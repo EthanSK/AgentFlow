@@ -25,6 +25,16 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-05T20:08:38Z
+**Trigger:** Ethan questioned transcription quality, excessive context, and the current GPT realtime model, and requested research-backed comments for future agents.
+**Symptom:** Bounded requests and successful live transport had been verified, but no paired human-reference evaluation established that four Codex excerpts or same-Mode History improved recognition.
+**Root cause:** The installed Modes use gpt-live-transcribe, English and xhigh with enhancement disabled. Context is optional topic guidance, not a conversational voice-agent instruction stack. Codex selection admits assistant commentary; History can cross conversations sharing one Mode and repeat earlier recognition errors. These are verified policy limitations, not a proven cause of the reported word errors. Local context-resolution logs can occur twice for one session.update, and pre-budget candidate counts do not prove final included-message counts.
+**Fix:** Added a dated official-source research reference, routed the learnings skill to it, and added adjacent model, context, request-lifecycle and fallback comments. Keep Vocabulary separate, distinguish local caps from documented limits, and require identical-audio human-reference comparisons before claiming a quality gain. No executable source, prompt bytes, active settings, installed binary, or audio state changed.
+**Commit:** 34adfbeb64861182ce7c1facba706e59208941fc
+**Guard:** Verified all five touched Swift files retain identical non-comment lines; skill validation, local-reference checks and diff whitespace checks passed. Build-322's bounded 18:00–21:01 London sample had 87 connections, zero dropped-audio drains, 80 nonempty live finals and seven empty finals taking fallback. Prompt max was 990 characters with 82 frozen keywords. Quiet but nonzero retained audio in the empty cases does not establish spoken content; transport metrics and nonzero error-string lengths are not recognition accuracy. Read .agents/skills/learnings/references/openai-transcription-quality.md for sources, exact sample limits and the still-unperformed quality comparison.
+---
+
+---
 **Date:** 2026-09-05T13:08:32Z
 **Trigger:** Ethan heard repeated recording-start chimes, then identified Razer Previous/Next Change holds as the trigger and transferred this collision fix to the Corsair/Karabiner task.
 **Symptom:** Razer 8 could open VoiceInk's recorder; Razer 5 could cancel it or produce only its start sound while navigating/staging in VS Code.
