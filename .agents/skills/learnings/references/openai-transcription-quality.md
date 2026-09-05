@@ -53,7 +53,7 @@ before transport; never truncate encoded JSON or sacrifice Vocabulary to make a 
 
 Build 322 Codex selection kept up to four 160-character message prefixes from the proven
 active task. The parser accepts user/assistant text but does **not** filter assistant
-`channel`; commentary can consume slots intended to supply useful naming context.
+final/progress metadata; commentary can consume slots intended to supply useful naming context.
 Its wrapper, instructions, JSON keys, and role labels also consume the small prompt budget.
 Exact task identity proves provenance, not relevance or recognition benefit.
 
@@ -63,9 +63,15 @@ fewer. Same Mode is not same conversation, and a previous recognition error can 
 as a hint. Neither risk is proof of the cause of Ethan's reported errors. Do not silently
 disable requested context, broaden its capture, or claim the existing counts are optimal.
 
-Ethan approved the leaner policy on 2026-09-05. Build 323 keeps at most two recent user or
-explicit final-channel assistant excerpts, each at most 160 characters with whole-word
-truncation. Missing/unknown assistant channels and progress commentary are excluded.
+Ethan approved the leaner policy on 2026-09-05. Build 323 introduced at most two recent user or
+explicit final assistant excerpts, each at most 160 characters with whole-word truncation.
+Its channel-only gate was too narrow: the current native producer uses `phase=final_answer`
+or `phase=commentary`, with no channel field. Build 324 accepts the explicit native final
+phase and the older `channel=final` shape only when phase is absent. Missing, unknown,
+malformed, or conflicting final/progress metadata fail closed. Verify the actual local
+producer metadata and synthesize fixtures from that shape; an invented channel-only fixture
+can pass every unit test while silently excluding real assistant replies. Do not copy or log
+private message contents merely to inspect schema keys.
 Deduplicate repeated text across roles. A short topic label and JSON string array replace
 XML, role objects, and extra instructions; quoting preserves structure, not instruction
 priority. Retain useful code identifiers rather than deleting names the user may speak.

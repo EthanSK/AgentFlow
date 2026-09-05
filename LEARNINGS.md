@@ -25,6 +25,16 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-05T21:27:00Z
+**Trigger:** Follow through the approved context cleanup against the installed runtime and actual current Codex log schema.
+**Symptom:** Build 323's first physical recording used one 190-character excerpt and all 82 keywords, streamed successfully, finalized in 0.607 seconds, issued Primary paste/Return and removed its pipeline. However, the new channel-only filter also excluded actual final assistant replies.
+**Root cause:** Current native Codex message metadata uses phase=final_answer or phase=commentary, not channel. A bounded metadata-only audit found 151 commentary and 14 final-answer messages with no channel field. Synthetic channel-only fixtures validated the assumed schema rather than the real producer.
+**Fix:** Build 324 accepts explicit native phase=final_answer, or legacy channel=final only when phase is absent, and rejects missing, unknown, malformed or contradictory metadata. Two new regressions use the observed producer shape without copying private chat text. All compact-context, dictionary, language/delay, snapshot and delivery boundaries remain unchanged. Update the research and failure guidance so future parser work verifies producer metadata first.
+**Commit:** This build-324 correction to 0c09528220769cb27491a05e3770832b3ec2cf3b.
+**Guard:** Canonical Mini focused action named and passed all 22 selected tests in two suites, including native-phase acceptance, progress/conflict rejection, compact context, Primary/Next and HUD guards. Build 323 had separately passed all 299 tests, signing, entitlements, one guarded installation, unchanged Mode-config hash and official-app hash; those results do not substitute for the new build-324 full release gate. The 1024-character live/completed synthetic protocol probe remains valid because transport parameters are unchanged. No human-reference recognition gain is claimed.
+---
+
+---
 **Date:** 2026-09-05T21:09:00Z
 **Trigger:** Ethan approved cleaning up GPT Live context and requested a bounded Fable consultation without excessive usage.
 **Symptom:** Build 322 could spend nearly its entire prompt allowance on four excerpts plus 346 characters of framing, include assistant progress, and fall back to unrelated same-Mode dictation History.

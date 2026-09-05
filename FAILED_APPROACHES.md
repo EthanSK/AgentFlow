@@ -1132,6 +1132,19 @@ No row may be promoted merely because a later build reused part of it.
   local active-task API. Update the exact parser and fail-closed tests before accepting that API;
   do not substitute a recency or title heuristic during migration.
 
+### Assuming final Codex replies always have a channel field
+
+- **State:** REJECTED by live build-323 follow-through on 2026-09-05.
+- **Attempt:** Exclude assistant progress by requiring `payload.channel == "final"`.
+- **Why it fails:** Current native rollout metadata uses `phase=final_answer` and
+  `phase=commentary`, with no `channel` field. Channel-only synthetic tests passed but
+  real final replies were excluded too; the app remained functional with user context only.
+- **Use instead:** Build 324 accepts explicit native `phase=final_answer`, or the legacy
+  `channel=final` only when phase is absent. Reject malformed, unknown and contradictory
+  metadata. Test fixtures must follow the observed producer schema, not a guessed API shape.
+- **Reconsider only if:** A verified new Codex producer changes that schema. Inspect metadata
+  keys/enum values without exposing chat text and update the exact parser plus fixtures.
+
 ### Appending recent-transcript context to the shared provider prompt
 
 - **State:** REJECTED by design on 2026-08-16, before implementation.

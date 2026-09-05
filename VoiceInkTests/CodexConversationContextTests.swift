@@ -252,6 +252,23 @@ struct CodexConversationContextTests {
         #expect(fullStatic.contextCharacters == 0)
     }
 
+    @Test func nativeCodexFinalAnswerPhaseIsAcceptedWithoutLegacyChannel() throws {
+        // Shape checked against current native rollout metadata without copying chat text.
+        let final = try rolloutLine(role: "assistant", contentType: "output_text", text: "Use CoreAudioRecorder", channel: nil, phase: "final_answer")
+        let progress = try rolloutLine(role: "assistant", contentType: "output_text", text: "Still checking the files", channel: nil, phase: "commentary")
+        #expect(CodexConversationContextPolicy.message(fromRolloutLine: final)?.text == "Use CoreAudioRecorder")
+        #expect(CodexConversationContextPolicy.message(fromRolloutLine: progress) == nil)
+        let user = try rolloutLine(role: "user", contentType: "input_text", text: "Check microphone input", channel: nil)
+        #expect(CodexConversationContextPolicy.selectedMessages(fromNewestRolloutLines: [progress, final, user]).count == 2)
+    }
+
+    @Test func conflictingOrUnknownAssistantPhaseFailsClosed() throws {
+        for (phase, channel) in [("commentary", "final"), ("unknown", "final"), ("final_answer", "commentary")] {
+            let line = try rolloutLine(role: "assistant", contentType: "output_text", text: "Do not send this text", channel: channel, phase: phase)
+            #expect(CodexConversationContextPolicy.message(fromRolloutLine: line) == nil)
+        }
+    }
+
     @Test func escapedOrDuplicateExcerptsCannotOverfillOrForgeCompactContext() throws {
         let hostile = CodexConversationContextMessage(role: .user, text: String(repeating: "< > ", count: 50))
         let newest = CodexConversationContextMessage(role: .assistant, text: "Keep the identifier CoreAudioRecorder")
@@ -309,7 +326,8 @@ struct CodexConversationContextTests {
         role: String,
         contentType: String,
         text: String,
-        channel: String? = "final"
+        channel: String? = "final",
+        phase: String? = nil
     ) throws -> String {
         var payload: [String: Any] = [
             "type": "message",
@@ -317,6 +335,7 @@ struct CodexConversationContextTests {
             "content": [["type": contentType, "text": text]]
         ]
         if let channel { payload["channel"] = channel }
+        if let phase { payload["phase"] = phase }
         let object: [String: Any] = [
             "timestamp": "2026-08-31T22:49:33.393Z",
             "type": "response_item",

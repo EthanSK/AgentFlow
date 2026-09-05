@@ -78,8 +78,10 @@ For optional recent context, use only exact active-Codex messages; same-Mode His
 a production fallback. While verified Codex is frontmost, require the counts-only trace to show
 `Codex context captured messages=` and `request context frozen ... codexMessages=` greater than
 zero; do not infer exact task context from a recent session file, title, Accessibility destination,
-or shared Mode. Require explicit final-channel assistant replies, exclude progress/unknown channels,
-and retain at most two whole-word excerpts within the independent 400-character context budget.
+or shared Mode. Require explicit final assistant metadata: current native rollouts use
+`phase=final_answer`; accept legacy `channel=final` only when phase is absent. Exclude progress,
+unknown, malformed or conflicting metadata, and verify the real producer shape before release.
+Retain at most two whole-word excerpts within the independent 400-character context budget.
 The normalized static prompt stays first and Vocabulary remains a separate field. Test realistic
 long messages, escaped expansion, no-context fallback, and post-fit counts; a zero included count
 can otherwise look healthy while ordinary dictations lose all useful context. Keep task identity,

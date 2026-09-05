@@ -114,8 +114,9 @@ enum CodexConversationContextPolicy {
     }
 
     static func message(fromRolloutLine line: String) -> CodexConversationContextMessage? {
-        // Role filtering alone admitted progress chatter in build 322. Only an explicit
-        // final channel proves an assistant reply is eligible; absent/unknown channels fail
+        // Role filtering alone admitted progress chatter in build 322. Current native Codex
+        // rollouts use phase=final_answer, not channel=final (the older message shape).
+        // Require explicit final metadata; absent, unknown, or conflicting values fail
         // closed. Even these two excerpts need identical-audio evaluation before claiming
         // better recognition or expanding their budget/source scope.
         guard line.contains("\"type\":\"response_item\""),
@@ -131,8 +132,15 @@ enum CodexConversationContextPolicy {
             return nil
         }
 
-        guard role != .assistant || payload["channel"] as? String == "final" else {
-            return nil
+        if role == .assistant {
+            let channel = payload["channel"] as? String
+            if let rawPhase = payload["phase"] {
+                guard let phase = rawPhase as? String,
+                      phase == "final_answer",
+                      payload["channel"] == nil || channel == "final" else { return nil }
+            } else {
+                guard channel == "final" else { return nil }
+            }
         }
 
         let acceptedContentType = role == .user ? "input_text" : "output_text"
