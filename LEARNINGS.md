@@ -25,6 +25,16 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-05T21:37:00Z
+**Trigger:** Complete the approved GPT Live context cleanup, including signed local installation and live follow-through.
+**Symptom:** The leaner policy needed proof in the installed app, including the correction for Codex's native final-answer metadata rather than channel-only fixtures.
+**Root cause:** Context size, exact source eligibility and transport success are separate acceptance boundaries; none alone proves recognition accuracy.
+**Fix:** Signed build 324 from 516434f40b46721222c74e5218aed13c9c47ce57 is installed. It retains the two-excerpt/400-character optional context policy and native phase=final_answer support, with no History fallback. Both guarded updates during this task used delivered five-second notifications, repeated idle checks, cooperative termination and recoverable prior bundles; neither started a recording. The original dirty worktree, all seven Mode configurations, exact-delivery/context toggles, main-window bounds, official VoiceInk executable and active OBS capture were preserved.
+**Commit:** 516434f40b46721222c74e5218aed13c9c47ce57; this entry is verification-only.
+**Guard:** The exact build-324 canonical Mini gate named and passed 301 tests in nine suites after 22 focused tests; all 372 native/project/test source files matched the committed local tree. The separate ordinary Release has no XCTest payload/dependency, passes deep/strict signing and outer Automation/audio-input entitlements, and has CDHash 7a1b81c196500c50faffb320dd59ecadbbfa2162, executable SHA-256 a54ecf4133c43bf0bcf61e570e853f18989213c77ccb2603db1dadf1a6ebe5f0 and archive SHA-256 c55b65bd051064581d9ebd83c8af5ec21a4643a0007769fbb7f1dfc721be1d10. At 22:34 London a real no-Codex-context recording logged recentEntries=0, codexMessages=0, promptChars=0, keywords=82 and completed normally. At 22:35 a real Codex recording logged one included excerpt, contextChars=182, promptChars=182 and keywords=82, connected, produced realtime partials, finalized in 0.536 seconds, issued normal Primary delivery/Return and removed its pipeline. These are runtime/protocol facts, not a human-reference accuracy score or visual acceptance of every delivery route. A controlled recognition comparison remains separate work; user-supplied examples are not required to begin that evaluation.
+---
+
+---
 **Date:** 2026-09-05T21:27:00Z
 **Trigger:** Follow through the approved context cleanup against the installed runtime and actual current Codex log schema.
 **Symptom:** Build 323's first physical recording used one 190-character excerpt and all 82 keywords, streamed successfully, finalized in 0.607 seconds, issued Primary paste/Return and removed its pipeline. However, the new channel-only filter also excluded actual final assistant replies.
