@@ -25,6 +25,16 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-05T13:08:32Z
+**Trigger:** Ethan heard repeated recording-start chimes, then identified Razer Previous/Next Change holds as the trigger and transferred this collision fix to the Corsair/Karabiner task.
+**Symptom:** Razer 8 could open VoiceInk's recorder; Razer 5 could cancel it or produce only its start sound while navigating/staging in VS Code.
+**Root cause:** A listen-only modifier trace captured Control, Control+Shift, Control+Shift+Option, then Hyper (adding Command) within a fraction of a millisecond. The three-modifier intermediate state matches VoiceInk's Primary shortcut. The same event sequence correlated with an idle Primary start, then cancellation during startup while VS Code was focused. Source PID zero identifies the HID/virtual-HID path, not a particular physical device by itself; Ethan supplied the Razer 5/8 reproduction. This was not a microphone-refresh loop or the unrelated Codex completion-sound hook.
+**Fix:** Investigation only. Sent the evidence and physical reproduction to the existing mouse task at Ethan's request; do not claim the collision repaired. Preserve immediate Primary start, stage-on-release, both mice's independent readiness/Undo bindings, and the completion hook. No native VoiceInk source, installed binary, mouse setting, or shared audio state changed.
+**Commit:** None; observed on build 322 from 5aff67de334376ecaef2295d4f79127a11bc9764.
+**Guard:** Correlated passive modifier metadata with the existing privacy-safe recording trace; no synthetic input was sent. Build 322 also produced first PCM, nonzero streaming chunks, realtime partials, and completed Primary delivery in ordinary installed recordings. A physical Bose/Scarlett round trip remains unverified.
+---
+
+---
 **Date:** 2026-09-04T22:32:31Z
 **Trigger:** Ethan confirmed a VoiceInk++ restart restored capture after his Bose output auto-switch round trip and asked for an automatic capture refresh and release.
 **Symptom:** The output watcher logged Scarlett-to-Bose at 22:35 and Bose disconnect at 22:58, matching the failed process's input-format event. Subsequent GPT Live requests connected but captured zero PCM and header-only WAVs, then failed with empty-buffer/HTTP 400 errors. The user-restarted build 321 produced real partials and non-zero streaming chunks again.
