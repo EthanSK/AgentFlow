@@ -50,6 +50,13 @@ An output-only change can invalidate input capture without changing its ID or sa
 actual PCM evidence, preserve active/paused recordings, and never reset shared hardware to test it
 while OBS or another protected audio session is active without Ethan's approval.
 
+For OpenAI transcription quality, prompt/context, keyword, language, delay, or session-reuse
+work, first read [references/openai-transcription-quality.md](references/openai-transcription-quality.md).
+It separates dated official model facts from VoiceInk++ choices and recognition quality from
+transport success. Re-fetch current model guidance and use human-referenced, same-audio comparisons
+before claiming a context or delay setting improves accuracy; never treat a full prompt budget,
+local context-log count, synthetic probe, or catalog score as that evidence.
+
 For OpenAI GPT Live Transcribe work, use `scripts/openai-transcription-probe.swift` with synthetic PCM16 mono 24 kHz plus its WAV equivalent before building, installing, or changing active Modes. Require `session.updated`, at least one real delta, a non-empty completion, and a successful `gpt-transcribe` completed-audio fallback. The WebSocket connection is `wss://api.openai.com/v1/realtime?intent=transcription`; `gpt-live-transcribe` belongs only in `audio.input.transcription.model`. Never revive either rejected `?model=gpt-live-transcribe` or `?model=gpt-realtime-*` connection form. The probe reads the VoiceInk++ key from local secure preferences and must not print transcript contents or credentials.
 
 Keep every OpenAI realtime and completed-audio prompt within VoiceInk++'s 992-character production

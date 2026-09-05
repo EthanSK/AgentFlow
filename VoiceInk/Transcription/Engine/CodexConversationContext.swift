@@ -24,6 +24,10 @@ struct CodexActiveThreadEvent: Equatable {
 /// then read only bounded user/assistant text from that thread's native local session. If
 /// any boundary is missing or ambiguous, no Codex text leaves the Mac.
 enum CodexConversationContextPolicy {
+    // These limits are app choices, not an OpenAI-recommended conversation size. Proven
+    // task identity does not prove every excerpt is relevant to the next spoken sentence.
+    // Keep guidance small; never fill the cap or add instructions merely because they fit.
+    // Research: .agents/skills/learnings/references/openai-transcription-quality.md.
     static let bundleIdentifier = "com.openai.codex"
     static let maximumMessages = 4
     static let maximumMessageCharacters = 160
@@ -97,6 +101,9 @@ enum CodexConversationContextPolicy {
     }
 
     static func message(fromRolloutLine line: String) -> CodexConversationContextMessage? {
+        // Current policy accepts assistant commentary as well as final text: role filtering
+        // is not relevance filtering. Evaluate a narrower selection on identical real audio
+        // before calling these four excerpts optimal or expanding their budget/source scope.
         guard line.contains("\"type\":\"response_item\""),
               line.contains("\"type\":\"message\""),
               let data = line.data(using: .utf8),
@@ -157,6 +164,8 @@ enum CodexConversationContextPolicy {
     }
 
     static func encodedContextBlock(messages: [CodexConversationContextMessage]) -> String? {
+        // Escaping protects JSON/wrapper structure, not model instruction priority. A quoted
+        // instruction can still bias recognition; more warning prose is not a proven cure.
         let values: [[String: String]] = messages.compactMap { message in
             guard let text = sanitizedMessageText(message.text) else { return nil }
             return ["role": message.role.rawValue, "text": text]

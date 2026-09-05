@@ -12,6 +12,9 @@ struct OpenAIProvider: CloudProvider {
     let includesAutoDetect = true
     let isStreamingOnly = true
 
+    // Catalog scores are display metadata, not measured accuracy or a model guarantee.
+    // Quality decisions require the same-audio evaluation in
+    // .agents/skills/learnings/references/openai-transcription-quality.md.
     var models: [CloudModel] {[
         CloudModel(
             name: OpenAITranscriptionConfiguration.liveModelName,
@@ -58,8 +61,15 @@ struct OpenAIProvider: CloudProvider {
 }
 
 enum OpenAITranscriptionConfiguration {
+    // Model-specific contract checked 2026-09-05, not conversational gpt-realtime-*:
+    // https://developers.openai.com/api/docs/guides/realtime-transcription
+    // Keep the dated evidence, local caps, and evaluation limits in the research reference
+    // named above; do not transplant chat-model prompt/temperature/reasoning settings here.
     static let liveModelName = "gpt-live-transcribe"
     static let completedAudioModelName = "gpt-transcribe"
+    // Already the most audio-context delay level. OpenAI documents a possible WER benefit,
+    // not guaranteed accuracy or fixed milliseconds. Compare real speech before changing it;
+    // this is not reasoning effort and must never add a local recording-start debounce.
     static let accuracyDelay = "xhigh"
     static let realtimeSampleRate = 24_000
 
@@ -70,6 +80,8 @@ enum OpenAITranscriptionConfiguration {
     // completed-audio fallback share this production cap and the same frozen prompt.
     // Context policies compose against it so `normalizedPrompt` only needs to bound a
     // legacy static prompt, never slice a structured context block.
+    // Independent local Vocabulary cap, not part of promptCharacterLimit and not a claimed
+    // published provider maximum. Context must never crowd out or manufacture keywords.
     static let keywordLimit = 100
     static let providerPromptHardMaximum = 1_024
     static let promptSafetyMargin = 32
@@ -124,6 +136,10 @@ enum OpenAITranscriptionConfiguration {
         prompt: String?,
         customVocabulary: [String]
     ) -> [String: Any] {
+        // Context is a topic/setting hint, keywords are literal possible spoken terms, and
+        // languages are expected input languages—not required output or agent instructions.
+        // https://developers.openai.com/api/docs/guides/transcription#improve-transcription-quality
+        // Preserve separate fields, frozen snapshot parity, and audio-grounded evaluation.
         var transcription: [String: Any] = [
             "model": liveModelName,
             "delay": accuracyDelay,

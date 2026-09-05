@@ -63,6 +63,10 @@ struct RecentTranscriptContextCandidate: Equatable {
 /// Same Mode is **not** the same app, window, chat, or document. That is the honest
 /// limitation, which is why the whole feature is opt-in and off by default.
 enum RecentTranscriptContextPolicy {
+    // This fallback can reuse an earlier recognition error or another conversation sharing
+    // the Mode. Recency is not a relevance/accuracy guarantee. Compare against dictionary-only
+    // on human-referenced audio before expanding it; do not infer benefit from API success.
+    // Research: .agents/skills/learnings/references/openai-transcription-quality.md.
     /// At most three recent excerpts. This is a recognition hint, not a conversation log.
     static let maximumEntries = 3
     /// Independent suffix budget. The existing static prompt keeps the remainder of
@@ -423,6 +427,9 @@ enum TranscriptionRequestContextSnapshot {
                 messages: snapshot.codexMessages
             )
 
+        // Counts are pre-budget-fit candidates, not final included-entry counts or network
+        // requests. Provisional/final Mode resolution may log twice for one session.update;
+        // a raw whitespace-only static prompt may log one character but transport omits it.
         // Counts only. Prompt text, context entries, dictionary terms, transcript
         // excerpts, and Mode-identifying values must never enter any log.
         logger.info(

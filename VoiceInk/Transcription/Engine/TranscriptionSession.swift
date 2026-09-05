@@ -273,6 +273,10 @@ final class StreamingTranscriptionSession: TranscriptionSession {
         }
 
         try Task.checkCancellation()
+        // This is an additional billable completed-audio request, not a prompt-quality retry.
+        // Keep it bounded to the same immutable audio/context; never loop through prompts
+        // until one produces plausible text. Empty speech and transport failure need separate
+        // evaluation: .agents/skills/learnings/references/openai-transcription-quality.md.
         let fallbackStart = Date()
         logger.notice("Using batch fallback for \(model.displayName, privacy: .public) file=\(audioURL.lastPathComponent, privacy: .public)")
         let text = try await fallbackService.transcribe(audioURL: audioURL, model: model, context: context)

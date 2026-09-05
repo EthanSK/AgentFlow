@@ -205,6 +205,10 @@ final class OpenAIStreamingProvider: ContextualStreamingTranscriptionProvider, @
         // completed-audio fallback in `CloudTranscriptionService` read the same frozen
         // prompt and keyword snapshot, so an empty live final cannot silently retry the
         // same audio with different provider guidance.
+        // Send guidance once here, not on every audio chunk or partial transcript. Duplicate
+        // local context-resolution logs do not imply duplicate session.update requests.
+        // Fresh recording sessions also prevent implicit context carry-over between tasks.
+        // Research: .agents/skills/learnings/references/openai-transcription-quality.md.
         let sessionUpdate = OpenAITranscriptionConfiguration.realtimeSessionUpdate(
             language: language,
             prompt: context.openAITranscriptionPrompt,
