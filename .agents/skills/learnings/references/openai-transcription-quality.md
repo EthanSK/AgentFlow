@@ -29,7 +29,7 @@ keywords, or promise that filling the available budget improves recognition.
 
 | Input | Supported purpose | VoiceInk++ boundary |
 | --- | --- | --- |
-| `prompt` | Topic or setting of the audio | Static context first; optional bounded Codex **or** History suffix |
+| `prompt` | Topic or setting of the audio | Static context first; optional bounded active-Codex suffix; no History fallback |
 | `keywords` | Literal names, acronyms, and other terms that may be spoken | Frozen user Vocabulary only; independent of the prompt budget |
 | `languages` | Expected input languages | Frozen Mode language; `en` for the audited install; omit for auto |
 
@@ -51,17 +51,32 @@ before transport; never truncate encoded JSON or sacrifice Vocabulary to make a 
 
 ## Do not turn recognition context into an agent prompt
 
-Current Codex selection keeps up to four 160-character message prefixes from the proven
+Build 322 Codex selection kept up to four 160-character message prefixes from the proven
 active task. The parser accepts user/assistant text but does **not** filter assistant
 `channel`; commentary can consume slots intended to supply useful naming context.
 Its wrapper, instructions, JSON keys, and role labels also consume the small prompt budget.
 Exact task identity proves provenance, not relevance or recognition benefit.
 
-When exact Codex context is unavailable, History contributes up to three eligible excerpts,
+In build 322, when exact Codex context was unavailable, History contributed up to three eligible excerpts,
 320 characters each, within 15 minutes and one stable Mode ID. Budget fitting can retain
 fewer. Same Mode is not same conversation, and a previous recognition error can be fed back
 as a hint. Neither risk is proof of the cause of Ethan's reported errors. Do not silently
 disable requested context, broaden its capture, or claim the existing counts are optimal.
+
+Ethan approved the leaner policy on 2026-09-05. Build 323 keeps at most two recent user or
+explicit final-channel assistant excerpts, each at most 160 characters with whole-word
+truncation. Missing/unknown assistant channels and progress commentary are excluded.
+Deduplicate repeated text across roles. A short topic label and JSON string array replace
+XML, role objects, and extra instructions; quoting preserves structure, not instruction
+priority. Retain useful code identifiers rather than deleting names the user may speak.
+The optional block has an independent 400-character maximum; the complete prompt still
+fits 992 with the normalized static prefix unchanged. Drop oldest whole excerpts if escaped
+text expands beyond either limit. No Codex identity/context means static prompt plus frozen
+Vocabulary only: no History query, summarizer, extra API call, or new delivery/AX path.
+These are conservative engineering limits, not a measured optimum or a proven accuracy gain.
+The old pure History policy and its comments/tests remain test-only negative evidence.
+Post-fit `codexMessages`, `contextChars` and normalized `promptChars` describe what is sent;
+`recentEntries=0` is retained for the existing privacy trace format, not a fallback.
 
 JSON escaping protects the block's structure; the explanatory warning does not establish an
 LLM instruction-priority sandbox or guarantee that quoted instructions are ignored. Prefer
@@ -130,9 +145,11 @@ catalog's decorative `accuracy: 0.98` value. GPT Live supplies no confidence sco
 timestamps, or speaker labels according to the fetched guide.
 
 No paired human-reference quality comparison was completed in this audit. Recommended
-next experiment: keep the dictionary and English hint; compare the current four-message
-context with no optional context and with one short, demonstrably relevant excerpt.
-That is a proposal, not a changed default or a proven cure. Do not upload a private corpus
+next experiment: keep the dictionary and English hint; compare the previous four-message
+context with no optional context and with the approved compact policy on identical audio.
+The compact policy is an authorized implementation, not a proven cure. User-provided examples
+are not a prerequisite: use existing saved recordings with human-checked reference speech.
+Do not upload a private corpus
 to another provider or start a large billable run without task-specific authorization.
 Keep reports private and prompts, audio, chat text, and dictionary contents out of logs.
 

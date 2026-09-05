@@ -398,17 +398,9 @@ struct RecentTranscriptContextTests {
     }
 
     @Test @MainActor func missingStableModeScopeReturnsExactLegacyPrompt() {
-        let modeID = UUID()
-        let candidate = RecentTranscriptContextCandidate(
-            text: "a completed entry that must not cross the no-Mode boundary",
-            timestamp: Date().addingTimeInterval(-30),
-            modeID: modeID,
-            status: .completed
-        )
         let inputSnapshot = TranscriptionRequestInputSnapshot(
             staticPrompt: "legacy prompt bytes",
             vocabulary: ["Project Alpha"],
-            recentCandidates: [candidate],
             codexMessages: [],
             capturedAt: Date(),
             recentContextEnabled: true
@@ -433,7 +425,6 @@ struct RecentTranscriptContextTests {
         let expected = TranscriptionRequestInputSnapshot(
             staticPrompt: "static prompt",
             vocabulary: ["Project Alpha"],
-            recentCandidates: [],
             codexMessages: [],
             capturedAt: capturedAt,
             recentContextEnabled: true
@@ -455,9 +446,9 @@ struct RecentTranscriptContextTests {
         #expect(captureCount == 1)
     }
 
-    @Test @MainActor func disabledRecentContextDoesNotInvokeTheHistoryLoader() {
+    @Test @MainActor func disabledRecentContextDoesNotInvokeTheCodexLoader() {
         var vocabularyLoads = 0
-        var historyLoads = 0
+        var codexLoads = 0
         let snapshot = TranscriptionRequestContextSnapshot.capture(
             staticPrompt: "static prompt",
             includeRecentContext: false,
@@ -466,23 +457,16 @@ struct RecentTranscriptContextTests {
                 vocabularyLoads += 1
                 return ["Literal Term"]
             },
-            recentCandidates: {
-                historyLoads += 1
-                return [
-                    RecentTranscriptContextCandidate(
-                        text: "this loader must never run while disabled",
-                        timestamp: Date(),
-                        modeID: UUID(),
-                        status: .completed
-                    )
-                ]
+            codexMessages: {
+                codexLoads += 1
+                return [CodexConversationContextMessage(role: .user, text: "must not load")]
             }
         )
 
         #expect(vocabularyLoads == 1)
-        #expect(historyLoads == 0)
+        #expect(codexLoads == 0)
         #expect(snapshot.vocabulary == ["Literal Term"])
-        #expect(snapshot.recentCandidates.isEmpty)
+        #expect(snapshot.codexMessages.isEmpty)
         #expect(!snapshot.recentContextEnabled)
     }
 
@@ -596,7 +580,7 @@ struct RecentTranscriptContextTests {
         #expect(recordingA.vocabulary == ["Alpha"])
         #expect(recordingB.vocabulary == ["Alpha", "Beta"])
         #expect(promptA != promptB)
-        #expect(promptB.contains(newerText))
+        #expect(!promptB.contains(newerText))
         #expect(!promptA.contains(newerText))
     }
 
@@ -749,29 +733,31 @@ struct RecentTranscriptContextTests {
         #expect(!source.contains("TranscriptionDelivery"))
         // Privacy: only counts may be logged.
         #expect(!source.contains("privacy: .private"))
-        #expect(source.contains("recentEntries=\\(entries.count, privacy: .public)"))
+        #expect(source.contains("recentEntries=0"))
+        #expect(source.contains("codexMessages=\\(composition.includedMessages, privacy: .public)"))
+        #expect(!source.contains("FetchDescriptor<Transcription>"))
+        #expect(!source.contains("RecentTranscriptContextPolicy"))
+        #expect(!source.contains("recentCandidates"))
         #expect(!source.contains("\\(entries, privacy:"))
         #expect(!source.contains("\\(snapshot.staticPrompt, privacy:"))
         #expect(!source.contains("\\(snapshot.vocabulary, privacy:"))
         #expect(!source.contains("\\(candidate.text, privacy:"))
     }
 
-    @Test func settingsCopyExplainsExcerptsSavedTextAndVocabularySeparation() throws {
+    @Test func settingsCopyExplainsCodexOnlyContextAndVocabularySeparation() throws {
         let source = try String(
             contentsOf: repositoryRoot
                 .appendingPathComponent("VoiceInk/Views/AI Models/ModelSettingsPanel.swift"),
             encoding: .utf8
         )
 
-        #expect(source.contains("sentence-aligned excerpts"))
-        #expect(source.contains("saved text after any paragraph formatting and Word Replacements"))
-        #expect(source.contains("recent context never adds or changes Vocabulary"))
-        #expect(source.contains("A transcription's Mode is the one that finished it"))
-        #expect(source.contains("matches the Mode this recording starts in"))
-        #expect(source.contains("Same Mode does not mean same app, chat, or document"))
-        #expect(source.contains("RecentTranscriptContextPolicy.maximumEntries"))
-        #expect(source.contains("RecentTranscriptContextPolicy.recencyWindowMinutes"))
-        #expect(source.contains("Deleting a transcription in History removes it from future context"))
+        #expect(source.contains("short message excerpts"))
+        #expect(source.contains("Codex's final replies"))
+        #expect(source.contains("never progress updates"))
+        #expect(source.contains("Vocabulary is sent separately; context never replaces it"))
+        #expect(source.contains("History is never sent"))
+        #expect(source.contains("CodexConversationContextPolicy.maximumMessages"))
+        #expect(!source.contains("RecentTranscriptContextPolicy.maximumEntries"))
         #expect(source.contains(".disabled(!hasUsableOpenAIModel)"))
     }
 
@@ -1000,7 +986,7 @@ struct RecentTranscriptContextTests {
         #expect(frozenKeywords == persisted)
         #expect(realtimeKeywords == frozenKeywords)
         #expect(fallbackKeywords == frozenKeywords)
-        #expect(requestContext.openAITranscriptionPrompt?.contains(historyOnlyMarker) == true)
+        #expect(requestContext.openAITranscriptionPrompt?.contains(historyOnlyMarker) == false)
         #expect(!frozenKeywords.contains(historyOnlyMarker))
     }
 

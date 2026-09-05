@@ -25,6 +25,16 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-05T21:09:00Z
+**Trigger:** Ethan approved cleaning up GPT Live context and requested a bounded Fable consultation without excessive usage.
+**Symptom:** Build 322 could spend nearly its entire prompt allowance on four excerpts plus 346 characters of framing, include assistant progress, and fall back to unrelated same-Mode dictation History.
+**Root cause:** Role-only filtering did not distinguish final replies, Mode identity did not prove conversation identity, and candidate-count logs overstated messages surviving budget fitting. These policy defects are verified; their contribution to recognition errors is not measured.
+**Fix:** Build 323 sends at most two 160-character whole-word excerpts from the proven active Codex task, allows assistant text only with explicit final channel, deduplicates across roles, and uses a compact quoted array with a 400-character optional-block cap. The normalized static prompt retains precedence within 992 characters; Vocabulary remains separate and frozen, as do English/xhigh and realtime/fallback parity. Missing exact context sends no History, and the shipping app contains no History-context query. The retired pure policy and all its comments remain test-only regression fixtures. Logs report post-fit counts and normalized prompt length. Setting help and the research/failure guidance describe the new boundaries.
+**Commit:** This build-323 release source.
+**Guard:** The Mac Mini canonical focused action named and passed all 48 selected tests in three suites, including five new compact-context regressions plus mandatory Primary/Next/HUD guards. A synthetic, silent-to-the-speakers provider probe passed session.updated, 28 deltas, nonempty live completion and gpt-transcribe fallback with the same 1024-character boundary prompt. Skill validation and diff checks pass. The full exact-commit release gate and installed runtime checks are still required; no human-reference accuracy gain is claimed.
+---
+
+---
 **Date:** 2026-09-05T20:08:38Z
 **Trigger:** Ethan questioned transcription quality, excessive context, and the current GPT realtime model, and requested research-backed comments for future agents.
 **Symptom:** Bounded requests and successful live transport had been verified, but no paired human-reference evaluation established that four Codex excerpts or same-Mode History improved recognition.

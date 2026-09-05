@@ -74,16 +74,17 @@ The API exposes no numeral-normalization switch: a physical `gpt-live-transcribe
 explicit number-word-to-digit example. Preserve live preferences until a documented dedicated
 control is proven; deterministic numerals require a separately tested VoiceInk++ post-processor.
 
-For optional recent context, first distinguish exact active-Codex messages from the same-Mode
-History fallback. While verified Codex is frontmost, require the counts-only trace to show
+For optional recent context, use only exact active-Codex messages; same-Mode History is no longer
+a production fallback. While verified Codex is frontmost, require the counts-only trace to show
 `Codex context captured messages=` and `request context frozen ... codexMessages=` greater than
 zero; do not infer exact task context from a recent session file, title, Accessibility destination,
-or shared Mode. For the History fallback, do not accept a short-message-only live test: correlate
-the counts-only request log with History status, age, stable Mode UUID, and raw character length,
-then include at least one realistic dictation longer than the current per-entry budget. A zero
-eligible count can otherwise look healthy in unit tests while ordinary long dictations are rejected
-whole and the feature appears inactive. Keep task identity, message, transcript, prompt, and keyword
-text out of logs while gathering this evidence.
+or shared Mode. Require explicit final-channel assistant replies, exclude progress/unknown channels,
+and retain at most two whole-word excerpts within the independent 400-character context budget.
+The normalized static prompt stays first and Vocabulary remains a separate field. Test realistic
+long messages, escaped expansion, no-context fallback, and post-fit counts; a zero included count
+can otherwise look healthy while ordinary dictations lose all useful context. Keep task identity,
+message, transcript, prompt, and keyword text out of logs. The retired History policy lives only in
+test fixtures to preserve its comments and negative evidence; never restore its runtime query.
 
 For a requested Soniox-versus-AssemblyAI comparison using saved recordings, read
 [references/provider-realtime-ab-test.md](references/provider-realtime-ab-test.md)

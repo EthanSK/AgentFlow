@@ -1100,12 +1100,11 @@ No row may be promoted merely because a later build reused part of it.
   Accessibility resolver, breaking the Primary isolation boundary in `AGENTS.md`. Chromium,
   Electron, Telegram, and Notion also reuse wrappers across logical contexts, so a resolved
   wrapper would not have proven "same chat" even if it were allowed.
-- **Use instead:** Two boundaries that are already frozen, non-Accessibility, per-recording
-  state remain the general fallback: a short recency window and an exact match on this recording's
-  stable enabled Mode UUID. Build 315 adds one stronger boundary for a frontmost Codex host only:
+- **Use instead:** Build 323 removes the former same-Mode/recency History fallback entirely;
+  neither boundary proves conversation identity. Build 315 introduced a stronger boundary for a frontmost Codex host only:
   the current Codex process's primary selected-view event plus the exact matching local session
   JSONL. This is app-owned conversation identity, not a paste destination. Say plainly in the
-  setting's help text that fallback same Mode is **not** same app, chat, or document, and keep the
+  setting's help text that History is never sent and unknown task identity means no chat context. Keep the
   whole feature opt-in and off by default. The context source must continue to reference no
   destination, focus, paste, or `AXUIElement` symbol.
 - **Reconsider only if:** Ethan explicitly asks for stronger scoping *and* a non-destination,
@@ -1125,7 +1124,8 @@ No row may be promoted merely because a later build reused part of it.
   event for the current Codex process's visible primary renderer. Require its valid thread UUID to
   resolve to exactly one date-bounded native session file, then parse only bounded user/assistant
   message text. A later primary `active=false`, missing/ambiguous file, unreadable tail, or any
-  identity failure must produce no Codex messages and allow the documented History fallback.
+  identity failure must produce no Codex messages. Build 323 sends only static prompt plus
+  Vocabulary then; the earlier History fallback is retired, not an identity-recovery mechanism.
   Never activate Codex, inspect its Accessibility tree, scrape the screen, or log thread/message
   content for this feature.
 - **Reconsider only if:** Codex replaces the selected-view event/session format with a documented

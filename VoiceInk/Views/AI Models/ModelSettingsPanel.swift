@@ -141,7 +141,7 @@ private struct EnhancementModelSettingsView: View {
 /// Opt-in recent context for the OpenAI transcription models.
 ///
 /// When Codex is frontmost, its own selected-view thread ID supplies exact task scope
-/// without Accessibility. Elsewhere, the honest fallback remains recent same-Mode History.
+/// without Accessibility. Elsewhere, no conversation context is sent; History is excluded.
 /// Everything else — Primary/Next destinations, paste, auto-send — is untouched.
 private struct RecentDictationContextSection: View {
     @EnvironmentObject private var transcriptionModelManager: TranscriptionModelManager
@@ -152,20 +152,13 @@ private struct RecentDictationContextSection: View {
     }
 
     private var informationMessage: String {
-        String(
-            format: String(localized: "When Codex is frontmost, adds up to %d recent user or assistant messages from the exactly selected local Codex task. System, developer, tool, environment, and draft composer content are excluded. If an exact Codex task cannot be proven, or in another app, it instead uses bounded sentence-aligned excerpts from up to %d completed History transcriptions from the last %d minutes in the same Mode. A transcription's Mode is the one that finished it, so a trigger word or Next-button destination can change which later recordings match it. Same Mode does not mean same app, chat, or document. Only OpenAI transcription models receive this context; audio, destinations, realtime partials, and enhanced text are never included. Deleting a transcription in History removes it from future context."),
-            CodexConversationContextPolicy.maximumMessages,
-            RecentTranscriptContextPolicy.maximumEntries,
-            RecentTranscriptContextPolicy.recencyWindowMinutes
-        )
+        String(localized: "Only your messages and Codex's final replies are sent, never progress updates, tool output, or unsent drafts. History is never sent, and no chat context is sent when the exact task can't be identified. Vocabulary is sent separately; context never replaces it.")
     }
 
     private var visibleSummary: String {
         String(
-            format: String(localized: "OpenAI receives up to %d bounded messages from the active Codex task when exact local task identity is available. Otherwise it receives sentence-aligned excerpts from up to %d completed History items from the last %d minutes whose Mode matches the Mode this recording starts in. The History fallback uses saved text after any paragraph formatting and Word Replacements; recent context never adds or changes Vocabulary."),
-            CodexConversationContextPolicy.maximumMessages,
-            RecentTranscriptContextPolicy.maximumEntries,
-            RecentTranscriptContextPolicy.recencyWindowMinutes
+            format: String(localized: "Send up to %d short message excerpts from the active Codex task to OpenAI. Only works if Codex is frontmost and the exact task is identified."),
+            CodexConversationContextPolicy.maximumMessages
         )
     }
 
