@@ -25,6 +25,16 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-08T23:46:45Z
+**Trigger:** Ethan authorized installing the start-only button-down mapping and giving feedback after installation.
+**Symptom:** Native build 326 readiness alone did not establish that the physical mouse transport was active or that the initiating release was harmless.
+**Root cause:** The native receiver and Karabiner's two source-tagged bindings are independently installed layers; a ready socket cannot prove the live mapping, and application edge timestamps do not measure physical switch latency.
+**Fix:** The mouse owner activated only Corsair F19 and lower Razer F22 down/up commands after Ethan explicitly superseded pre-install capture. Independent readback deep-equals that candidate (SHA-256 9e481c4ad90fb493dd1112a536468c60c1d5ac92b30a1600eadbfc7b7e3fe177), with the unlocked-session lease and retired upper F21 preserved. No further native rebuild or restart was needed.
+**Commit:** Native implementation 7f8297d0d3f8b71cf05f5b1c9781cd1314a37faa, signed build 326; activation evidence is separate from the native release.
+**Guard:** A natural Corsair recording logged down/startOnDown, up/consumedStartRelease, later down/armed, then up/primaryOnRelease and the unchanged 0.45-second stop window. Nonempty finalization, Primary paste/one HID Return, completion and pipeline removal followed. HUD receipt was 4 ms and first PCM 127 ms after the accepted down handler on this application-fallback run; these are not switch-to-pixel measurements or a like-for-like benchmark. This establishes the observed Corsair start/stop edges, not Razer, multi-click/paused/pending/paired/context-menu/Next/lock acceptance, subjective snappiness, or independently visible submission. Keep the broad physical checks open without reinstating the explicitly superseded pre-install gate.
+---
+
+---
 **Date:** 2026-09-08T23:29:25Z
 **Trigger:** Ethan confirmed that only Start should move to physical button-down; all other actions stay on release.
 **Symptom:** The release-only mouse chord waits for finger-up and also invokes VoiceInk's modifier pre-chord capture before the final start reservation.
