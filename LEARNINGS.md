@@ -25,6 +25,16 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-08T23:29:25Z
+**Trigger:** Ethan confirmed that only Start should move to physical button-down; all other actions stay on release.
+**Symptom:** The release-only mouse chord waits for finger-up and also invokes VoiceInk's modifier pre-chord capture before the final start reservation.
+**Root cause:** A stateless move of that chord to down would move Stop and every gesture too. Source-tagged down/up lifetime is needed to select one edge without changing the existing Primary classifier; the initial up and an overlapping near-simultaneous companion press must not become a later Stop.
+**Fix:** Build 326 adds a strict four-field Karabiner datagram receiver, independent per-source cycles, stable capture-start identity, serial ingress timing, bounded queues, ordered reducer entry without waiting for audio startup, and receiver/session generation guards. Only fully idle down starts; its up is consumed; all non-idle gestures remain release actions. Public early session observation and positive ordinary input gate commands; lock/wake invalidates queued input and uncommitted mouse starts without canceling established capture or independent keyboard gestures. Primary/Next delivery routes are unchanged. The signed native build is installed and logged ready=true after ordinary input, with build 325 preserved for rollback. The mouse mapping remains a separate attended activation/acceptance boundary, so no physical latency improvement is claimed yet.
+**Commit:** 7f8297d0d3f8b71cf05f5b1c9781cd1314a37faa; build 326 executable SHA-256 35b61a350c2cd4928b954283033fa04d16ae98946503c23131ef1da63c17f863, CDHash 0520a273fa12b4b0ee0315b7eaa60f7b3fcaa2a2.
+**Guard:** All 31 final focused tests and all 322 named release tests in ten suites passed the canonical Mini runner; 376 native/test/project files matched the tested snapshot. Sixteen new tests cover protocol, source cycles, paired holds, slow startup, order, socket ownership, generation changes, zero-length datagram draining, lock/wake and keyboard independence. The separate ordinary Release has no XCTest payload and passes deep/strict signing with outer Automation/audio-input entitlements. The delivered five-second warning and idle checks preceded one cooperative quit and one replacement; a timed-out quit observer was reconciled against the actual absent PID before resuming, never force-killed or blindly retried. The original VoiceInk app and active OBS were unchanged. Metadata filter tests and skill validation passed. Require attended source down/hold/up and real start/release/gesture/context-menu/Next/lock acceptance before claiming the mouse behavior shipped end to end.
+---
+
+---
 **Date:** 2026-09-05T21:37:00Z
 **Trigger:** Complete the approved GPT Live context cleanup, including signed local installation and live follow-through.
 **Symptom:** The leaner policy needed proof in the installed app, including the correction for Codex's native final-answer metadata rather than channel-only fixtures.
