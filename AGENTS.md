@@ -23,7 +23,17 @@ The separate **Next button** is also the forward button, secondary button, Next 
 
 Ethan's live G502 X LIGHTSPEED `Desktop: Default` profile was sanity-checked on 2026-07-14: the upper side thumb control runs the `speech to text` Shift-Control-Option macro and is the primary button; a different control is explicitly labeled `Next Track` and is the Next button. G HUB's separately labeled `Mouse Button 4` and `Mouse Button 5` are not aliases for that Next control. Never infer “forward button” means raw Mouse Button 5.
 
-Ethan's Razer F21/F22 and Corsair F19 source releases currently converge through Karabiner as the
+For the approved source-tagged mouse transport, **only fully idle Start runs on physical
+button-down; the rest stays on release**. Consume the initiating press's up even during async
+startup; it is never Stop or click two. Non-idle down only arms a per-source cycle, and up
+contributes one existing Primary gesture. Keep the pending-transcription decision window and all
+recording/paused multi-click behavior. Keyboard Primary and physical Next remain separate and
+unchanged. Never enable retired Razer F21 or alter other device mappings to install this transport.
+Require an attended source down/hold/up capture and physical start/release/gesture acceptance;
+generated Karabiner JSON and native unit tests do not prove physical timing.
+
+Historical shared-chord transport (not permission to revive a retired source):
+Ethan's Razer F21/F22 and Corsair F19 source releases converged through Karabiner as the
 same Shift-Control-Option Primary chord. VoiceInk++ owns the final duplicate boundary, but it cannot
 recover the originating control after Karabiner's exclusive HID grab. Coalesce only a second complete
 Primary-toggle chord whose event-tap timestamp is less than 90 ms after the last accepted chord; a

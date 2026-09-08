@@ -109,6 +109,18 @@ For a realtime stop that pastes nothing or appears to skip Return, separate tran
 
 For a G HUB sanity check, confirm the live active profile, onboard/software mode, resolved assignment diagram, and VoiceInk++'s stored shortcut. Raw profile card IDs or historical G-numbers alone are insufficient to identify the physical control.
 
+For source-tagged mouse input, preserve Ethan's start-only edge contract: fully idle Start runs
+on down, its matching up is consumed even across async startup, and every non-idle gesture stays
+on release. Do not replace this with a down-triggered chord for every action. Karabiner's documented
+`send_user_command` may target VoiceInk's own strict, bounded UNIX datagram receiver; never reuse
+Agentic Mouse's endpoint or emit the old chord as a fallback. Keep independent source cycles,
+serial ingress timestamps, receiver/session generations, and positive ordinary-input readiness
+after launch/wake. Commands cannot unlock the gate; gate changes invalidate queued edges and
+uncommitted starts without canceling an established recording or independent keyboard gesture.
+Require native phase/slow-start/order/session tests plus attended physical source down/hold/up,
+Start-release-no-op, later release gestures, context-menu, Next, and lock-screen checks before
+physical acceptance. Preserve retired controls and the mouse owner's exact-device lease rules.
+
 When several hardware controls converge through Karabiner as one modifier-only Primary chord,
 establish the ownership boundary before trying to identify the source. An exclusive HID-open failure
 such as `0xe00002c5` means VoiceInk++ cannot recover F19/F21/F22 identity after Karabiner has collapsed

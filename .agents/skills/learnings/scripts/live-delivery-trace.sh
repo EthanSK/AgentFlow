@@ -266,6 +266,8 @@ run_trace() {
     fi
     case "$line" in
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'paste retarget:'*|\
+      *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'primary mouse: readiness ready='*|\
+      *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'primary mouse: edge source='*|\
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'record start reservation: passive Next capture durationMs='*|\
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'recorder HUD: presentation verified reason='*|\
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'pipeline enqueue '*|\

@@ -20,6 +20,8 @@ ${source.slice(start, end + '    esac'.length)}
 done`;
 const prefix = '2026-01-01 12:00:00.000 I VoiceInkPlusPlus[123:abc] ';
 const allowed = [
+  '[com.ethansk.VoiceInkPlusPlus:VIPPDebug] primary mouse: readiness ready=true protocolVersion=1',
+  '[com.ethansk.VoiceInkPlusPlus:VIPPDebug] primary mouse: edge source=corsair phase=down decision=startOnDown dispatchLatencyMs=1',
   '[com.ethansk.VoiceInkPlusPlus:VIPPDebug] record start reservation: passive Next capture durationMs=35 requestID=synthetic targetCaptured=true',
   '[com.ethansk.VoiceInkPlusPlus:VIPPDebug] recorder HUD: presentation verified reason=recording start style=mini attempt=1 screens=2',
   '[com.ethansk.VoiceInkPlusPlus:FocusLock] Exact-input context scan durationMs=20 nodes=100 anchors=16 regionFiltered=true',
@@ -28,6 +30,7 @@ const allowed = [
   '[com.ethansk.VoiceInkPlusPlus:VIPPDebug] pipeline remove generation=2 sequence=1 recordingSessionID=synthetic'
 ].map(line => prefix + line);
 const denied = [
+  '[com.ethansk.VoiceInkPlusPlus:VIPPDebug] primary mouse: payload=PRIVATE-COMMAND',
   '[com.ethansk.VoiceInkPlusPlus:FocusLock] Exact-input context contents=PRIVATE-CONTEXT',
   '[com.ethansk.VoiceInkPlusPlus:VIPPDebug] record start prompt=PRIVATE-PROMPT',
   '[com.prakashjoshipax.voiceink:ShortcutMonitor] Unrelated key=PRIVATE-KEY',
@@ -41,4 +44,4 @@ assert.deepEqual(result.slice(0, allowed.length), allowed);
 assert.equal(result.length, allowed.length + 1);
 assert(result.at(-1).includes('error=<redacted> generation=2 sequence=1'));
 assert(!result.join('\n').includes('PRIVATE-'));
-console.log('PASS: six metadata receipts retained, four content messages excluded, provider error redacted');
+console.log('PASS: eight metadata receipts retained, five content messages excluded, provider error redacted');

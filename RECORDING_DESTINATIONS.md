@@ -5,6 +5,13 @@ exact-input latching. A Primary stop follows whichever keyboard input is current
 happens. Next can instead preserve the recording-start input or select a second-chance input while
 transcription is still loading.
 
+On the source-tagged mouse transport, only fully idle Start moves to physical button-down.
+Its matching release does nothing. Every non-idle action still enters the existing Primary
+gesture classifier on release; a down while recording or paused does not stop, finalize, or
+change a destination. Source-specific press cycles, stable recording-start identity, and native
+session generations reject duplicate/orphan releases and events from a closed receiver lifetime.
+This transport adds no destination route and does not alter the independent keyboard shortcut.
+
 ## Real-time transcription stays in the recorder
 
 When a provider such as Soniox streams partial words during recording, VoiceInk++ displays those

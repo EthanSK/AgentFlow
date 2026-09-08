@@ -5,6 +5,12 @@ import UniformTypeIdentifiers
 class AppDelegate: NSObject, NSApplicationDelegate {
     weak var menuBarManager: MenuBarManager?
     weak var voiceInkEngine: VoiceInkEngine?
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Inactive launches can receive sessionDidResignActive before did-finish.
+        // Subscribe early; a socket command is never evidence of an unlocked Mac.
+        PrimaryMouseSessionGate.shared.startObserving()
+    }
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         menuBarManager?.applyActivationPolicy()

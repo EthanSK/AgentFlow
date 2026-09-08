@@ -161,6 +161,12 @@ class VoiceInkEngine: NSObject, ObservableObject {
         recordingStartReservation.pendingID != nil
     }
 
+    /// One stable identity across reservation and microphone startup, used only
+    /// to prevent a delayed physical mouse release from acting on a new capture.
+    var primaryMouseCaptureStartID: UUID? {
+        activeRecordingSession?.startID ?? recordingStartReservation.pendingID
+    }
+
     /// Includes both a start reservation and a materialized recording session. This
     /// closes the tiny consumed-reservation-to-session-card boundary for UI decisions.
     var hasActiveCaptureOwner: Bool {

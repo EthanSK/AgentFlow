@@ -23,9 +23,24 @@ A read-only check of the live **Desktop: Default** software profile on Ethan's G
 
 When diagnosing the hardware mapping, verify G HUB's active profile and resolved assignment diagram as well as VoiceInk++'s stored shortcut. Do not infer the physical control from a historical G-number, a raw card ID, or the English word “forward” alone.
 
-## Equivalent hardware Primary releases
+## Physical down and release
 
-The current shared mouse layer maps the Corsair F19 release and both Razer DPI-button releases
+For the source-tagged mouse path, only **fully idle Start** runs on physical button-down.
+The up from that same starting press is consumed, including while microphone startup is still
+awaiting completion: it must never stop capture or count as another click. While starting,
+recording, paused, or a previous result is pending, down only arms the cycle and release supplies
+one existing Primary gesture. The existing click-decision windows begin at those accepted release
+times. No hold changes a Primary destination; the separate Next button owns exact-input routing.
+
+Karabiner sends the approved Corsair or lower-Razer source plus `down`/`up` through a dedicated
+VoiceInk UNIX datagram endpoint. Do not also emit the old chord, reopen the hardware beside
+Karabiner, or enable the retired upper-Razer F21 transport. The ordinary keyboard Primary chord
+remains available and shares only the narrow duplicate-activation guard. Physical down/up timing
+requires an attended exact-device capture; source support is not evidence of a live mapping.
+
+## Historical equivalent hardware Primary releases
+
+The historical shared mouse layer mapped the Corsair F19 release and both Razer DPI-button releases
 (F21/F22) to the same Shift-Control-Option Primary chord. Once Karabiner emits that chord,
 VoiceInk++ cannot identify which physical source produced it. Each control alone is therefore one
 ordinary Primary activation.

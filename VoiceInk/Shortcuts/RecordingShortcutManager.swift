@@ -23,6 +23,11 @@ class RecordingShortcutManager: ObservableObject {
         didSet {
             UserDefaults.standard.set(primaryRecordingShortcutMode.rawValue, forKey: "primaryRecordingShortcutMode")
             primaryRecordingShortcutModeSource.primaryMode = primaryRecordingShortcutMode
+            primaryMousePresses.reset()
+            let mouseReady = primaryMouseReceiver.setEnabled(
+                PrimaryMouseSessionGate.shared.readiness.isReady && primaryRecordingShortcutMode == .toggle
+            )
+            shortcutModeHandler.logPrimaryMouseReadiness(mouseReady)
         }
     }
     @Published var secondaryRecordingShortcutMode: Mode {
@@ -50,6 +55,17 @@ class RecordingShortcutManager: ObservableObject {
     private var shortcutChangeObserver: NSObjectProtocol?
     private let shortcutModeHandler: RecordingShortcutModeHandler
     private let primaryRecordingShortcutModeSource: RecordingShortcutModeSource
+    private let primaryMouseReceiver = PrimaryMouseCommandReceiver()
+    private var primaryMousePresses = PrimaryMousePressCoordinator(
+        startCompanionInterval: PrimaryRecordingPressCoordinator.duplicatePrimaryChordInterval(
+            normalStopDecisionInterval: PrimaryRecordingPressCoordinator.secondPressInterval(
+                systemDoubleClickInterval: NSEvent.doubleClickInterval
+            )
+        )
+    )
+    private var primaryMouseActionsInFlight = 0
+    private var primaryMouseOwnedStartID: UUID?
+    private var primaryMousePreviousDecision: PrimaryMouseDecisionBarrier?
 
     // MARK: - Helper Properties
     private var canHandleShortcutAction: Bool {
@@ -218,6 +234,121 @@ class RecordingShortcutManager: ObservableObject {
         // Start proactively re-arming the hotkey event tap on wake/unlock + via a watchdog
         // so a long idle period can't leave the record hotkey dead on the first press.
         setupEventTapHealthMonitoring()
+        setupPrimaryMouseInput()
+    }
+
+    private var primaryMouseContext: PrimaryMousePressCoordinator.Context {
+        if let id = engine.primaryMouseCaptureStartID { return .capture(id) }
+        if let id = engine.pendingClipboardOnlySessionID ?? engine.sessions.last?.id {
+            return .pending(id)
+        }
+        guard engine.recordingState == .idle, primaryMouseActionsInFlight == 0 else {
+            return .unavailable
+        }
+        return .idle
+    }
+
+    private func setupPrimaryMouseInput() {
+        let gate = PrimaryMouseSessionGate.shared
+        gate.startObserving()
+        gate.onChange = { [weak self] ready in
+            guard let self else { return }
+            let enabled = self.primaryMouseReceiver.setEnabled(
+                ready && self.primaryRecordingShortcutMode == .toggle
+            )
+            self.primaryMousePresses.reset()
+            if !enabled {
+                self.shortcutModeHandler.cancelPendingPrimaryMouseDecisions()
+                if let id = self.primaryMouseOwnedStartID {
+                    self.engine.cancelRecordingStartReservation(id)
+                    if let session = self.engine.activeRecordingSession,
+                       session.startID == id, session.liveRecordingState == .starting {
+                        // Lock may race the AUHAL await. Mark this exact uncommitted
+                        // mouse start synchronously; never cancel an established
+                        // recording, a keyboard start, or another session's audio.
+                        session.shouldCancel = true
+                        Task { @MainActor [weak self] in
+                            guard let self else { return }
+                            if self.engine.activeRecordingSession === session,
+                               session.liveRecordingState == .starting {
+                                await self.recorderUIManager.cancelRecording()
+                            } else {
+                                // AUHAL may already have observed shouldCancel and
+                                // removed this start. The ordinary dismiss guard
+                                // preserves any newer capture/pending result.
+                                await self.recorderUIManager.dismissRecorderPanel()
+                            }
+                        }
+                    }
+                }
+                self.primaryMouseOwnedStartID = nil
+            }
+            self.shortcutModeHandler.logPrimaryMouseReadiness(enabled)
+        }
+        do {
+            try primaryMouseReceiver.start { [weak self] event in
+                self?.receivePrimaryMouseEvent(event)
+            }
+            let enabled = primaryMouseReceiver.setEnabled(
+                gate.readiness.isReady && primaryRecordingShortcutMode == .toggle
+            )
+            shortcutModeHandler.logPrimaryMouseReadiness(enabled)
+        } catch {
+            logger.error("Primary mouse receiver unavailable; existing keyboard shortcut unchanged")
+        }
+    }
+
+    private func receivePrimaryMouseEvent(_ event: PrimaryMouseCommandReceiver.Event) {
+        guard primaryMouseReceiver.isCurrent(event),
+              primaryRecordingShortcutMode == .toggle else { return }
+        let age = ProcessInfo.processInfo.systemUptime - event.receivedAt
+        guard age >= 0, age <= 2 else {
+            primaryMousePresses.reset()
+            return // Do not replay obsolete input after a stalled main run loop.
+        }
+        let context = primaryMouseContext
+        let decision = primaryMousePresses.receive(
+            event.command, eventTime: event.receivedAt, context: context
+        )
+        shortcutModeHandler.logPrimaryMouseEvent(event, decision: decision)
+        guard decision == .startOnDown || decision == .primaryOnRelease else { return }
+        guard primaryMouseActionsInFlight < 32 else {
+            primaryMousePresses.reset()
+            return
+        }
+        let previousDecision = primaryMousePreviousDecision
+        let decisionBarrier = PrimaryMouseDecisionBarrier()
+        primaryMousePreviousDecision = decisionBarrier
+        primaryMouseActionsInFlight += 1
+        Task { @MainActor [weak self] in
+            defer { decisionBarrier.open() }
+            await previousDecision?.wait()
+            guard let self else { return }
+            defer { self.primaryMouseActionsInFlight -= 1 }
+            guard self.primaryMouseReceiver.isCurrent(event) else { return }
+            if decision == .startOnDown {
+                guard self.engine.recordingState == .idle,
+                      !self.engine.hasPendingRecordingStart,
+                      self.engine.sessions.isEmpty else { return }
+            } else {
+                guard self.primaryMouseContext == context else { return }
+            }
+            // The physical cycle is already consumed/armed synchronously above.
+            // Do not hold the keyboard's isShortcutPressed latch across async
+            // microphone startup: another mouse release must remain processable.
+            await self.shortcutModeHandler.handlePrimaryMouseActivation(
+                eventTime: event.receivedAt,
+                isCurrent: { [weak self] in
+                    self?.primaryMouseReceiver.isCurrent(event) == true
+                },
+                didReserveStart: { [weak self] id in self?.primaryMouseOwnedStartID = id },
+                decisionRegistered: { decisionBarrier.open() }
+            )
+            if !self.primaryMouseReceiver.isCurrent(event),
+               let id = self.primaryMouseOwnedStartID {
+                self.engine.cancelRecordingStartReservation(id)
+            }
+        }
     }
 
     // MARK: - Event-tap health monitoring (idle-miss bug fix)
@@ -396,6 +527,7 @@ class RecordingShortcutManager: ObservableObject {
                     // Cancel the delayed single-Primary decision first so it cannot
                     // fire after Next has already stopped the same recording.
                     self.shortcutModeHandler.cancelPendingPrimaryDecisions()
+                    self.primaryMousePresses.reset()
 
                     if self.engine.recordingState.isRecordingOrPaused,
                        self.recorderUIManager.isRecorderPanelVisible {
@@ -493,6 +625,10 @@ class RecordingShortcutManager: ObservableObject {
         middleClickTask?.cancel()
         
         shortcutModeHandler.reset()
+        primaryMousePresses.reset()
+        primaryMouseReceiver.setEnabled(
+            PrimaryMouseSessionGate.shared.readiness.isReady && primaryRecordingShortcutMode == .toggle
+        )
     }
     
     var isShortcutConfigured: Bool {
@@ -512,6 +648,8 @@ class RecordingShortcutManager: ObservableObject {
         }
 
         MainActor.assumeIsolated {
+            PrimaryMouseSessionGate.shared.onChange = nil
+            primaryMouseReceiver.stop()
             teardownEventTapHealthMonitoring()
             removeAllMonitoring()
         }
@@ -1034,12 +1172,14 @@ final class RecordingShortcutModeHandler {
     private var primaryIdleStartCoordinator: PrimaryIdleStartPressCoordinator
     private var primaryPressCoordinator: PrimaryRecordingPressCoordinator
     private var primaryDuplicateChordCoalescer: PrimaryShortcutDuplicateChordCoalescer
+    private var lastPrimaryGestureWasMouse = false
     private var primaryStartDecisionTask: Task<Void, Never>?
     private var pendingPrimaryCompletionTarget: (generation: Int, sessionID: UUID)?
     private var pendingPrimaryStartReservation: (
         generation: Int,
         requestID: UUID,
-        modeId: UUID?
+        modeId: UUID?,
+        isCurrent: @MainActor () -> Bool
     )?
     private var primaryGestureDecisionTask: Task<Void, Never>?
     private var primaryPauseTransitionTask: Task<Bool, Never>?
@@ -1169,6 +1309,42 @@ final class RecordingShortcutModeHandler {
         FocusLockService.shared.clearLock()
     }
 
+    func logPrimaryMouseReadiness(_ ready: Bool) {
+        vippLog.info("primary mouse: readiness ready=\(ready, privacy: .public) protocolVersion=1")
+    }
+
+    func logPrimaryMouseEvent(
+        _ event: PrimaryMouseCommandReceiver.Event,
+        decision: PrimaryMousePressCoordinator.Decision
+    ) {
+        let latency = Int((ProcessInfo.processInfo.systemUptime - event.receivedAt) * 1_000)
+        vippLog.info("primary mouse: edge source=\(event.command.source.rawValue, privacy: .public) phase=\(event.command.phase.rawValue, privacy: .public) decision=\(decision.rawValue, privacy: .public) dispatchLatencyMs=\(latency, privacy: .public)")
+    }
+
+    /// A semantic mouse press is complete before this async action starts. It
+    /// shares Primary's narrow duplicate filter and existing gesture reducer, but
+    /// never borrows the independently balanced keyboard down/up latch. In toggle
+    /// mode no hold duration selects a destination; only physical Next owns that.
+    func handlePrimaryMouseActivation(
+        eventTime: TimeInterval,
+        isCurrent: @escaping @MainActor () -> Bool = { true },
+        didReserveStart: @escaping @MainActor (UUID) -> Void = { _ in },
+        decisionRegistered: @escaping @MainActor () -> Void = {}
+    ) async {
+        defer { decisionRegistered() }
+        guard isCurrent(), !isShortcutPressed,
+              !primaryDuplicateChordCoalescer.shouldCoalesce(
+                  action: .primaryRecording, mode: .toggle, eventTime: eventTime
+              ) else { return }
+        lastShortcutPressTime = Date()
+        lastPrimaryGestureWasMouse = true
+        await handlePrimaryToggleKeyDown(
+            eventTime: eventTime, modeId: nil,
+            isCurrent: isCurrent, didReserveStart: didReserveStart,
+            decisionRegistered: decisionRegistered
+        )
+    }
+
     func handleKeyDown(
         action: ShortcutAction,
         eventTime: TimeInterval,
@@ -1219,6 +1395,7 @@ final class RecordingShortcutModeHandler {
         shortcutPressStartTime = eventTime
 
         if isPrimaryToggleGesture {
+            lastPrimaryGestureWasMouse = false
             await handlePrimaryToggleKeyDown(
                 eventTime: eventTime,
                 modeId: modeId
@@ -1423,8 +1600,12 @@ final class RecordingShortcutModeHandler {
 
     private func handlePrimaryToggleKeyDown(
         eventTime: TimeInterval,
-        modeId: UUID?
+        modeId: UUID?,
+        isCurrent: @escaping @MainActor () -> Bool = { true },
+        didReserveStart: @escaping @MainActor (UUID) -> Void = { _ in },
+        decisionRegistered: @escaping @MainActor () -> Void = {}
     ) async {
+        guard isCurrent() else { return }
         if recordingState() == .idle {
             if let suppressPrimaryIdlePressUntil {
                 if eventTime <= suppressPrimaryIdlePressUntil {
@@ -1435,7 +1616,10 @@ final class RecordingShortcutModeHandler {
             }
             await handlePrimaryIdleStartPress(
                 eventTime: eventTime,
-                modeId: modeId
+                modeId: modeId,
+                isCurrent: isCurrent,
+                didReserveStart: didReserveStart,
+                decisionRegistered: decisionRegistered
             )
             return
         }
@@ -1448,6 +1632,7 @@ final class RecordingShortcutModeHandler {
             recordingState: recordingState(),
             eventTime: eventTime
         )
+        decisionRegistered()
 
         switch decision {
         case .startOrCancelImmediately:
@@ -1507,6 +1692,7 @@ final class RecordingShortcutModeHandler {
                 _ = await primaryPauseTransitionTask.value
                 self.primaryPauseTransitionTask = nil
             }
+            guard isCurrent() else { return }
             setActiveRecordingCompletionDisposition(.normalDelivery)
             setActiveRecordingAutoSendDisposition(.suppressOnce)
             suppressPrimaryIdlePressUntil = eventTime +
@@ -1545,9 +1731,14 @@ final class RecordingShortcutModeHandler {
 
     private func handlePrimaryIdleStartPress(
         eventTime: TimeInterval,
-        modeId: UUID?
+        modeId: UUID?,
+        isCurrent: @escaping @MainActor () -> Bool = { true },
+        didReserveStart: @escaping @MainActor (UUID) -> Void = { _ in },
+        decisionRegistered: @escaping @MainActor () -> Void = {}
     ) async {
-        switch primaryIdleStartCoordinator.registerPress(eventTime: eventTime) {
+        let decision = primaryIdleStartCoordinator.registerPress(eventTime: eventTime)
+        decisionRegistered()
+        switch decision {
         case .deferStart(let generation):
             // Only an existing pending transcription needs a click decision: its
             // double-click means Won't paste. Fully idle Start has no debounce.
@@ -1580,6 +1771,13 @@ final class RecordingShortcutModeHandler {
                 primaryIdleStartCoordinator.reset()
                 return
             }
+            guard isCurrent() else {
+                cancelRecordingStartReservation(requestID)
+                endPendingPrimaryCompletionTarget()
+                primaryIdleStartCoordinator.reset()
+                return
+            }
+            didReserveStart(requestID)
             // Launch cleanup can yield while the first press is reserving. If the
             // matching second press canceled this generation during that await, the
             // returned token must be released instead of resurrecting the start.
@@ -1592,7 +1790,8 @@ final class RecordingShortcutModeHandler {
             let pending = (
                 generation: generation,
                 requestID: requestID,
-                modeId: modeId
+                modeId: modeId,
+                isCurrent: isCurrent
             )
             if needsPendingCompletionDecision {
                 pendingPrimaryStartReservation = pending
@@ -1709,12 +1908,15 @@ final class RecordingShortcutModeHandler {
     }
 
     private func commitPrimaryStart(
-        _ pending: (generation: Int, requestID: UUID, modeId: UUID?)
+        _ pending: (
+            generation: Int, requestID: UUID, modeId: UUID?,
+            isCurrent: @MainActor () -> Bool
+        )
     ) async {
         if pendingPrimaryCompletionTarget?.generation == pending.generation {
             endPendingPrimaryCompletionTarget()
         }
-        guard recordingState() == .idle,
+        guard pending.isCurrent(), recordingState() == .idle,
               canHandleShortcutAction() else {
             cancelRecordingStartReservation(pending.requestID)
             return
@@ -1860,7 +2062,14 @@ final class RecordingShortcutModeHandler {
         vippLog.info("shortcut: Primary quadruple-click finish success=\(didFinish, privacy: .public) destination=primaryCurrentInput paste=true autoSend=false playback=restoredIfOwned")
     }
 
+    func cancelPendingPrimaryMouseDecisions() {
+        // The native readiness gate must not rewrite an independently accepted
+        // keyboard gesture merely because the mouse transport became unavailable.
+        if lastPrimaryGestureWasMouse { cancelPendingPrimaryDecisions() }
+    }
+
     func cancelPendingPrimaryDecisions() {
+        lastPrimaryGestureWasMouse = false
         cancelPendingPrimaryStartDecision()
         primaryGestureDecisionTask?.cancel()
         primaryGestureDecisionTask = nil
