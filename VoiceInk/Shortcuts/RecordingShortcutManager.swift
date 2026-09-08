@@ -338,7 +338,13 @@ class RecordingShortcutManager: ObservableObject {
                 Task { @MainActor in
                     guard let self else { return }
                     guard let mode = self.recordingMode(for: action) else { return }
-                    self.logger.info("Recording shortcut key-down action=\(String(describing: action), privacy: .public) mode=\(mode.rawValue, privacy: .public) recordingState=\(String(describing: self.engine.recordingState), privacy: .public) route=primaryCurrentInput")
+                    // Separate event-to-MainActor backlog from the later passive AX
+                    // capture/HUD/audio work. This observes the existing event clock;
+                    // it must not delay, reinterpret, or synthesize a mouse gesture.
+                    let dispatchLatencyMilliseconds = max(
+                        0, Int((ProcessInfo.processInfo.systemUptime - eventTime) * 1_000)
+                    )
+                    self.logger.info("Recording shortcut key-down action=\(String(describing: action), privacy: .public) mode=\(mode.rawValue, privacy: .public) recordingState=\(String(describing: self.engine.recordingState), privacy: .public) route=primaryCurrentInput dispatchLatencyMs=\(dispatchLatencyMilliseconds, privacy: .public)")
                     await self.shortcutModeHandler.handleKeyDown(
                         action: action,
                         eventTime: eventTime,

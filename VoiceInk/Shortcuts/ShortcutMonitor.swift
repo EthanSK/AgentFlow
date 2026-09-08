@@ -238,12 +238,22 @@ final class ShortcutMonitor {
 
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         let modifierFlags = NSEvent.ModifierFlags(rawValue: UInt(event.flags.rawValue))
-        return handleEvent(
+        let receivedAt = ProcessInfo.processInfo.systemUptime
+        let primaryWasDown = shortcuts[.primaryRecording]?.isDown == true
+        let shouldSuppress = handleEvent(
             kind: eventKind,
             keyCode: keyCode,
             modifierFlags: modifierFlags,
-            eventTime: ProcessInfo.processInfo.systemUptime
+            eventTime: receivedAt
         )
+        if !primaryWasDown, shortcuts[.primaryRecording]?.isDown == true {
+            // Observe only a newly recognized Primary chord, never unrelated keys.
+            // Keep raw clocks so event-tap backlog can be distinguished from the
+            // later MainActor handoff. Gesture/coalescing decisions deliberately keep
+            // their existing callback clock; telemetry must not alter their timing.
+            logger.info("Primary shortcut event received eventTimestampNs=\(event.timestamp, privacy: .public) callbackUptime=\(receivedAt, privacy: .public)")
+        }
+        return shouldSuppress
     }
 
     private func handleSystemDefinedEvent(_ event: CGEvent) -> Bool {

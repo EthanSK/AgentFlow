@@ -7502,6 +7502,128 @@ struct VoiceInkTests {
     }
 
     @MainActor
+    @Test func contextAnchorScanSkipsGeometryAndValuesForNonTextControls() {
+        var frameReads: [Int] = []
+        var valueReads: [Int] = []
+        let anchors = FocusLockService.collectContextAnchors(
+            elements: Array(0..<100),
+            region: CGRect(x: 0, y: 0, width: 100, height: 100),
+            isExcluded: { $0 == 99 },
+            role: { $0 >= 95 ? kAXStaticTextRole : kAXGroupRole },
+            relativeFrame: { index in
+                frameReads.append(index)
+                return CGRect(x: index == 98 ? 200 : 0, y: 0, width: 10, height: 10)
+            },
+            value: { index in
+                valueReads.append(index)
+                return "Stable document context for element \(index)"
+            }
+        )
+        #expect(frameReads == [95, 96, 97, 98])
+        #expect(valueReads == [95, 96, 97])
+        #expect(anchors.count == 3)
+    }
+
+    @MainActor
+    @Test func contextAnchorScanPreservesOriginalFullTreeFingerprint() {
+        struct Node {
+            let role: String?
+            let frame: CGRect?
+            let value: String?
+            var excluded = false
+        }
+        let region = CGRect(x: 0, y: 0, width: 100, height: 100)
+        var nodes = (0..<40).map { index in
+            Node(
+                role: [kAXStaticTextRole, kAXTextAreaRole, kAXTextFieldRole][index % 3],
+                frame: CGRect(x: 0, y: 0, width: 10, height: 10),
+                value: "Document \(index)  anchor\n" + String(repeating: "x", count: index + 25)
+            )
+        }
+        nodes += [
+            nodes[10],
+            Node(role: kAXStaticTextRole, frame: nil,
+                 value: "Unreadable geometry retains the original semantic anchor"),
+            Node(role: kAXStaticTextRole, frame: region.offsetBy(dx: 200, dy: 0),
+                 value: "Outside the captured content region must remain excluded"),
+            Node(role: kAXButtonRole, frame: region,
+                 value: "A button must never become a document text anchor"),
+            Node(role: kAXTextAreaRole, frame: region,
+                 value: "The captured composer itself must remain excluded", excluded: true),
+            Node(role: kAXTextFieldRole, frame: region, value: "Do anything"),
+            Node(role: kAXTextFieldRole, frame: region, value: "Ask for follow-up changes"),
+            Node(role: nil, frame: region, value: "Unknown role is not a semantic anchor"),
+            Node(role: kAXStaticTextRole, frame: region, value: nil),
+            Node(role: kAXStaticTextRole, frame: region,
+                 value: "Long anchor " + String(repeating: "z", count: 300))
+        ]
+
+        // Frozen pre-optimization selector: scan every node, filter by region first,
+        // normalize/deduplicate, and keep the longest 16. Do not bless a faster scan
+        // that narrows the tree or weakens the independently matched task identity.
+        var original: [String] = []
+        var seen = Set<String>()
+        for node in nodes {
+            if node.excluded { continue }
+            if let frame = node.frame, !region.intersects(frame) { continue }
+            guard [kAXStaticTextRole, kAXTextAreaRole, kAXTextFieldRole].contains(node.role ?? ""),
+                  let rawValue = node.value else { continue }
+            let normalized = rawValue.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+            guard normalized.count >= 20,
+                  normalized != "Ask for follow-up changes",
+                  normalized != "Do anything" else { continue }
+            let anchor = String(normalized.prefix(180))
+            if seen.insert(anchor).inserted { original.append(anchor) }
+        }
+        original = Array(original.sorted { $0.count > $1.count }.prefix(16))
+        let optimized = FocusLockService.collectContextAnchors(
+            elements: nodes, region: region, isExcluded: { $0.excluded },
+            role: { $0.role }, relativeFrame: { $0.frame }, value: { $0.value }
+        )
+        #expect(optimized == original)
+        #expect(optimized.count == 16)
+        #expect(optimized.first?.count == 180)
+    }
+
+    @MainActor
+    @Test func contextAnchorScanWithoutRegionNeverReadsGeometry() {
+        var frameReads = 0
+        let anchors = FocusLockService.collectContextAnchors(
+            elements: [0, 1], region: nil, isExcluded: { _ in false },
+            role: { _ in kAXStaticTextRole },
+            relativeFrame: { _ in frameReads += 1; return nil },
+            value: { _ in "One stable duplicate document anchor" }
+        )
+        #expect(frameReads == 0)
+        #expect(anchors == ["One stable duplicate document anchor"])
+    }
+
+    @Test func contextAnchorGeometryReusesOnlyTheCurrentScanWindowFrame() throws {
+        let source = try repositorySource("VoiceInk/Modes/FocusLockService.swift")
+        let scan = try #require(source.range(of: "    private func contextAnchors("))
+        let region = try #require(source.range(of: "    private func contentRegion("))
+        let scanBody = String(source[scan.lowerBound..<region.lowerBound])
+        #expect(scanBody.contains("let elements = descendants(of: window)"))
+        #expect(scanBody.contains("let windowFrame = region == nil ? nil : frame(of: window)"))
+        #expect(scanBody.contains("self.relativeFrame(of: $0, in: window, windowFrame: windowFrame)"))
+        #expect(!scanBody.contains("cachedContext"))
+        let owningWindow = try #require(source.range(of: "    private func owningWindow("))
+        let regionBody = String(source[region.lowerBound..<owningWindow.lowerBound])
+        #expect(regionBody.contains("windowFrame: windowFrame"))
+        #expect(source.contains("let windowFrame = windowFrame ?? frame(of: window)"))
+    }
+
+    @Test func startupTimingTelemetryDoesNotChangeShortcutDecisionClocks() throws {
+        let monitor = try repositorySource("VoiceInk/Shortcuts/ShortcutMonitor.swift")
+        #expect(monitor.contains("let receivedAt = ProcessInfo.processInfo.systemUptime"))
+        #expect(monitor.contains("eventTime: receivedAt"))
+        #expect(monitor.contains("if !primaryWasDown, shortcuts[.primaryRecording]?.isDown == true"))
+        #expect(!monitor.contains("eventTime: Double(event.timestamp)"))
+        let manager = try repositorySource("VoiceInk/Shortcuts/RecordingShortcutManager.swift")
+        #expect(manager.contains("ProcessInfo.processInfo.systemUptime - eventTime"))
+    }
+
+    @MainActor
     @Test func exactInputContextFingerprintFailsClosedAcrossDifferentDocuments() {
         let captured = ["unique original task prompt", "stable original response"]
 

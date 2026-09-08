@@ -4009,24 +4009,64 @@ final class FocusLockService: ObservableObject {
         region: CGRect?,
         excluding excludedElement: AXUIElement?
     ) -> [String] {
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        let elements = descendants(of: window)
+        // AX reads are synchronous cross-process calls on the recording-start path.
+        // Freeze this scan's window geometry once, and reject non-text roles before
+        // asking for node geometry. Do not shorten the tree, reuse a prior scan, or
+        // drop semantic anchors: Next still needs the decision-time document identity
+        // even when an Electron composer wrapper survives a task/tab switch.
+        let windowFrame = region == nil ? nil : frame(of: window)
+        let anchors = Self.collectContextAnchors(
+            elements: elements,
+            region: region,
+            isExcluded: { element in
+                excludedElement.map { CFEqual(element, $0) } ?? false
+            },
+            role: { self.stringAttribute(kAXRoleAttribute, from: $0) },
+            relativeFrame: {
+                self.relativeFrame(of: $0, in: window, windowFrame: windowFrame)
+            },
+            value: {
+                self.stringAttribute(kAXValueAttribute, from: $0)
+                    ?? self.stringAttribute(kAXTitleAttribute, from: $0)
+            }
+        )
+        let durationMilliseconds = Int(
+            (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000
+        )
+        // Metadata only: never log the anchors, composer contents, or window title.
+        logger.info("Exact-input context scan durationMs=\(durationMilliseconds, privacy: .public) nodes=\(elements.count, privacy: .public) anchors=\(anchors.count, privacy: .public) regionFiltered=\(region != nil, privacy: .public)")
+        return anchors
+    }
+
+    /// Keep selection identical to the original full-tree fingerprint while making
+    /// expensive frame/value reads lazy. The injected reads let regression tests
+    /// prove both the anchor set and the avoided Accessibility round trips.
+    static func collectContextAnchors<Element>(
+        elements: [Element],
+        region: CGRect?,
+        isExcluded: (Element) -> Bool,
+        role: (Element) -> String?,
+        relativeFrame: (Element) -> CGRect?,
+        value: (Element) -> String?
+    ) -> [String] {
         var anchors: [String] = []
         var seen = Set<String>()
-        for element in descendants(of: window) {
-            if let excludedElement, CFEqual(element, excludedElement) { continue }
-            if let region,
-               let elementFrame = relativeFrame(of: element, in: window),
-               !region.intersects(elementFrame) {
-                continue
-            }
-            switch stringAttribute(kAXRoleAttribute, from: element) {
+        for element in elements {
+            if isExcluded(element) { continue }
+            switch role(element) {
             case kAXStaticTextRole, kAXTextAreaRole, kAXTextFieldRole:
                 break
             default:
                 continue
             }
-            let rawValue = stringAttribute(kAXValueAttribute, from: element)
-                ?? stringAttribute(kAXTitleAttribute, from: element)
-            guard let rawValue else { continue }
+            if let region,
+               let elementFrame = relativeFrame(element),
+               !region.intersects(elementFrame) {
+                continue
+            }
+            guard let rawValue = value(element) else { continue }
             let normalized = rawValue
                 .split(whereSeparator: { $0.isWhitespace })
                 .joined(separator: " ")
@@ -4055,7 +4095,11 @@ final class FocusLockService: ObservableObject {
                   !CFEqual(candidate, window) else {
                 break
             }
-            if let candidateFrame = relativeFrame(of: candidate, in: window),
+            if let candidateFrame = relativeFrame(
+                of: candidate,
+                in: window,
+                windowFrame: windowFrame
+            ),
                candidateFrame.width >= windowFrame.width * 0.45,
                candidateFrame.height >= windowFrame.height * 0.45,
                candidateFrame.width < windowFrame.width * 0.95 {
@@ -4231,10 +4275,11 @@ final class FocusLockService: ObservableObject {
 
     private func relativeFrame(
         of element: AXUIElement,
-        in window: AXUIElement
+        in window: AXUIElement,
+        windowFrame: CGRect? = nil
     ) -> CGRect? {
         guard let elementFrame = frame(of: element),
-              let windowFrame = frame(of: window) else {
+              let windowFrame = windowFrame ?? frame(of: window) else {
             return nil
         }
         return CGRect(

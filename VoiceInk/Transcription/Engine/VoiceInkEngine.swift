@@ -586,7 +586,12 @@ class VoiceInkEngine: NSObject, ObservableObject {
         }
 
         activeRecordingDeliveryBarrier.beginCapture(owner: requestID)
+        let captureStartedAt = ProcessInfo.processInfo.systemUptime
         let focusedInput = FocusLockService.shared.captureRecordingStartInputSnapshot()
+        let captureMilliseconds = Int(
+            (ProcessInfo.processInfo.systemUptime - captureStartedAt) * 1_000
+        )
+        vippLog.info("record start reservation: passive Next capture durationMs=\(captureMilliseconds, privacy: .public) requestID=\(requestID.uuidString, privacy: .public) targetCaptured=\(focusedInput != nil, privacy: .public)")
         preparedRecordingStart = PreparedRecordingStart(
             requestID: requestID,
             focusedInput: focusedInput
