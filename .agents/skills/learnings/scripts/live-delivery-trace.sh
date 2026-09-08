@@ -255,6 +255,9 @@ run_trace() {
   # The allowlist retains routing, immutable job lineage, provider timing/counts,
   # and delivery metadata only. Do not broaden it to arbitrary messages: traces
   # must never persist dictated/transcribed text, prompts, or provider error bodies.
+  # Startup receipts are numeric/identity metadata, not window or chat contents.
+  # Keep these prefixes aligned with production logs and the filter regression test;
+  # adding an app log alone does not make it survive this privacy boundary.
   while IFS= read -r line; do
     if [ "${line%% *}" != "$active_day" ] && [[ "${line%% *}" == [0-9][0-9][0-9][0-9]-* ]]; then
       active_day="${line%% *}"
@@ -263,6 +266,8 @@ run_trace() {
     fi
     case "$line" in
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'paste retarget:'*|\
+      *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'record start reservation: passive Next capture durationMs='*|\
+      *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'recorder HUD: presentation verified reason='*|\
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'pipeline enqueue '*|\
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'pipeline enqueue REFUSED'*|\
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'pipeline queue DISCARD'*|\
@@ -292,6 +297,7 @@ run_trace() {
       *'[com.ethansk.VoiceInkPlusPlus:CodexConversationContext]'*'Codex context unavailable after exact frontmost-app check'*|\
       *'[com.ethansk.VoiceInkPlusPlus:TranscriptionRequestContext]'*'request context frozen recentEntries='*|\
       *'[com.ethansk.VoiceInkPlusPlus:FocusLock]'*'Captured editable input'*|\
+      *'[com.ethansk.VoiceInkPlusPlus:FocusLock]'*'Exact-input context scan durationMs='*|\
       *'[com.ethansk.VoiceInkPlusPlus:FocusLock]'*'Captured Telegram exact-input identity'*|\
       *'[com.ethansk.VoiceInkPlusPlus:FocusLock]'*'Captured recording-start'*|\
       *'[com.ethansk.VoiceInkPlusPlus:FocusLock]'*'Recording-start main-composer'*|\
@@ -309,7 +315,6 @@ run_trace() {
       *'[com.ethansk.VoiceInkPlusPlus:FocusLock]'*'Telegram retained'*|\
       *'[com.ethansk.VoiceInkPlusPlus:FocusLock]'*'Telegram visual identity'*|\
       *'[com.ethansk.VoiceInkPlusPlus:FocusLock]'*'Background internal focus'*|\
-      *'[com.ethansk.VoiceInkPlusPlus:FocusLock]'*'Exact-input'*|\
       *'[com.ethansk.VoiceInkPlusPlus:FocusLock]'*'Semantic Send'*|\
       *'[com.ethansk.VoiceInkPlusPlus:FocusLock]'*'semantic Send'*|\
       *'[com.ethansk.VoiceInkPlusPlus:FocusLock]'*'Bounded OpenAI FooterActions'*|\
@@ -319,6 +324,7 @@ run_trace() {
       *'[com.ethansk.VoiceInkPlusPlus:FocusLock]'*'Resolved explicitly labelled Send'*|\
       *'[com.ethansk.VoiceInkPlusPlus:FocusLock]'*'Application activation'*|\
       *'[com.prakashjoshipax.voiceink:ShortcutMonitor]'*'Next Track'*|\
+      *'[com.prakashjoshipax.voiceink:ShortcutMonitor]'*'Primary shortcut event received eventTimestampNs='*|\
       *'[com.prakashjoshipax.voiceink:ShortcutMonitor]'*'Event tap'*|\
       *'[com.prakashjoshipax.voiceink:RecordingShortcutManager]'*'Recording shortcut'*|\
       *'[com.prakashjoshipax.voiceink:RecordingShortcutManager]'*'Next Track'*|\
