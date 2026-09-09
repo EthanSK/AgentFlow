@@ -25,6 +25,16 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-09T00:46:02Z
+**Trigger:** Ethan asked to keep VoiceInk warm and retry directly from the floating transcription-failed message.
+**Symptom:** Genuine provider failures retained the WAV but exposed no retry action in the floating error; intermittent startup delay was suspected to be App Nap.
+**Root cause:** The error panel supported one action (normally Copy), and the recording pipeline retired its failed session without an engine-owned retry entry point. AppNapGuard already holds userInitiatedAllowingIdleSystemSleep for the app lifetime; installed builds 326 and 327 both logged it active. This investigation did not establish App Nap as the remaining delay cause, and no additional microphone/network warming was justified.
+**Fix:** Build 327 adds Try again beside Copy for genuine pre-delivery transcription failures. The one-shot, generation-bound offer creates a unique WAV copy and fresh History/session/queue identity from the failed recording's frozen request, original context snapshot, raw/no-Return policy and existing Primary/Next destination. It uses the ordinary completed-file provider path (GPT Live's existing gpt-transcribe fallback), never microphone/media startup or a retired streaming socket. The original failed row/WAV remain pinned; a successful retry copy follows ordinary retention. Canceled, Won't-paste, completed/delivery-error, stale-reset and assistant-follow-up jobs cannot acquire a retry. Old notification timers/actions cannot dismiss or invoke a replacement panel.
+**Commit:** Native implementation 559e289ced58f41d01714fbda8892bf271ff4a2b and final guards aab8d58e287213395be3c081cb3e9d486b0b0f18; privacy trace receipt c34c606.
+**Guard:** The final native source/build 327 passed all 18 selected tests and all 327 named tests in 10 suites through canonical Xcode actions on the Mini. The separately built/signed Release has executable SHA-256 617b8cfe7618bb094ecbd3065b893f2551b4dc93644e6635d0124ceb29cc1255 and CDHash 8475ff1a23a9fbad20a4fd00b164cd4607b8746d; archive SHA-256 9d575e3e2eb5025ece3036e2611d031d0ad6dfb073cc030a652078d11ef667d5. Installed once after delivered five-second warning, repeated idle checks and cooperative quit; PID 56067, deep/strict signature, Automation/audio-input entitlements and unchanged icon verified. Build 326 is rollback; official VoiceInk, OBS and Agentic Mouse were untouched. The preview's expected popup/action was not verifiable through the available UI controller, so no manual button or real failed-recording retry acceptance is claimed. A real retry remains to be checked without deliberately disrupting network/audio. The trace filter retains opaque retry lineage only; the Mini fixture accepted its metadata, excluded three content lines and routed provider failure to redaction. The app's independent readiness gate rearmed on ordinary input at 01:46:08 London; a false startup receipt alone is not a broken mouse receiver.
+---
+
+---
 **Date:** 2026-09-08T23:46:45Z
 **Trigger:** Ethan authorized installing the start-only button-down mapping and giving feedback after installation.
 **Symptom:** Native build 326 readiness alone did not establish that the physical mouse transport was active or that the initiating release was harmless.
