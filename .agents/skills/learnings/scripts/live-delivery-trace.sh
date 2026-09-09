@@ -271,6 +271,7 @@ run_trace() {
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'record start reservation: passive Next capture durationMs='*|\
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'recorder HUD: presentation verified reason='*|\
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'pipeline enqueue '*|\
+      *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'pipeline retry originalTranscriptionID='*|\
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'pipeline enqueue REFUSED'*|\
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'pipeline queue DISCARD'*|\
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'pipeline run START'*|\
