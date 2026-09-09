@@ -1431,7 +1431,9 @@ class VoiceInkEngine: NSObject, ObservableObject {
                 self.transcriptionJobRegistry.remove(identity)
                 self.reportUnresolvedPrimaryAutoSendIfQueueDrained()
                 self.vippLog.info("pipeline remove \(identity.logDescription, privacy: .public)")
-                if let failureNotice {
+                if let failureNotice,
+                   identity.generation == self.transcriptionJobRegistry.generation,
+                   !job.recordingSession.shouldCancel {
                     self.showTranscriptionFailure(failureNotice)
                 }
             }
@@ -1508,7 +1510,10 @@ class VoiceInkEngine: NSObject, ObservableObject {
                 transcriptionConfiguration: retry.configuration,
                 recordingInputDevice: retry.inputDevice,
                 realtimeDraftText: retry.realtimeDraft,
-                preservesOriginalAudioForRecovery: true,
+                // Only the failed original is permanently pinned. This independent
+                // retry copy follows normal retention after success; failure/cancel
+                // will pin it through the existing pipeline recovery policy.
+                preservesOriginalAudioForRecovery: false,
                 transcriptionStatus: .pending
             )
             retryTranscription = transcription
@@ -1869,12 +1874,13 @@ class VoiceInkEngine: NSObject, ObservableObject {
 
         // Pipeline finished (delivered, failed, or canceled). Capture the result, release
         // shared model resources, drop the poison key, and remove the session from the stack.
-        let failureNotice = failureTitle.map {
+        let shouldPresentFailure = jobIsCurrent() && !jobShouldCancel()
+            && transcription.transcriptionStatus == TranscriptionStatus.failed.rawValue
+            && session.completionDisposition == .normalDelivery
+        let failureNotice = (shouldPresentFailure ? failureTitle : nil).map {
             TranscriptionFailureNotice(
                 title: $0,
-                retry: jobIsCurrent() && !jobShouldCancel()
-                    ? FailedTranscriptionRetry(generation: job.identity.generation, session: session, transcription: transcription)
-                    : nil
+                retry: FailedTranscriptionRetry(generation: job.identity.generation, session: session, transcription: transcription)
             )
         }
         session.transcript = transcription.text
