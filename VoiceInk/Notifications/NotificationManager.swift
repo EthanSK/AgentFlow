@@ -1,6 +1,24 @@
 import SwiftUI
 import AppKit
 
+/// A dismissed/replaced notification must never run an old action or close its
+/// successor. In particular, Try again can synchronously present another error.
+struct NotificationPresentationIdentity {
+    private(set) var current: UUID?
+
+    mutating func begin() -> UUID {
+        let id = UUID()
+        current = id
+        return id
+    }
+
+    mutating func consume(_ id: UUID) -> Bool {
+        guard current == id else { return false }
+        current = nil
+        return true
+    }
+}
+
 @MainActor
 protocol NotificationRecorderPlacementProviding: AnyObject {
     func notificationBottomReservedHeight(on screen: NSScreen) -> CGFloat?
@@ -11,6 +29,7 @@ class NotificationManager {
 
     private var notificationWindow: NSPanel?
     private var dismissTimer: Timer?
+    private var presentationIdentity = NotificationPresentationIdentity()
     private weak var recorderPlacementProvider: NotificationRecorderPlacementProviding?
 
     private init() {}
@@ -34,7 +53,8 @@ class NotificationManager {
         duration: TimeInterval = 3.0,
         playSound: Bool = true,
         onTap: (() -> Void)? = nil,
-        actionButton: (label: String, action: () -> Void)? = nil
+        actionButton: (label: String, action: () -> Void)? = nil,
+        preservesErrorCopyAction: Bool = false
     ) {
         dismissTimer?.invalidate()
         dismissTimer = nil
@@ -43,6 +63,7 @@ class NotificationManager {
             existingWindow.close()
             notificationWindow = nil
         }
+        let presentationID = presentationIdentity.begin()
         
         // Errors remain audible by default. Callers may suppress only the sound when
         // a warning is intentionally advisory while preserving the visible evidence.
@@ -54,18 +75,19 @@ class NotificationManager {
         // visible long enough to select and copy, and provide a one-click fallback for
         // nonactivating panels where the user's current app may still own Command-C.
         let effectiveDuration = type == .error ? max(duration, 12.0) : duration
+        let copyAction: (label: String, action: () -> Void) = (
+            label: String(localized: "Copy"),
+            action: {
+                let pasteboard = NSPasteboard.general
+                pasteboard.clearContents()
+                pasteboard.setString(title, forType: .string)
+            }
+        )
         let effectiveActionButton: (label: String, action: () -> Void)?
         if let actionButton {
             effectiveActionButton = actionButton
         } else if type == .error {
-            effectiveActionButton = (
-                label: String(localized: "Copy"),
-                action: {
-                    let pasteboard = NSPasteboard.general
-                    pasteboard.clearContents()
-                    pasteboard.setString(title, forType: .string)
-                }
-            )
+            effectiveActionButton = copyAction
         } else {
             effectiveActionButton = nil
         }
@@ -76,11 +98,27 @@ class NotificationManager {
             duration: effectiveDuration,
             onClose: { [weak self] in
                 Task { @MainActor in
-                    self?.dismissNotification()
+                    self?.dismissNotification(presentationID: presentationID)
                 }
             },
-            onTap: onTap,
-            actionButton: effectiveActionButton
+            onTap: onTap.map { action in
+                { [weak self] in
+                    guard self?.dismissNotification(presentationID: presentationID) == true else { return }
+                    action()
+                }
+            },
+            actionButton: effectiveActionButton.map { button in
+                (label: button.label, action: { [weak self] in
+                    guard self?.dismissNotification(presentationID: presentationID) == true else { return }
+                    button.action()
+                })
+            },
+            secondaryActionButton: type == .error && actionButton != nil && preservesErrorCopyAction
+                ? (label: copyAction.label, action: { [weak self] in
+                    guard self?.presentationIdentity.current == presentationID else { return }
+                    copyAction.action()
+                })
+                : nil
         )
         let hostingController = NSHostingController(rootView: notificationView)
         let size = hostingController.view.fittingSize
@@ -122,7 +160,7 @@ class NotificationManager {
             withTimeInterval: effectiveDuration,
             repeats: false
         ) { [weak self] _ in
-            self?.dismissNotification()
+            self?.dismissNotification(presentationID: presentationID)
         }
     }
 
@@ -170,7 +208,15 @@ class NotificationManager {
 
     @MainActor
     func dismissNotification() {
-        guard let window = notificationWindow else { return }
+        guard let id = presentationIdentity.current else { return }
+        dismissNotification(presentationID: id)
+    }
+
+    @MainActor
+    @discardableResult
+    private func dismissNotification(presentationID: UUID) -> Bool {
+        guard presentationIdentity.consume(presentationID) else { return false }
+        guard let window = notificationWindow else { return true }
         
         notificationWindow = nil
         
@@ -185,5 +231,6 @@ class NotificationManager {
             window.close()
 
         })
+        return true
     }
 }

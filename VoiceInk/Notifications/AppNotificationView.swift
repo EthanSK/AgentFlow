@@ -8,6 +8,7 @@ struct AppNotificationView: View {
     let onClose: () -> Void
     let onTap: (() -> Void)?
     var actionButton: (label: String, action: () -> Void)? = nil
+    var secondaryActionButton: (label: String, action: () -> Void)? = nil
     
     @State private var progress: Double = 1.0
     @State private var timer: Timer?
@@ -67,6 +68,15 @@ struct AppNotificationView: View {
                     }
                 
                 Spacer()
+
+                if let secondaryActionButton {
+                    // Copy preserves both the diagnostic and the recovery action;
+                    // only Try again or Close consumes this failure notification.
+                    Button(secondaryActionButton.label, action: secondaryActionButton.action)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white.opacity(0.8))
+                        .buttonStyle(PlainButtonStyle())
+                }
 
                 if let actionButton {
                     Button(action: {

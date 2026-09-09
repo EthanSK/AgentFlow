@@ -442,6 +442,9 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     var transcriptionConfiguration: TranscriptionRuntimeConfiguration?
     // App/window context snapshot store for AI enhancement context.
     var contextStore: RecordingContextSnapshotStore?
+    // A failed-file retry reuses only the original value snapshot. Never restart
+    // clipboard/selection/screen capture against the user's later workspace.
+    var retryContextSnapshot: RecordingContextSnapshot?
     // Background tasks capturing the above context; cancelled when the session ends.
     var contextTasks: [Task<Void, Never>] = []
 
@@ -634,5 +637,6 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         contextTasks.forEach { $0.cancel() }
         contextTasks.removeAll()
         contextStore = nil
+        retryContextSnapshot = nil
     }
 }

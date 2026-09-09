@@ -26,6 +26,7 @@ enum RecorderPanelStyle: String, CaseIterable, Identifiable {
 
 @MainActor
 protocol RecorderPanelPresenting: AnyObject {
+    func showTranscriptionRetryPanel()
     var isRecorderPanelVisible: Bool { get }
     func dismissRecorderPanel() async
 }
@@ -179,6 +180,14 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
     }
 
     // MARK: - Recorder Panel Management
+
+    /// Saved-audio retries own a transcription card, not the microphone lifecycle.
+    /// Do not call toggleRecord, play a start sound, or notify the media bridge.
+    func showTranscriptionRetryPanel() {
+        if showRecorderPanel(reason: "saved audio retry") {
+            isRecorderPanelVisible = true
+        }
+    }
 
     @discardableResult
     private func showRecorderPanel(

@@ -252,6 +252,136 @@ private final class PrimaryShortcutHandlerTestState {
 }
 
 struct VoiceInkTests {
+    @Test func replacedNotificationCannotDismissOrRunItsSuccessor() {
+        var identity = NotificationPresentationIdentity()
+        let failed = identity.begin()
+        let firstConsumed = identity.consume(failed)
+        #expect(firstConsumed)
+        let retryFailed = identity.begin()
+        let oldConsumed = identity.consume(failed)
+        #expect(!oldConsumed) // Old view onClose and old timer.
+        #expect(identity.current == retryFailed)
+        let retryConsumed = identity.consume(retryFailed)
+        #expect(retryConsumed)
+        let duplicateConsumed = identity.consume(retryFailed)
+        #expect(!duplicateConsumed) // Double-click is one-shot.
+        let replaced = identity.begin()
+        let current = identity.begin()
+        let replacedConsumed = identity.consume(replaced)
+        #expect(!replacedConsumed)
+        #expect(identity.current == current)
+    }
+
+    @Test @MainActor func transcriptionRetryRejectsDeliveredCanceledAndNoPasteResults() {
+        for status in [nil, TranscriptionStatus.pending.rawValue,
+                       TranscriptionStatus.completed.rawValue, TranscriptionStatus.failed.rawValue,
+                       TranscriptionStatus.canceled.rawValue, TranscriptionStatus.canceledWithResult.rawValue] {
+            for canceled in [false, true] {
+                for completion in [RecordingCompletionDisposition.normalDelivery, .clipboardOnly] {
+                    for followUp in [false, true] {
+                        #expect(FailedTranscriptionRetry.isEligible(
+                            status: status, canceled: canceled,
+                            completion: completion, isAssistantFollowUp: followUp
+                        ) == (status == TranscriptionStatus.failed.rawValue && !canceled
+                              && completion == .normalDelivery && !followUp))
+                    }
+                }
+            }
+        }
+    }
+
+    @Test @MainActor func transcriptionRetryKeepsFrozenRequestAndEachDestinationRoute() throws {
+        let model = CloudModel(name: "retry-fixture", displayName: "Retry fixture",
+                               description: "Offline test only", provider: .openAI,
+                               speed: 1, accuracy: 1, isMultilingual: true,
+                               supportsStreaming: true, supportedLanguages: ["en": "English"])
+        let mode = ModeConfig(name: "Original Next Mode", isAIEnhancementEnabled: false, outputMode: .paste, autoSendKey: .enter)
+        let configuration = TranscriptionRuntimeConfiguration(
+            mode: mode, model: model, language: "en", isRealtimeEnabled: true,
+            requestContext: TranscriptionRequestContext(language: "en", prompt: "frozen vocabulary")
+        )
+        for route in [RecordingPasteDestination.primaryCurrentInput, .recordingStart, .focusedDuringTranscription] {
+            let originalURL = URL(fileURLWithPath: "/private/tmp/original-\(UUID()).wav")
+            let retryURL = URL(fileURLWithPath: "/private/tmp/retry-\(UUID()).wav")
+            let original = RecordingSession(phase: .transcribing)
+            original.audioURL = originalURL
+            original.transcriptionConfiguration = configuration
+            original.pasteTarget = RecordingPasteTarget(destination: route, focusedInput: nil, mode: mode)
+            original.skipPostProcessing = true
+            original.autoSendDisposition = .suppressOnce
+            original.retryContextSnapshot = RecordingContextSnapshot(selectedText: "original selection")
+            let record = Transcription(text: "failure", duration: 9,
+                                       audioFileURL: originalURL.absoluteString,
+                                       realtimeDraftText: "retained HUD words",
+                                       preservesOriginalAudioForRecovery: true,
+                                       transcriptionStatus: .failed)
+            let retry = try #require(FailedTranscriptionRetry(generation: 7, session: original, transcription: record))
+            original.clearContext()
+            original.pasteTarget = RecordingPasteTarget(destination: .primaryCurrentInput, focusedInput: nil)
+            #expect(retry.claim(currentGeneration: 7))
+            #expect(!retry.claim(currentGeneration: 7))
+            let session = retry.makeSession(audioURL: retryURL)
+            #expect(session.id != original.id)
+            #expect(session.phase == .transcribing)
+            #expect(session.liveRecordingState == .transcribing)
+            #expect(session.audioURL == retryURL)
+            #expect(session.transcriptionConfiguration?.model.id == model.id)
+            #expect(session.transcriptionConfiguration?.requestContext.openAITranscriptionPrompt == "frozen vocabulary")
+            #expect(session.pasteTarget.destination == route)
+            #expect(session.pasteTarget.mode == (route == .primaryCurrentInput ? nil : mode))
+            #expect(session.recordingStartFocusedInput == nil)
+            #expect(session.transcriptionSession == nil)
+            #expect(session.contextStore == nil && session.contextTasks.isEmpty)
+            #expect(session.retryContextSnapshot?.selectedText == "original selection")
+            #expect(session.recoverablePartialTranscript == "retained HUD words")
+            #expect(session.skipPostProcessing && session.autoSendDisposition == .suppressOnce)
+            #expect(record.audioFileURL == originalURL.absoluteString)
+            #expect(record.transcriptionStatus == TranscriptionStatus.failed.rawValue)
+            #expect(record.preservesOriginalAudioForRecovery)
+            var registry = TranscriptionJobRegistry()
+            let originalIdentity = registry.register(recordingSessionID: original.id, transcriptionID: record.id, audioURL: originalURL)
+            let retryIdentity = registry.register(recordingSessionID: session.id, transcriptionID: UUID(), audioURL: retryURL)
+            #expect(originalIdentity != nil)
+            #expect(retryIdentity != nil)
+            let stale = try #require(FailedTranscriptionRetry(generation: 7, session: original, transcription: record))
+            #expect(!stale.claim(currentGeneration: 8))
+            #expect(!stale.claim(currentGeneration: 7))
+        }
+    }
+
+    @Test func retryUsesRetiredFailureAndNormalQueueWithoutStartingCapture() throws {
+        let engine = try repositorySource("VoiceInk/Transcription/Engine/VoiceInkEngine.swift")
+        let retryStart = try #require(engine.range(of: "    private func retryFailedTranscription("))
+        let retryEnd = try #require(engine.range(of: "    /// Resolve whether this normal Primary paste", range: retryStart.upperBound..<engine.endIndex))
+        let retry = engine[retryStart.lowerBound..<retryEnd.lowerBound]
+        #expect(retry.contains("retry.claim(currentGeneration:"))
+        #expect(retry.contains("Task.detached(priority: .userInitiated)"))
+        #expect(retry.contains("try retryOriginalStillExists(retry)"))
+        #expect(retry.contains("try modelContext.save()"))
+        #expect(retry.contains("enqueueTranscription(for: session, transcription: transcription)"))
+        #expect(!retry.contains("toggleRecord("))
+        #expect(!retry.contains("startRecording("))
+        #expect(!retry.contains("captureFocusedInput"))
+        #expect(!retry.contains("playStartSound"))
+        #expect(!retry.contains("AudioTranscriptionService"))
+        let retired = try #require(engine.range(of: "self.transcriptionJobRegistry.remove(identity)", range: engine.range(of: "let failureNotice = await self.runPipeline(for: job)")!.upperBound..<engine.endIndex))
+        let presented = try #require(engine.range(of: "self.showTranscriptionFailure(failureNotice)"))
+        #expect(retired.lowerBound < presented.lowerBound)
+        let notification = try repositorySource("VoiceInk/Notifications/NotificationManager.swift")
+        #expect(notification.contains("preservesErrorCopyAction"))
+        #expect(notification.contains("presentationID: presentationID) == true"))
+        #expect(notification.contains(".nonactivatingPanel"))
+    }
+
+    @Test func appNapProtectionRemainsLifetimeOwnedWithoutKeepingMacAwake() throws {
+        let guardSource = try repositorySource("VoiceInk/Services/AppNapGuard.swift")
+        let app = try repositorySource("VoiceInk/VoiceInk.swift")
+        #expect(guardSource.contains(".userInitiatedAllowingIdleSystemSleep"))
+        #expect(guardSource.contains("private var activityToken: NSObjectProtocol?"))
+        #expect(guardSource.contains("endActivity(activityToken)"))
+        #expect(app.contains("_ = AppNapGuard.shared"))
+    }
+
 
     @Test @MainActor func abandonedShortcutCaptureRestoresItsPreviousBinding() {
         let action = ShortcutAction.mode(UUID())

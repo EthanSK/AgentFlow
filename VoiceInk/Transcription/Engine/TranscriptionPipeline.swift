@@ -152,12 +152,23 @@ class TranscriptionPipeline {
         onQueuedPrimaryAutoSendIssued: @escaping () -> Void = {},
         onCancel: @escaping () async -> Void,
         onDismiss: @escaping () async -> Void,
-        assistant: AssistantHooks = .inactive
+        assistant: AssistantHooks = .inactive,
+        onTranscriptionFailure: ((String) -> Void)? = nil
     ) async {
         let model = transcriptionConfiguration.model
         var finalText: String?
         var didInsertSessionMetric = false
         var responseError: String?
+        func reportTranscriptionFailure(_ title: String) {
+            // The engine defers its retry offer until this failed record is saved
+            // and its queue identity has retired. Other callers retain the ordinary
+            // error notification; delivery/Return errors never reach this callback.
+            if let onTranscriptionFailure {
+                onTranscriptionFailure(title)
+            } else {
+                NotificationManager.shared.showNotification(title: title, type: .error, duration: 5.0)
+            }
+        }
         var outputForDelivery: OutputRuntimeConfiguration?
         var responseConfig: EnhancementRuntimeConfiguration?
 
@@ -504,13 +515,11 @@ class TranscriptionPipeline {
                 vippLog.info("pipeline: failed transcription retained original audio but no realtime draft was available")
                 let shortReason = String(errorDescription.prefix(120))
                 await MainActor.run {
-                    NotificationManager.shared.showNotification(
-                        title: String(
+                    reportTranscriptionFailure(
+                        String(
                             format: String(localized: "Transcription failed: %@"),
                             shortReason
-                        ),
-                        type: .error,
-                        duration: 5.0
+                        )
                     )
                 }
 
@@ -524,12 +533,10 @@ class TranscriptionPipeline {
                     ? String(localized: "Partial text copied to clipboard; audio saved in History")
                     : String(localized: "Partial text and audio saved in History")
                 await MainActor.run {
-                    NotificationManager.shared.showNotification(
+                    reportTranscriptionFailure(
                         // Recovery must never hide the provider/network reason. The
                         // retained draft is useful context appended to the same failure.
-                        title: "\(String(format: String(localized: "Transcription failed: %@"), shortReason)) — \(recoverySummary)",
-                        type: .error,
-                        duration: 5.0
+                        "\(String(format: String(localized: "Transcription failed: %@"), shortReason)) — \(recoverySummary)"
                     )
                 }
             }

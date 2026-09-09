@@ -18,6 +18,92 @@ private struct QueuedTranscriptionJob {
     let transcriptionSession: TranscriptionSession?
 }
 
+/// One explicit retry of a pre-delivery transcription failure. Retain value
+/// snapshots, never the failed streaming provider, queue task, or live context jobs.
+/// This is not a fourth destination route: Primary still owns neither input nor
+/// Mode, while each Next route keeps its original atomic input/Mode decision.
+@MainActor
+final class FailedTranscriptionRetry {
+    let generation: UInt64
+    let originalTranscriptionID: UUID
+    let originalAudioURL: URL
+    let configuration: TranscriptionRuntimeConfiguration
+    let duration: TimeInterval
+    let inputDevice: RecordingInputDeviceSnapshot?
+    let realtimeDraft: String
+    let pasteTarget: RecordingPasteTarget
+    let context: RecordingContextSnapshot?
+    let skipPostProcessing: Bool
+    let autoSendDisposition: RecordingAutoSendDisposition
+    private(set) var wasClaimed = false
+
+    init?(
+        generation: UInt64,
+        session: RecordingSession,
+        transcription: Transcription
+    ) {
+        guard Self.isEligible(
+            status: transcription.transcriptionStatus,
+            canceled: session.shouldCancel,
+            completion: session.completionDisposition,
+            isAssistantFollowUp: session.useCase.isAssistantFollowUp
+        ), let configuration = session.transcriptionConfiguration,
+           let audioURL = session.audioURL?.standardizedFileURL,
+           transcription.audioFileURL == audioURL.absoluteString else { return nil }
+        self.generation = generation
+        originalTranscriptionID = transcription.id
+        originalAudioURL = audioURL
+        self.configuration = configuration
+        duration = transcription.duration
+        inputDevice = session.recordingInputDevice
+        realtimeDraft = transcription.recoverableRealtimeDraftText
+            ?? session.recoverablePartialTranscript
+        pasteTarget = session.pasteTarget
+        context = session.retryContextSnapshot ?? session.contextStore?.snapshot
+        skipPostProcessing = session.skipPostProcessing
+        autoSendDisposition = session.autoSendDisposition
+    }
+
+    static func isEligible(
+        status: String?,
+        canceled: Bool,
+        completion: RecordingCompletionDisposition,
+        isAssistantFollowUp: Bool
+    ) -> Bool {
+        // Do not retry delivery/Return failures (their transcription is completed),
+        // deliberate no-delivery exits, or a follow-up into a later assistant turn.
+        status == TranscriptionStatus.failed.rawValue && !canceled
+            && completion == .normalDelivery && !isAssistantFollowUp
+    }
+
+    func claim(currentGeneration: UInt64) -> Bool {
+        guard !wasClaimed else { return false }
+        wasClaimed = true
+        return generation == currentGeneration
+    }
+
+    func makeSession(audioURL: URL) -> RecordingSession {
+        let session = RecordingSession(phase: .transcribing)
+        session.liveRecordingState = .transcribing
+        session.audioURL = audioURL.standardizedFileURL
+        session.transcriptionConfiguration = configuration
+        session.recordingInputDevice = inputDevice
+        session.recoverablePartialTranscript = realtimeDraft
+        session.pasteTarget = pasteTarget
+        session.retryContextSnapshot = context
+        session.skipPostProcessing = skipPostProcessing
+        session.autoSendDisposition = autoSendDisposition
+        // No microphone, provider/socket reuse, new context capture, tentative
+        // start target, or media lifecycle ownership belongs to a saved-file retry.
+        return session
+    }
+}
+
+private struct TranscriptionFailureNotice {
+    let title: String
+    let retry: FailedTranscriptionRetry?
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // VoiceInkEngine — MULTI-SESSION refactor (record-while-transcribing, 2026-06-28)
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1341,12 +1427,111 @@ class VoiceInkEngine: NSObject, ObservableObject {
             },
             operation: { [weak self] _ in
                 guard let self else { return }
-                await self.runPipeline(for: job)
+                let failureNotice = await self.runPipeline(for: job)
                 self.transcriptionJobRegistry.remove(identity)
                 self.reportUnresolvedPrimaryAutoSendIfQueueDrained()
                 self.vippLog.info("pipeline remove \(identity.logDescription, privacy: .public)")
+                if let failureNotice {
+                    self.showTranscriptionFailure(failureNotice)
+                }
             }
         )
+    }
+
+    private func showTranscriptionFailure(_ notice: TranscriptionFailureNotice) {
+        NotificationManager.shared.showNotification(
+            title: notice.title,
+            type: .error,
+            duration: 12,
+            actionButton: notice.retry.map { retry in
+                (label: String(localized: "Try again"), action: { [weak self] in
+                    guard let self else { return }
+                    Task { @MainActor in await self.retryFailedTranscription(retry) }
+                })
+            },
+            preservesErrorCopyAction: true
+        )
+    }
+
+    private func retryOriginalStillExists(_ retry: FailedTranscriptionRetry) throws -> Bool {
+        guard retry.generation == transcriptionJobRegistry.generation,
+              !isResettingRecordingSession else { return false }
+        let originalID = retry.originalTranscriptionID
+        let originals = try modelContext.fetch(FetchDescriptor<Transcription>(
+            predicate: #Predicate { $0.id == originalID }
+        ))
+        return originals.contains {
+            $0.transcriptionStatus == TranscriptionStatus.failed.rawValue
+                && $0.audioFileURL == retry.originalAudioURL.absoluteString
+        } && FileManager.default.fileExists(atPath: retry.originalAudioURL.path)
+    }
+
+    private func retryFailedTranscription(_ retry: FailedTranscriptionRetry) async {
+        // Claim before the first suspension: double-clicks and stale panel callbacks
+        // can never enqueue the same retry twice. The original row/WAV stay intact.
+        guard !retry.wasClaimed else { return }
+        guard retry.claim(currentGeneration: transcriptionJobRegistry.generation) else {
+            NotificationManager.shared.showNotification(
+                title: String(localized: "This retry is no longer available."), type: .error
+            )
+            return
+        }
+        let retryAudioURL = recordingsDirectory.appendingPathComponent("retry_\(UUID().uuidString).wav")
+        var retryTranscription: Transcription?
+        do {
+            guard try retryOriginalStillExists(retry) else {
+                NotificationManager.shared.showNotification(
+                    title: String(localized: "This retry is no longer available."), type: .error
+                )
+                return
+            }
+            let sourceURL = retry.originalAudioURL
+            // File copying can be substantial. Keep it off the hotkey/UI actor;
+            // unique copy ownership also prevents retry retention cleanup deleting
+            // the original failed recording's recovery WAV.
+            try await Task.detached(priority: .userInitiated) {
+                try FileManager.default.copyItem(at: sourceURL, to: retryAudioURL)
+            }.value
+            if let resourceCleanupTask { await resourceCleanupTask.value }
+            guard !Task.isCancelled, try retryOriginalStillExists(retry) else {
+                try? FileManager.default.removeItem(at: retryAudioURL)
+                NotificationManager.shared.showNotification(
+                    title: String(localized: "This retry is no longer available."), type: .error
+                )
+                return
+            }
+            let session = retry.makeSession(audioURL: retryAudioURL)
+            let transcription = makeRecordingTranscription(
+                for: retryAudioURL,
+                text: "",
+                duration: retry.duration,
+                transcriptionConfiguration: retry.configuration,
+                recordingInputDevice: retry.inputDevice,
+                realtimeDraftText: retry.realtimeDraft,
+                preservesOriginalAudioForRecovery: true,
+                transcriptionStatus: .pending
+            )
+            retryTranscription = transcription
+            modelContext.insert(transcription)
+            try modelContext.save()
+            session.pipelineTranscriptionID = transcription.id
+            sessions.append(session)
+            recomputeDerivedState()
+            recorderUIManager?.showTranscriptionRetryPanel()
+            vippLog.info("pipeline retry originalTranscriptionID=\(retry.originalTranscriptionID.uuidString, privacy: .public) transcriptionID=\(transcription.id.uuidString, privacy: .public) audioFile=\(retryAudioURL.lastPathComponent, privacy: .public) generation=\(retry.generation, privacy: .public) destination=\(String(describing: retry.pasteTarget.destination), privacy: .public) microphone=false")
+            // Use the same serial queue, immutable identity checks, current-generation
+            // delivery lease and Primary/Next gates as an ordinary stopped recording.
+            enqueueTranscription(for: session, transcription: transcription)
+        } catch {
+            // Only this never-enqueued retry copy/row may be discarded. Never roll
+            // back the shared ModelContext or touch the original recovery record.
+            if let retryTranscription { modelContext.delete(retryTranscription) }
+            try? FileManager.default.removeItem(at: retryAudioURL)
+            NotificationManager.shared.showNotification(
+                title: String(format: String(localized: "Couldn't start transcription again: %@"), error.localizedDescription),
+                type: .error
+            )
+        }
     }
 
     /// Resolve whether this normal Primary paste owns the cohort's one auto-send.
@@ -1470,12 +1655,13 @@ class VoiceInkEngine: NSObject, ObservableObject {
     // Run the full transcribe→enhance→deliver pipeline for ONE immutable job. Only
     // destination/Mode retarget state remains intentionally late-bound on the owning
     // RecordingSession. Audio/config/transcription identity can never be read from B.
-    private func runPipeline(for job: QueuedTranscriptionJob) async {
+    private func runPipeline(for job: QueuedTranscriptionJob) async -> TranscriptionFailureNotice? {
         let session = job.recordingSession
         let transcription = job.transcription
         let transcriptionID = job.identity.transcriptionID
         session.phase = .delivering // pipeline is running; mark past pure-transcribing
         session.liveRecordingState = .transcribing
+        var failureTitle: String?
 
         let jobIsCurrent: @MainActor () -> Bool = { [weak self, weak session, weak transcription] in
             guard let self, let session, let transcription else { return false }
@@ -1537,7 +1723,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
             },
             recordingContextSnapshot: { [weak session] in
                 await MainActor.run {
-                    session?.contextStore?.snapshot
+                    session?.retryContextSnapshot ?? session?.contextStore?.snapshot
                 }
             },
             pasteTarget: { [weak session] in
@@ -1675,13 +1861,22 @@ class VoiceInkEngine: NSObject, ObservableObject {
                     guard let self else { return }
                     self.assistantSession.fail(message)
                 }
-            )
+            ),
+            onTranscriptionFailure: { failureTitle = $0 }
         )
 
         vippLog.info("pipeline run END \(job.identity.logDescription, privacy: .public) status=\(transcription.transcriptionStatus ?? "nil", privacy: .public) finalChars=\(transcription.text.count, privacy: .public) finalDigest=\(TranscriptionLineageDigest.make(transcription.enhancedText ?? transcription.text), privacy: .public)")
 
         // Pipeline finished (delivered, failed, or canceled). Capture the result, release
         // shared model resources, drop the poison key, and remove the session from the stack.
+        let failureNotice = failureTitle.map {
+            TranscriptionFailureNotice(
+                title: $0,
+                retry: jobIsCurrent() && !jobShouldCancel()
+                    ? FailedTranscriptionRetry(generation: job.identity.generation, session: session, transcription: transcription)
+                    : nil
+            )
+        }
         session.transcript = transcription.text
         canceledPipelineTranscriptionIDs.remove(transcriptionID)
         session.transcriptionSession = nil
@@ -1705,6 +1900,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
         if sessions.isEmpty {
             await recorderUIManager?.dismissRecorderPanel()
         }
+        return failureNotice
     }
 
     private func selectTriggerWordModeIfNeeded(
