@@ -56,6 +56,9 @@ It separates dated official model facts from VoiceInk++ choices and recognition 
 transport success. Re-fetch current model guidance and use human-referenced, same-audio comparisons
 before claiming a context or delay setting improves accuracy; never treat a full prompt budget,
 local context-log count, synthetic probe, or catalog score as that evidence.
+When reducing Vocabulary hints, preserve stored terms and every non-OpenAI provider; review
+the OpenAI-only exclusion set rather than lowering an alphabetical keyword cap. Confirm the
+per-recording realtime/fallback list is identical and the current live setting separately.
 
 For OpenAI GPT Live Transcribe work, use `scripts/openai-transcription-probe.swift` with synthetic PCM16 mono 24 kHz plus its WAV equivalent before building, installing, or changing active Modes. Require `session.updated`, at least one real delta, a non-empty completion, and a successful `gpt-transcribe` completed-audio fallback. The WebSocket connection is `wss://api.openai.com/v1/realtime?intent=transcription`; `gpt-live-transcribe` belongs only in `audio.input.transcription.model`. Never revive either rejected `?model=gpt-live-transcribe` or `?model=gpt-realtime-*` connection form. The probe reads the VoiceInk++ key from local secure preferences and must not print transcript contents or credentials.
 

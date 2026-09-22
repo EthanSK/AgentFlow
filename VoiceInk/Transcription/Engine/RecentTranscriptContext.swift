@@ -14,6 +14,35 @@ enum RecentTranscriptContextSettings {
     }
 }
 
+/// Per-user GPT Live shortlist. Vocabulary remains the source of truth for every provider;
+/// excluding a term here never deletes it or changes another provider's request. A missing
+/// setting preserves the previous complete keyword list, and previously unseen new terms
+/// participate automatically. Do not use a shorter alphabetical prefix: it can silently
+/// lose the tail without regard to which spelling Ethan needs help with.
+enum OpenAIKeywordSelection {
+    static let excludedWordsKey = "VIPPExcludedOpenAIKeywords"
+
+    static var excludedWords: Set<String> {
+        excludedWords(in: .standard)
+    }
+
+    static func excludedWords(in defaults: UserDefaults) -> Set<String> {
+        Set((defaults.stringArray(forKey: excludedWordsKey) ?? []).map(normalizedKey))
+    }
+
+    static func selected(from vocabulary: [String], excluding excluded: Set<String>) -> [String] {
+        vocabulary.filter { !excluded.contains(normalizedKey($0)) }
+    }
+
+    static func selected(from vocabulary: [String]) -> [String] {
+        selected(from: vocabulary, excluding: excludedWords)
+    }
+
+    private static func normalizedKey(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+}
+
 
 /// Store-backed inputs captured at most once by one recording-owned lazy cache.
 ///
@@ -93,7 +122,7 @@ enum TranscriptionRequestContextSnapshot {
             staticPrompt: staticPrompt,
             includeRecentContext: includeRecentContext,
             now: now,
-            vocabulary: { frozenVocabulary(from: modelContext) },
+            vocabulary: { OpenAIKeywordSelection.selected(from: frozenVocabulary(from: modelContext)) },
             codexMessages: { CodexConversationContextReader.recentMessagesIfFrontmost() }
         )
     }

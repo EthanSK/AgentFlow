@@ -1049,7 +1049,9 @@ class VoiceInkEngine: NSObject, ObservableObject {
 
         // Create a recording-owned lazy cache. This performs no SwiftData work unless a
         // provisional or URL-resolved Mode actually selects OpenAI; on first OpenAI use it
-        // freezes prompt, Vocabulary, and (only when opted in) bounded History candidates.
+        // freezes prompt, the OpenAI-only Vocabulary shortlist, and (only when opted in)
+        // bounded active-Codex excerpts. With excerpts off, no Codex session files are read
+        // on this latency-sensitive recording-start path.
         // Both Mode resolutions then reuse that one value.
         let requestInputSnapshotCache = TranscriptionRequestInputSnapshotCache(
             staticPrompt: UserDefaults.standard.string(forKey: "TranscriptionPrompt"),

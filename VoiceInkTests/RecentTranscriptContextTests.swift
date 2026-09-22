@@ -512,6 +512,63 @@ struct RecentTranscriptContextTests {
         #expect(unavailable.customVocabulary(orLiveFetch: { ["live"] }) == ["live"])
     }
 
+    @Test func openAIShortlistPreservesStoredWordsAndIncludesNewTerms() throws {
+        let suite = "VoiceInk.OpenAIKeywordSelection.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let stored = ["Project Name", "ordinary", "Unusual Spelling", "New Name"]
+
+        // An absent setting is an exact, fail-open match for the old list.
+        #expect(OpenAIKeywordSelection.excludedWords(in: defaults).isEmpty)
+        #expect(OpenAIKeywordSelection.selected(from: stored, excluding: []) == stored)
+
+        defaults.set([" ORDINARY ", "project name"], forKey: OpenAIKeywordSelection.excludedWordsKey)
+        let excluded = OpenAIKeywordSelection.excludedWords(in: defaults)
+        #expect(OpenAIKeywordSelection.selected(from: stored, excluding: excluded) == ["Unusual Spelling", "New Name"])
+        #expect(stored.count == 4) // Selection never deletes or mutates Vocabulary.
+    }
+
+    @Test @MainActor func openAIShortlistIsFrozenForLiveAndFallback() throws {
+        let context = try makeStoreContext(named: "OpenAIShortlistFreezeTest")
+        context.insert(VocabularyWord(word: "Kept Name"))
+        context.insert(VocabularyWord(word: "Excluded Name"))
+        try context.save()
+
+        let allWords = ["Excluded Name", "Kept Name"]
+        let selected = OpenAIKeywordSelection.selected(
+            from: allWords,
+            excluding: ["excluded name"]
+        )
+        let frozen = TranscriptionRequestContextSnapshot.capture(
+            staticPrompt: nil,
+            includeRecentContext: false,
+            now: Date(),
+            vocabulary: { selected }
+        )
+        let request = TranscriptionRequestContextSnapshot.make(
+            language: "en",
+            modeID: nil,
+            snapshot: frozen
+        )
+        let live = OpenAITranscriptionConfiguration.realtimeSessionUpdate(
+            language: request.language,
+            prompt: request.openAITranscriptionPrompt,
+            customVocabulary: request.customVocabulary(orLiveFetch: { allWords })
+        )
+        let session = try #require(live["session"] as? [String: Any])
+        let audio = try #require(session["audio"] as? [String: Any])
+        let input = try #require(audio["input"] as? [String: Any])
+        let transcription = try #require(input["transcription"] as? [String: Any])
+        let fallback = OpenAITranscriptionConfiguration.completedAudioFields(
+            language: request.language,
+            prompt: request.openAITranscriptionPrompt,
+            customVocabulary: request.customVocabulary(orLiveFetch: { allWords })
+        )
+        #expect(transcription["keywords"] as? [String] == ["Kept Name"])
+        #expect(fallback.filter { $0.name == "keywords[]" }.map(\.value) == ["Kept Name"])
+        #expect(try context.fetch(FetchDescriptor<VocabularyWord>()).count == 2)
+    }
+
     @Test @MainActor func snapshotIsFrozenPerRecordingAndIgnoresLaterStoreChanges() throws {
         let context = try makeStoreContext(named: "RecentContextIsolationTest")
         let now = Date()
@@ -682,7 +739,7 @@ struct RecentTranscriptContextTests {
         )
         #expect(cloud.contains("provider == .openAI ? context.openAITranscriptionPrompt : context.prompt"))
         #expect(cloud.contains("customVocabulary: model.provider == .openAI"))
-        #expect(cloud.contains("context.customVocabulary(orLiveFetch: getCustomDictionaryTerms)"))
+        #expect(cloud.contains("OpenAIKeywordSelection.selected(from: getCustomDictionaryTerms())"))
 
         let streaming = try String(
             contentsOf: repositoryRoot
@@ -691,6 +748,7 @@ struct RecentTranscriptContextTests {
         )
         #expect(streaming.contains("prompt: context.openAITranscriptionPrompt"))
         #expect(streaming.contains("context.customVocabulary(orLiveFetch: customDictionaryTerms)"))
+        #expect(streaming.contains("OpenAIKeywordSelection.selected(from: vocabularyWords.map(\\.word))"))
 
         // The resolver can run provisionally and finally, but only OpenAI asks the one
         // recording-owned lazy cache for its frozen store snapshot.

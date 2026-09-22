@@ -70,7 +70,9 @@ class CloudTranscriptionService: TranscriptionService {
                 // snapshot. Every other provider keeps its existing live-fetch behavior;
                 // otherwise its streaming half and batch fallback could silently differ.
                 customVocabulary: model.provider == .openAI
-                    ? context.customVocabulary(orLiveFetch: getCustomDictionaryTerms)
+                    ? context.customVocabulary(orLiveFetch: {
+                        OpenAIKeywordSelection.selected(from: getCustomDictionaryTerms())
+                    })
                     : getCustomDictionaryTerms()
             )
         } catch let error as CloudTranscriptionError {

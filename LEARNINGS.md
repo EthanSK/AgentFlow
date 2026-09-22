@@ -25,6 +25,15 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-22T23:20:37Z
+**Trigger:** Ethan reported worse GPT Live recognition and asked for a much smaller set of useful chat and dictionary hints, with an independent Opus 5.5 review.
+**Symptom:** Installed build 327 had recent Codex excerpts enabled and sent all 82 stored Vocabulary words as keywords on a sampled recording; the static prompt normalized to absent. Context and keyword counts established payload shape, not recognition quality. No paired human-reference comparison existed.
+**Root cause:** No single cause of the subjective word errors was proven. A 14-day, 2,283-completed-transcript read found 47 dictionary terms absent from recognized output, but that cannot distinguish irrelevant terms from rare spellings the model missed. Recent Scarlett WAV levels did not show a broad microphone-level collapse. The optional Codex reader can synchronously read log tails on the recording-start path, although its latency contribution has not been measured.
+**Fix:** Ethan's `VIPPRecentTranscriptContextEnabled` preference was switched off for new recordings, so the current whitespace-only static prompt produces no prompt field. Build 328 introduces an OpenAI-only `VIPPExcludedOpenAIKeywords` filter. His personal setting is configured to send 35 reviewed terms once build 328 is installed, while preserving all 82 SwiftData rows and the unchanged non-OpenAI paths. Missing exclusions retain the previous full list; previously unseen additions are included. Frozen realtime and completed-audio fallback inputs share the selected list. No private word list enters source or logs.
+**Commit:** This build-328 release source; installation and human-reference quality acceptance remain separate gates.
+**Guard:** On the Mac Mini, all 46 named context/Codex tests passed, including two new shortlist guards. Two canonical focused selections for mandatory Primary/Next/HUD guards stalled before any named test and were not counted; the exact-build release gate must name those guards. A synthetic, non-private GPT Live probe accepted a 1,024-character prompt and separate two-keyword and English fields, emitted 15 deltas, completed non-empty, and returned a non-empty `gpt-transcribe` fallback; this proves protocol acceptance, not better recognition. The learnings skill validates. Compare same audio to human-corrected references before claiming an accuracy gain.
+
+---
 **Date:** 2026-09-09T00:46:02Z
 **Trigger:** Ethan asked to keep VoiceInk warm and retry directly from the floating transcription-failed message.
 **Symptom:** Genuine provider failures retained the WAV but exposed no retry action in the floating error; intermittent startup delay was suspected to be App Nap.

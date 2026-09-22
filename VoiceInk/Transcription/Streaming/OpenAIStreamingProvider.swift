@@ -420,7 +420,7 @@ final class OpenAIStreamingProvider: ContextualStreamingTranscriptionProvider, @
         guard let vocabularyWords = try? modelContext.fetch(descriptor) else {
             return []
         }
-        return vocabularyWords.map(\.word)
+        return OpenAIKeywordSelection.selected(from: vocabularyWords.map(\.word))
     }
 
     private var didCommit: Bool {

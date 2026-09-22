@@ -90,9 +90,9 @@ enum ModeRuntimeResolver {
             // only their batch fallback would make the two halves of one recording differ.
             requestContext = TranscriptionRequestContextSnapshot.make(
                 language: language,
-                // A stable enabled Mode UUID is required before recent history can be
-                // scoped. Disabled/no-Mode recordings still freeze OpenAI keywords but
-                // send no recent transcript text.
+                // Mode identity is not conversation identity. Disabled/no-Mode recordings
+                // still freeze OpenAI keywords; optional chat text comes only from the
+                // proven active Codex task, never History or another app's Mode.
                 modeID: (mode?.isEnabled == true) ? mode?.id : nil,
                 snapshot: requestInputSnapshotCache.snapshot()
             )

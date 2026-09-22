@@ -163,3 +163,39 @@ Preserve `RecentTranscriptContextTests`, `CodexConversationContextTests`, frozen
 realtime/fallback parity, Primary/Next isolation, and HUD-only partials for an implementation.
 The synthetic provider probe validates protocol acceptance, not human recognition quality.
 Comments/research alone do not require a rebuild or an unnecessary restart of the signed app.
+
+## 2026-09-23 lean-hints decision (personal configuration, not an accuracy claim)
+
+Ethan asked to send substantially less to GPT Live after finding recognition subjectively
+worse. The build-327 audit confirmed a whitespace-only static prompt, optional active-Codex
+excerpts enabled, and all 82 stored Vocabulary terms sent on a sampled recording. Exactly
+which words were misrecognized was not supplied, and neither the 82 terms nor the excerpts
+were proven causal. Opus 5.5 independently reviewed the source and recommended disabling
+unmeasured chat excerpts by default for Ethan, while choosing a small keyword set by value
+rather than taking an alphabetical prefix. His opt-in Codex-excerpt flag was switched off
+for subsequent recordings; the source default was already off. The installed build 327
+does not yet understand the new keyword-exclusion preference.
+
+The proposed build-328 path preserves every SwiftData Vocabulary row and filters only
+OpenAI outgoing keywords using `VIPPExcludedOpenAIKeywords` in VoiceInk++ UserDefaults.
+A missing preference means the previous full list. Previously unseen additions are included
+automatically. Never implement a short alphabetical `keywordLimit`: it can drop a rare,
+important spelling solely because it sorts late. Keep the existing 100-term transport
+validation ceiling independent from prompt length. The selection must agree across one
+recording's realtime session and completed-audio fallback; other providers must receive
+their unchanged Vocabulary. Do not log or commit Ethan's personal term/exclusion lists.
+
+The 2026-09-22 read-only audit counted 2,283 completed transcripts in 14 days: 47 of 82
+stored terms did not occur in recognized output. That supports reviewing outgoing relevance,
+not deleting those terms—misrecognized rare names may be absent precisely because they
+need a hint. A sample of 184 completed Scarlett-input WAVs over two days had median RMS
+about -28.6 dBFS; that did not show a broad microphone-level collapse, but it cannot
+establish recognition accuracy or rule out individual clipped/quiet recordings. Keep
+English, `xhigh`, model, and audio route fixed while measuring any hint change.
+
+Before claiming a quality gain, compare identical retained audio against human-corrected
+references with full hints, the lean list, and no keywords, all without optional chat.
+Track word errors, exact-name hits, unspoken keyword insertions, first-word omissions,
+empty finals, fallback frequency, first delta, and stop-to-final latency. A substantial
+billable replay needs specific authorization; ordinary new recordings can supply
+observational feedback but cannot by themselves establish a controlled improvement.
