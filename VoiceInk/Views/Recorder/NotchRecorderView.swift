@@ -32,6 +32,7 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
             // Keep the realtime panel visible before the provider's first partial so
             // a slow Wi-Fi/WebSocket handshake cannot make streaming mode look off.
             let shouldShowLive = stateProvider.showsRealtimeTranscriptHUD
+                || stateProvider.latestSelectionPreview != nil
             return shouldShowLive ? .liveText : .active
         case .transcribing, .enhancing:
             return .active
@@ -119,9 +120,12 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     }
 
     private var liveTranscriptDisplayText: String {
-        stateProvider.partialTranscript.isEmpty
-            ? "…"
+        let speech = stateProvider.partialTranscript.isEmpty
+            ? (stateProvider.showsRealtimeTranscriptHUD ? "…" : "")
             : stateProvider.partialTranscript
+        guard let preview = stateProvider.latestSelectionPreview else { return speech }
+        let selection = "\(String(localized: "Selected Text")): \(preview)"
+        return speech.isEmpty ? selection : speech + "\n" + selection
     }
 
     // VIPP (skip-mode-processing feature): Binding to the OBSERVED session's one-shot

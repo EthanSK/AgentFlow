@@ -6,6 +6,7 @@ protocol RecorderStateProvider: AnyObject {
     var recordingState: RecordingState { get }
     var partialTranscript: String { get }
     var completionDisposition: RecordingCompletionDisposition { get }
+    var latestSelectionPreview: String? { get }
     // A realtime provider owns a live-text HUD from recording start, even before
     // its first partial arrives. This is presentation state only: the placeholder
     // never enters the transcript or either Primary/Next delivery route.
@@ -33,6 +34,7 @@ protocol RecorderStateProvider: AnyObject {
 extension RecorderStateProvider {
     var showsRealtimeTranscriptHUD: Bool { false }
     var completionDisposition: RecordingCompletionDisposition { .normalDelivery }
+    var latestSelectionPreview: String? { nil }
 
     var currentFocusIconActionPulseID: UUID? {
         guard let pulse = iconActionPulse, pulse.icon == .currentFocus else { return nil }

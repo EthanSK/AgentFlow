@@ -223,6 +223,13 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     // stays frozen in the HUD and no new audio reaches the provider.
     @Published var partialTranscript: String = ""
 
+    // Only short selection boundaries are retained for this recording. A new
+    // recording gets an independent list, and a canceled capture never transfers
+    // its references to a later transcription job.
+    @Published private(set) var latestSelectionPreview: String?
+    private(set) var liveSelectionReferences: [LiveSelectionReference] = []
+    private var liveSelectionCapture: LiveSelectionCapture?
+
     // Make the realtime HUD visible as soon as the frozen Mode selects a streaming
     // provider. A network/Wi-Fi handshake may delay the first Soniox partial, but the
     // recorder must still communicate that live transcription is active. The empty
@@ -447,6 +454,27 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     var retryContextSnapshot: RecordingContextSnapshot?
     // Background tasks capturing the above context; cancelled when the session ends.
     var contextTasks: [Task<Void, Never>] = []
+
+    func beginLiveSelectionCapture() {
+        guard liveSelectionCapture == nil else { return }
+        let capture = LiveSelectionCapture { [weak self] reference in
+            self?.recordLiveSelection(reference)
+        }
+        liveSelectionCapture = capture
+        capture.start()
+    }
+
+    func recordLiveSelection(_ reference: LiveSelectionReference) {
+        guard phase == .recording,
+              liveRecordingState.isRecordingOrPaused else { return }
+        liveSelectionReferences.append(reference)
+        latestSelectionPreview = reference.preview
+    }
+
+    func endLiveSelectionCapture() {
+        liveSelectionCapture?.stop()
+        liveSelectionCapture = nil
+    }
 
     // Whether this capture is a brand-new dictation or an assistant follow-up turn. Mirrors
     // the engine's old RecordingUseCase; kept per-session because two sessions could in

@@ -520,6 +520,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
     /// SwiftUI animates the card out (transition on the `sessions` array).
     private func removeSession(_ session: RecordingSession) {
         session.phase = .done
+        session.endLiveSelectionCapture()
         session.clearContext()
         sessions.removeAll { $0.id == session.id }
         recomputeDerivedState()
@@ -796,6 +797,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
 
             active.phase = .transcribing
             active.liveRecordingState = .transcribing
+            active.endLiveSelectionCapture()
             // Realtime remains HUD-only while capture is live. At the irreversible
             // stop boundary, however, persist the last HUD text beside the original
             // WAV before starting asynchronous finalization. This is local recovery
@@ -1148,6 +1150,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
             session.liveRecordingState = .recording
             session.phase = .recording
             recomputeDerivedState()
+            session.beginLiveSelectionCapture()
             if session.recordingStartFocusedInput == nil {
                 let retryTarget = FocusLockService.shared
                     .captureFocusedInputSnapshot(
@@ -1733,6 +1736,9 @@ class VoiceInkEngine: NSObject, ObservableObject {
                     session?.retryContextSnapshot ?? session?.contextStore?.snapshot
                 }
             },
+            liveSelectionReferences: { [weak session] in
+                session?.liveSelectionReferences ?? []
+            },
             pasteTarget: { [weak session] in
                 guard let session else {
                     preconditionFailure("The recording session must exist until its delivery target is resolved")
@@ -1975,6 +1981,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
             session.startID = UUID() // invalidate start handshake
             session.recoverablePartialTranscript = session.partialTranscript
             session.partialTranscript = ""
+            session.endLiveSelectionCapture()
             session.clearContext()
             await recorder.stopRecording()
             await finishCanceledRecording(session)
@@ -2028,6 +2035,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
         for session in sessions {
             session.shouldCancel = true
             session.transcriptionSession?.cancel()
+            session.endLiveSelectionCapture()
             session.clearContext()
         }
         sessions.removeAll()

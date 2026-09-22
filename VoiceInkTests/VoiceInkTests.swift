@@ -386,6 +386,52 @@ struct VoiceInkTests {
     }
 
 
+    @Test func liveSelectionReferenceKeepsOnlyBoundariesForLongText() throws {
+        let source = String(repeating: "a", count: 60)
+            + "PRIVATE_MIDDLE_MUST_NOT_LEAVE_THE_APP"
+            + String(repeating: "z", count: 60)
+        let reference = try #require(LiveSelectionReference(source))
+        let message = LiveSelectionReference.appending(
+            [reference],
+            to: "Please check this section."
+        )
+
+        #expect(reference.omittedMiddle)
+        #expect(message.contains("Selected text in Codex"))
+        #expect(message.contains(String(repeating: "a", count: 46)))
+        #expect(message.contains(String(repeating: "z", count: 46)))
+        #expect(!message.contains("PRIVATE_MIDDLE_MUST_NOT_LEAVE_THE_APP"))
+        #expect(LiveSelectionReference.appending([reference], to: "") == "")
+    }
+
+    @Test @MainActor func liveSelectionBelongsOnlyToItsRecording() throws {
+        let first = RecordingSession()
+        let second = RecordingSession()
+        let reference = try #require(LiveSelectionReference("One selected phrase"))
+
+        first.recordLiveSelection(reference)
+        #expect(first.liveSelectionReferences == [reference])
+        #expect(second.liveSelectionReferences.isEmpty)
+
+        first.phase = .transcribing
+        first.recordLiveSelection(reference)
+        #expect(first.liveSelectionReferences.count == 1)
+        #expect(second.latestSelectionPreview == nil)
+    }
+
+    @Test @MainActor func liveSelectionNeedsASelectionGesture() {
+        let point = NSPoint(x: 10, y: 10)
+        #expect(!LiveSelectionCapture.isSelectionGesture(
+            from: point, to: NSPoint(x: 11, y: 10), clickCount: 1
+        ))
+        #expect(LiveSelectionCapture.isSelectionGesture(
+            from: point, to: NSPoint(x: 30, y: 10), clickCount: 1
+        ))
+        #expect(LiveSelectionCapture.isSelectionGesture(
+            from: point, to: point, clickCount: 2
+        ))
+    }
+
     @Test @MainActor func abandonedShortcutCaptureRestoresItsPreviousBinding() {
         let action = ShortcutAction.mode(UUID())
         let originalShortcut = Shortcut.key(

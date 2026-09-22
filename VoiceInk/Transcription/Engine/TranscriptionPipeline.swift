@@ -105,6 +105,7 @@ class TranscriptionPipeline {
         triggerWordModeSelection: @escaping (String) -> String? = { _ in nil },
         enhancementConfiguration: @escaping () -> EnhancementRuntimeConfiguration?,
         recordingContextSnapshot: @escaping () async -> RecordingContextSnapshot? = { nil },
+        liveSelectionReferences: @escaping () -> [LiveSelectionReference] = { [] },
         pasteTarget resolvePasteTarget: @escaping () async -> RecordingPasteTarget,
         outputConfiguration: @escaping () -> OutputRuntimeConfiguration,
         // ── VIPP (skip-mode-processing feature) — EXPLICIT bypass flag ──
@@ -184,6 +185,27 @@ class TranscriptionPipeline {
         var completionDispositionNow = RecordingCompletionDisposition.normalDelivery
         var autoSendDispositionNow = RecordingAutoSendDisposition.configured
         let recoverablePartialTranscriptNow = recoverablePartialTranscript()
+
+        func attachLiveSelectionsToFinalText() {
+            // This is a final-message annotation, not streaming destination input.
+            // Keep the raw/skip contract verbatim, and never append references to
+            // commands or recorder-assistant responses. Only selection boundaries
+            // leave the recording; the complete selected text is not persisted.
+            guard !skipPostProcessingNow,
+                  !assistant.isFollowUp,
+                  let current = finalText else { return }
+            let annotated = LiveSelectionReference.appending(
+                liveSelectionReferences(),
+                to: current
+            )
+            guard annotated != current else { return }
+            finalText = annotated
+            if transcription.enhancedText != nil && responseError == nil {
+                transcription.enhancedText = annotated
+            } else {
+                transcription.text = annotated
+            }
+        }
         if transcription.recoverableRealtimeDraftText == nil,
            !recoverablePartialTranscriptNow
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -601,6 +623,7 @@ class TranscriptionPipeline {
         // work, then copy once and return before resolving any Accessibility target,
         // mode output action, custom command, paste, or Return key.
         if completionDispositionNow == .clipboardOnly {
+            attachLiveSelectionsToFinalText()
             FocusLockService.shared.clearLock()
             SoundManager.shared.playStopSound()
             let clipboardText = finalText?
@@ -653,6 +676,9 @@ class TranscriptionPipeline {
         }
 
         let outputForPasteTarget = routeResolvedOutput
+        if outputForPasteTarget.outputMode == .paste {
+            attachLiveSelectionsToFinalText()
+        }
         let deliveryLeasePolicy: TranscriptionDeliveryLeasePolicy =
             pasteTargetForDelivery.destination == .primaryCurrentInput
                 && outputForPasteTarget.outputMode == .paste

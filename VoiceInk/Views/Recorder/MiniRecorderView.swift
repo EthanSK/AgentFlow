@@ -39,13 +39,17 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     // "Recording" text or inventing transcript content.
     private var hasLiveTranscript: Bool {
         stateProvider.recordingState.isRecordingOrPaused
-            && stateProvider.showsRealtimeTranscriptHUD
+            && (stateProvider.showsRealtimeTranscriptHUD
+                || stateProvider.latestSelectionPreview != nil)
     }
 
     private var liveTranscriptDisplayText: String {
-        stateProvider.partialTranscript.isEmpty
-            ? "…"
+        let speech = stateProvider.partialTranscript.isEmpty
+            ? (stateProvider.showsRealtimeTranscriptHUD ? "…" : "")
             : stateProvider.partialTranscript
+        guard let preview = stateProvider.latestSelectionPreview else { return speech }
+        let selection = "\(String(localized: "Selected Text")): \(preview)"
+        return speech.isEmpty ? selection : speech + "\n" + selection
     }
 
     private var hasAssistantResponse: Bool {
