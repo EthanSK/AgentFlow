@@ -25,6 +25,17 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-23T22:38:48Z
+**Trigger:** Ethan physically compared build 332 black preview against the final paste after two highlights.
+**Symptom:** A second Codex highlight appeared at the top of the black recorder HUD instead of after speech and the first highlight, although final paste was ordered.
+**Root cause:** Build 332 published only latestSelectionPreview and rendered it in a fixed strip separate from the live speech scroll view.
+**Fix:** Publish all per-session selection references and compose bounded highlight snippets with live speech by capture-time word anchors in one 56-point auto-scrolling HUD; leave final delivery unchanged.
+**Commit:** 1449b95
+**Guard:** selectedTextPreviewInterleavesEveryHighlightWithLiveSpeech; realtimeStreamingRemainsRecorderHUDOnlyUntilFinalDelivery; focused seven-test Mac mini pass 2026-09-23
+---
+
+
+---
 **Date:** 2026-09-23T22:16:34Z
 **Trigger:** Ethan reported live speech missing from the black recorder window after selecting text in Codex and asked to fix, build, and restart.
 **Symptom:** A long Codex selection preview displaced new speech partials from the fixed-height black recorder HUD even when GPT Live was streaming.
