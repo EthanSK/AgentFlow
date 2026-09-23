@@ -25,6 +25,14 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-23T01:03:41Z
+**Trigger:** Ethan requested XML-wrapped Codex selections interleaved with speech, separated by blank lines, then showed the old end-appended output.
+**Symptom:** Build 329 appended selected text after the whole transcript. The first build-330 Release candidate passed tests and signing but crashed during CoreData/CloudKit startup when launched on the MacBook Pro.
+**Root cause:** The build-330 release command omitted the project-required `LOCAL_BUILD` Swift condition. That compiled the upstream dictionary CloudKit path even though the local self-signed app has no iCloud entitlement. This was a packaging error, unrelated to selection formatting.
+**Fix:** `LiveSelectionReference.interleaving` places compact escaped XML selection blocks at the approximate word position recorded from the live HUD at mouse-up, and `RecordingSession` owns that position snapshot. Rebuilt with `LocalBuild.xcconfig` and an explicit `LOCAL_BUILD` compiler condition as build 331, preserving the local entitlement set. Retained the crashed build-330 bundle for diagnosis and build-329 as rollback.
+**Commit:** `d4cc9b2` for behavior; `de47876` for build 331.
+**Guard:** The exact behavior source passed 333 named tests in 10 suites through the fresh direct `xcrun xctest` fallback after Xcode's TestManager stalled at zero tests. Build-331's Swift driver command contained `-DLOCAL_BUILD`; signed Release SHA-256 is `6dd6b1cd170082daaa226bfd5bc0306718c5ba3619ec66af81a3d6be6138c0fc`, CDHash `2a2d6befa4f7385d4470c9159d9513d9907a6cae`. Deep/strict signature and Automation/audio-input entitlements passed; the app stayed running under PID 436 after restart, and official VoiceInk's executable SHA-256 remained `6b7085120de7ec2e0da5274d11bd060d39ba74f4eec6b631912`. Ethan's physical inline-position acceptance remains unverified; live partials can revise, so placement is approximate. Future local Release commands must require `LOCAL_BUILD` before signing or installation.
+---
 **Date:** 2026-09-23T00:03:52Z
 **Trigger:** Ethan requested automatic mouse-up selection references during one continuing Codex dictation.
 **Symptom:** A live Codex selection captured during dictation could be lost before the recording ends.
