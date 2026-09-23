@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     @ObservedObject var stateProvider: S
+    let liveTranscriptHeight: CGFloat
     let recorder: Recorder
     @ObservedObject var assistantSession: AssistantSession
     let onRecordButtonTapped: () -> Void
@@ -165,7 +166,8 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
             if hasLiveTranscript {
                 LiveTranscriptView(
                     text: stateProvider.partialTranscript,
-                    selectionReferences: stateProvider.liveSelectionReferences
+                    selectionReferences: stateProvider.liveSelectionReferences,
+                    height: liveTranscriptHeight
                 )
                 Divider().background(Color.white.opacity(0.15))
             }
@@ -187,7 +189,17 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
             controlBar
         }
         .frame(width: capsuleWidth)
-        .background(Color.black)
+        .background {
+            if hasLiveTranscript && liveTranscriptHeight > 100 {
+                LinearGradient(
+                    colors: [.black.opacity(0.55), .black.opacity(0.82), .black],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            } else {
+                Color.black
+            }
+        }
         .clipShape(RoundedRectangle(cornerRadius: hasLiveTranscript || hasAssistantResponse ? expandedCornerRadius : compactCornerRadius, style: .continuous))
         .animation(.easeInOut(duration: 0.3), value: hasLiveTranscript)
         .animation(.easeInOut(duration: 0.3), value: hasAssistantResponse)

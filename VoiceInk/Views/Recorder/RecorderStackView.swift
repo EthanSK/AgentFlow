@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // RecorderStackView(s) — stacked recorder cards for record-while-transcribing.
@@ -40,6 +41,8 @@ import SwiftUI
 
 struct MiniRecorderStackView: View {
     @ObservedObject var engine: VoiceInkEngine
+    @State private var layoutTick = 0
+    let screenHeight: CGFloat
     let recorder: Recorder
     @ObservedObject var assistantSession: AssistantSession
     let onRecordButtonTapped: () -> Void
@@ -66,11 +69,41 @@ struct MiniRecorderStackView: View {
         ordered.isEmpty && assistantSession.isVisible
     }
 
+    private var liveTranscriptHeight: CGFloat {
+        guard let baseSession else { return MiniRecorderLayoutMetrics.liveTranscriptHeight }
+        let parts = LiveSelectionReference.previewParts(
+            baseSession.liveSelectionReferences,
+            with: baseSession.partialTranscript
+        )
+        return MiniRecorderLayoutMetrics.transcriptHeight(
+            parts: parts,
+            width: 344,
+            maxHeight: screenHeight - 150
+        )
+    }
+
+    private var baseCardHeight: CGFloat {
+        if assistantSession.isVisible {
+            return MiniRecorderLayoutMetrics.assistantPanelHeight + 41
+        }
+        if let baseSession,
+           baseSession.liveRecordingState.isRecordingOrPaused,
+           baseSession.showsRealtimeTranscriptHUD || !baseSession.liveSelectionReferences.isEmpty {
+            return liveTranscriptHeight + 41
+        }
+        return MiniRecorderLayoutMetrics.controlBarHeight
+    }
+
+    private var stackedChipCount: Int {
+        max(0, ordered.count - (baseSession == nil ? 0 : 1))
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             if showAssistantOnlyCard {
                 MiniRecorderView(
                     stateProvider: engine,
+                    liveTranscriptHeight: liveTranscriptHeight,
                     recorder: recorder,
                     assistantSession: assistantSession,
                     onRecordButtonTapped: onRecordButtonTapped,
@@ -85,10 +118,7 @@ struct MiniRecorderStackView: View {
                     // Each card is shifted UP by its distance from the base. The base card
                     // (indexFromBottom == 0) stays at offset 0; older transcribing cards
                     // climb upward in the bottom-anchored panel.
-                    .offset(
-                        y: -MiniRecorderLayoutMetrics.stackedCardSpacing
-                            * CGFloat(indexFromBottom(of: session))
-                    )
+                    .offset(y: cardOffset(for: session))
                     .zIndex(zIndex(for: session))
                     .transition(
                         .move(edge: .bottom).combined(with: .opacity)
@@ -99,6 +129,22 @@ struct MiniRecorderStackView: View {
         // offset shuffles) animate the pile growing/collapsing.
         .animation(.spring(response: 0.38, dampingFraction: 0.85), value: engine.sessions.map(\.id))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .onReceive(baseSession?.objectWillChange ?? ObservableObjectPublisher()) { _ in
+            // The engine's session array does not publish changes to a session's
+            // screenshot/selection list. Refresh host height on those changes too.
+            layoutTick &+= 1
+        }
+        .background(RecorderPanelHeightSync(
+            desiredHeight: max(430, baseCardHeight + CGFloat(stackedChipCount) * 46 + 12),
+            edge: .bottom
+        ))
+    }
+
+    private func cardOffset(for session: RecordingSession) -> CGFloat {
+        let distance = indexFromBottom(of: session)
+        guard distance > 0 else { return 0 }
+        return -(baseCardHeight + 6 + CGFloat(distance - 1)
+                 * MiniRecorderLayoutMetrics.stackedCardSpacing)
     }
 
     // Distance of a session from the base, in card units. Base = 0, next-older = 1, etc.
@@ -128,6 +174,7 @@ struct MiniRecorderStackView: View {
             // partial transcript, etc.). Controls route to the engine-level closures.
             MiniRecorderView(
                 stateProvider: session,
+                liveTranscriptHeight: liveTranscriptHeight,
                 recorder: recorder,
                 assistantSession: assistantSession,
                 onRecordButtonTapped: onRecordButtonTapped,
@@ -156,10 +203,12 @@ struct MiniRecorderStackView: View {
 //   window height was extended to fit up to a few stacked chips beneath the pill.
 struct NotchRecorderStackView: View {
     @ObservedObject var engine: VoiceInkEngine
+    @State private var layoutTick = 0
     let recorder: Recorder
     @ObservedObject var assistantSession: AssistantSession
     let notchWidth: CGFloat
     let notchHeight: CGFloat
+    let screenHeight: CGFloat
     let onRecordButtonTapped: () -> Void
     let onCloseTapped: () -> Void
     let onCancelTapped: () -> Void
@@ -188,6 +237,32 @@ struct NotchRecorderStackView: View {
         pillSession == nil && assistantSession.isVisible
     }
 
+    private var liveTranscriptHeight: CGFloat {
+        guard let pillSession else { return MiniRecorderLayoutMetrics.liveTranscriptHeight }
+        return MiniRecorderLayoutMetrics.transcriptHeight(
+            parts: LiveSelectionReference.previewParts(
+                pillSession.liveSelectionReferences,
+                with: pillSession.partialTranscript
+            ),
+            width: notchWidth + 360 - 16,
+            maxHeight: screenHeight - notchHeight - 150
+        )
+    }
+
+    private var desiredPanelHeight: CGFloat {
+        let pill: CGFloat
+        if assistantSession.isVisible {
+            pill = notchHeight + 6 + 320
+        } else if let session = pillSession,
+                  session.liveRecordingState.isRecordingOrPaused,
+                  session.showsRealtimeTranscriptHUD || !session.liveSelectionReferences.isEmpty {
+            pill = notchHeight + 6 + liveTranscriptHeight + 1
+        } else {
+            pill = notchHeight + 6
+        }
+        return max(430, pill + CGFloat(backgroundSessions.count) * 46 + 12)
+    }
+
     var body: some View {
         VStack(spacing: 6) {
             // The pill at the top (the notch itself).
@@ -198,6 +273,7 @@ struct NotchRecorderStackView: View {
                     assistantSession: assistantSession,
                     notchWidth: notchWidth,
                     notchHeight: notchHeight,
+                    liveTranscriptHeight: liveTranscriptHeight,
                     onRecordButtonTapped: onRecordButtonTapped,
                     onCloseTapped: onCloseTapped,
                     onCancelTapped: onCancelTapped,
@@ -210,6 +286,7 @@ struct NotchRecorderStackView: View {
                     assistantSession: assistantSession,
                     notchWidth: notchWidth,
                     notchHeight: notchHeight,
+                    liveTranscriptHeight: liveTranscriptHeight,
                     onRecordButtonTapped: onRecordButtonTapped,
                     onCloseTapped: onCloseTapped,
                     onCancelTapped: onCancelTapped,
@@ -229,6 +306,13 @@ struct NotchRecorderStackView: View {
         }
         .animation(.spring(response: 0.38, dampingFraction: 0.85), value: engine.sessions.map(\.id))
         .frame(maxWidth: .infinity, alignment: .top)
+        .onReceive(pillSession?.objectWillChange ?? ObservableObjectPublisher()) { _ in
+            layoutTick &+= 1
+        }
+        .background(RecorderPanelHeightSync(
+            desiredHeight: desiredPanelHeight,
+            edge: .top
+        ))
     }
 }
 

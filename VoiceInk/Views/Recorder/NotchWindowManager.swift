@@ -11,7 +11,7 @@ class NotchWindowManager {
 
     private var windows: [WindowEntry] = []
 
-    private let makeView: (_ notchWidth: CGFloat, _ notchHeight: CGFloat) -> AnyView
+    private let makeView: (_ notchWidth: CGFloat, _ notchHeight: CGFloat, _ screenHeight: CGFloat) -> AnyView
 
     init(
         engine: VoiceInkEngine,
@@ -27,7 +27,7 @@ class NotchWindowManager {
         // (record-while-transcribing stack). Routed to engine.cancelSession(id:).
         onCancelSession: @escaping (UUID) -> Void
     ) {
-        self.makeView = { notchWidth, notchHeight in
+        self.makeView = { notchWidth, notchHeight, screenHeight in
             AnyView(
                 // Host the STACK container: the active session is the notch pill, background
                 // transcribing sessions render as chips stacked beneath it.
@@ -37,6 +37,7 @@ class NotchWindowManager {
                     assistantSession: assistantSession,
                     notchWidth: notchWidth,
                     notchHeight: notchHeight,
+                    screenHeight: screenHeight,
                     onRecordButtonTapped: onRecordButtonTapped,
                     onCloseTapped: onCloseTapped,
                     onCancelTapped: onCancelTapped,
@@ -92,7 +93,7 @@ class NotchWindowManager {
         for (index, screen) in screens.enumerated() {
             let metrics = NotchRecorderPanel.calculateWindowMetrics(for: screen)
             let panel = NotchRecorderPanel(contentRect: metrics.frame)
-            let view = makeView(metrics.notchWidth, metrics.notchHeight)
+            let view = makeView(metrics.notchWidth, metrics.notchHeight, screen.frame.height)
             let hostingController = NotchRecorderHostingController(rootView: view)
             panel.contentView = hostingController.view
             let windowController = NSWindowController(window: panel)

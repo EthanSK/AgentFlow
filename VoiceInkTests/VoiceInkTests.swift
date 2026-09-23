@@ -10,6 +10,7 @@ import AppKit
 import Carbon.HIToolbox
 import CoreAudio
 import CoreGraphics
+import Darwin
 import Foundation
 import ApplicationServices
 @testable import VoiceInkPlusPlus
@@ -495,6 +496,98 @@ struct VoiceInkTests {
             #expect(source.contains("selectionReferences: stateProvider.liveSelectionReferences"))
             #expect(!source.contains("speech + \"\\n\" + selection"))
         }
+    }
+
+    @Test @MainActor func savedScreenshotPathJoinsSpeechAndSelectionsInCaptureOrder() throws {
+        let selection = try #require(LiveSelectionReference("the line before the screenshot"))
+        let screenshot = try #require(LiveSelectionReference(
+            screenshotURL: URL(fileURLWithPath: "/Users/test/Screenshots/Screenshot & <one>.png")
+        ))
+        let references = [
+            selection.anchored(after: "Look"),
+            screenshot.anchored(after: "Look at this")
+        ]
+        #expect(LiveSelectionReference.previewParts(
+            references, with: "Look at this now"
+        ) == [
+            .speech("Look"), .selection("“the line before the screenshot”"),
+            .speech("at this"), .screenshot("Screenshot & <one>.png"),
+            .speech("now")
+        ])
+        let message = LiveSelectionReference.interleaving(
+            references, with: "Look at this now"
+        )
+        #expect(message.contains("<local_screenshot path=\"/Users/test/Screenshots/Screenshot &amp; &lt;one&gt;.png\"/>"))
+        #expect(message.range(of: "<codex_selection")!.lowerBound
+                < message.range(of: "<local_screenshot")!.lowerBound)
+        let screenshotFirst = LiveSelectionReference.interleaving(
+            [screenshot.anchored(after: "Look"), selection.anchored(after: "Look at this")],
+            with: "Look at this now"
+        )
+        #expect(screenshotFirst.contains("<codex_selection index=\"1\""))
+        #expect(XMLParser(data: Data(
+            "<root>\(message)</root>".utf8
+        )).parse())
+        #expect(LiveSelectionReference(screenshotURL: URL(string: "https://example.com/a.png")!) == nil)
+        let trueMarker = try PropertyListSerialization.data(
+            fromPropertyList: true, format: .binary, options: 0
+        )
+        let falseMarker = try PropertyListSerialization.data(
+            fromPropertyList: false, format: .binary, options: 0
+        )
+        #expect(LiveSelectionCapture.isScreenshotMarker(trueMarker))
+        #expect(!LiveSelectionCapture.isScreenshotMarker(falseMarker))
+    }
+
+    @Test @MainActor func onlyFreshNativeScreenshotsEnterLiveContext() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voiceink-screenshot-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let start = Date()
+        let screenshot = directory.appendingPathComponent("Screenshot test.png")
+        try Data([0x89, 0x50, 0x4e, 0x47]).write(to: screenshot)
+        #expect(!LiveSelectionCapture.isNativeScreenshot(screenshot, since: start))
+        let marker = try PropertyListSerialization.data(
+            fromPropertyList: true, format: .binary, options: 0
+        )
+        let attribute = "com.apple.metadata:kMDItemIsScreenCapture"
+        let result = marker.withUnsafeBytes { bytes in
+            screenshot.path.withCString { path in
+                attribute.withCString { name in
+                    setxattr(path, name, bytes.baseAddress, marker.count, 0, 0)
+                }
+            }
+        }
+        #expect(result == 0)
+        #expect(LiveSelectionCapture.isNativeScreenshot(screenshot, since: start))
+        #expect(!LiveSelectionCapture.isNativeScreenshot(
+            screenshot, since: Date().addingTimeInterval(10)
+        ))
+    }
+
+    @Test func recorderContextGrowsBeforeItsScreenBound() throws {
+        let short = MiniRecorderLayoutMetrics.transcriptHeight(
+            parts: [.speech("Hello")], width: 344, maxHeight: 700
+        )
+        let long = MiniRecorderLayoutMetrics.transcriptHeight(
+            parts: [.speech(String(repeating: "a sentence with several words. ", count: 80))],
+            width: 344,
+            maxHeight: 700
+        )
+        #expect(short == MiniRecorderLayoutMetrics.liveTranscriptHeight)
+        #expect(long > short)
+        #expect(long <= 700)
+        #expect(MiniRecorderLayoutMetrics.notificationBottomReservedHeight(
+            showsAssistant: false,
+            showsRealtimeTranscript: true,
+            sessionCount: 1,
+            realtimeTranscriptHeight: long
+        ) == 24 + long + 1 + 40)
+        let stacks = try repositorySource("VoiceInk/Views/Recorder/RecorderStackView.swift")
+        #expect(stacks.contains(".onReceive(baseSession?.objectWillChange"))
+        #expect(stacks.contains(".onReceive(pillSession?.objectWillChange"))
+        #expect(stacks.contains("RecorderPanelHeightSync("))
     }
 
     @Test @MainActor func abandonedShortcutCaptureRestoresItsPreviousBinding() {

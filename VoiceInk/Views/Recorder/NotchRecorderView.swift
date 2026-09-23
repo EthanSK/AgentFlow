@@ -6,6 +6,7 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     @ObservedObject var assistantSession: AssistantSession
     let notchWidth: CGFloat
     let notchHeight: CGFloat
+    let liveTranscriptHeight: CGFloat
     let onRecordButtonTapped: () -> Void
     let onCloseTapped: () -> Void
     // Exit ("X"): stop without paste, save captured audio/HUD draft in History, and
@@ -47,7 +48,7 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     private let transcriptSideExpansion: CGFloat = 180
     private let assistantSideExpansion: CGFloat = 230
     private let activeHeightBonus: CGFloat = 6
-    private let transcriptPanelHeight: CGFloat = 57
+    private var transcriptPanelHeight: CGFloat { liveTranscriptHeight + 1 }
     private let assistantPanelHeight: CGFloat = 320
 
     private var mainRowHeight: CGFloat { notchHeight + activeHeightBonus }
@@ -157,7 +158,17 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
             assistantPanel
         }
         .frame(width: pillWidth, height: pillHeight)
-        .background(Color.black)
+        .background {
+            if displayState == .liveText && liveTranscriptHeight > 100 {
+                LinearGradient(
+                    colors: [.black.opacity(0.55), .black.opacity(0.82), .black],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            } else {
+                Color.black
+            }
+        }
         .clipShape(
             NotchShape(
                 topCornerRadius: displayState == .liveText ? 12 : 8,
@@ -259,7 +270,8 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                 Divider().background(Color.white.opacity(0.15))
                 LiveTranscriptView(
                     text: stateProvider.partialTranscript,
-                    selectionReferences: stateProvider.liveSelectionReferences
+                    selectionReferences: stateProvider.liveSelectionReferences,
+                    height: liveTranscriptHeight
                 )
                     .padding(.horizontal, 8)
             }

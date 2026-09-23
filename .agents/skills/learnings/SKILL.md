@@ -91,6 +91,20 @@ can otherwise look healthy while ordinary dictations lose all useful context. Ke
 message, transcript, prompt, and keyword text out of logs. The retired History policy lives only in
 test fixtures to preserve its comments and negative evidence; never restore its runtime query.
 
+For live Codex selected-text and screenshot context, keep one per-recording chronological
+stream: bounded selected-text excerpts, saved native screenshot **paths only**, and HUD-only
+speech. Capture screenshots only from the configured macOS screenshot folder while the
+recording is active, require the native screenshot metadata marker, and never read pixels,
+pasteboard images, or a whole selected passage into GPT Live's prompt. A path in final text
+lets a local Codex agent inspect the file; it is not an uploaded image attachment and may
+be inaccessible to cloud recipients or after a file moves. The preview now grows with its
+content up to each display's safe height, then scrolls; keep the mini/notch host windows,
+stacked cards, and notification clearance synchronized. Require
+`savedScreenshotPathJoinsSpeechAndSelectionsInCaptureOrder`,
+`onlyFreshNativeScreenshotsEnterLiveContext`,
+`recorderContextGrowsBeforeItsScreenBound`, and the existing chronological-preview and
+HUD-only guards before release. A test of final XML alone does not prove the live HUD.
+
 For a requested Soniox-versus-AssemblyAI comparison using saved recordings, read
 [references/provider-realtime-ab-test.md](references/provider-realtime-ab-test.md)
 and use `scripts/compare-realtime-stt.mjs`. Dry-run the corpus first, require one

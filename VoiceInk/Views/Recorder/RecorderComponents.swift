@@ -511,6 +511,7 @@ struct RecorderModeButton: View {
 struct LiveTranscriptView: View {
     let text: String
     let selectionReferences: [LiveSelectionReference]
+    let height: CGFloat
 
     private var previewParts: [LiveSelectionReference.PreviewPart] {
         LiveSelectionReference.previewParts(selectionReferences, with: text)
@@ -526,6 +527,9 @@ struct LiveTranscriptView: View {
             case .selection(let preview):
                 part = Text("\(String(localized: "Selected Text")): \(preview)")
                     .foregroundColor(.cyan.opacity(0.8))
+            case .screenshot(let filename):
+                part = Text("\(String(localized: "Screenshot")): \(filename)")
+                    .foregroundColor(.orange.opacity(0.95))
             }
             return entry.offset == 0 ? part : result + Text("  ") + part
         }
@@ -545,12 +549,12 @@ struct LiveTranscriptView: View {
                     .padding(.vertical, 6)
                     .id("bottom")
             }
-            .frame(height: MiniRecorderLayoutMetrics.liveTranscriptHeight)
+            .frame(height: height)
             .mask(
                 LinearGradient(
                     stops: [
                         .init(color: .clear, location: 0.0),
-                        .init(color: .black, location: 0.18),
+                        .init(color: .black, location: height > 120 ? 0.06 : 0.18),
                         .init(color: .black, location: 1.0)
                     ],
                     startPoint: .top,

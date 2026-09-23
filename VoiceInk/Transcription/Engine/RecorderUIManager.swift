@@ -170,12 +170,28 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
 
         let showsRealtimeTranscript =
             baseSession?.liveRecordingState.isRecordingOrPaused == true
-            && baseSession?.showsRealtimeTranscriptHUD == true
+            && (baseSession?.showsRealtimeTranscriptHUD == true
+                || baseSession?.liveSelectionReferences.isEmpty == false)
+
+        let transcriptHeight: CGFloat
+        if let baseSession, showsRealtimeTranscript {
+            transcriptHeight = MiniRecorderLayoutMetrics.transcriptHeight(
+                parts: LiveSelectionReference.previewParts(
+                    baseSession.liveSelectionReferences,
+                    with: baseSession.partialTranscript
+                ),
+                width: 344,
+                maxHeight: screen.visibleFrame.height - 150
+            )
+        } else {
+            transcriptHeight = MiniRecorderLayoutMetrics.liveTranscriptHeight
+        }
 
         return MiniRecorderLayoutMetrics.notificationBottomReservedHeight(
             showsAssistant: showsAssistant,
             showsRealtimeTranscript: showsRealtimeTranscript,
-            sessionCount: engine.sessions.count
+            sessionCount: engine.sessions.count,
+            realtimeTranscriptHeight: transcriptHeight
         )
     }
 

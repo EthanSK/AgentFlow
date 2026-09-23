@@ -13,22 +13,87 @@ enum MiniRecorderLayoutMetrics {
     static let assistantPanelHeight: CGFloat = 320
     static let stackedCardSpacing: CGFloat = 46
 
+    static func transcriptHeight(
+        parts: [LiveSelectionReference.PreviewPart],
+        width: CGFloat,
+        maxHeight: CGFloat
+    ) -> CGFloat {
+        let plain = parts.map { part -> String in
+            switch part {
+            case .speech(let text): return text
+            case .selection(let text): return "Selected Text: \(text)"
+            case .screenshot(let text): return "Screenshot: \(text)"
+            }
+        }.joined(separator: "  ")
+        let content = plain.isEmpty ? "…" : plain
+        // After enough dictated context to fill any normal display, measuring
+        // the whole transcript on every provider partial would add HUD latency.
+        if content.count > 3_000 { return max(liveTranscriptHeight, maxHeight) }
+        let bounds = (content as NSString).boundingRect(
+            with: NSSize(width: max(1, width - 32), height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: NSFont.systemFont(ofSize: 12)]
+        )
+        return min(max(liveTranscriptHeight, maxHeight),
+                   max(liveTranscriptHeight, ceil(bounds.height) + 16))
+    }
+
     static func notificationBottomReservedHeight(
         showsAssistant: Bool,
         showsRealtimeTranscript: Bool,
-        sessionCount: Int
+        sessionCount: Int,
+        realtimeTranscriptHeight: CGFloat = liveTranscriptHeight
     ) -> CGFloat {
         let baseHeight: CGFloat
         if showsAssistant {
             baseHeight = assistantPanelHeight + separatorHeight + controlBarHeight
         } else if showsRealtimeTranscript {
-            baseHeight = liveTranscriptHeight + separatorHeight + controlBarHeight
+            baseHeight = realtimeTranscriptHeight + separatorHeight + controlBarHeight
         } else {
             baseHeight = controlBarHeight
         }
 
         let stackedHeight = CGFloat(max(0, sessionCount - 1)) * stackedCardSpacing
         return bottomPadding + baseHeight + stackedHeight
+    }
+}
+
+/// Resize only the transparent host window needed for the visible live context.
+/// A permanent full-screen nonactivating panel would intercept clicks in other
+/// apps even where the recorder draws nothing.
+struct RecorderPanelHeightSync: NSViewRepresentable {
+    enum Edge: Equatable { case bottom, top }
+    let desiredHeight: CGFloat
+    let edge: Edge
+
+    final class Coordinator {
+        var desiredHeight: CGFloat = 430
+        var scheduled = false
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeNSView(context: Context) -> NSView { NSView(frame: .zero) }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        context.coordinator.desiredHeight = desiredHeight
+        guard !context.coordinator.scheduled else { return }
+        context.coordinator.scheduled = true
+        DispatchQueue.main.async { [weak view, coordinator = context.coordinator] in
+            coordinator.scheduled = false
+            guard let panel = view?.window,
+                  let screen = panel.screen else { return }
+            let limit = edge == .bottom
+                ? screen.visibleFrame.height - MiniRecorderLayoutMetrics.bottomPadding - 12
+                : screen.frame.height - 12
+            let height = min(max(120, coordinator.desiredHeight), max(120, limit))
+            guard abs(panel.frame.height - height) > 1 else { return }
+            var frame = panel.frame
+            frame.size.height = height
+            frame.origin.y = edge == .bottom
+                ? screen.visibleFrame.minY + MiniRecorderLayoutMetrics.bottomPadding
+                : screen.frame.maxY - height
+            panel.setFrame(frame, display: true)
+        }
     }
 }
 

@@ -223,9 +223,10 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     // stays frozen in the HUD and no new audio reaches the provider.
     @Published var partialTranscript: String = ""
 
-    // Only short selection boundaries are retained for this recording. A new
-    // recording gets an independent list, and a canceled capture never transfers
-    // its references to a later transcription job.
+    // Only short selection boundaries and paths of screenshots saved during
+    // this recording are retained. Pixels are not read; a new recording gets
+    // an independent list, and cancellation never transfers these references
+    // to a later transcription job.
     @Published private(set) var liveSelectionReferences: [LiveSelectionReference] = []
     private var liveSelectionCapture: LiveSelectionCapture?
 
@@ -466,9 +467,9 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     func recordLiveSelection(_ reference: LiveSelectionReference) {
         guard phase == .recording,
               liveRecordingState.isRecordingOrPaused else { return }
-        // Freeze the live speech visible at mouse-up. Final transcription may
-        // revise words, so this is an approximate insertion anchor, not an AX
-        // range or a second live write into the destination composer.
+        // Freeze the live speech visible at selection mouse-up or screenshot
+        // save. Final transcription may revise words, so this is an approximate
+        // insertion anchor, not an AX range or a live destination write.
         liveSelectionReferences.append(reference.anchored(after: partialTranscript))
     }
 

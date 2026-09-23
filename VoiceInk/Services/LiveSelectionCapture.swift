@@ -1,4 +1,6 @@
 import AppKit
+import CoreServices
+import Darwin
 import Foundation
 
 /// A compact, per-recording reference to text selected in Codex. The complete
@@ -8,6 +10,7 @@ struct LiveSelectionReference: Equatable {
     enum PreviewPart: Equatable {
         case speech(String)
         case selection(String)
+        case screenshot(String)
     }
 
     let preview: String
@@ -15,6 +18,7 @@ struct LiveSelectionReference: Equatable {
     let omittedMiddle: Bool
     private let start: String
     private let end: String?
+    private let screenshotPath: String?
     private var spokenPrefix = ""
 
     init?(_ selectedText: String) {
@@ -25,6 +29,7 @@ struct LiveSelectionReference: Equatable {
         guard !normalized.isEmpty else { return nil }
 
         characterCount = trimmed.count
+        screenshotPath = nil
         if normalized.count <= 96 {
             preview = "“\(normalized)”"
             omittedMiddle = false
@@ -37,6 +42,21 @@ struct LiveSelectionReference: Equatable {
             preview = "“\(start)” … “\(last)”"
             omittedMiddle = true
         }
+    }
+
+    /// Only a saved macOS screenshot's path is carried into the final message;
+    /// image pixels and clipboard contents are never read by this recorder path.
+    init?(screenshotURL: URL) {
+        guard screenshotURL.isFileURL,
+              screenshotURL.path.hasPrefix("/") else { return nil }
+        let path = screenshotURL.standardizedFileURL.path
+        guard !path.contains("\n"), !path.contains("\r") else { return nil }
+        screenshotPath = path
+        preview = screenshotURL.lastPathComponent
+        characterCount = 0
+        omittedMiddle = false
+        start = ""
+        end = nil
     }
 
     func anchored(after spokenText: String) -> Self {
@@ -61,7 +81,11 @@ struct LiveSelectionReference: Equatable {
             let speech = String(partialTranscript[previousEnd..<insertion])
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if !speech.isEmpty { parts.append(.speech(speech)) }
-            parts.append(.selection(reference.preview))
+            if reference.screenshotPath != nil {
+                parts.append(.screenshot(reference.preview))
+            } else {
+                parts.append(.selection(reference.preview))
+            }
             previousEnd = insertion
             lastWordCount = wordCount
         }
@@ -82,9 +106,10 @@ struct LiveSelectionReference: Equatable {
         // the mouse came up. Never send a fake native Codex message/range anchor.
         let wordEnds = wordEndIndices(in: transcript)
         var lastWordCount = 0
+        var selectionIndex = 0
         var previousEnd = transcript.startIndex
         var parts: [String] = []
-        for (index, reference) in references.enumerated() {
+        for reference in references {
             let spokenWordCount = reference.spokenPrefix.split(whereSeparator: \.isWhitespace).count
             let wordCount = min(max(lastWordCount, spokenWordCount), wordEnds.count)
             let insertion = wordCount == 0 ? transcript.startIndex : wordEnds[wordCount - 1]
@@ -93,7 +118,8 @@ struct LiveSelectionReference: Equatable {
             if !speech.isEmpty {
                 parts.append(speech)
             }
-            parts.append(reference.xml(index: index + 1))
+            if reference.screenshotPath == nil { selectionIndex += 1 }
+            parts.append(reference.xml(index: selectionIndex))
             previousEnd = insertion
             lastWordCount = wordCount
         }
@@ -106,6 +132,9 @@ struct LiveSelectionReference: Equatable {
     }
 
     private func xml(index: Int) -> String {
+        if let screenshotPath {
+            return "<local_screenshot path=\"\(Self.xmlEscaped(screenshotPath))\"/>"
+        }
         let attributes = "index=\"\(index)\" source=\"Codex\" characters=\"\(characterCount)\" middle_omitted=\"\(omittedMiddle)\""
         if let end {
             return "<codex_selection \(attributes)>\n"
@@ -164,6 +193,11 @@ final class LiveSelectionCapture {
     private var monitor: Any?
     private var mouseDownPoint: NSPoint?
     private var captureTask: Task<Void, Never>?
+    private var screenshotSource: DispatchSourceFileSystemObject?
+    private var screenshotDirectory: URL?
+    private var screenshotBaseline: Set<String> = []
+    private var screenshotStart = Date.distantFuture
+    private var screenshotScanTask: Task<Void, Never>?
 
     init(onCapture: @escaping (LiveSelectionReference) -> Void) {
         self.onCapture = onCapture
@@ -178,6 +212,7 @@ final class LiveSelectionCapture {
                 self?.handle(event)
             }
         }
+        startScreenshotWatch()
     }
 
     func stop() {
@@ -188,6 +223,126 @@ final class LiveSelectionCapture {
         captureTask?.cancel()
         captureTask = nil
         mouseDownPoint = nil
+        screenshotScanTask?.cancel()
+        screenshotScanTask = nil
+        screenshotSource?.cancel()
+        screenshotSource = nil
+        screenshotDirectory = nil
+        screenshotBaseline.removeAll()
+        screenshotStart = .distantFuture
+    }
+
+    private func startScreenshotWatch() {
+        let directory = Self.screenshotDirectoryURL()
+        guard FileManager.default.fileExists(atPath: directory.path) else { return }
+        let descriptor = open(directory.path, O_EVTONLY)
+        guard descriptor >= 0 else { return }
+        screenshotDirectory = directory
+        screenshotBaseline = Set((try? FileManager.default.contentsOfDirectory(
+            atPath: directory.path
+        )) ?? [])
+        screenshotStart = Date()
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: descriptor,
+            eventMask: [.write, .rename, .delete],
+            queue: .main
+        )
+        source.setEventHandler { [weak self] in
+            Task { @MainActor [weak self] in self?.scheduleScreenshotScan() }
+        }
+        source.setCancelHandler { [descriptor] in close(descriptor) }
+        screenshotSource = source
+        source.resume()
+    }
+
+    private static func screenshotDirectoryURL() -> URL {
+        let configured = UserDefaults(suiteName: "com.apple.screencapture")?
+            .string(forKey: "location")
+        if let configured, !configured.isEmpty {
+            return URL(fileURLWithPath: (configured as NSString).expandingTildeInPath,
+                       isDirectory: true).standardizedFileURL
+        }
+        return FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask)[0]
+    }
+
+    private func scheduleScreenshotScan() {
+        screenshotScanTask?.cancel()
+        screenshotScanTask = Task { @MainActor [weak self] in
+            // The file and its screenshot metadata can appear in separate writes.
+            // Bounded retries catch a normal save without monitoring the folder at idle.
+            for delay in [250_000_000, 750_000_000, 1_500_000_000] as [UInt64] {
+                try? await Task.sleep(nanoseconds: delay)
+                guard !Task.isCancelled, let self else { return }
+                self.scanNewScreenshots()
+            }
+        }
+    }
+
+    private func scanNewScreenshots() {
+        guard let directory = screenshotDirectory,
+              let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else {
+            return
+        }
+        let candidates = names.filter { !screenshotBaseline.contains($0) }
+            .sorted { first, second in
+                let firstURL = directory.appendingPathComponent(first)
+                let secondURL = directory.appendingPathComponent(second)
+                let firstDate = (try? firstURL.resourceValues(forKeys: [.creationDateKey]))?
+                    .creationDate ?? .distantFuture
+                let secondDate = (try? secondURL.resourceValues(forKeys: [.creationDateKey]))?
+                    .creationDate ?? .distantFuture
+                return firstDate == secondDate ? first < second : firstDate < secondDate
+            }
+        for name in candidates {
+            let url = directory.appendingPathComponent(name)
+            guard Self.isNativeScreenshot(url, since: screenshotStart),
+                  let reference = LiveSelectionReference(screenshotURL: url) else { continue }
+            screenshotBaseline.insert(name)
+            onCapture(reference)
+        }
+    }
+
+    static func isNativeScreenshot(_ url: URL, since start: Date) -> Bool {
+        let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .creationDateKey])
+        guard values?.isRegularFile == true,
+              let created = values?.creationDate,
+              created >= start.addingTimeInterval(-1),
+              ["png", "jpg", "jpeg", "heic", "pdf"].contains(url.pathExtension.lowercased()),
+              !url.hasDirectoryPath else {
+            return false
+        }
+        if let item = MDItemCreate(kCFAllocatorDefault, url.path as CFString),
+           let marker = MDItemCopyAttribute(
+               item, "kMDItemIsScreenCapture" as CFString
+           ) as? NSNumber,
+           marker.boolValue {
+            return true
+        }
+        // Spotlight may not have indexed a screenshot during its first seconds.
+        // Apple's own screen-capture xattr is written with the saved file and
+        // avoids accepting a merely screenshot-named, unrelated image.
+        let attribute = "com.apple.metadata:kMDItemIsScreenCapture"
+        let size = url.path.withCString { path in
+            attribute.withCString { name in getxattr(path, name, nil, 0, 0, 0) }
+        }
+        guard size > 0, size < 1024 else { return false }
+        var bytes = [UInt8](repeating: 0, count: size)
+        let read = bytes.withUnsafeMutableBytes { buffer in
+            url.path.withCString { path in
+                attribute.withCString { name in
+                    getxattr(path, name, buffer.baseAddress, size, 0, 0)
+                }
+            }
+        }
+        guard read == size else { return false }
+        return isScreenshotMarker(Data(bytes))
+    }
+
+    static func isScreenshotMarker(_ data: Data) -> Bool {
+        let value = try? PropertyListSerialization.propertyList(
+            from: data, options: [], format: nil
+        )
+        return (value as? NSNumber)?.boolValue == true
     }
 
     private func handle(_ event: NSEvent) {

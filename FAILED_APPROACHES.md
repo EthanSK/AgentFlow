@@ -925,14 +925,14 @@ No row may be promoted merely because a later build reused part of it.
 
 - **State:** REJECTED in installed build 331 after Ethan selected text in Codex while recording.
 - **Failure:** The mini/notch HUD appended a potentially long selection as a permanent tail after speech. Every speech update scrolled to that tail, making live recognition appear absent even when provider partials arrived.
-- **Rule:** Never append an unbounded selection as a fixed tail. Keep selected excerpts compact and in their capture-time position between speech segments; scroll to the newest composed content on either speech or selection updates. Preserve the 56-point envelope and HUD-only provisional words.
+- **Rule:** Never append an unbounded selection as a fixed tail. Keep selected excerpts compact and in their capture-time position between speech segments; scroll to the newest composed content on either speech or selection updates. Keep provisional words HUD-only. The original 56-point envelope was a build-333 constraint; Ethan explicitly replaced it with screen-bounded vertical growth on 2026-09-24.
 - **Reconsider only if:** a different layout proves the newest speech remains readable with long selections on both mini and notch panels during live updates.
 
 ### Pinning only the latest selection above live speech
 
 - **State:** REJECTED in installed build 332 by Ethan's real recording with a second Codex highlight; the final pasted sequence was better but the black preview was not.
 - **Failure:** A separate 18-point top strip exposed only `latestSelectionPreview`. Each new highlight replaced the earlier one and appeared above speech rather than after what Ethan had said before selecting it. Passing ordering tests for final XML did not validate the HUD.
-- **Rule:** Publish the per-session reference list to the HUD and render bounded highlights in the same chronological flow as live speech. Re-scroll on both partial changes and newly captured selections; keep the final paste path independent.
+- **Rule:** Publish the per-session reference list to the HUD and render bounded highlights in the same chronological flow as live speech. Re-scroll on both partial changes and newly captured selections; keep the final paste path independent. The original fixed-height requirement was superseded by Ethan's 2026-09-24 request for vertical growth.
 - **Reconsider only if:** Ethan explicitly requests a separate latest-selection summary in addition to, not instead of, the chronological preview.
 
 ### Showing the HUD on only the activation monitor

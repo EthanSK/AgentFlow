@@ -66,6 +66,8 @@ Ethan's current configuration is:
 
 Soniox needs your own provider credentials and funded account. Keep Deepgram or another supported model configured as a fallback. Copy the pattern—especially HUD-only partials and the safe per-app auto-send choices—rather than blindly enabling Return everywhere.
 
+While recording, the black preview keeps spoken words, short Codex text selections, and newly saved macOS screenshots in one chronological stream. Screenshots appear in orange and contribute only their local file path to the final text; VoiceInk++ does not attach the image or send its pixels to the transcription model. A local Codex task can inspect that path while the file remains available, but a cloud recipient or a moved screenshot may not be able to open it. The preview grows with the context until it reaches the display's safe height, then scrolls.
+
 ### 3. Learn the two-button rhythm
 
 - **Finish here:** stop normally and let whichever system keyboard input is focused at final delivery receive the result.

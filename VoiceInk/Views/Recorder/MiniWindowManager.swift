@@ -164,7 +164,7 @@ class MiniWindowManager {
 
     private var windows: [WindowEntry] = []
 
-    private let makeView: () -> AnyView
+    private let makeView: (CGFloat) -> AnyView
 
     init(
         engine: VoiceInkEngine,
@@ -180,13 +180,14 @@ class MiniWindowManager {
         // (record-while-transcribing stack). Routed to engine.cancelSession(id:).
         onCancelSession: @escaping (UUID) -> Void
     ) {
-        self.makeView = {
+        self.makeView = { screenHeight in
             AnyView(
                 // Host the STACK container (one card per engine.sessions entry) rather than
                 // a single MiniRecorderView. The stack renders the active/base card with full
                 // controls and older transcribing cards piled upward.
                 MiniRecorderStackView(
                     engine: engine,
+                    screenHeight: screenHeight,
                     recorder: recorder,
                     assistantSession: assistantSession,
                     onRecordButtonTapped: onRecordButtonTapped,
@@ -252,7 +253,9 @@ class MiniWindowManager {
         for (index, screen) in screens.enumerated() {
             let metrics = MiniRecorderPanel.calculateWindowMetrics(for: screen)
             let panel = MiniRecorderPanel(contentRect: metrics)
-            let hostingController = NSHostingController(rootView: makeView())
+            let hostingController = NSHostingController(
+                rootView: makeView(screen.visibleFrame.height)
+            )
             panel.contentView = hostingController.view
             let windowController = NSWindowController(window: panel)
             windows.append(WindowEntry(
