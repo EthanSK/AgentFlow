@@ -7117,8 +7117,8 @@ struct VoiceInkTests {
         #expect(notchRecorderSource.contains(
             "stateProvider.showsRealtimeTranscriptHUD"
         ))
-        #expect(miniRecorderSource.contains("text: liveTranscriptDisplayText"))
-        #expect(notchRecorderSource.contains("text: liveTranscriptDisplayText"))
+        #expect(miniRecorderSource.contains("text: stateProvider.partialTranscript"))
+        #expect(notchRecorderSource.contains("text: stateProvider.partialTranscript"))
 
         let deliverySource = try String(
             contentsOf: repositoryRoot.appendingPathComponent(
