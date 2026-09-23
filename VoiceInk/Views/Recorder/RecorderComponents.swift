@@ -529,7 +529,7 @@ struct LiveTranscriptView: View {
                     .foregroundColor(.cyan.opacity(0.8))
             case .screenshot(let filename):
                 part = Text("\(String(localized: "Screenshot")): \(filename)")
-                    .foregroundColor(.orange.opacity(0.95))
+                    .foregroundColor(.purple.opacity(0.95))
             }
             return entry.offset == 0 ? part : result + Text("  ") + part
         }
@@ -542,7 +542,7 @@ struct LiveTranscriptView: View {
                 // speech before and after it. The old pinned latest-selection
                 // strip lost earlier highlights and made new ones jump to top.
                 previewText
-                    .font(.system(size: 12))
+                    .font(.system(size: MiniRecorderLayoutMetrics.liveTranscriptFontSize))
                     .foregroundColor(.white.opacity(0.8))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)

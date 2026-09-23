@@ -567,12 +567,17 @@ struct VoiceInkTests {
     }
 
     @Test func recorderContextGrowsBeforeItsScreenBound() throws {
+        #expect(MiniRecorderLayoutMetrics.liveTranscriptWidth == 688)
+        #expect(MiniRecorderLayoutMetrics.liveTranscriptFontSize == 24)
+        #expect(MiniRecorderLayoutMetrics.notchTranscriptSideExpansion == 360)
         let short = MiniRecorderLayoutMetrics.transcriptHeight(
-            parts: [.speech("Hello")], width: 344, maxHeight: 700
+            parts: [.speech("Hello")],
+            width: MiniRecorderLayoutMetrics.liveTranscriptWidth,
+            maxHeight: 700
         )
         let long = MiniRecorderLayoutMetrics.transcriptHeight(
             parts: [.speech(String(repeating: "a sentence with several words. ", count: 80))],
-            width: 344,
+            width: MiniRecorderLayoutMetrics.liveTranscriptWidth,
             maxHeight: 700
         )
         #expect(short == MiniRecorderLayoutMetrics.liveTranscriptHeight)
@@ -588,6 +593,9 @@ struct VoiceInkTests {
         #expect(stacks.contains(".onReceive(baseSession?.objectWillChange"))
         #expect(stacks.contains(".onReceive(pillSession?.objectWillChange"))
         #expect(stacks.contains("RecorderPanelHeightSync("))
+        let components = try repositorySource("VoiceInk/Views/Recorder/RecorderComponents.swift")
+        #expect(components.contains(".foregroundColor(.purple.opacity(0.95))"))
+        #expect(components.contains(".font(.system(size: MiniRecorderLayoutMetrics.liveTranscriptFontSize))"))
     }
 
     @Test @MainActor func abandonedShortcutCaptureRestoresItsPreviousBinding() {

@@ -6,6 +6,11 @@ import AppKit
 /// notification offset previously assumed a 34pt bar and overlapped the 97pt
 /// real-time transcript HUD.
 enum MiniRecorderLayoutMetrics {
+    // Double the live-context width and type together so dictation remains
+    // legible without forcing twice as many wrapped lines into the HUD.
+    static let liveTranscriptWidth: CGFloat = 688
+    static let liveTranscriptFontSize: CGFloat = 24
+    static let notchTranscriptSideExpansion: CGFloat = 360
     static let bottomPadding: CGFloat = 24
     static let controlBarHeight: CGFloat = 40
     static let liveTranscriptHeight: CGFloat = 56
@@ -32,7 +37,7 @@ enum MiniRecorderLayoutMetrics {
         let bounds = (content as NSString).boundingRect(
             with: NSSize(width: max(1, width - 32), height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: [.font: NSFont.systemFont(ofSize: 12)]
+            attributes: [.font: NSFont.systemFont(ofSize: liveTranscriptFontSize)]
         )
         return min(max(liveTranscriptHeight, maxHeight),
                    max(liveTranscriptHeight, ceil(bounds.height) + 16))
@@ -127,7 +132,7 @@ class MiniRecorderPanel: NSPanel {
     }
     
     static func calculateWindowMetrics(for screen: NSScreen? = NSScreen.main) -> NSRect {
-        let width: CGFloat = 540
+        let width: CGFloat = 720
         let height: CGFloat = 430
 
         guard let screen else {

@@ -77,7 +77,7 @@ struct MiniRecorderStackView: View {
         )
         return MiniRecorderLayoutMetrics.transcriptHeight(
             parts: parts,
-            width: 344,
+            width: MiniRecorderLayoutMetrics.liveTranscriptWidth,
             maxHeight: screenHeight - 150
         )
     }
@@ -244,7 +244,7 @@ struct NotchRecorderStackView: View {
                 pillSession.liveSelectionReferences,
                 with: pillSession.partialTranscript
             ),
-            width: notchWidth + 360 - 16,
+            width: notchWidth + MiniRecorderLayoutMetrics.notchTranscriptSideExpansion * 2 - 16,
             maxHeight: screenHeight - notchHeight - 150
         )
     }

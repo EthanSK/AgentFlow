@@ -180,7 +180,7 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
                     baseSession.liveSelectionReferences,
                     with: baseSession.partialTranscript
                 ),
-                width: 344,
+                width: MiniRecorderLayoutMetrics.liveTranscriptWidth,
                 maxHeight: screen.visibleFrame.height - 150
             )
         } else {

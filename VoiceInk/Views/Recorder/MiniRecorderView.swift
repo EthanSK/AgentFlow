@@ -15,7 +15,7 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     // MARK: - Layout Constants
 
     private let compactWidth: CGFloat = 228
-    private let expandedWidth: CGFloat = 344
+    private let expandedWidth = MiniRecorderLayoutMetrics.liveTranscriptWidth
     private let assistantWidth: CGFloat = 520
     private let compactCornerRadius: CGFloat = 20
     private let expandedCornerRadius: CGFloat = 14
