@@ -187,16 +187,18 @@ class TranscriptionPipeline {
         let recoverablePartialTranscriptNow = recoverablePartialTranscript()
 
         func attachLiveSelectionsToFinalText() {
-            // This is a final-message annotation, not streaming destination input.
+            // Insert the selected-text reference alongside the speech that preceded
+            // it in the live HUD. This remains one final destination write, never a
+            // streaming edit to a composer while recording.
             // Keep the raw/skip contract verbatim, and never append references to
             // commands or recorder-assistant responses. Only selection boundaries
             // leave the recording; the complete selected text is not persisted.
             guard !skipPostProcessingNow,
                   !assistant.isFollowUp,
                   let current = finalText else { return }
-            let annotated = LiveSelectionReference.appending(
+            let annotated = LiveSelectionReference.interleaving(
                 liveSelectionReferences(),
-                to: current
+                with: current
             )
             guard annotated != current else { return }
             finalText = annotated

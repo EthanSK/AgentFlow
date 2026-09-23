@@ -467,7 +467,10 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     func recordLiveSelection(_ reference: LiveSelectionReference) {
         guard phase == .recording,
               liveRecordingState.isRecordingOrPaused else { return }
-        liveSelectionReferences.append(reference)
+        // Freeze the live speech visible at mouse-up. Final transcription may
+        // revise words, so this is an approximate insertion anchor, not an AX
+        // range or a second live write into the destination composer.
+        liveSelectionReferences.append(reference.anchored(after: partialTranscript))
         latestSelectionPreview = reference.preview
     }
 

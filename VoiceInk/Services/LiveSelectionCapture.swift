@@ -10,6 +10,7 @@ struct LiveSelectionReference: Equatable {
     let omittedMiddle: Bool
     private let start: String
     private let end: String?
+    private var spokenPrefix = ""
 
     init?(_ selectedText: String) {
         let trimmed = selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -33,29 +34,74 @@ struct LiveSelectionReference: Equatable {
         }
     }
 
-    static func appending(_ references: [Self], to transcript: String) -> String {
+    func anchored(after spokenText: String) -> Self {
+        var copy = self
+        copy.spokenPrefix = spokenText
+        return copy
+    }
+
+    static func interleaving(_ references: [Self], with transcript: String) -> String {
         guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               !references.isEmpty else {
             return transcript
         }
 
-        let entries = references.enumerated().map { index, reference in
-            let attributes = "index=\"\(index + 1)\" characters=\"\(reference.characterCount)\" middle_omitted=\"\(reference.omittedMiddle)\""
-            if let end = reference.end {
-                return "  <selection \(attributes)>\n"
-                    + "    <start>\(xmlEscaped(reference.start))</start>\n"
-                    + "    <end>\(xmlEscaped(end))</end>\n"
-                    + "  </selection>"
+        // Live provider text is a cumulative preview, not word-timestamped audio.
+        // Its word count places each selection near the speech already shown when
+        // the mouse came up. Never send a fake native Codex message/range anchor.
+        let wordEnds = wordEndIndices(in: transcript)
+        var lastWordCount = 0
+        var previousEnd = transcript.startIndex
+        var parts: [String] = []
+        for (index, reference) in references.enumerated() {
+            let spokenWordCount = reference.spokenPrefix.split(whereSeparator: \.isWhitespace).count
+            let wordCount = min(max(lastWordCount, spokenWordCount), wordEnds.count)
+            let insertion = wordCount == 0 ? transcript.startIndex : wordEnds[wordCount - 1]
+            let speech = String(transcript[previousEnd..<insertion])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !speech.isEmpty {
+                parts.append(speech)
             }
-            return "  <selection \(attributes)>\n"
-                + "    <text>\(xmlEscaped(reference.start))</text>\n"
-                + "  </selection>"
+            parts.append(reference.xml(index: index + 1))
+            previousEnd = insertion
+            lastWordCount = wordCount
         }
-        // This is quoted context, not a native Codex annotation: no message ID
-        // or exact text offsets are available from the clipboard-free AX read.
-        return transcript + "\n\n<codex_selections source=\"Codex\" order=\"selection_sequence\">\n"
-            + entries.joined(separator: "\n")
-            + "\n</codex_selections>"
+        let remainingSpeech = String(transcript[previousEnd...])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !remainingSpeech.isEmpty {
+            parts.append(remainingSpeech)
+        }
+        return parts.joined(separator: "\n\n")
+    }
+
+    private func xml(index: Int) -> String {
+        let attributes = "index=\"\(index)\" source=\"Codex\" characters=\"\(characterCount)\" middle_omitted=\"\(omittedMiddle)\""
+        if let end {
+            return "<codex_selection \(attributes)>\n"
+                + "  <start>\(Self.xmlEscaped(start))</start>\n"
+                + "  <end>\(Self.xmlEscaped(end))</end>\n"
+                + "</codex_selection>"
+        }
+        return "<codex_selection \(attributes)>\n"
+            + "  <text>\(Self.xmlEscaped(start))</text>\n"
+            + "</codex_selection>"
+    }
+
+    private static func wordEndIndices(in text: String) -> [String.Index] {
+        var ends: [String.Index] = []
+        var insideWord = false
+        for index in text.indices {
+            if text[index].isWhitespace {
+                if insideWord {
+                    ends.append(index)
+                    insideWord = false
+                }
+            } else {
+                insideWord = true
+            }
+        }
+        if insideWord { ends.append(text.endIndex) }
+        return ends
     }
 
     private static func xmlEscaped(_ text: String) -> String {
