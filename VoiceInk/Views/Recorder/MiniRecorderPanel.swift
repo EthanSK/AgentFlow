@@ -9,9 +9,14 @@ enum MiniRecorderLayoutMetrics {
     static let bottomPadding: CGFloat = 24
     static let controlBarHeight: CGFloat = 40
     static let liveTranscriptHeight: CGFloat = 56
+    static let selectionPreviewHeight: CGFloat = 18
     static let separatorHeight: CGFloat = 1
     static let assistantPanelHeight: CGFloat = 320
     static let stackedCardSpacing: CGFloat = 46
+
+    static func liveSpeechHeight(hasSelectionPreview: Bool) -> CGFloat {
+        liveTranscriptHeight - (hasSelectionPreview ? selectionPreviewHeight : 0)
+    }
 
     static func notificationBottomReservedHeight(
         showsAssistant: Bool,

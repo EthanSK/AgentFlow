@@ -510,34 +510,54 @@ struct RecorderModeButton: View {
 
 struct LiveTranscriptView: View {
     let text: String
+    let selectionPreview: String?
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.vertical, showsIndicators: false) {
-                Text(text)
-                    .font(.system(size: 12))
-                    .foregroundColor(.white.opacity(0.8))
+        VStack(spacing: 0) {
+            // The selection must not live below speech in the auto-scrolling view:
+            // a long preview otherwise occupies the bottom of this 56pt HUD and
+            // makes every new realtime partial appear to stop rendering.
+            if let selectionPreview {
+                Text("\(String(localized: "Selected Text")): \(selectionPreview)")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.65))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)
-                    .padding(.vertical, 6)
-                    .id("bottom")
+                    .frame(height: MiniRecorderLayoutMetrics.selectionPreviewHeight)
             }
-            .frame(height: MiniRecorderLayoutMetrics.liveTranscriptHeight)
-            .mask(
-                LinearGradient(
-                    stops: [
-                        .init(color: .clear, location: 0.0),
-                        .init(color: .black, location: 0.18),
-                        .init(color: .black, location: 1.0)
-                    ],
-                    startPoint: .top,
-                    endPoint: .bottom
+
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    Text(text)
+                        .font(.system(size: 12))
+                        .foregroundColor(.white.opacity(0.8))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 6)
+                        .id("bottom")
+                }
+                .frame(height: MiniRecorderLayoutMetrics.liveSpeechHeight(
+                    hasSelectionPreview: selectionPreview != nil
+                ))
+                .mask(
+                    LinearGradient(
+                        stops: [
+                            .init(color: .clear, location: 0.0),
+                            .init(color: .black, location: 0.18),
+                            .init(color: .black, location: 1.0)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
                 )
-            )
-            .onChange(of: text) {
-                proxy.scrollTo("bottom", anchor: .bottom)
+                .onChange(of: text) {
+                    proxy.scrollTo("bottom", anchor: .bottom)
+                }
             }
         }
+        .frame(height: MiniRecorderLayoutMetrics.liveTranscriptHeight)
         .transaction { $0.disablesAnimations = true }
     }
 }

@@ -120,12 +120,9 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     }
 
     private var liveTranscriptDisplayText: String {
-        let speech = stateProvider.partialTranscript.isEmpty
+        stateProvider.partialTranscript.isEmpty
             ? (stateProvider.showsRealtimeTranscriptHUD ? "…" : "")
             : stateProvider.partialTranscript
-        guard let preview = stateProvider.latestSelectionPreview else { return speech }
-        let selection = "\(String(localized: "Selected Text")): \(preview)"
-        return speech.isEmpty ? selection : speech + "\n" + selection
     }
 
     // VIPP (skip-mode-processing feature): Binding to the OBSERVED session's one-shot
@@ -266,7 +263,10 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
         VStack(spacing: 0) {
             if displayState == .liveText {
                 Divider().background(Color.white.opacity(0.15))
-                LiveTranscriptView(text: liveTranscriptDisplayText)
+                LiveTranscriptView(
+                    text: liveTranscriptDisplayText,
+                    selectionPreview: stateProvider.latestSelectionPreview
+                )
                     .padding(.horizontal, 8)
             }
         }

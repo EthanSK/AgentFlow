@@ -460,6 +460,22 @@ struct VoiceInkTests {
         ))
     }
 
+    @Test func selectedTextPreviewCannotPushLiveSpeechOutOfTheRecorderHUD() throws {
+        #expect(MiniRecorderLayoutMetrics.liveSpeechHeight(hasSelectionPreview: false) == 56)
+        #expect(MiniRecorderLayoutMetrics.liveSpeechHeight(hasSelectionPreview: true) == 38)
+
+        let components = try repositorySource("VoiceInk/Views/Recorder/RecorderComponents.swift")
+        let mini = try repositorySource("VoiceInk/Views/Recorder/MiniRecorderView.swift")
+        let notch = try repositorySource("VoiceInk/Views/Recorder/NotchRecorderView.swift")
+        #expect(components.contains("if let selectionPreview"))
+        #expect(components.contains("hasSelectionPreview: selectionPreview != nil"))
+        #expect(components.contains(".onChange(of: text)"))
+        for source in [mini, notch] {
+            #expect(source.contains("selectionPreview: stateProvider.latestSelectionPreview"))
+            #expect(!source.contains("speech + \"\\n\" + selection"))
+        }
+    }
+
     @Test @MainActor func abandonedShortcutCaptureRestoresItsPreviousBinding() {
         let action = ShortcutAction.mode(UUID())
         let originalShortcut = Shortcut.key(
@@ -7080,12 +7096,8 @@ struct VoiceInkTests {
         #expect(notchRecorderSource.contains(
             "stateProvider.showsRealtimeTranscriptHUD"
         ))
-        #expect(miniRecorderSource.contains(
-            "LiveTranscriptView(text: liveTranscriptDisplayText)"
-        ))
-        #expect(notchRecorderSource.contains(
-            "LiveTranscriptView(text: liveTranscriptDisplayText)"
-        ))
+        #expect(miniRecorderSource.contains("text: liveTranscriptDisplayText"))
+        #expect(notchRecorderSource.contains("text: liveTranscriptDisplayText"))
 
         let deliverySource = try String(
             contentsOf: repositoryRoot.appendingPathComponent(
