@@ -510,54 +510,58 @@ struct RecorderModeButton: View {
 
 struct LiveTranscriptView: View {
     let text: String
-    let selectionPreview: String?
+    let selectionReferences: [LiveSelectionReference]
+
+    private var previewParts: [LiveSelectionReference.PreviewPart] {
+        LiveSelectionReference.previewParts(selectionReferences, with: text)
+    }
+
+    private var previewText: Text {
+        guard !previewParts.isEmpty else { return Text("…") }
+        return previewParts.enumerated().reduce(Text("")) { result, entry in
+            let part: Text
+            switch entry.element {
+            case .speech(let speech):
+                part = Text(speech)
+            case .selection(let preview):
+                part = Text("\(String(localized: "Selected Text")): \(preview)")
+                    .foregroundColor(.cyan.opacity(0.8))
+            }
+            return entry.offset == 0 ? part : result + Text("  ") + part
+        }
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // The selection must not live below speech in the auto-scrolling view:
-            // a long preview otherwise occupies the bottom of this 56pt HUD and
-            // makes every new realtime partial appear to stop rendering.
-            if let selectionPreview {
-                Text("\(String(localized: "Selected Text")): \(selectionPreview)")
-                    .font(.system(size: 10))
-                    .foregroundColor(.white.opacity(0.65))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                // One chronological stream keeps each highlight between the
+                // speech before and after it. The old pinned latest-selection
+                // strip lost earlier highlights and made new ones jump to top.
+                previewText
+                    .font(.system(size: 12))
+                    .foregroundColor(.white.opacity(0.8))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)
-                    .frame(height: MiniRecorderLayoutMetrics.selectionPreviewHeight)
+                    .padding(.vertical, 6)
+                    .id("bottom")
             }
-
-            ScrollViewReader { proxy in
-                ScrollView(.vertical, showsIndicators: false) {
-                    Text(text)
-                        .font(.system(size: 12))
-                        .foregroundColor(.white.opacity(0.8))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 6)
-                        .id("bottom")
-                }
-                .frame(height: MiniRecorderLayoutMetrics.liveSpeechHeight(
-                    hasSelectionPreview: selectionPreview != nil
-                ))
-                .mask(
-                    LinearGradient(
-                        stops: [
-                            .init(color: .clear, location: 0.0),
-                            .init(color: .black, location: 0.18),
-                            .init(color: .black, location: 1.0)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
+            .frame(height: MiniRecorderLayoutMetrics.liveTranscriptHeight)
+            .mask(
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0.0),
+                        .init(color: .black, location: 0.18),
+                        .init(color: .black, location: 1.0)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
                 )
-                .onChange(of: text) {
-                    proxy.scrollTo("bottom", anchor: .bottom)
-                }
+            )
+            .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
+            .onChange(of: previewParts) {
+                proxy.scrollTo("bottom", anchor: .bottom)
             }
         }
-        .frame(height: MiniRecorderLayoutMetrics.liveTranscriptHeight)
         .transaction { $0.disablesAnimations = true }
     }
 }

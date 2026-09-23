@@ -5,6 +5,11 @@ import Foundation
 /// selection is discarded after making this value; the sent message includes only
 /// its boundaries, so the recipient must already have the source to resolve them.
 struct LiveSelectionReference: Equatable {
+    enum PreviewPart: Equatable {
+        case speech(String)
+        case selection(String)
+    }
+
     let preview: String
     let characterCount: Int
     let omittedMiddle: Bool
@@ -38,6 +43,32 @@ struct LiveSelectionReference: Equatable {
         var copy = self
         copy.spokenPrefix = spokenText
         return copy
+    }
+
+    static func previewParts(_ references: [Self], with partialTranscript: String) -> [PreviewPart] {
+        // The HUD uses the same approximate cumulative-word anchor as final
+        // delivery, but never writes provisional text into another app. Keep
+        // every selection in sequence with speech, including equal anchors when
+        // the provider has not emitted another partial between two selections.
+        let wordEnds = wordEndIndices(in: partialTranscript)
+        var lastWordCount = 0
+        var previousEnd = partialTranscript.startIndex
+        var parts: [PreviewPart] = []
+        for reference in references {
+            let spokenWordCount = reference.spokenPrefix.split(whereSeparator: \.isWhitespace).count
+            let wordCount = min(max(lastWordCount, spokenWordCount), wordEnds.count)
+            let insertion = wordCount == 0 ? partialTranscript.startIndex : wordEnds[wordCount - 1]
+            let speech = String(partialTranscript[previousEnd..<insertion])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !speech.isEmpty { parts.append(.speech(speech)) }
+            parts.append(.selection(reference.preview))
+            previousEnd = insertion
+            lastWordCount = wordCount
+        }
+        let remainingSpeech = String(partialTranscript[previousEnd...])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !remainingSpeech.isEmpty { parts.append(.speech(remainingSpeech)) }
+        return parts
     }
 
     static func interleaving(_ references: [Self], with transcript: String) -> String {

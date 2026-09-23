@@ -444,7 +444,7 @@ struct VoiceInkTests {
         first.phase = .transcribing
         first.recordLiveSelection(reference)
         #expect(first.liveSelectionReferences.count == 1)
-        #expect(second.latestSelectionPreview == nil)
+        #expect(second.liveSelectionReferences.isEmpty)
     }
 
     @Test @MainActor func liveSelectionNeedsASelectionGesture() {
@@ -460,18 +460,39 @@ struct VoiceInkTests {
         ))
     }
 
-    @Test func selectedTextPreviewCannotPushLiveSpeechOutOfTheRecorderHUD() throws {
-        #expect(MiniRecorderLayoutMetrics.liveSpeechHeight(hasSelectionPreview: false) == 56)
-        #expect(MiniRecorderLayoutMetrics.liveSpeechHeight(hasSelectionPreview: true) == 38)
+    @Test func selectedTextPreviewInterleavesEveryHighlightWithLiveSpeech() throws {
+        let first = try #require(LiveSelectionReference("first highlight"))
+        let second = try #require(LiveSelectionReference("second highlight"))
+        let references = [
+            first.anchored(after: "Hello"),
+            second.anchored(after: "Hello I am")
+        ]
+        #expect(LiveSelectionReference.previewParts(
+            references, with: "Hello I am talking now"
+        ) == [
+            .speech("Hello"), .selection("“first highlight”"),
+            .speech("I am"), .selection("“second highlight”"),
+            .speech("talking now")
+        ])
+        #expect(LiveSelectionReference.previewParts(
+            [first.anchored(after: "Hello"), second.anchored(after: "Hello")],
+            with: "Hello again"
+        ) == [
+            .speech("Hello"), .selection("“first highlight”"),
+            .selection("“second highlight”"), .speech("again")
+        ])
+        #expect(LiveSelectionReference.previewParts(references, with: "") == [
+            .selection("“first highlight”"), .selection("“second highlight”")
+        ])
+        #expect(MiniRecorderLayoutMetrics.liveTranscriptHeight == 56)
 
         let components = try repositorySource("VoiceInk/Views/Recorder/RecorderComponents.swift")
         let mini = try repositorySource("VoiceInk/Views/Recorder/MiniRecorderView.swift")
         let notch = try repositorySource("VoiceInk/Views/Recorder/NotchRecorderView.swift")
-        #expect(components.contains("if let selectionPreview"))
-        #expect(components.contains("hasSelectionPreview: selectionPreview != nil"))
-        #expect(components.contains(".onChange(of: text)"))
+        #expect(components.contains(".onChange(of: previewParts)"))
+        #expect(!components.contains("if let selectionPreview"))
         for source in [mini, notch] {
-            #expect(source.contains("selectionPreview: stateProvider.latestSelectionPreview"))
+            #expect(source.contains("selectionReferences: stateProvider.liveSelectionReferences"))
             #expect(!source.contains("speech + \"\\n\" + selection"))
         }
     }

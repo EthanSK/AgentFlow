@@ -226,8 +226,7 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     // Only short selection boundaries are retained for this recording. A new
     // recording gets an independent list, and a canceled capture never transfers
     // its references to a later transcription job.
-    @Published private(set) var latestSelectionPreview: String?
-    private(set) var liveSelectionReferences: [LiveSelectionReference] = []
+    @Published private(set) var liveSelectionReferences: [LiveSelectionReference] = []
     private var liveSelectionCapture: LiveSelectionCapture?
 
     // Make the realtime HUD visible as soon as the frozen Mode selects a streaming
@@ -471,7 +470,6 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         // revise words, so this is an approximate insertion anchor, not an AX
         // range or a second live write into the destination composer.
         liveSelectionReferences.append(reference.anchored(after: partialTranscript))
-        latestSelectionPreview = reference.preview
     }
 
     func endLiveSelectionCapture() {
