@@ -921,6 +921,13 @@ No row may be promoted merely because a later build reused part of it.
 
 ## Recorder HUD and feedback regressions
 
+### Appending selection preview below speech inside one auto-scrolling live transcript
+
+- **State:** REJECTED in installed build 331 after Ethan selected text in Codex while recording.
+- **Failure:** The mini/notch HUD used one 56-point scrolling transcript for both speech and a potentially long selection preview. Every speech update scrolled to the bottom selection tail, making live recognition appear absent even when provider partials arrived.
+- **Rule:** Pin the compact selection preview outside the speech-only scroll area on every mirrored recorder panel. Keep the shared total height and notification clearance stable, and keep provisional words HUD-only.
+- **Reconsider only if:** a redesigned HUD separately guarantees that the newest speech partial remains visibly readable with arbitrarily long selections, on both mini and notch panels, under live updates and the shared layout metrics.
+
 ### Showing the HUD on only the activation monitor
 
 - **State:** REJECTED; multi-monitor mirroring accepted.

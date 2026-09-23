@@ -25,6 +25,17 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-23T22:16:34Z
+**Trigger:** Ethan reported live speech missing from the black recorder window after selecting text in Codex and asked to fix, build, and restart.
+**Symptom:** A long Codex selection preview displaced new speech partials from the fixed-height black recorder HUD even when GPT Live was streaming.
+**Root cause:** Mini and notch views concatenated speech and selection preview inside one auto-scrolling LiveTranscriptView; speech updates scrolled to the bottom selection tail. This is distinct from one recorded GPT Live session that received PCM but returned no usable partial or final text; the HUD fix cannot repair a provider-empty result.
+**Fix:** Build 332 pins a one-line selection preview outside the speech scroll area, keeps the shared 56-point envelope, and leaves final XML interleaving and delivery routes unchanged.
+**Commit:** b633772f630025ccb25fd94511fbbc304a4cf362
+**Guard:** Eight focused tests and all 337 named release tests passed on the Mac Mini with zero skips. A concurrent full run exposed one unrelated timing-sensitive Primary start test failure; its two isolated cases and the serial full rerun passed. The separate Release archive SHA-256 is b6b9df91367784c5b8ea5dd699459e0f7a5c1d34bd5282cc764938ba754e3a64. Installed signed build 332 has CDHash e2591ac7208ea24ba9366f3ede0711a6eab51c26 and Automation enabled, and launched as PID 2344 after the delivered five-second warning and idle checks. Build 331 remains recoverable at /private/tmp/voiceink-hud332-install.gXcg1Y/installed-build331.app; official VoiceInk's executable hash is unchanged. Visible speech-plus-selection acceptance remains unverified.
+---
+
+
+---
 **Date:** 2026-09-23T01:03:41Z
 **Trigger:** Ethan requested XML-wrapped Codex selections interleaved with speech, separated by blank lines, then showed the old end-appended output.
 **Symptom:** Build 329 appended selected text after the whole transcript. The first build-330 Release candidate passed tests and signing but crashed during CoreData/CloudKit startup when launched on the MacBook Pro.
