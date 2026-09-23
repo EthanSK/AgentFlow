@@ -25,6 +25,16 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-23T23:13:06Z
+**Trigger:** Ethan accepted build 333's chronological speech/selection preview, then requested inline screenshot paths and a vertically growing, fading live context HUD.
+**Symptom:** The fixed 56-point preview required scrolling and could not represent a newly saved screenshot alongside speech and Codex highlights.
+**Root cause:** Live context was modeled as selected-text references only; mini/notch host windows and notification clearance retained fixed transcript geometry. A path alone is not an uploaded image attachment.
+**Fix:** Build-334 source captures only newly saved macOS screenshots with native screenshot metadata while recording, inserts XML-escaped local paths at approximate speech anchors, colours screenshot items orange, and grows the mini/notch preview to a screen-safe bound before falling back to scroll. Window height, stacked chips and notification clearance follow the same content height. No pixels or clipboard images enter the transcription prompt.
+**Commit:** ccdd001
+**Guard:** Mac mini focused Xcode actions named and passed nine relevant tests, including `onlyFreshNativeScreenshotsEnterLiveContext`, `savedScreenshotPathJoinsSpeechAndSelectionsInCaptureOrder`, `recorderContextGrowsBeforeItsScreenBound`, chronological preview, HUD-only streaming, Primary isolation and second-chance routing. Full exact-commit/build-334 release gate and physical screenshot/HUD acceptance remain pending.
+---
+
+---
 **Date:** 2026-09-23T22:38:48Z
 **Trigger:** Ethan physically compared build 332 black preview against the final paste after two highlights.
 **Symptom:** A second Codex highlight appeared at the top of the black recorder HUD instead of after speech and the first highlight, although final paste was ordered.
