@@ -1271,9 +1271,12 @@ No row may be promoted merely because a later build reused part of it.
 - **State:** REPEATED PROCESS FAILURE.
 - Xcode's TestManager frequently built app/tests and then stalled without naming a test. XCTest can
   also print a zero-test preamble before the Swift Testing cases execute.
+- Build 335's focused `-only-testing:VoiceInkTests/VoiceInkTests/testName` filters compiled but
+  selected zero Swift Testing cases. The same names with `testName()` executed and passed.
 - **Rule:** Canonical Xcode action first. If it stalls, preserve evidence and run the already-built
   bundle directly with correct app/framework paths. Require every expected test name and a real pass
-  count.
+  count. For this Swift Testing suite, include `()` in each focused test selector; reconsider that
+  spelling only if a later Xcode-discovered identifier proves a different form executes the case.
 
 ### Reusing a stale direct-xctest bundle
 

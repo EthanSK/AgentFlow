@@ -25,6 +25,15 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-23T23:39:27Z
+**Trigger:** Ethan asked for purple screenshot references and roughly double-size dictated text and width in the live recorder float, while retaining chronological Codex highlights.
+**Symptom:** Build 334 rendered the live context at 12 pt in a 344-pt mini pill (180-pt notch side expansion); screenshot references were orange. Enlarging only SwiftUI text would leave the host window and measured/notification geometry inconsistent.
+**Root cause:** The visible mini/notch width, transparent host width, measured transcript height, and notification clearance were distributed across separate view/manager files.
+**Fix:** Build 335 centralizes 24-pt type, 688-pt mini width, and 360-pt notch side expansion in `MiniRecorderLayoutMetrics`, sizes both hosts to contain them, and uses purple only for screenshot references while keeping selections cyan and speech white. It preserves screen-bounded vertical growth and chronological interleaving. The Codex session log contains multiple real speech-plus-selection messages and a later native screenshot path; log delivery alone does not prove live HUD pixels.
+**Commit:** `fd8128a`
+**Guard:** Seven named focused tests and the exact-source Mac mini full suite (337 Swift Testing plus 8 XCTest) passed. `LOCAL_BUILD` Release v335 passed deep/strict signature verification with Automation enabled; archive SHA-256 `c4f383df0cf118a8d03df2a701e1c3cc2f1f5d66242891439ae681f7c159ad34`, executable SHA-256 `a35a3fcbd3c81e562113439063c8cccac6ac4a2217f078d2c8ddfe48624defbc`, CDHash `eb53127c923c9eab26dfb5aaf2ffb02a2c24e018`. The first focused Xcode selection omitted `()` and ran zero Swift tests, so it was rejected and rerun correctly. After a real five-second heads-up and two idle checks, only `/Applications/VoiceInkPlusPlus.app` was replaced; signed build 334 remains recoverable at `/private/tmp/voiceink-context335-install.OeUgj5/replaced-build334.app`, and official VoiceInk's executable hash stayed unchanged. PID 98770 remained running and unhidden without a startup crash or open recording. Physical colour/type acceptance during a real recording is still unverified.
+
+---
 **Date:** 2026-09-23T23:13:06Z
 **Trigger:** Ethan accepted build 333's chronological speech/selection preview, then requested inline screenshot paths and a vertically growing, fading live context HUD.
 **Symptom:** The fixed 56-point preview required scrolling and could not represent a newly saved screenshot alongside speech and Codex highlights.
