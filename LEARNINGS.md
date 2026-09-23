@@ -25,6 +25,17 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-23T00:03:52Z
+**Trigger:** Ethan requested automatic mouse-up selection references during one continuing Codex dictation.
+**Symptom:** A live Codex selection captured during dictation could be lost before the recording ends.
+**Root cause:** Recording-start context capture calls clearContext after the session has entered recording; tying the mouse-up monitor to that context cleanup would stop it immediately.
+**Fix:** LiveSelectionCapture now has a per-recording lifecycle independent of RecordingContextSnapshot; it stores compact selection boundaries and appends numbered references to the final dictated text.
+**Commit:** b69b434
+**Guard:** Mac Mini direct full-suite gate: 332 tests in 10 suites, including liveSelectionBelongsOnlyToItsRecording and liveSelectionNeedsASelectionGesture. Signed build 329 installed with PID 3283 and deep/strict signature. Physical Codex selection acceptance remains unverified.
+---
+
+
+---
 **Date:** 2026-09-22T23:20:37Z
 **Trigger:** Ethan reported worse GPT Live recognition and asked for a much smaller set of useful chat and dictionary hints, with an independent Opus 5.5 review.
 **Symptom:** Installed build 327 had recent Codex excerpts enabled and sent all 82 stored Vocabulary words as keywords on a sampled recording; the static prompt normalized to absent. Context and keyword counts established payload shape, not recognition quality. No paired human-reference comparison existed.
