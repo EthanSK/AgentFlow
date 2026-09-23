@@ -8,6 +8,8 @@ struct LiveSelectionReference: Equatable {
     let preview: String
     let characterCount: Int
     let omittedMiddle: Bool
+    private let start: String
+    private let end: String?
 
     init?(_ selectedText: String) {
         let trimmed = selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -20,8 +22,13 @@ struct LiveSelectionReference: Equatable {
         if normalized.count <= 96 {
             preview = "“\(normalized)”"
             omittedMiddle = false
+            start = normalized
+            end = nil
         } else {
-            preview = "“\(normalized.prefix(46))” … “\(normalized.suffix(46))”"
+            start = String(normalized.prefix(46))
+            let last = String(normalized.suffix(46))
+            end = last
+            preview = "“\(start)” … “\(last)”"
             omittedMiddle = true
         }
     }
@@ -33,12 +40,41 @@ struct LiveSelectionReference: Equatable {
         }
 
         let entries = references.enumerated().map { index, reference in
-            let omission = reference.omittedMiddle ? "; middle omitted" : ""
-            let unit = reference.characterCount == 1 ? "character" : "characters"
-            return "[\(index + 1)] \(reference.preview) (\(reference.characterCount) \(unit)\(omission))"
+            let attributes = "index=\"\(index + 1)\" characters=\"\(reference.characterCount)\" middle_omitted=\"\(reference.omittedMiddle)\""
+            if let end = reference.end {
+                return "  <selection \(attributes)>\n"
+                    + "    <start>\(xmlEscaped(reference.start))</start>\n"
+                    + "    <end>\(xmlEscaped(end))</end>\n"
+                    + "  </selection>"
+            }
+            return "  <selection \(attributes)>\n"
+                + "    <text>\(xmlEscaped(reference.start))</text>\n"
+                + "  </selection>"
         }
-        return transcript + "\n\nSelected text in Codex, in selection order (quoted context):\n"
+        // This is quoted context, not a native Codex annotation: no message ID
+        // or exact text offsets are available from the clipboard-free AX read.
+        return transcript + "\n\n<codex_selections source=\"Codex\" order=\"selection_sequence\">\n"
             + entries.joined(separator: "\n")
+            + "\n</codex_selections>"
+    }
+
+    private static func xmlEscaped(_ text: String) -> String {
+        // A selection is untrusted page text. It must remain text even if it
+        // contains tags, entities, or characters forbidden by XML 1.0.
+        let xmlSafe = String(text.filter { character in
+            character.unicodeScalars.allSatisfy { scalar in
+                let value = scalar.value
+                return value == 0x9 || value == 0xA || value == 0xD
+                    || (0x20...0xD7FF).contains(value)
+                    || (0xE000...0xFFFD).contains(value)
+                    || (0x10000...0x10FFFF).contains(value)
+            }
+        })
+        return xmlSafe.replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&apos;")
     }
 }
 

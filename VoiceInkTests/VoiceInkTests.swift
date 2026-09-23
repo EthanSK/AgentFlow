@@ -11,6 +11,7 @@ import Carbon.HIToolbox
 import CoreAudio
 import CoreGraphics
 import Foundation
+import FoundationXML
 import ApplicationServices
 @testable import VoiceInkPlusPlus
 
@@ -397,11 +398,32 @@ struct VoiceInkTests {
         )
 
         #expect(reference.omittedMiddle)
-        #expect(message.contains("Selected text in Codex"))
+        #expect(message.contains("<codex_selections source=\"Codex\" order=\"selection_sequence\">"))
+        #expect(message.contains("middle_omitted=\"true\""))
+        #expect(message.contains("<start>"))
+        #expect(message.contains("<end>"))
         #expect(message.contains(String(repeating: "a", count: 46)))
         #expect(message.contains(String(repeating: "z", count: 46)))
         #expect(!message.contains("PRIVATE_MIDDLE_MUST_NOT_LEAVE_THE_APP"))
         #expect(LiveSelectionReference.appending([reference], to: "") == "")
+    }
+
+    @Test func liveSelectionXMLQuotesSelectedTextAndKeepsOrder() throws {
+        let first = try #require(LiveSelectionReference("alpha\u{0000} & <selection> \"quoted\" 'text'"))
+        let second = try #require(LiveSelectionReference("second passage"))
+        let message = LiveSelectionReference.appending(
+            [first, second],
+            to: "Compare these sections."
+        )
+        let start = try #require(message.range(of: "<codex_selections"))
+        let xml = String(message[start.lowerBound...])
+
+        #expect(xml.contains("<selection index=\"1\""))
+        #expect(xml.contains("<selection index=\"2\""))
+        #expect(xml.contains("<text>alpha &amp; &lt;selection&gt; &quot;quoted&quot; &apos;text&apos;</text>"))
+        #expect(xml.contains("<text>second passage</text>"))
+        #expect(!xml.contains("<text>alpha & <selection>"))
+        #expect(XMLParser(data: Data(xml.utf8)).parse())
     }
 
     @Test @MainActor func liveSelectionBelongsOnlyToItsRecording() throws {
