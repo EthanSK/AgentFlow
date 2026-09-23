@@ -29,6 +29,12 @@ The folder contains the extension, macOS helper, native host, tests and install 
 Follow the [agent setup guide](companions/youtube-bridge/AGENT_SETUP.md) to reproduce the setup.
 It is an optional companion with its own installation; building VoiceInk++ alone does not install it.
 
+## Codex selections during dictation
+
+In Ethan's current installed build, highlight text in Codex while a VoiceInk++ recording is running. On mouse release, the recorder captures a short reference and shows it in the HUD. The final message places each `<codex_selection>` XML block between the words spoken before and after that selection, with a blank line on either side. Long selections include only their beginning and end. The placement uses the live transcript available at selection time, so it can shift slightly if recognition revises earlier words.
+
+This is a text reference in the dictated message, not a native Codex annotation or a link to an exact message range. **The public `main` source does not yet include this native feature**; building this checkout will not enable it.
+
 ## The reason VoiceInk++ exists
 
 Most dictation tools bind a recording to wherever you happen to be when the result arrives. VoiceInk++ gives two mouse buttons three deliberate routes. The **primary button** is Ethan's normal/thumb/toggle recording button; the separate **Next button** is mapped to the standard macOS **Next Track** media action. [The canonical glossary](TERMINOLOGY.md) records every conversational alias.
