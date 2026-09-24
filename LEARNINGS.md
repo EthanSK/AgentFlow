@@ -25,6 +25,26 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-24T01:10:00Z
+**Trigger:** The first MacBook launch of tested VoiceInk++ build 336 failed after its ad-hoc-signed Mini Release bundle was installed.
+**Symptom:** `open -g` returned success but no VoiceInk++ process survived; the crash report named `DYLD Library missing` for `whisper.framework` and a library-validation signer mismatch.
+**Root cause:** Deep/strict `codesign` verification and intact outer Automation entitlements did not establish that the ad-hoc outer app and nested framework could load together on the MacBook. The established local build path uses the stable `VoiceInk Local Signing` identity.
+**Fix:** Re-signed the same tested build-336 binary and nested frameworks on the Mini with `resign-local.sh` and the checked-in local entitlements, transferred a new bundle-preserving archive, and installed it. Build 336 now runs as PID 5670, CDHash `9a880fe532f10b311c7ab77a1c61a14cdc1e2d50`; build 335 remains recoverable and official VoiceInk is unchanged. Updated release guidance in `AGENTS.md`, `BUILDING.md`, and the learnings skill.
+**Commit:** `8f278c6` (tested native source; signing and release guidance followed)
+**Guard:** Before transfer, require the stable signing authority on both outer app and `whisper.framework`, deep/strict validity, and outer Automation entitlement. After `open`, require a persistent new PID; its exit status alone is not a launch receipt.
+---
+
+---
+**Date:** 2026-09-24T01:10:00Z
+**Trigger:** Ethan asked for Codex selection XML to identify the right task when dictating across chats, best-effort, without changing the working live context flow.
+**Symptom:** `<codex_selection>` carried selected text but no proven task identity, so a recipient could misread a cross-task selection as belonging to its own task.
+**Root cause:** Selection capture had no verified active Codex task label; `com.openai.codex` alone is also insufficient because ChatGPT can share that bundle ID.
+**Fix:** Commit `27c8969` adds `task_id` and, when exact read-only metadata exists, escaped `task_title` only when a verified Codex app's selected-view task ID remains stable across capture. Missing or ambiguous identity keeps the old unlabelled XML. It adds no transcription prompt text and does not probe Codex Accessibility. Build 336 source is `8f278c6`. For Ethan's requested Codex-like font, the HUD's existing system font was retained: Codex's configured Inter is unavailable locally and its CSS falls back to the same macOS system sans family.
+**Commit:** `27c8969`
+**Guard:** The two new label/title tests and nearby Primary, both Next, context, and HUD-only guards passed on the Mini. The exact build-336 commit passed 339 Swift Testing cases plus 8 XCTest cases. Live selected-text acceptance remains unverified; test and install evidence do not prove a physical cross-chat dictation result.
+---
+
+---
 **Date:** 2026-09-24T00:20:46Z
 **Trigger:** Ethan asked to make live dictated Codex selections and screenshots a major website/README feature, and to replace the overlong public site.
 **Symptom:** The existing site buried the installed-only context feature in setup copy; its scroll-reveal sections also appeared blank in a full-page browser capture until they were individually scrolled into view.

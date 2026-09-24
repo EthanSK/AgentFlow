@@ -142,6 +142,8 @@ Exact Apple Terminal/iTerm delivery also needs the optional Automation grant sho
 
 If you re-sign a local build after Xcode finishes, the outer app signature must explicitly use `VoiceInk/VoiceInk.local.entitlements`. A generic replacement signature can remove the Automation entitlement even when `codesign --verify --deep --strict` still accepts the nested bundle. Inspect the final outer entitlements and require `com.apple.security.automation.apple-events` to be true before testing Terminal or iTerm delivery.
 
+Before archiving an install candidate, sign its nested frameworks and outer app with the Mini's stable `VoiceInk Local Signing` identity. Verify that both the outer app and `whisper.framework` report that authority. An ad-hoc Release bundle may pass deep/strict verification and entitlement inspection but abort at launch on the MacBook with `DYLD Library missing` because library validation finds mismatched signer identities. A successful `open` exit code is not a launch receipt; require a live VoiceInk++ PID after startup.
+
 On Ethan's Mac Mini, pass that checked-in file to the local signing helper explicitly:
 
 ```sh

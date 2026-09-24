@@ -1342,6 +1342,20 @@ No row may be promoted merely because a later build reused part of it.
 - **Rule:** Reapply `VoiceInk/VoiceInk.local.entitlements`, then require deep/strict verification and
   inspect the outer entitlement.
 
+### Installing a merely ad-hoc-signed Release bundle
+
+- **State:** PROCESS FAILURE, proven by build 336's first MacBook launch on 2026-09-24.
+- **Attempt:** Archive the Mini's ad-hoc `xcodebuild build` output after deep/strict signature and
+  outer-entitlement checks, then install it directly.
+- **Observed result:** `open -g` returned success, but no process survived. The crash report named
+  `DYLD Library missing` for `whisper.framework` because library validation rejected its signer
+  identity in the outer process.
+- **Rule:** On the Mini, sign the outer app and nested frameworks with the established stable
+  `VoiceInk Local Signing` identity, explicitly retaining local entitlements, before archiving.
+  Verify both authorities and an actual persistent MacBook PID after installation. Reconsider
+  ad-hoc distribution only with a disposable MacBook launch proving nested framework loading,
+  TCC persistence, and the same release boundary; deep/strict validity alone is insufficient.
+
 ### Raw recursive app-bundle transfer
 
 - **State:** REJECTED.
