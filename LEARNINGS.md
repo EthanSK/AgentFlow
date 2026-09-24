@@ -25,6 +25,17 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-24T21:29:21Z
+**Trigger:** Final setup-link audit before signing build 337.
+**Symptom:** The README, site and native Help invited people to report a VoiceInk++ issue even though the repository does not accept Issues.
+**Root cause:** The public repository has_issues setting is false; the inherited and newly added issue links were not checked against that live setting.
+**Fix:** Commit f2d0837 points those surfaces to the VoiceInk++ repository instead of promising a disabled report form.
+**Commit:** f2d0837
+**Guard:** Check live repository feature availability before advertising a support destination; the dashboard URL test verifies the fork-owned repository path.
+---
+
+
+---
 **Date:** 2026-09-24T21:13:18Z
 **Trigger:** Ethan requested a shareable VoiceInk++ card and complete setup across app, README and website.
 **Symptom:** The site used a square icon for social previews, native Help linked to upstream and disappeared before a first recording, and setup hid distinct install requirements.
