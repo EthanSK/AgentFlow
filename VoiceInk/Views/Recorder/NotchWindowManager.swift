@@ -1,15 +1,19 @@
 import SwiftUI
 import AppKit
+import Combine
 
 @MainActor
 class NotchWindowManager {
     private struct WindowEntry {
         let screenIdentity: RecorderDisplayReusePolicy.ScreenIdentity
         let panel: NotchRecorderPanel
+        let host: ScaledRecorderHostingView
         let windowController: NSWindowController
     }
 
     private var windows: [WindowEntry] = []
+    private let hudScale = RecorderHUDScaleStore.shared
+    private var scaleSubscription: AnyCancellable?
 
     private let makeView: (_ notchWidth: CGFloat, _ notchHeight: CGFloat, _ screenHeight: CGFloat) -> AnyView
 
@@ -33,6 +37,7 @@ class NotchWindowManager {
                 // transcribing sessions render as chips stacked beneath it.
                 NotchRecorderStackView(
                     engine: engine,
+                    hudScale: RecorderHUDScaleStore.shared,
                     recorder: recorder,
                     assistantSession: assistantSession,
                     notchWidth: notchWidth,
@@ -45,6 +50,9 @@ class NotchWindowManager {
                     onCancelSession: onCancelSession
                 )
             )
+        }
+        scaleSubscription = hudScale.$scale.dropFirst().sink { [weak self] _ in
+            self?.refreshScale()
         }
     }
 
@@ -73,7 +81,8 @@ class NotchWindowManager {
             return presentationReport(for: screens)
         case .reuse:
             for (entry, screen) in zip(windows, screens) {
-                entry.panel.show(on: screen)
+                entry.host.setScale(CGFloat(hudScale.scale))
+                entry.panel.show(on: screen, scale: CGFloat(hudScale.scale))
             }
             return presentationReport(for: screens)
         }
@@ -81,6 +90,24 @@ class NotchWindowManager {
 
     func hide() {
         windows.forEach { $0.panel.orderOut(nil) }
+    }
+
+    private func refreshScale() {
+        guard !windows.isEmpty else { return }
+        let screens = NSScreen.screens
+        let identities = screens.enumerated().map { index, screen in
+            RecorderDisplayReusePolicy.screenIdentity(for: screen, index: index)
+        }
+        guard identities == windows.map(\.screenIdentity) else {
+            if windows.contains(where: { $0.panel.isVisible }) { _ = show() }
+            return
+        }
+        for (entry, screen) in zip(windows, screens) {
+            entry.host.setScale(CGFloat(hudScale.scale))
+            if entry.panel.isVisible {
+                entry.panel.show(on: screen, scale: CGFloat(hudScale.scale))
+            }
+        }
     }
 
     func destroyWindow() {
@@ -91,11 +118,13 @@ class NotchWindowManager {
         deinitializeWindows()
 
         for (index, screen) in screens.enumerated() {
-            let metrics = NotchRecorderPanel.calculateWindowMetrics(for: screen)
+            let metrics = NotchRecorderPanel.calculateWindowMetrics(
+                for: screen, scale: CGFloat(hudScale.scale)
+            )
             let panel = NotchRecorderPanel(contentRect: metrics.frame)
             let view = makeView(metrics.notchWidth, metrics.notchHeight, screen.frame.height)
-            let hostingController = NotchRecorderHostingController(rootView: view)
-            panel.contentView = hostingController.view
+            let host = ScaledRecorderHostingView(rootView: view, scale: CGFloat(hudScale.scale))
+            panel.contentView = host
             let windowController = NSWindowController(window: panel)
             windows.append(WindowEntry(
                 screenIdentity: RecorderDisplayReusePolicy.screenIdentity(
@@ -103,9 +132,10 @@ class NotchWindowManager {
                     index: index
                 ),
                 panel: panel,
+                host: host,
                 windowController: windowController
             ))
-            panel.show(on: screen)
+            panel.show(on: screen, scale: CGFloat(hudScale.scale))
         }
     }
 

@@ -181,7 +181,7 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
                     with: baseSession.partialTranscript
                 ),
                 width: MiniRecorderLayoutMetrics.liveTranscriptWidth,
-                maxHeight: screen.visibleFrame.height - 150
+                maxHeight: screen.visibleFrame.height / CGFloat(RecorderHUDScaleStore.shared.scale) - 150
             )
         } else {
             transcriptHeight = MiniRecorderLayoutMetrics.liveTranscriptHeight
@@ -191,7 +191,8 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
             showsAssistant: showsAssistant,
             showsRealtimeTranscript: showsRealtimeTranscript,
             sessionCount: engine.sessions.count,
-            realtimeTranscriptHeight: transcriptHeight
+            realtimeTranscriptHeight: transcriptHeight,
+            scale: CGFloat(RecorderHUDScaleStore.shared.scale)
         )
     }
 

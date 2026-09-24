@@ -47,7 +47,8 @@ enum MiniRecorderLayoutMetrics {
         showsAssistant: Bool,
         showsRealtimeTranscript: Bool,
         sessionCount: Int,
-        realtimeTranscriptHeight: CGFloat = liveTranscriptHeight
+        realtimeTranscriptHeight: CGFloat = liveTranscriptHeight,
+        scale: CGFloat = 1
     ) -> CGFloat {
         let baseHeight: CGFloat
         if showsAssistant {
@@ -59,7 +60,7 @@ enum MiniRecorderLayoutMetrics {
         }
 
         let stackedHeight = CGFloat(max(0, sessionCount - 1)) * stackedCardSpacing
-        return bottomPadding + baseHeight + stackedHeight
+        return bottomPadding + (baseHeight + stackedHeight) * scale
     }
 }
 
@@ -70,9 +71,11 @@ struct RecorderPanelHeightSync: NSViewRepresentable {
     enum Edge: Equatable { case bottom, top }
     let desiredHeight: CGFloat
     let edge: Edge
+    let scale: CGFloat
 
     final class Coordinator {
         var desiredHeight: CGFloat = 430
+        var scale: CGFloat = 1
         var scheduled = false
     }
 
@@ -81,6 +84,7 @@ struct RecorderPanelHeightSync: NSViewRepresentable {
 
     func updateNSView(_ view: NSView, context: Context) {
         context.coordinator.desiredHeight = desiredHeight
+        context.coordinator.scale = scale
         guard !context.coordinator.scheduled else { return }
         context.coordinator.scheduled = true
         DispatchQueue.main.async { [weak view, coordinator = context.coordinator] in
@@ -90,7 +94,9 @@ struct RecorderPanelHeightSync: NSViewRepresentable {
             let limit = edge == .bottom
                 ? screen.visibleFrame.height - MiniRecorderLayoutMetrics.bottomPadding - 12
                 : screen.frame.height - 12
-            let height = min(max(120, coordinator.desiredHeight), max(120, limit))
+            let minimum = 120 * coordinator.scale
+            let height = min(max(minimum, coordinator.desiredHeight * coordinator.scale),
+                             max(minimum, limit))
             guard abs(panel.frame.height - height) > 1 else { return }
             var frame = panel.frame
             frame.size.height = height
@@ -131,9 +137,12 @@ class MiniRecorderPanel: NSPanel {
         standardWindowButton(.closeButton)?.isHidden = true
     }
     
-    static func calculateWindowMetrics(for screen: NSScreen? = NSScreen.main) -> NSRect {
-        let width: CGFloat = 720
-        let height: CGFloat = 430
+    static func calculateWindowMetrics(
+        for screen: NSScreen? = NSScreen.main,
+        scale: CGFloat = 1
+    ) -> NSRect {
+        let width: CGFloat = 720 * scale
+        let height: CGFloat = 430 * scale
 
         guard let screen else {
             return NSRect(x: 0, y: 0, width: width, height: height)
@@ -153,8 +162,8 @@ class MiniRecorderPanel: NSPanel {
         )
     }
 
-    func show(on screen: NSScreen) {
-        let metrics = MiniRecorderPanel.calculateWindowMetrics(for: screen)
+    func show(on screen: NSScreen, scale: CGFloat = 1) {
+        let metrics = MiniRecorderPanel.calculateWindowMetrics(for: screen, scale: scale)
         setFrame(metrics, display: true)
         orderFrontRegardless()
         // Flush the first hosted frame so a window that passed the manager's visibility

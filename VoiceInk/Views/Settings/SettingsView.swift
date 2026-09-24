@@ -10,6 +10,7 @@ struct SettingsView: View {
     @EnvironmentObject private var recorderUIManager: RecorderUIManager
     @EnvironmentObject private var transcriptionModelManager: TranscriptionModelManager
     @EnvironmentObject private var enhancementService: AIEnhancementService
+    @ObservedObject private var hudScale = RecorderHUDScaleStore.shared
     @ObservedObject private var mediaController = MediaController.shared
     @ObservedObject private var playbackController = PlaybackController.shared
     @AppStorage("hasCompletedOnboardingV2") private var hasCompletedOnboardingV2 = true
@@ -185,6 +186,21 @@ struct SettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
+
+                LabeledContent("HUD size") {
+                    Slider(
+                        value: Binding(
+                            get: { hudScale.scale },
+                            set: { hudScale.setScale($0) }
+                        ),
+                        in: RecorderHUDScaleStore.minimumScale...RecorderHUDScaleStore.maximumScale
+                    )
+                    .frame(width: 160)
+                    .accessibilityLabel("HUD size")
+                    Text("\(Int((hudScale.scale * 100).rounded()))%")
+                        .monospacedDigit()
+                        .frame(width: 42, alignment: .trailing)
+                }
 
             }
 

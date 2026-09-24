@@ -41,6 +41,7 @@ import Combine
 
 struct MiniRecorderStackView: View {
     @ObservedObject var engine: VoiceInkEngine
+    @ObservedObject var hudScale: RecorderHUDScaleStore
     @State private var layoutTick = 0
     let screenHeight: CGFloat
     let recorder: Recorder
@@ -78,7 +79,7 @@ struct MiniRecorderStackView: View {
         return MiniRecorderLayoutMetrics.transcriptHeight(
             parts: parts,
             width: MiniRecorderLayoutMetrics.liveTranscriptWidth,
-            maxHeight: screenHeight - 150
+            maxHeight: screenHeight / CGFloat(hudScale.scale) - 150
         )
     }
 
@@ -136,7 +137,8 @@ struct MiniRecorderStackView: View {
         }
         .background(RecorderPanelHeightSync(
             desiredHeight: max(430, baseCardHeight + CGFloat(stackedChipCount) * 46 + 12),
-            edge: .bottom
+            edge: .bottom,
+            scale: CGFloat(hudScale.scale)
         ))
     }
 
@@ -203,6 +205,7 @@ struct MiniRecorderStackView: View {
 //   window height was extended to fit up to a few stacked chips beneath the pill.
 struct NotchRecorderStackView: View {
     @ObservedObject var engine: VoiceInkEngine
+    @ObservedObject var hudScale: RecorderHUDScaleStore
     @State private var layoutTick = 0
     let recorder: Recorder
     @ObservedObject var assistantSession: AssistantSession
@@ -245,7 +248,7 @@ struct NotchRecorderStackView: View {
                 with: pillSession.partialTranscript
             ),
             width: notchWidth + MiniRecorderLayoutMetrics.notchTranscriptSideExpansion * 2 - 16,
-            maxHeight: screenHeight - notchHeight - 150
+            maxHeight: screenHeight / CGFloat(hudScale.scale) - notchHeight - 150
         )
     }
 
@@ -311,7 +314,8 @@ struct NotchRecorderStackView: View {
         }
         .background(RecorderPanelHeightSync(
             desiredHeight: desiredPanelHeight,
-            edge: .top
+            edge: .top,
+            scale: CGFloat(hudScale.scale)
         ))
     }
 }

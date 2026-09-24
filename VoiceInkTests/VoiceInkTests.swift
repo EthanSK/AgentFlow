@@ -770,6 +770,38 @@ struct VoiceInkTests {
         #expect(components.contains(".font(.system(size: MiniRecorderLayoutMetrics.liveTranscriptFontSize))"))
     }
 
+    @Test func recorderHUDSizePersistsAndScalesTheWholeHost() throws {
+        let suite = "VoiceInkHUDScaleTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = RecorderHUDScaleStore(defaults: defaults)
+        #expect(store.scale == 0.85)
+        store.setScale(0.7)
+        #expect(RecorderHUDScaleStore(defaults: defaults).scale == 0.7)
+        store.setScale(0.1)
+        #expect(store.scale == RecorderHUDScaleStore.minimumScale)
+        store.setScale(2)
+        #expect(store.scale == RecorderHUDScaleStore.maximumScale)
+        store.setScale(.nan)
+        #expect(store.scale == RecorderHUDScaleStore.defaultScale)
+
+        let reserved = MiniRecorderLayoutMetrics.notificationBottomReservedHeight(
+            showsAssistant: false,
+            showsRealtimeTranscript: true,
+            sessionCount: 2,
+            realtimeTranscriptHeight: 200,
+            scale: 0.5
+        )
+        let expectedReserved: CGFloat = 24 + (200 + 1 + 40 + 46) * 0.5
+        #expect(reserved == expectedReserved)
+        let mini = MiniRecorderPanel.calculateWindowMetrics(for: nil, scale: 0.5)
+        let notch = NotchRecorderPanel.calculateWindowMetrics(for: nil, scale: 0.5)
+        #expect(mini.width == 360 && mini.height == 215)
+        #expect(notch.frame.width == 140 && notch.frame.height == 12)
+        let sourceSize = ScaledRecorderHostingView.sourceSize(for: mini.size, scale: 0.5)
+        #expect(sourceSize.width == 720 && sourceSize.height == 430)
+    }
+
     @Test @MainActor func abandonedShortcutCaptureRestoresItsPreviousBinding() {
         let action = ShortcutAction.mode(UUID())
         let originalShortcut = Shortcut.key(
