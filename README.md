@@ -5,7 +5,7 @@
 
   Speech to text for Mac, built for working with agents.
 
-  [Website](https://ethansk.github.io/VoiceInkPlusPlus/) · [Build guide](BUILDING.md) · [Button glossary](TERMINOLOGY.md) · [Destination guide](RECORDING_DESTINATIONS.md) · [Issues](https://github.com/EthanSK/VoiceInkPlusPlus/issues)
+  [Website](https://ethansk.github.io/VoiceInkPlusPlus/) · [Full setup](SETUP.md) · [Ethan's setup](https://ethansk.github.io/ethan-setup/) · [Build guide](BUILDING.md) · [Button glossary](TERMINOLOGY.md) · [Issues](https://github.com/EthanSK/VoiceInkPlusPlus/issues)
 
   [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-066b55.svg)](LICENSE)
   ![Platform: macOS 14.4+](https://img.shields.io/badge/macOS-14.4%2B-111615.svg)
@@ -34,6 +34,8 @@ and make the empty state look like this.
 - Placement is best effort because live recognition can revise earlier words. A highlight can be reading context rather than an instruction.
 - Provisional words stay in the recorder until one final paste. The preview grows vertically to the display's safe height, then scrolls.
 
+For Codex to interpret this XML-style context across tasks, install the [VoiceInk++ context skill](.agents/skills/interpret-voiceink-context/SKILL.md) as a personal skill. You can ask Codex: “Install `interpret-voiceink-context` from `EthanSK/VoiceInkPlusPlus/.agents/skills/interpret-voiceink-context`.” The skill reads interleaved speech, selections and screenshot paths as best-effort context; it does not upload screenshot pixels or assume every highlight is an instruction.
+
 ## Choose where each transcript goes
 
 Map two mouse buttons: the **Primary button** to your VoiceInk++ recording shortcut and the **Next button** to macOS **Next Track**. The [button glossary](TERMINOLOGY.md) lists every alias.
@@ -52,7 +54,9 @@ For Codex CLI or Claude Code, the terminal or editor hosting it owns the input, 
 
 ## Ethan's setup
 
-- **Mouse:** Logitech G502 X LIGHTSPEED, mapped in Logitech G HUB. Next won't skip music while the recorder is showing.
+The [full setup website](https://ethansk.github.io/ethan-setup/) shows Ethan's hardware, mappings and companion apps. [Agentic Mouse](https://ethansk.github.io/agentic-mouse/) is a separate, optional control layer: it can trigger VoiceInk++ from mouse hardware, but VoiceInk++ records and transcribes without it.
+
+- **Mouse:** Two spare controls mapped to VoiceInk++ Primary and macOS Next Track. See the setup site for current device-specific mappings. Next won't skip music while the recorder is showing.
 - **Transcription:** Soniox V5 real-time in English, on your own Soniox account. Keep Deepgram or another model as a fallback.
 - **Live words:** shown only in the recorder, then pasted once when you stop.
 - **AI:** OpenAI gpt-5.5, with enhancement off in fast direct-paste Modes.
@@ -71,22 +75,23 @@ There's no public download or VoiceInk++ Homebrew cask. You need **macOS 14.4 or
 ```sh
 git clone https://github.com/EthanSK/VoiceInkPlusPlus.git
 cd VoiceInkPlusPlus
-make local
-open ~/Downloads/VoiceInkPlusPlus.app
+./scripts/install-first-use.sh
 ```
 
-`make local` builds an ad-hoc signed app into `~/Downloads`, with no paid Apple Developer account needed. Allow Microphone and Accessibility on first launch; exact Terminal and iTerm delivery also needs Automation. [BUILDING.md](BUILDING.md) covers prerequisites, make targets and troubleshooting.
+The first-use installer builds an ad-hoc signed app in `~/Applications`, opens it, and refuses to overwrite an existing VoiceInk++ installation. `./scripts/install-first-use.sh --all` also installs the included YouTube helper, its login LaunchAgent, and the Codex context skill. Chrome extension loading, macOS permissions, provider keys, physical mouse mapping and Agentic Mouse remain separate user choices; see the [full setup and verification guide](SETUP.md). `make local` remains the build-only path that copies an app to `~/Downloads`; [BUILDING.md](BUILDING.md) covers prerequisites and troubleshooting.
 
 The upstream `voiceink` Homebrew cask and downloads install VoiceInk, not VoiceInk++.
 
 ## Documentation
 
+- [Install the complete, optional-component setup](SETUP.md)
 - [Build VoiceInk++](BUILDING.md)
 - [Translate Ethan's mouse-button terminology](TERMINOLOGY.md)
 - [Understand the Next button and recording destinations](RECORDING_DESTINATIONS.md)
 - [Read the accepted implementation learnings](LEARNINGS.md)
 - [Review failed approaches before retrying delivery work](FAILED_APPROACHES.md)
 - [Use the self-improving Codex/Claude Code learnings skill](.agents/skills/learnings/SKILL.md)
+- [Install the VoiceInk++ context interpretation skill](.agents/skills/interpret-voiceink-context/SKILL.md)
 - [Review update guidance](UPDATING.md)
 - [Report a VoiceInk++ issue](https://github.com/EthanSK/VoiceInkPlusPlus/issues)
 

@@ -226,11 +226,15 @@ struct DashboardContent: View {
                             .foregroundColor(.secondary)
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(minHeight: geometry.size.height - 56)
+                    .frame(minHeight: max(220, geometry.size.height * 0.42))
 
                     if !isAccessibilityEnabled {
                         accessibilityReminder
                     }
+
+                    // New users need the fork's setup and help links before their
+                    // first recording; the session-count branch must not hide them.
+                    HelpAndResourcesSection()
                 }
                 .padding(.vertical, 28)
                 .padding(.horizontal, 24)

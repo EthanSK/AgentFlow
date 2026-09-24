@@ -493,6 +493,16 @@ main:focus {
   margin-top: 1.5rem;
 }
 
+.skill-handoff {
+  max-width: 45rem;
+  margin: 1.6rem 0 0;
+  padding: 0.85rem 1rem;
+  border-left: 3px solid var(--mint-ink);
+  background: rgba(255, 255, 255, 0.48);
+  color: var(--graphite);
+  font-size: 0.95rem;
+}
+
 .replay {
   display: inline-flex;
   justify-self: start;
@@ -728,6 +738,11 @@ kbd {
 
 /* Setup */
 
+.setup-intro {
+  max-width: 42rem;
+  margin-bottom: 1.6rem;
+}
+
 .spec {
   display: grid;
   gap: 1.25rem 2.5rem;
@@ -774,6 +789,33 @@ kbd {
 }
 
 /* Build */
+
+.pieces {
+  margin: 0;
+}
+
+.pieces div {
+  display: grid;
+  gap: 0.25rem 1.5rem;
+  padding: 0.9rem 0;
+  border-top: 1px solid var(--rule);
+}
+
+.pieces dt {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.pieces dd {
+  margin: 0;
+  color: var(--graphite);
+}
+
+@media (min-width: 40rem) {
+  .pieces div {
+    grid-template-columns: 9.5rem minmax(0, 1fr);
+  }
+}
 
 .commands {
   overflow: hidden;

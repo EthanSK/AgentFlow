@@ -26,6 +26,17 @@ sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
 
 ## Quick start
 
+For a safe **first** installation in `~/Applications`, use the [guided installer](SETUP.md):
+
+```sh
+git clone https://github.com/EthanSK/VoiceInkPlusPlus.git
+cd VoiceInkPlusPlus
+./scripts/install-first-use.sh
+```
+
+It refuses an existing VoiceInk++ app, so it is not an in-place updater. To build a candidate
+without installing it, use the existing development command:
+
 ```sh
 git clone https://github.com/EthanSK/VoiceInkPlusPlus.git
 cd VoiceInkPlusPlus

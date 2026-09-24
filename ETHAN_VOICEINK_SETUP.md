@@ -1,8 +1,11 @@
 # Copy Ethan's VoiceInk++ setup
 
 This is a start-to-finish handoff for an agent configuring VoiceInk++ on another person's Mac.
-It records Ethan's live settings as inspected on **2026-07-30**, but it never includes Ethan's API
-keys, Keychain data, vocabulary, transcripts, or other private content.
+It records a **2026-07-30 settings snapshot**, not a guarantee of Ethan's current devices, Modes,
+or provider choices. It never includes Ethan's API keys, Keychain data, vocabulary, transcripts,
+or other private content. For the current hardware and companion-app picture, use
+[Ethan's setup](https://ethansk.github.io/ethan-setup/). [Agentic Mouse](https://ethansk.github.io/agentic-mouse/)
+is optional and separate from VoiceInk++.
 
 ## Goal
 
@@ -25,10 +28,9 @@ There are three important traps:
    the VoiceInk++ UI.
 2. **Each Mode overrides the global model.** Changing only `CurrentTranscriptionModel` can leave every
    real app Mode on its previous provider. Configure and verify every Mode.
-3. **GPT Live Transcribe is not on the public `main` branch yet.** Use the public
-   `codex/gpt-live-transcribe` branch at commit `2e30c9a` or newer. That commit includes the required
-   connection fix `33729ea`. A build from current `main`, upstream VoiceInk, or the wrong application
-   will not show the GPT model.
+3. **Use VoiceInk++'s public `main`, not upstream VoiceInk.** GPT Live Transcribe and live
+   selection/screenshot context are included in VoiceInk++ source. Upstream VoiceInk or a
+   previously installed bundle may not show them.
 
 ## Rules for the setup agent
 
@@ -56,23 +58,19 @@ Run:
 ```sh
 git clone https://github.com/EthanSK/VoiceInkPlusPlus.git
 cd VoiceInkPlusPlus
-git fetch origin codex/gpt-live-transcribe
-git switch --track origin/codex/gpt-live-transcribe
-git merge-base --is-ancestor 33729ea HEAD
 make local
 open ~/Downloads/VoiceInkPlusPlus.app
 ```
 
-The `git merge-base` command must exit successfully. The built bundle is
-`~/Downloads/VoiceInkPlusPlus.app`, displayed as **VoiceInk++**, with bundle identifier
+The built bundle is `~/Downloads/VoiceInkPlusPlus.app`, displayed as **VoiceInk++**, with bundle identifier
 `com.ethansk.VoiceInkPlusPlus`.
 
-If GPT Live Transcribe is missing from **Settings → AI Models**, stop and verify the branch, commit,
+If GPT Live Transcribe is missing from **Settings → AI Models**, stop and verify the repository, commit,
 and running app identity. Do not recreate it as a generic custom multipart model: it requires the
 dedicated realtime WebSocket integration.
 
-Ethan's inspected installation was VoiceInk++ **v2.0 build 268**. The recipient does not need that
-exact build number if she builds a newer commit containing `33729ea`.
+Ethan's July settings snapshot came from VoiceInk++ **v2.0 build 268**. That build number is historical;
+the recipient should build current public `main`, not attempt to reproduce the old binary.
 
 ## 2. Grant macOS permissions
 
@@ -341,9 +339,9 @@ Open every Mode and change its transcription model. Mode settings override the g
 
 ### GPT Live Transcribe is absent
 
-Verify that the running bundle is VoiceInk++ from `codex/gpt-live-transcribe` at `2e30c9a` or newer,
-and that commit `33729ea` is an ancestor. Current public `main` and upstream VoiceInk are not the
-required build.
+Verify that the running bundle is current VoiceInk++ from
+`https://github.com/EthanSK/VoiceInkPlusPlus` and that the selected Mode uses GPT Live Transcribe.
+Upstream VoiceInk and a stale installed VoiceInk++ bundle are not substitutes.
 
 ### Realtime text does not appear
 
@@ -364,7 +362,7 @@ and may fail closed instead of submitting an uncertain target.
 
 ## Final acceptance checklist
 
-- [ ] Correct VoiceInk++ fork and GPT branch installed
+- [ ] Current VoiceInk++ public `main` built and launched
 - [ ] Microphone and Accessibility granted
 - [ ] Recipient's own OpenAI API key added and verified
 - [ ] GPT Live Transcribe selected in every intended Mode

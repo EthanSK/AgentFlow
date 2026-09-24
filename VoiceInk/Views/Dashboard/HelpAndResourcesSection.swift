@@ -1,5 +1,17 @@
 import SwiftUI
 
+// Fork-owned destinations stay separate from upstream VoiceInk documentation.
+// In particular, VoiceInk++ issue reports must not email upstream support or
+// silently include system information; the Dashboard has an explicit Copy action.
+enum VoiceInkPlusPlusResourceURLs {
+    static let website = URL(string: "https://ethansk.github.io/VoiceInkPlusPlus/")!
+    static let setupGuide = URL(string: "https://github.com/EthanSK/VoiceInkPlusPlus/blob/main/SETUP.md")!
+    static let ethanSetup = URL(string: "https://ethansk.github.io/ethan-setup/")!
+    static let agenticMouse = URL(string: "https://ethansk.github.io/agentic-mouse/")!
+    static let issues = URL(string: "https://github.com/EthanSK/VoiceInkPlusPlus/issues")!
+    static let originalVoiceInkDocs = URL(string: "https://tryvoiceink.com/docs")!
+}
+
 struct HelpAndResourcesSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -9,33 +21,45 @@ struct HelpAndResourcesSection: View {
 
             VStack(alignment: .leading, spacing: 10) {
                 resourceLink(
-                    icon: "sparkles",
-                    title: "Recommended Models",
-                    color: AppTheme.Sidebar.models,
-                    url: "https://tryvoiceink.com/recommended-models"
+                    icon: "waveform",
+                    title: "VoiceInk++ website",
+                    color: AppTheme.Sidebar.dashboard,
+                    url: VoiceInkPlusPlusResourceURLs.website
                 )
 
                 resourceLink(
-                    icon: "video.fill",
-                    title: "YouTube Videos & Guides",
-                    color: AppTheme.Sidebar.dashboard,
-                    url: "https://www.youtube.com/@tryvoiceink/videos"
+                    icon: "checklist",
+                    title: "Full setup guide",
+                    color: AppTheme.Sidebar.models,
+                    url: VoiceInkPlusPlusResourceURLs.setupGuide
+                )
+
+                resourceLink(
+                    icon: "desktopcomputer",
+                    title: "Ethan's setup",
+                    color: AppTheme.Sidebar.models,
+                    url: VoiceInkPlusPlusResourceURLs.ethanSetup
+                )
+
+                resourceLink(
+                    icon: "computermouse.fill",
+                    title: "Agentic Mouse",
+                    color: AppTheme.Sidebar.dictionary,
+                    url: VoiceInkPlusPlusResourceURLs.agenticMouse
+                )
+
+                resourceLink(
+                    icon: "exclamationmark.bubble.fill",
+                    title: "Report a VoiceInk++ issue",
+                    color: AppTheme.Sidebar.audio,
+                    url: VoiceInkPlusPlusResourceURLs.issues
                 )
 
                 resourceLink(
                     icon: "book.fill",
-                    title: "Documentation",
+                    title: "Original VoiceInk docs",
                     color: AppTheme.Sidebar.dictionary,
-                    url: "https://tryvoiceink.com/docs"
-                )
-                
-                resourceLink(
-                    icon: "exclamationmark.bubble.fill",
-                    title: "Feedback or Issues?",
-                    color: AppTheme.Sidebar.audio,
-                    action: {
-                        EmailSupport.openSupportEmail()
-                    }
+                    url: VoiceInkPlusPlusResourceURLs.originalVoiceInkDocs
                 )
             }
         }
@@ -43,13 +67,9 @@ struct HelpAndResourcesSection: View {
         .background(AppCardBackground(cornerRadius: 28))
     }
     
-    private func resourceLink(icon: String, title: LocalizedStringKey, color: Color, url: String? = nil, action: (() -> Void)? = nil) -> some View {
+    private func resourceLink(icon: String, title: LocalizedStringKey, color: Color, url: URL) -> some View {
         Button(action: {
-            if let action = action {
-                action()
-            } else if let urlString = url, let url = URL(string: urlString) {
-                NSWorkspace.shared.open(url)
-            }
+            NSWorkspace.shared.open(url)
         }) {
             HStack(spacing: 10) {
                 DashboardIconGlyph(systemName: icon, color: color, size: 15, frameSize: 20)

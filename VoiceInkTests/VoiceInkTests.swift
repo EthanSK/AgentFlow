@@ -254,6 +254,28 @@ private final class PrimaryShortcutHandlerTestState {
 }
 
 struct VoiceInkTests {
+    @Test func dashboardResourcesUseForkOwnedDestinations() throws {
+        let expected: [(URL, String, String)] = [
+            (VoiceInkPlusPlusResourceURLs.website, "ethansk.github.io", "/VoiceInkPlusPlus/"),
+            (VoiceInkPlusPlusResourceURLs.setupGuide, "github.com", "/EthanSK/VoiceInkPlusPlus/blob/main/SETUP.md"),
+            (VoiceInkPlusPlusResourceURLs.ethanSetup, "ethansk.github.io", "/ethan-setup/"),
+            (VoiceInkPlusPlusResourceURLs.agenticMouse, "ethansk.github.io", "/agentic-mouse/"),
+            (VoiceInkPlusPlusResourceURLs.issues, "github.com", "/EthanSK/VoiceInkPlusPlus/issues"),
+        ]
+        for (url, host, path) in expected {
+            #expect(url.scheme == "https")
+            #expect(url.host == host)
+            #expect(url.path == path)
+        }
+
+        // A fork issue must not be sent to upstream's support address or
+        // silently prefill the user's system information into a public report.
+        let resources = try repositorySource("VoiceInk/Views/Dashboard/HelpAndResourcesSection.swift")
+        #expect(!resources.contains("EmailSupport.openSupportEmail"))
+        let dashboard = try repositorySource("VoiceInk/Views/Dashboard/DashboardContent.swift")
+        #expect(dashboard.components(separatedBy: "HelpAndResourcesSection()").count == 3)
+    }
+
     @Test func replacedNotificationCannotDismissOrRunItsSuccessor() {
         var identity = NotificationPresentationIdentity()
         let failed = identity.begin()

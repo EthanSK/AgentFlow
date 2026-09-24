@@ -3,6 +3,7 @@ DEPS_DIR := $(HOME)/VoiceInk-Dependencies
 WHISPER_CPP_DIR := $(DEPS_DIR)/whisper.cpp
 FRAMEWORK_PATH := $(WHISPER_CPP_DIR)/build-apple/whisper.xcframework
 LOCAL_DERIVED_DATA := $(CURDIR)/.local-build
+LOCAL_APP_OUTPUT := $(HOME)/Downloads/VoiceInkPlusPlus.app
 
 .PHONY: all clean whisper setup build local check healthcheck help dev run
 
@@ -62,13 +63,14 @@ local: check setup
 	@# (build-path-safe name; user-visible name is "VoiceInk++" via CFBundleDisplayName).
 	@APP_PATH="$(LOCAL_DERIVED_DATA)/Build/Products/Debug/VoiceInkPlusPlus.app" && \
 	if [ -d "$$APP_PATH" ]; then \
-		echo "Copying VoiceInkPlusPlus.app to ~/Downloads..."; \
-		rm -rf "$$HOME/Downloads/VoiceInkPlusPlus.app"; \
-		ditto "$$APP_PATH" "$$HOME/Downloads/VoiceInkPlusPlus.app"; \
-		xattr -cr "$$HOME/Downloads/VoiceInkPlusPlus.app"; \
+		echo "Copying VoiceInkPlusPlus.app to $(LOCAL_APP_OUTPUT)..."; \
+		mkdir -p "$(dir $(LOCAL_APP_OUTPUT))"; \
+		rm -rf "$(LOCAL_APP_OUTPUT)"; \
+		ditto "$$APP_PATH" "$(LOCAL_APP_OUTPUT)"; \
+		xattr -cr "$(LOCAL_APP_OUTPUT)"; \
 		echo ""; \
-		echo "Build complete! App saved to: ~/Downloads/VoiceInkPlusPlus.app"; \
-		echo "Run with: open ~/Downloads/VoiceInkPlusPlus.app"; \
+		echo "Build complete! App saved to: $(LOCAL_APP_OUTPUT)"; \
+		echo "Run with: open $(LOCAL_APP_OUTPUT)"; \
 		echo ""; \
 		echo "Limitations of local builds:"; \
 		echo "  - No iCloud dictionary sync"; \

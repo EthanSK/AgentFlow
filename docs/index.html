@@ -10,9 +10,13 @@
   <meta property="og:title" content="VoiceInk++">
   <meta property="og:description" content="Combine live speech, Codex highlights, and screenshot paths in one message with VoiceInk++ for Mac.">
   <meta property="og:url" content="https://ethansk.github.io/VoiceInkPlusPlus/">
-  <meta property="og:image" content="https://raw.githubusercontent.com/EthanSK/VoiceInkPlusPlus/main/VoiceInk/Assets.xcassets/AppIcon.appiconset/1024-mac.png">
-  <meta property="og:image:alt" content="VoiceInk++ app icon">
-  <meta name="twitter:card" content="summary">
+  <meta property="og:image" content="https://ethansk.github.io/VoiceInkPlusPlus/assets/social-card.png?v=1">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="VoiceInk++ recorder with spoken words, a cyan Codex selection, a purple screenshot reference, and a mint waveform">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://ethansk.github.io/VoiceInkPlusPlus/assets/social-card.png?v=1">
   <link rel="canonical" href="https://ethansk.github.io/VoiceInkPlusPlus/">
   <link rel="icon" href="https://raw.githubusercontent.com/EthanSK/VoiceInkPlusPlus/main/VoiceInk/Assets.xcassets/AppIcon.appiconset/128-mac.png">
   <link rel="apple-touch-icon" href="https://raw.githubusercontent.com/EthanSK/VoiceInkPlusPlus/main/VoiceInk/Assets.xcassets/AppIcon.appiconset/256-mac.png">
@@ -43,6 +47,7 @@
       <a href="#routes">Routes</a>
       <a href="#setup">Setup</a>
       <a href="#build">Build</a>
+      <a href="#pieces">Install pieces</a>
       <a class="top-github" href="https://github.com/EthanSK/VoiceInkPlusPlus">GitHub <span aria-hidden="true">↗</span></a>
     </nav>
   </header>
@@ -53,7 +58,8 @@
       content with or without JavaScript. script.js only hides and re-reveals these
       existing parts in order (data-at is milliseconds from start); it holds no copy.
       Example text is invented. Never put Ethan's real selections or screenshot paths here.
-      Serialized tags match LiveSelectionReference in the build-335 source.
+      Serialized tags match LiveSelectionReference. This demo deliberately uses
+      the plain selection tag shown when exact Codex task identity is unknown.
     -->
     <section class="hero" aria-labelledby="hero-title" data-demo-root data-stop-at="2800">
       <div class="wrap">
@@ -118,6 +124,7 @@
             </ul>
           </figcaption>
         </figure>
+        <p class="skill-handoff">Using Codex? <a href="https://github.com/EthanSK/VoiceInkPlusPlus/tree/main/.agents/skills/interpret-voiceink-context">Install the VoiceInk++ context skill</a> so it can read selections and screenshot paths alongside your speech, even across chats.</p>
       </div>
     </section>
 
@@ -159,12 +166,14 @@
       <div class="wrap split">
         <div class="band-head">
           <h2 id="setup-title">Ethan's setup</h2>
+          <p><a href="https://ethansk.github.io/ethan-setup/">See the full setup <span aria-hidden="true">↗</span></a></p>
         </div>
         <div class="band-body">
+          <p class="setup-intro"><a href="https://ethansk.github.io/ethan-setup/">Ethan's setup</a> shows the hardware, mouse mappings and companion apps. <a href="https://ethansk.github.io/agentic-mouse/">Agentic Mouse</a> is a separate, optional control layer; VoiceInk++ records and transcribes without it.</p>
           <dl class="spec">
             <div>
-              <dt>Mouse</dt>
-              <dd>Logitech G502 X LIGHTSPEED, mapped in Logitech G HUB</dd>
+              <dt>Controls</dt>
+              <dd>Two spare mouse buttons, mapped to VoiceInk++ Primary and macOS Next Track</dd>
             </div>
             <div>
               <dt>Next button</dt>
@@ -188,7 +197,7 @@
           <ul class="also">
             <li>Start a new recording while earlier ones are still transcribing.</li>
             <li>The recorder shows on every connected monitor.</li>
-            <li>Double-press Primary to pause and resume one recording.</li>
+            <li>Double-press Primary to finish without pasting. Triple-press to pause, then press once to resume.</li>
             <li>The optional <a href="https://github.com/EthanSK/VoiceInkPlusPlus/tree/main/companions/youtube-bridge">YouTube Bridge</a> pauses YouTube while you talk. Its source is included; install it separately.</li>
           </ul>
         </div>
@@ -199,29 +208,48 @@
       <div class="wrap split">
         <div class="band-head">
           <h2 id="build-title">Build from source</h2>
-          <p>There's no public download or VoiceInk++ Homebrew cask. You need macOS 14.4 or later and Xcode.</p>
+          <p>There's no public download or VoiceInk++ Homebrew cask. You need macOS 14.4 or later and full Xcode.</p>
         </div>
         <div class="band-body">
           <div class="commands">
             <pre tabindex="0" aria-label="Build commands"><code data-copy-source>git clone https://github.com/EthanSK/VoiceInkPlusPlus.git
 cd VoiceInkPlusPlus
-make local
-open ~/Downloads/VoiceInkPlusPlus.app</code></pre>
+./scripts/install-first-use.sh</code></pre>
             <div class="commands-bar" data-copy-bar hidden>
               <button class="copy" type="button" data-copy>Copy commands</button>
               <span class="sr-only" role="status" data-copy-status></span>
             </div>
           </div>
           <ul class="build-notes">
-            <li>This builds VoiceInk++ from public source, including real-time context.</li>
-            <li><code>make local</code> builds an ad-hoc signed app into Downloads. No paid Apple developer account needed.</li>
+            <li>The first-use installer builds VoiceInk++ from public source, including real-time context, and puts it in your Applications folder.</li>
+            <li>Use <code>--all</code> to also install the Codex context skill and YouTube helper. Chrome still needs its unpacked extension loaded manually.</li>
             <li>Allow Microphone and Accessibility on first launch. Exact Terminal and iTerm delivery also needs Automation.</li>
+            <li>The script refuses an existing VoiceInk++ install; updates need a recording-idle check and rollback.</li>
             <li>The upstream <code>voiceink</code> Homebrew cask installs VoiceInk, not VoiceInk++.</li>
           </ul>
           <p class="actions">
-            <a class="button" href="https://github.com/EthanSK/VoiceInkPlusPlus/blob/main/BUILDING.md">Build guide <span aria-hidden="true">↗</span></a>
+            <a class="button" href="https://github.com/EthanSK/VoiceInkPlusPlus/blob/main/SETUP.md">Full setup guide <span aria-hidden="true">↗</span></a>
+            <a href="https://github.com/EthanSK/VoiceInkPlusPlus/blob/main/BUILDING.md">Build details <span aria-hidden="true">↗</span></a>
             <a href="https://github.com/EthanSK/VoiceInkPlusPlus/issues">Issues <span aria-hidden="true">↗</span></a>
           </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="pieces" aria-labelledby="pieces-title">
+      <div class="wrap split">
+        <div class="band-head">
+          <h2 id="pieces-title">More than talking</h2>
+          <p>Ethan's extensions turn dictation into a live context stream. Install only the pieces you want.</p>
+        </div>
+        <div class="band-body">
+          <dl class="pieces">
+            <div><dt>Core · required</dt><dd>VoiceInk++ app, a transcription model, and macOS Microphone and Accessibility access.</dd></div>
+            <div><dt>Context · for Codex</dt><dd><a href="https://github.com/EthanSK/VoiceInkPlusPlus/tree/main/.agents/skills/interpret-voiceink-context">Install the context skill</a> to help Codex read speech, selections and screenshot paths together.</dd></div>
+            <div><dt>YouTube · optional</dt><dd><a href="https://github.com/EthanSK/VoiceInkPlusPlus/tree/main/companions/youtube-bridge">YouTube Bridge</a> adds a menu app, Chrome native host and login LaunchAgent. You load its Chrome extension once.</dd></div>
+            <div><dt>Mouse · optional</dt><dd><a href="https://ethansk.github.io/agentic-mouse/">Agentic Mouse</a> and programmable buttons are separate. The VoiceInk++ keyboard shortcut works without them.</dd></div>
+          </dl>
+          <p class="note">The <a href="https://github.com/EthanSK/VoiceInkPlusPlus/blob/main/SETUP.md">full setup guide</a> covers first install, manual permissions, Chrome loading and a real recording check. <code>--all</code> installs the bundled extras, not Agentic Mouse or your personal settings.</p>
         </div>
       </div>
     </section>
@@ -233,8 +261,12 @@ open ~/Downloads/VoiceInkPlusPlus.app</code></pre>
       <nav class="foot-nav" aria-label="Documentation">
         <a href="https://github.com/EthanSK/VoiceInkPlusPlus">GitHub</a>
         <a href="https://github.com/EthanSK/VoiceInkPlusPlus/blob/main/BUILDING.md">Build guide</a>
+        <a href="https://github.com/EthanSK/VoiceInkPlusPlus/blob/main/SETUP.md">Full setup</a>
         <a href="https://github.com/EthanSK/VoiceInkPlusPlus/blob/main/TERMINOLOGY.md">Button glossary</a>
         <a href="https://github.com/EthanSK/VoiceInkPlusPlus/blob/main/RECORDING_DESTINATIONS.md">Destination guide</a>
+        <a href="https://github.com/EthanSK/VoiceInkPlusPlus/tree/main/.agents/skills/interpret-voiceink-context">Context skill</a>
+        <a href="https://ethansk.github.io/ethan-setup/">Ethan's setup</a>
+        <a href="https://ethansk.github.io/agentic-mouse/">Agentic Mouse</a>
         <a href="https://github.com/EthanSK/VoiceInkPlusPlus/tree/main/.agents/skills/learnings">Learnings skill</a>
       </nav>
     </div>

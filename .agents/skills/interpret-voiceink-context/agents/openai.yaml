@@ -1,0 +1,4 @@
+interface:
+  display_name: "Interpret VoiceInk++ Context"
+  short_description: "Read speech with selections and screenshots"
+  default_prompt: "Use $interpret-voiceink-context to read this dictated message with its inline context."

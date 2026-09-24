@@ -1,7 +1,7 @@
 {
   "name": "VoiceInk++",
   "short_name": "VoiceInk++",
-  "description": "Mac dictation for agents, with live Codex highlights and screenshot paths in Ethan's current build.",
+  "description": "Mac dictation for agents, with live Codex highlights and screenshot paths in VoiceInk++ source.",
   "start_url": "/VoiceInkPlusPlus/",
   "display": "standalone",
   "background_color": "#e5eae8",
