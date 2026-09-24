@@ -25,6 +25,16 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-24T22:26:35Z
+**Trigger:** Ethan asked for VoiceInk++ live highlighting from apps beyond Codex.
+**Symptom:** Selecting text in another Mac app while recording produced no inline context cue.
+**Root cause:** `LiveSelectionCapture` rejected every frontmost process outside the verified Codex app, even though `SelectedTextService` already had clipboard-free Accessibility and supported-browser scripting strategies.
+**Fix:** Commit `aad3ba1` retains the Codex-specific task path but emits a bounded `<app_selection>` with the stable frontmost app name and bundle ID for other apps. It never invents a document, tab, chat, or Codex task label; capture still requires a selection gesture and a stable source PID.
+**Commit:** aad3ba1
+**Guard:** Build 338's exact-source Mac Mini full-suite fallback named and passed 341 tests in 10 suites after the canonical focused retry and full Xcode action both stalled before test execution. The clean separately built app was signed with the stable identity, passed deep/strict and outer Automation checks, and is installed with CDHash `528a1332fec437f05de0870adb0c3aa09ba65c90` and executable SHA-256 `e70dba21ebe9f95ac8b27eec3442fadf3fdd44bbde3646ba5a5bd5e8afa8d7ea`; physical drag-to-HUD acceptance remains unverified because Ethan was actively recording during the attempted disposable-app check. Never use clipboard-copy selection fallbacks: they can race transcript paste and restore an older pasteboard payload.
+---
+
+---
 **Date:** 2026-09-24T21:29:21Z
 **Trigger:** Final setup-link audit before signing build 337.
 **Symptom:** The README, site and native Help invited people to report a VoiceInk++ issue even though the repository does not accept Issues.
