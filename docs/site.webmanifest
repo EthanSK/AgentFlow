@@ -1,11 +1,11 @@
 {
   "name": "VoiceInk++",
   "short_name": "VoiceInk++",
-  "description": "Opinionated macOS voice-to-text for staying in the flow.",
+  "description": "Mac dictation for agents, with live Codex highlights and screenshot paths in Ethan's current build.",
   "start_url": "/VoiceInkPlusPlus/",
   "display": "standalone",
-  "background_color": "#0b0d12",
-  "theme_color": "#0b0d12",
+  "background_color": "#e5eae8",
+  "theme_color": "#e5eae8",
   "icons": [
     {
       "src": "https://raw.githubusercontent.com/EthanSK/VoiceInkPlusPlus/main/VoiceInk/Assets.xcassets/AppIcon.appiconset/512-mac.png",

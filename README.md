@@ -1,139 +1,78 @@
 <div align="center">
-  <img src="VoiceInk/Assets.xcassets/AppIcon.appiconset/256-mac.png" width="156" height="156" alt="VoiceInk++ app icon">
+  <img src="VoiceInk/Assets.xcassets/AppIcon.appiconset/256-mac.png" width="128" height="128" alt="VoiceInk++ app icon">
 
   # VoiceInk++
 
-  ### Become Jarvis. Keep it moving. Not a second of waiting around.
-
-  **Either you or the agent is running.**
+  Speech to text for Mac, built for working with agents.
 
   [Website](https://ethansk.github.io/VoiceInkPlusPlus/) · [Build guide](BUILDING.md) · [Button glossary](TERMINOLOGY.md) · [Destination guide](RECORDING_DESTINATIONS.md) · [Issues](https://github.com/EthanSK/VoiceInkPlusPlus/issues)
 
-  [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-50e3bf.svg)](LICENSE)
-  ![Platform: macOS 14.4+](https://img.shields.io/badge/macOS-14.4%2B-7aa7ff.svg)
-  ![Swift](https://img.shields.io/badge/Swift-native-ffbc6b.svg)
+  [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-066b55.svg)](LICENSE)
+  ![Platform: macOS 14.4+](https://img.shields.io/badge/macOS-14.4%2B-111615.svg)
+  ![Swift](https://img.shields.io/badge/Swift-native-4a5452.svg)
 </div>
 
-VoiceInk++ is Ethan SK's opinionated macOS voice-to-text workflow. Speak instead of reaching for the keyboard, choose current focus or an exact saved input for each transcript, and carry on in another app while transcription, paste, and auto-send finish behind you.
+## Real-time context
 
-It is built for people who use AI agents, terminals, chats, and editors all day—and do not want to spend even an awkward second staring at a transcription spinner.
+> [!NOTE]
+> Real-time context is only in Ethan's current installed build. Public `main` doesn't include it yet, so building this repository won't enable it.
+
+Highlight text in Codex or take a macOS screenshot while you're recording. The recorder shows each one in line with your words, selections in cyan and screenshots in purple, and the final paste puts each reference where you said it:
+
+```text
+Rename this function
+
+<codex_selection index="1" source="Codex" characters="32" middle_omitted="false">
+  <text>func loadRows(from cache: Cache)</text>
+</codex_selection>
+
+and make the empty state look like this.
+
+<local_screenshot path="/Users/you/Desktop/Screenshot 2026-09-24 at 10.41.12.png"/>
+```
+
+- Long highlights keep only their first and last 46 characters, as `<start>` and `<end>`.
+- Screenshots add their file path, not the image.
+- Placement follows the live transcript, so a reference can shift by a word if recognition revises earlier text.
+- It's plain text in your message, not a native Codex annotation or a link to an exact range.
+
+## Choose where each transcript goes
+
+Map two mouse buttons: the **Primary button** to your VoiceInk++ recording shortcut and the **Next button** to macOS **Next Track**. The [button glossary](TERMINOLOGY.md) lists every alias.
+
+| Press | When | Text goes to |
+| --- | --- | --- |
+| Primary | While recording | The input focused when the text arrives, like base VoiceInk |
+| Next | While recording | The input where you started recording |
+| Next | While transcribing, after a Primary stop | **Second chance:** the input focused when you press Next |
+
+Only the Next routes save an exact input along with its app's Mode and auto-send. If VoiceInk++ can't verify that input, it shows an error instead of pasting somewhere else. Double-pressing Primary pauses and resumes the same recording; it isn't a route. The [destination guide](RECORDING_DESTINATIONS.md) has the full contract.
+
+For Codex CLI or Claude Code, the terminal or editor hosting it owns the input, so the recorder shows that host's icon. Set the Mode and auto-send on the host app. No plugin or shell hook is needed.
+
+## Ethan's setup
+
+- **Mouse:** Logitech G502 X LIGHTSPEED, mapped in Logitech G HUB. Next won't skip music while the recorder is showing.
+- **Transcription:** Soniox V5 real-time in English, on your own Soniox account. Keep Deepgram or another model as a fallback.
+- **Live words:** shown only in the recorder, then pasted once when you stop.
+- **AI:** OpenAI gpt-5.5, with enhancement off in fast direct-paste Modes.
+- **Auto-send:** Return in Codex, Claude desktop, ChatGPT and the terminal or editor hosting Codex CLI or Claude Code; off in Chrome.
+
+## Also
+
+- Start a new recording while earlier ones are still transcribing. Each keeps its own Mode, input and delivery state.
+- The recorder shows on every connected monitor, with the current app and locked destination as separate icons.
+- Double-press Primary to pause and resume one recording. Paused audio is left out.
+- The recorder's cancel control discards an active recording. One-shot raw mode skips processing and auto-send.
+- Delivery errors show in the recorder instead of being reported as success.
 
 ## YouTube and Chrome companion
 
-The [VoiceInk YouTube Bridge](companions/youtube-bridge/README.md) is included in this repository.
-It pauses a playing YouTube video when dictation starts and resumes only the video it paused;
-manual playback changes keep priority. The same extension supports Agentic Mouse's YouTube seek,
-volume and speed controls on watch pages and Shorts, Chrome tab history, and its fixed website shortcuts.
+The optional [VoiceInk YouTube Bridge](companions/youtube-bridge/README.md) pauses a playing YouTube video when dictation starts and resumes only the video it paused. It also supports Agentic Mouse's YouTube controls, Chrome tab history and website shortcuts. Its extension, macOS helper, tests and install scripts are in this repository; install it separately with the [agent setup guide](companions/youtube-bridge/AGENT_SETUP.md).
 
-The folder contains the extension, macOS helper, native host, tests and install scripts.
-Follow the [agent setup guide](companions/youtube-bridge/AGENT_SETUP.md) to reproduce the setup.
-It is an optional companion with its own installation; building VoiceInk++ alone does not install it.
+## Build from source
 
-## Codex selections during dictation
-
-In Ethan's current installed build, highlight text in Codex while a VoiceInk++ recording is running. On mouse release, the recorder captures a short reference and shows it in the HUD. The final message places each `<codex_selection>` XML block between the words spoken before and after that selection, with a blank line on either side. Long selections include only their beginning and end. The placement uses the live transcript available at selection time, so it can shift slightly if recognition revises earlier words.
-
-This is a text reference in the dictated message, not a native Codex annotation or a link to an exact message range. **The public `main` source does not yet include this native feature**; building this checkout will not enable it.
-
-## The reason VoiceInk++ exists
-
-Most dictation tools bind a recording to wherever you happen to be when the result arrives. VoiceInk++ gives two mouse buttons three deliberate routes. The **primary button** is Ethan's normal/thumb/toggle recording button; the separate **Next button** is mapped to the standard macOS **Next Track** media action. [The canonical glossary](TERMINOLOGY.md) records every conversational alias.
-
-| What you do | Where the transcript goes |
-| --- | --- |
-| Press the primary button again to stop normally | Whichever system keyboard input is focused when final delivery happens; never the recording-start input |
-| Press the **Next button** while recording | The input captured when recording started |
-| Stop normally, then press the **Next button** while transcription is loading | A second chance: replace the pending destination with the exact input focused now |
-
-The third route is the workflow-defining one:
-
-> Normal stop → transcription begins → focus a new input → press the Next button once → move on → VoiceInk++ returns to that input, pastes, uses that app's auto-send setting, and restores your later workspace.
-
-The target belongs to the individual recording. Starting another recording or focusing another app does not release it.
-
-## Ethan's recommended setup
-
-This is the setup Ethan actually uses—not an exhaustive menu of possibilities.
-
-### 1. Put two controls under your thumb
-
-Use a mouse with at least two programmable buttons. Ethan uses a **Logitech G502 X LIGHTSPEED** because it is light, comfortable, smooth over its USB receiver, and highly configurable.
-
-In **Logitech G HUB**:
-
-- Map one side button to your normal VoiceInk++ toggle shortcut.
-- Map a second side button—your **Next button**—to the standard macOS **Next Track** media action.
-
-VoiceInk++ owns that Next Track event for as long as the black recorder/transcription bar is visible.
-An eligible press stops or retargets; a late/ineligible press is a safe no-op. Once the bar hides, the
-media key continues to work normally.
-
-### 2. Copy the fast VoiceInk++ stack
-
-Ethan's current configuration is:
-
-- **Transcription:** Soniox V5 with real-time transcription
-- **Live transcript:** shown only in VoiceInk++'s black recorder bar; never written provisionally into another app
-- **AI provider/model:** OpenAI · gpt-5.5
-- **Fast direct-paste Modes:** AI enhancement off
-- **Language:** English
-- **Paste method:** Default
-- **Audio input:** the best available microphone (Ethan currently uses Digital Mic)
-- **Auto-send:** Return in the Codex app, Claude desktop, ChatGPT, and the terminal/editor hosts used by Codex CLI or Claude Code; deliberately off in Chrome
-
-Soniox needs your own provider credentials and funded account. Keep Deepgram or another supported model configured as a fallback. Copy the pattern—especially HUD-only partials and the safe per-app auto-send choices—rather than blindly enabling Return everywhere.
-
-### 3. Learn the two-button rhythm
-
-- **Finish here:** stop normally and let whichever system keyboard input is focused at final delivery receive the result.
-- **Send it back:** press the Next button while recording to use the input where recording began.
-- **Second chance:** after a normal stop, focus another input and press the Next button while the result is still loading. Then keep working elsewhere.
-
-That is the whole idea: stay in the flow. Something is always happening.
-
-## Codex and Claude Code support
-
-All three destination routes work with agent inputs. The important distinction is who owns the editable macOS input:
-
-| Agent surface | What VoiceInk++ locks | Auto-send route |
-| --- | --- | --- |
-| **Codex desktop** | The exact Codex composer | Surface-specific Send when verifiable; safe foreground route when already focused |
-| **Codex CLI** | The exact terminal or editor input hosting the CLI | Host-native delivery when supported; safe focused-input route otherwise |
-| **Claude Code** | The exact Terminal, iTerm, Ghostty, VS Code, Cursor, or other host input | Host-native delivery when supported; safe focused-input route otherwise |
-| **Claude desktop** | The exact Claude composer | Verified exact-input delivery with safe failure behavior |
-
-For a CLI agent, the recorder intentionally shows the **host app icon**—for example, Terminal or VS Code—because that app owns the real input. Create a VoiceInk++ Mode for the host app, enable Return only where automatic submission is safe, and use the Next button exactly as you would in Codex desktop. No Codex or Claude plugin, shell hook, or process-name detection is required.
-
-## What the recorder shows
-
-The compact recorder panel appears on every connected monitor and keeps its information spatially consistent:
-
-```text
-[ v<version> ]
-[  .<build>  ] [ Stop ] [ Mode ] [ waveform ] [ current focused app ] [ locked destination ]
-```
-
-- The two-row `v<version>` / `.<build>` identifier changes with every installed native release.
-- Routine “Recording” text stays out of the way; visible text is reserved for real warnings and errors.
-- The current app and locked destination are separate, so you can see both what you are doing and where the transcript will land.
-- The destination remains visible through transcription and updates immediately after a successful second-chance retarget.
-- Delivery errors are surfaced instead of being silently reported as success.
-
-## More flow-first features
-
-- Record a new thought while earlier recordings are still transcribing.
-- Keep each recording's Mode, input, auto-send key, and delivery state isolated.
-- Type and auto-send into a verified exact background input without interrupting the workspace you moved to.
-- Use the verified foreground route only when the exact saved input already owns keyboard focus or a foreground-only target can be safely promoted.
-- Cancel a recording instantly with Escape or the recorder's cancel control.
-- Use one-shot raw/skip mode when you want untouched transcription with no auto-send.
-- Double-press the Primary button to pause and resume the same recording without including paused audio.
-- Pause and resume supported media without blindly toggling playback state.
-- Keep the recording waveform visible across every connected display.
-
-## Build it
-
-VoiceInk++ currently ships as source rather than a notarized public binary. You need **macOS 14.4 or later**, Xcode, Git, Microphone permission, and Accessibility permission. Exact Apple Terminal/iTerm delivery additionally needs the optional Automation grant described in [BUILDING.md](BUILDING.md).
+There's no public download or VoiceInk++ Homebrew cask. You need **macOS 14.4 or later**, Xcode and Git.
 
 ```sh
 git clone https://github.com/EthanSK/VoiceInkPlusPlus.git
@@ -142,7 +81,9 @@ make local
 open ~/Downloads/VoiceInkPlusPlus.app
 ```
 
-`make local` creates an ad-hoc signed standalone app without requiring a paid Apple Developer account. Read [BUILDING.md](BUILDING.md) for prerequisites, build targets, and troubleshooting.
+`make local` builds an ad-hoc signed app into `~/Downloads`, with no paid Apple Developer account needed. It builds public `main`, which doesn't include real-time context yet. Allow Microphone and Accessibility on first launch; exact Terminal and iTerm delivery also needs Automation. [BUILDING.md](BUILDING.md) covers prerequisites, make targets and troubleshooting.
+
+The upstream `voiceink` Homebrew cask and downloads install VoiceInk, not VoiceInk++.
 
 ## Documentation
 
@@ -155,16 +96,10 @@ open ~/Downloads/VoiceInkPlusPlus.app
 - [Review update guidance](UPDATING.md)
 - [Report a VoiceInk++ issue](https://github.com/EthanSK/VoiceInkPlusPlus/issues)
 
-## Project status
-
-VoiceInk++ is a personal, opinionated fork being shared in public. The destination workflows are intentionally specific and regression-protected; changes to them should preserve all three routes rather than collapsing them into one toggle.
-
-This fork has no Pro purchase, trial, license validation, affiliate promotion, or remote promotional-announcement system. Provider API costs are still paid directly to whichever optional transcription or AI service you configure.
-
-There is no VoiceInk++ Homebrew cask or public binary release at present. The upstream `voiceink` cask and downloads install the upstream product, not this fork.
-
 ## Origin and license
 
-VoiceInk++ is built on [VoiceInk](https://github.com/Beingpax/VoiceInk) by [Pax/Beingpax](https://github.com/Beingpax). The native macOS foundation, model integrations, and much of the broader application come from that project; VoiceInk++ adds Ethan's opinionated agent workflow, destination routing, overlapping-session behavior, recorder UI, and delivery hardening.
+VoiceInk++ is Ethan SK's personal fork of [VoiceInk](https://github.com/Beingpax/VoiceInk) by [Pax/Beingpax](https://github.com/Beingpax), shared in public. The native macOS foundation, model integrations and much of the app come from VoiceInk; VoiceInk++ adds the agent workflow, destination routes, overlapping sessions, recorder UI and delivery hardening. Changes should keep all three routes rather than collapsing them into one toggle.
 
-This repository is licensed under the [GNU General Public License v3.0](LICENSE). VoiceInk and related names belong to their respective owners; VoiceInk++ is Ethan's independent fork.
+This fork has no Pro purchase, trial, license validation, affiliate promotion or remote promotional announcements. Paid transcription and AI providers you configure bill you directly.
+
+Licensed under the [GNU General Public License v3.0](LICENSE). VoiceInk and related names belong to their respective owners; VoiceInk++ is Ethan's independent fork.
