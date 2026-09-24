@@ -25,6 +25,16 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-24T00:20:46Z
+**Trigger:** Ethan asked to make live dictated Codex selections and screenshots a major website/README feature, and to replace the overlong public site.
+**Symptom:** The existing site buried the installed-only context feature in setup copy; its scroll-reveal sections also appeared blank in a full-page browser capture until they were individually scrolled into view.
+**Root cause:** The site treated progressive reveal and long-form promotion as its primary structure instead of keeping the feature explanation and three destination routes immediately readable in semantic HTML.
+**Fix:** Commit 9589121 puts a short, color-coded speech/selection/screenshot example above the fold, removes the scroll-reveal dependency, keeps the three route definitions in HTML, and explicitly says that public source does not yet include the native context feature. The screenshot example is a file path, not an attached image.
+**Commit:** 9589121
+**Guard:** Validate local references and accessibility IDs, HTML, JavaScript, and README links; keep the finished demo and routes in static HTML so they remain present without JavaScript, and inspect desktop and 320/390-pixel phone layouts in a browser. Never describe the installed-only feature as available from public `main` until that native source is actually published.
+---
+
+---
 **Date:** 2026-09-23T23:39:27Z
 **Trigger:** Ethan asked for purple screenshot references and roughly double-size dictated text and width in the live recorder float, while retaining chronological Codex highlights.
 **Symptom:** Build 334 rendered the live context at 12 pt in a 344-pt mini pill (180-pt notch side expansion); screenshot references were orange. Enlarging only SwiftUI text would leave the host window and measured/notification geometry inconsistent.
@@ -92,6 +102,16 @@ Each entry looks like:
 **Fix:** Ethan's `VIPPRecentTranscriptContextEnabled` preference was switched off for new recordings, so the current whitespace-only static prompt produces no prompt field. Build 328 introduces an OpenAI-only `VIPPExcludedOpenAIKeywords` filter. His personal setting is configured to send 35 reviewed terms once build 328 is installed, while preserving all 82 SwiftData rows and the unchanged non-OpenAI paths. Missing exclusions retain the previous full list; previously unseen additions are included. Frozen realtime and completed-audio fallback inputs share the selected list. No private word list enters source or logs.
 **Commit:** Build-328 native release source `33c4c7f15875198a7f694615a104d641f349e39d`.
 **Guard:** On the Mac Mini, all 46 named focused context/Codex tests passed, including two new shortlist guards. Two canonical focused selections for mandatory Primary/Next/HUD guards stalled before any named test and were not counted; the exact-commit/build-328 canonical full action also stalled at zero named tests. Its freshly built bundle passed all 329 named tests in 10 suites with the documented disposable MediaRemoteAdapter framework-resource staging, including Primary isolation, both Next-route guards, HUD-only streaming and the new shortlist tests. A synthetic, non-private GPT Live probe accepted a 1,024-character prompt and separate two-keyword and English fields, emitted 15 deltas, completed non-empty, and returned a non-empty `gpt-transcribe` fallback; this proves protocol acceptance, not better recognition. The separate signed Release archive SHA-256 is `5f4ba9cfee2baaca553c9364258049637e89d9594c69906fd8e7e293ca28c682`; executable SHA-256 is `e43c8bc15363515a9876b358ccb175e5a2917a23953489bb4961e36c300248c1`; CDHash is `ebb514fde6df236e10f32c68d8ec6f067c132593`. Deep/strict signing, Automation and microphone entitlements, build number 328, new PID 5103, 82 preserved Vocabulary rows, 47 configured exclusions and unchanged official VoiceInk executable hash all verified. Build 327 is retained as a verified rollback archive. A natural post-install Primary recording connected GPT Live, emitted a first partial, finalized 122 characters, posted paste and one HID Enter, and removed its pipeline; visible destination acceptance and recognition-quality improvement are not established. The disabled-context branch does not emit a keyword-count log, so the 35-keyword claim follows the installed code plus live defaults/store counts, not captured request telemetry. The learnings skill validates. Compare same audio to human-corrected references before claiming an accuracy gain.
+
+---
+**Date:** 2026-09-09T17:48:58Z
+**Trigger:** Ethan asked for a self-contained VoiceInk++ repository including the YouTube/Chrome extension and agent setup.
+**Symptom:** Public VoiceInk++ setup referenced a YouTube workflow whose companion source was absent.
+**Root cause:** The Chrome extension, native host and menu app lived in a separate local project; its build also defaulted to a personal signing identity and generated an icon with undeclared Pillow.
+**Fix:** Bundle the companion, tests, icon and agent guide under companions/youtube-bridge; default to ad-hoc signing, include the artwork generator separately, and serialize installer paths as JSON/plist.
+**Commit:** 7b070b2246cf789d2376ca6629b217634ca66cd2
+**Guard:** Run scripts/test.sh and build the copied standalone folder on the Mac Mini; verify host/app signatures and installer paths containing spaces, quotes and ampersands. Public main does not yet emit the optional preserving-playback event.
+---
 
 ---
 **Date:** 2026-09-09T00:46:02Z
