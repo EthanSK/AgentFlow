@@ -25,6 +25,17 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-24T23:10:43Z
+**Trigger:** Ethan asked for whole highlighted text, latest-only contiguous highlights, and richer Chrome context.
+**Symptom:** Long selections reached the agent as first/last excerpts, and adjusting a highlight without speech left redundant cues. Chrome tags identified only the app.
+**Root cause:** LiveSelectionReference discarded the selected middle, RecordingSession appended every highlight, and the generic app path had no bounded Chrome page/DOM read.
+**Fix:** Commit 2731c4d retains the full selection only for final XML while keeping the HUD preview compact, collapses same-speech-anchor highlights, and optionally adds query-scrubbed Chrome page and common-ancestor cues through a bounded read-only script. Both public and personal interpretation skills describe the actual evidence and failure boundaries.
+**Commit:** 2731c4d
+**Guard:** Exact build 339 source passed 344 named tests in 10 suites on the Mac Mini via the documented direct full-suite fallback after the canonical focused/full Xcode runners stalled at zero tests. The separate signed Release app passed deep/strict and outer Automation checks and is installed with CDHash 698a97553b87956ac32cd06863253a7c8edf64be, persistent PID 35728; build 338 rollback is retained and official VoiceInk is untouched. Website wording was checked in a task-owned Chrome window. Physical dictation and Chrome DOM capture remain unverified; Chrome scripting may be blocked, in which case app-only selection remains.
+---
+
+
+---
 **Date:** 2026-09-24T22:26:35Z
 **Trigger:** Ethan asked for VoiceInk++ live highlighting from apps beyond Codex.
 **Symptom:** Selecting text in another Mac app while recording produced no inline context cue.
