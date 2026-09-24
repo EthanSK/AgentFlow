@@ -25,6 +25,16 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-24T23:56:04Z
+**Trigger:** Ethan asked for a saved size slider like Agentic Mouse because the VoiceInk++ float felt too large.
+**Symptom:** The enlarged live-context preview had no way to reduce its complete footprint; shrinking only SwiftUI pixels would leave the transparent recorder window intercepting clicks at its former size.
+**Root cause:** Mini and notch recorder panels used fixed AppKit frames while their SwiftUI content, dynamic transcript height, stacked cards, and notification clearance had separate unscaled geometry.
+**Fix:** Commit `bbef13d` adds one bounded persisted HUD scale, an Interface slider, and an AppKit host that maps the original SwiftUI coordinate space into a physically smaller panel on every display. Both panel styles, dynamic height, and mini error-notification clearance use that same value; the new default is 85%.
+**Commit:** bbef13d
+**Guard:** `recorderHUDSizePersistsAndScalesTheWholeHost` covers persistence, clamping, physical host geometry, and notification clearance. Keep scale changes out of recording/session state, keep mirrored panels aligned with their actual display, and validate the exact build with the Mini release gate before installing.
+---
+
+---
 **Date:** 2026-09-24T23:34:06Z
 **Trigger:** Ethan requested a public signed download with automatic releases.
 **Symptom:** A public VoiceInk++ binary would have shipped with only a GPLv3 preamble and a locally trusted signing path.
