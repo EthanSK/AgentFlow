@@ -187,9 +187,10 @@ class TranscriptionPipeline {
         let recoverablePartialTranscriptNow = recoverablePartialTranscript()
 
         func attachLiveSelectionsToFinalText() {
-            // Insert compact selection boundaries and saved screenshot paths
-            // alongside the speech that preceded them in the live HUD. Pixels
-            // and complete selections are not sent by this path. This remains
+            // Insert complete XML-escaped selections and saved screenshot paths
+            // alongside the speech that preceded them in the live HUD. The
+            // provider only saw a compact HUD preview, not these full texts.
+            // Screenshot pixels are not sent by this path. This remains
             // one final destination write, never a streaming composer edit.
             // Keep raw/skip verbatim and do not append references to commands
             // or recorder-assistant responses.

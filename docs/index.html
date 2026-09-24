@@ -66,7 +66,7 @@
         <div class="hero-head">
           <h1 id="hero-title">Talk while you <span class="g-select" data-at="900">highlight</span> and <span class="g-shot" data-at="2450">screenshot</span></h1>
           <div class="hero-aside">
-            <p class="lede">VoiceInk++ is speech to text for Mac, built for working with agents. Highlight text in another app or take a screenshot mid-sentence; it adds a short excerpt or file path to your message at that point.</p>
+            <p class="lede">VoiceInk++ is speech to text for Mac, built for working with agents. Highlight text in another app or take a screenshot mid-sentence; your final message puts the full selected text or screenshot path alongside the words you spoke.</p>
             <p class="caveat">Real-time context is included in VoiceInk++ source. Build it on your Mac to use it.</p>
           </div>
         </div>
@@ -118,8 +118,9 @@
             <button class="replay" type="button" data-demo-replay hidden><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v5h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Replay</button>
             <ul class="facts">
               <li>Words show only in the recorder until you stop, then paste once.</li>
-              <li>Long highlights keep only their first and last 46 characters.</li>
-              <li>Highlight in any app that exposes selected text to macOS. Codex can also label its task.</li>
+              <li>Full highlights paste at the end; the live preview stays short.</li>
+              <li>Without speech between highlights, only the latest remains.</li>
+              <li>Codex can label its task. Chrome can add page and DOM cues when scripting is available.</li>
               <li>Screenshots add their file path, not the image.</li>
               <li>Placement follows the live transcript, so a reference can shift by a word.</li>
             </ul>
@@ -198,7 +199,7 @@
           <ul class="also">
             <li>Start a new recording while earlier ones are still transcribing.</li>
             <li>The recorder shows on every connected monitor.</li>
-            <li>Double-press Primary to finish without pasting. Triple-press to pause, then press once to resume.</li>
+              <li>Double-press Primary to finish without pasting. Triple-press to pause, then press once to resume.</li>
             <li>The optional <a href="https://github.com/EthanSK/VoiceInkPlusPlus/tree/main/companions/youtube-bridge">YouTube Bridge</a> pauses YouTube while you talk. Its source is included; install it separately.</li>
           </ul>
         </div>

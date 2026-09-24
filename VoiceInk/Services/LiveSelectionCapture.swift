@@ -4,9 +4,9 @@ import Darwin
 import Foundation
 import SQLite3
 
-/// A compact, per-recording reference to text selected in the frontmost app.
-/// The complete selection is discarded after making this value; the sent message
-/// includes only its boundaries, so the recipient needs the source for long text.
+/// A per-recording reference to text selected in the frontmost app. The HUD
+/// shows only a compact preview; the complete text is added to the final
+/// destination message after transcription, never to live provider context.
 struct LiveSelectionReference: Equatable {
     private enum Source: Equatable {
         case codex
@@ -22,12 +22,12 @@ struct LiveSelectionReference: Equatable {
     let preview: String
     let characterCount: Int
     let omittedMiddle: Bool
-    private let start: String
-    private let end: String?
+    private let selectedText: String
     private let screenshotPath: String?
     private var spokenPrefix = ""
     private var codexThreadID: String?
     private var codexThreadTitle: String?
+    private var chromeContext: ChromeSelectionContextReader.Context?
     private var source: Source = .codex
 
     private var hudPreview: String {
@@ -46,17 +46,14 @@ struct LiveSelectionReference: Equatable {
 
         characterCount = trimmed.count
         screenshotPath = nil
+        self.selectedText = trimmed
+        omittedMiddle = false
         if normalized.count <= 96 {
             preview = "“\(normalized)”"
-            omittedMiddle = false
-            start = normalized
-            end = nil
         } else {
-            start = String(normalized.prefix(46))
+            let start = String(normalized.prefix(46))
             let last = String(normalized.suffix(46))
-            end = last
             preview = "“\(start)” … “\(last)”"
-            omittedMiddle = true
         }
     }
 
@@ -71,14 +68,19 @@ struct LiveSelectionReference: Equatable {
         preview = screenshotURL.lastPathComponent
         characterCount = 0
         omittedMiddle = false
-        start = ""
-        end = nil
+        self.selectedText = ""
     }
 
     func anchored(after spokenText: String) -> Self {
         var copy = self
         copy.spokenPrefix = spokenText
         return copy
+    }
+
+    var isSelection: Bool { screenshotPath == nil }
+
+    var spokenWordCount: Int {
+        spokenPrefix.split(whereSeparator: \.isWhitespace).count
     }
 
     func scopedToCodexThread(id: String, title: String?) -> Self {
@@ -117,17 +119,25 @@ struct LiveSelectionReference: Equatable {
         return copy
     }
 
+    func scopedToChrome(_ context: ChromeSelectionContextReader.Context?) -> Self {
+        guard case .application(_, let bundleID) = source,
+              bundleID == "com.google.Chrome" else { return self }
+        var copy = self
+        copy.chromeContext = context
+        return copy
+    }
+
     static func previewParts(_ references: [Self], with partialTranscript: String) -> [PreviewPart] {
         // The HUD uses the same approximate cumulative-word anchor as final
         // delivery, but never writes provisional text into another app. Keep
-        // every selection in sequence with speech, including equal anchors when
-        // the provider has not emitted another partial between two selections.
+        // selections in sequence with speech. RecordingSession replaces the
+        // preceding highlight when no new speech appeared between gestures.
         let wordEnds = wordEndIndices(in: partialTranscript)
         var lastWordCount = 0
         var previousEnd = partialTranscript.startIndex
         var parts: [PreviewPart] = []
         for reference in references {
-            let spokenWordCount = reference.spokenPrefix.split(whereSeparator: \.isWhitespace).count
+            let spokenWordCount = reference.spokenWordCount
             let wordCount = min(max(lastWordCount, spokenWordCount), wordEnds.count)
             let insertion = wordCount == 0 ? partialTranscript.startIndex : wordEnds[wordCount - 1]
             let speech = String(partialTranscript[previousEnd..<insertion])
@@ -162,7 +172,7 @@ struct LiveSelectionReference: Equatable {
         var previousEnd = transcript.startIndex
         var parts: [String] = []
         for reference in references {
-            let spokenWordCount = reference.spokenPrefix.split(whereSeparator: \.isWhitespace).count
+            let spokenWordCount = reference.spokenWordCount
             let wordCount = min(max(lastWordCount, spokenWordCount), wordEnds.count)
             let insertion = wordCount == 0 ? transcript.startIndex : wordEnds[wordCount - 1]
             let speech = String(transcript[previousEnd..<insertion])
@@ -199,6 +209,21 @@ struct LiveSelectionReference: Equatable {
             if let bundleID {
                 attributes += " bundle_id=\"\(Self.xmlEscaped(bundleID))\""
             }
+            if let chromeContext {
+                attributes += " page_url=\"\(Self.xmlEscaped(chromeContext.pageURL))\""
+                if let pageTitle = chromeContext.pageTitle {
+                    attributes += " page_title=\"\(Self.xmlEscaped(pageTitle))\""
+                }
+                if let elementTag = chromeContext.elementTag {
+                    attributes += " element_tag=\"\(Self.xmlEscaped(elementTag))\""
+                }
+                if let elementRole = chromeContext.elementRole {
+                    attributes += " element_role=\"\(Self.xmlEscaped(elementRole))\""
+                }
+                if let elementLabel = chromeContext.elementLabel {
+                    attributes += " element_label=\"\(Self.xmlEscaped(elementLabel))\""
+                }
+            }
         }
         if case .codex = source, let codexThreadID {
             attributes += " task_id=\"\(Self.xmlEscaped(codexThreadID))\""
@@ -206,14 +231,8 @@ struct LiveSelectionReference: Equatable {
                 attributes += " task_title=\"\(Self.xmlEscaped(codexThreadTitle))\""
             }
         }
-        if let end {
-            return "<\(tag) \(attributes)>\n"
-                + "  <start>\(Self.xmlEscaped(start))</start>\n"
-                + "  <end>\(Self.xmlEscaped(end))</end>\n"
-                + "</\(tag)>"
-        }
         return "<\(tag) \(attributes)>\n"
-            + "  <text>\(Self.xmlEscaped(start))</text>\n"
+            + "  <text>\(Self.xmlEscaped(selectedText))</text>\n"
             + "</\(tag)>"
     }
 
@@ -251,6 +270,93 @@ struct LiveSelectionReference: Equatable {
             .replacingOccurrences(of: ">", with: "&gt;")
             .replacingOccurrences(of: "\"", with: "&quot;")
             .replacingOccurrences(of: "'", with: "&apos;")
+    }
+}
+
+/// Optional Chrome-only enrichment from the same selected DOM range. A failed or
+/// blocked Apple Event is not permission to use the clipboard or guess a page.
+enum ChromeSelectionContextReader {
+    struct Context: Equatable {
+        let selectedText: String
+        let pageURL: String
+        let pageTitle: String?
+        let elementTag: String?
+        let elementRole: String?
+        let elementLabel: String?
+    }
+
+    static func parse(_ output: String) -> Context? {
+        guard let data = output.data(using: .utf8),
+              let fields = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+              let selected = fields["selectedText"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !selected.isEmpty,
+              let rawURL = fields["url"],
+              var url = URLComponents(string: rawURL),
+              ["https", "http"].contains(url.scheme?.lowercased() ?? ""),
+              let host = url.host, !host.isEmpty else { return nil }
+        // Most query strings can hold tokens. Preserve only YouTube's validated
+        // public video ID; other page context uses origin and path, never hashes.
+        let videoID = url.queryItems?.first(where: { $0.name == "v" })?.value
+        url.queryItems = nil
+        if ["youtube.com", "www.youtube.com", "m.youtube.com"].contains(host.lowercased()),
+           url.path == "/watch", let videoID,
+           !videoID.isEmpty, videoID.count <= 32,
+           videoID.unicodeScalars.allSatisfy({
+               CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
+                   .contains($0)
+           }) {
+            url.queryItems = [URLQueryItem(name: "v", value: videoID)]
+        }
+        url.fragment = nil
+        url.user = nil
+        url.password = nil
+        guard let pageURL = url.string, pageURL.count <= 512 else { return nil }
+        func clean(_ value: String?, limit: Int) -> String? {
+            guard let value else { return nil }
+            let cleaned = value.split(whereSeparator: \.isWhitespace)
+                .joined(separator: " ")
+                .filter { $0.unicodeScalars.allSatisfy { $0.value >= 0x20 && $0.value != 0x7F } }
+            return cleaned.isEmpty ? nil : String(cleaned.prefix(limit))
+        }
+        let allowedTag = CharacterSet.lowercaseLetters
+        let tag = clean(fields["elementTag"], limit: 24)?.lowercased()
+        let safeTag: String?
+        if let tag,
+           tag.unicodeScalars.allSatisfy({ allowedTag.contains($0) }),
+           !["html", "body"].contains(tag) {
+            safeTag = tag
+        } else {
+            safeTag = nil
+        }
+        let role = clean(fields["elementRole"], limit: 40)?.lowercased()
+        let allowedRole = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyz-")
+        let safeRole = role?.unicodeScalars.allSatisfy { allowedRole.contains($0) } == true
+            ? role : nil
+        return Context(
+            selectedText: selected,
+            pageURL: pageURL,
+            pageTitle: clean(fields["title"], limit: 160),
+            elementTag: safeTag,
+            elementRole: safeTag == nil ? nil : safeRole,
+            elementLabel: safeTag == nil ? nil : clean(fields["elementLabel"], limit: 100)
+        )
+    }
+
+    static func capture() async -> Context? {
+        // This reads only the current selection, its common DOM ancestor and
+        // active page identity. It does not install all-sites extension access,
+        // inspect surrounding text, mutate DOM, or send page content to GPT Live.
+        let javascript = #"(()=>{const s=window.getSelection();let t=s?.toString()??'';let e=s?.rangeCount?s.getRangeAt(0).commonAncestorContainer:null;e=e?.nodeType===1?e:e?.parentElement;if(!t){const a=document.activeElement;if(a&&typeof a.selectionStart==='number'&&typeof a.selectionEnd==='number'&&typeof a.value==='string'){t=a.value.slice(a.selectionStart,a.selectionEnd);e=a}}const o={selectedText:t,url:location.href,title:document.title};if(e&&e!==document.body&&e!==document.documentElement){o.elementTag=e.tagName?.toLowerCase()??'';o.elementRole=e.getAttribute('role')??'';o.elementLabel=e.getAttribute('aria-label')??e.getAttribute('title')??''}return JSON.stringify(o)})()"#
+        let quoted = javascript.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let script = "tell application id \"com.google.Chrome\"\n"
+            + "tell active tab of front window\n"
+            + "execute javascript \"\(quoted)\"\n"
+            + "end tell\nend tell"
+        guard let result = try? await BoundedAppleScriptRunner.run(source: script, timeout: 1.0) else {
+            return nil
+        }
+        return parse(result.stdout.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 }
 
@@ -495,8 +601,16 @@ final class LiveSelectionCapture {
                     ? CodexConversationContextReader.activeThreadIDIfFrontmost(
                         frontmostApplication: app
                     ) : nil
+                let chromeContext = app.bundleIdentifier == "com.google.Chrome"
+                    ? await ChromeSelectionContextReader.capture() : nil
+                let selectedText: String?
+                if let chromeContext {
+                    selectedText = chromeContext.selectedText
+                } else {
+                    selectedText = await SelectedTextService.fetchSelectedText()
+                }
                 guard !Task.isCancelled,
-                      let text = await SelectedTextService.fetchSelectedText(),
+                      let text = selectedText,
                       !Task.isCancelled,
                       Self.hasStableSource(expectedPID: sourcePID,
                                            currentPID: NSWorkspace.shared.frontmostApplication?.processIdentifier),
@@ -523,7 +637,7 @@ final class LiveSelectionCapture {
                     labeled = reference.scopedToApplication(
                         name: app.localizedName,
                         bundleID: app.bundleIdentifier
-                    )
+                    ).scopedToChrome(chromeContext)
                 }
                 guard !Task.isCancelled,
                       Self.hasStableSource(expectedPID: sourcePID,

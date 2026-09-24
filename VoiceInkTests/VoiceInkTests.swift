@@ -410,7 +410,7 @@ struct VoiceInkTests {
     }
 
 
-    @Test func liveSelectionReferenceKeepsOnlyBoundariesForLongText() throws {
+    @Test func liveSelectionReferenceSendsFullTextButKeepsPreviewCompact() throws {
         let source = String(repeating: "a", count: 60)
             + "PRIVATE_MIDDLE_MUST_NOT_LEAVE_THE_APP"
             + String(repeating: "z", count: 60)
@@ -420,15 +420,14 @@ struct VoiceInkTests {
             with: "Please check this section."
         )
 
-        #expect(reference.omittedMiddle)
+        #expect(!reference.omittedMiddle)
         #expect(message.hasPrefix("Please check\n\n<codex_selection index=\"1\""))
         #expect(message.hasSuffix("</codex_selection>\n\nthis section."))
-        #expect(message.contains("middle_omitted=\"true\""))
-        #expect(message.contains("<start>"))
-        #expect(message.contains("<end>"))
-        #expect(message.contains(String(repeating: "a", count: 46)))
-        #expect(message.contains(String(repeating: "z", count: 46)))
-        #expect(!message.contains("PRIVATE_MIDDLE_MUST_NOT_LEAVE_THE_APP"))
+        #expect(message.contains("middle_omitted=\"false\""))
+        #expect(message.contains("<text>\(source)</text>"))
+        #expect(!message.contains("<start>"))
+        #expect(!message.contains("<end>"))
+        #expect(reference.preview.count < source.count)
         #expect(LiveSelectionReference.interleaving([reference], with: "") == "")
     }
 
@@ -451,6 +450,17 @@ struct VoiceInkTests {
         #expect(parts[4] == "sections.")
         #expect(XMLParser(data: Data(parts[1].utf8)).parse())
         #expect(XMLParser(data: Data(parts[3].utf8)).parse())
+    }
+
+    @Test func fullSelectionPreservesInternalWhitespaceAndEscapesXML() throws {
+        let selected = "First line & <tag>\n\n  indented second line"
+        let reference = try #require(LiveSelectionReference("  \n" + selected + "\n  "))
+        let message = LiveSelectionReference.interleaving([reference], with: "Read this")
+        #expect(reference.characterCount == selected.count)
+        #expect(message.contains(
+            "<text>First line &amp; &lt;tag&gt;\n\n  indented second line</text>"
+        ))
+        #expect(XMLParser(data: Data("<root>\(message)</root>".utf8)).parse())
     }
 
     @Test func liveSelectionXMLLabelsOnlyAProvenCodexTask() throws {
@@ -506,6 +516,33 @@ struct VoiceInkTests {
         #expect(!noBundle.contains("bundle_id="))
     }
 
+    @Test func chromeSelectionIncludesOnlyProvenBoundedDOMContext() throws {
+        let raw = #"{"selectedText":"Share & Save","url":"https://www.youtube.com/watch?v=AbC_123-xyZ&token=secret#private","title":"Useful video","elementTag":"button","elementRole":"button","elementLabel":"Save & share"}"#
+        let context = try #require(ChromeSelectionContextReader.parse(raw))
+        let selected = try #require(LiveSelectionReference(context.selectedText))
+        let message = LiveSelectionReference.interleaving(
+            [selected.scopedToApplication(name: "Google Chrome", bundleID: "com.google.Chrome")
+                .scopedToChrome(context)],
+            with: "Look here"
+        )
+        #expect(message.contains("page_url=\"https://www.youtube.com/watch?v=AbC_123-xyZ\""))
+        #expect(message.contains("page_title=\"Useful video\""))
+        #expect(message.contains("element_tag=\"button\" element_role=\"button\""))
+        #expect(message.contains("element_label=\"Save &amp; share\""))
+        #expect(!message.contains("secret"))
+        #expect(!message.contains("private"))
+        #expect(XMLParser(data: Data("<root>\(message)</root>".utf8)).parse())
+
+        let unrelated = LiveSelectionReference.interleaving(
+            [selected.scopedToApplication(name: "TextEdit", bundleID: "com.apple.TextEdit")
+                .scopedToChrome(context)], with: "Look here"
+        )
+        #expect(!unrelated.contains("page_url="))
+        #expect(ChromeSelectionContextReader.parse(
+            #"{"selectedText":"text","url":"file:///private/a","title":"secret"}"#
+        ) == nil)
+    }
+
     @Test func codexSelectionTitleIsReadOnlyAndExactIDScoped() throws {
         let threadID = "019f5cec-30d7-7d53-a564-2f73ed8e0784"
         let databaseURL = FileManager.default.temporaryDirectory
@@ -548,6 +585,38 @@ struct VoiceInkTests {
         #expect(second.liveSelectionReferences.isEmpty)
     }
 
+    @Test @MainActor func repeatedHighlightsWithoutSpeechKeepOnlyLatest() throws {
+        let session = RecordingSession()
+        let first = try #require(LiveSelectionReference("first highlight"))
+        let second = try #require(LiveSelectionReference("second highlight"))
+        let third = try #require(LiveSelectionReference("third highlight"))
+        let screenshot = try #require(LiveSelectionReference(
+            screenshotURL: URL(fileURLWithPath: "/Users/test/Screenshots/example.png")
+        ))
+
+        session.partialTranscript = "Look"
+        session.recordLiveSelection(first)
+        session.recordLiveSelection(second)
+        #expect(session.liveSelectionReferences == [second.anchored(after: "Look")])
+
+        session.recordLiveSelection(screenshot)
+        session.recordLiveSelection(third)
+        #expect(session.liveSelectionReferences == [
+            screenshot.anchored(after: "Look"), third.anchored(after: "Look")
+        ])
+        #expect(LiveSelectionReference.previewParts(
+            session.liveSelectionReferences, with: "Look"
+        ) == [
+            .speech("Look"), .screenshot("example.png"),
+            .selection("“third highlight”")
+        ])
+
+        session.partialTranscript = "Look again"
+        session.recordLiveSelection(first)
+        #expect(session.liveSelectionReferences.last == first.anchored(after: "Look again"))
+        #expect(session.liveSelectionReferences.count == 3)
+    }
+
     @Test @MainActor func liveSelectionNeedsASelectionGesture() {
         let point = NSPoint(x: 10, y: 10)
         #expect(!LiveSelectionCapture.isSelectionGesture(
@@ -578,12 +647,12 @@ struct VoiceInkTests {
             .speech("I am"), .selection("“second highlight”"),
             .speech("talking now")
         ])
+        // The serializer accepts already-anchored references, but the session
+        // collapses equal-anchor selection gestures before they reach this HUD.
         #expect(LiveSelectionReference.previewParts(
-            [first.anchored(after: "Hello"), second.anchored(after: "Hello")],
-            with: "Hello again"
+            [second.anchored(after: "Hello")], with: "Hello again"
         ) == [
-            .speech("Hello"), .selection("“first highlight”"),
-            .selection("“second highlight”"), .speech("again")
+            .speech("Hello"), .selection("“second highlight”"), .speech("again")
         ])
         #expect(LiveSelectionReference.previewParts(references, with: "") == [
             .selection("“first highlight”"), .selection("“second highlight”")

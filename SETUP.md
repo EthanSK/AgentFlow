@@ -77,8 +77,10 @@ when no recording or transcription is active. The companion has its own
 - While recording, highlight short text first in Codex, then in a disposable TextEdit document,
   and take a macOS screenshot. Confirm both cyan selections and the purple screenshot path appear
   in capture order in the recorder and final message. The Codex highlight uses
-  `<codex_selection>`; TextEdit uses `<app_selection source="TextEdit">`. Other apps work when they
-  expose selected text through macOS Accessibility or supported browser scripting. The receiving
+  `<codex_selection>`; TextEdit uses `<app_selection source="TextEdit">`. Long selections paste in
+  full while the recorder shows a short preview; repeated highlights before more recognized speech
+  keep only the latest. Chrome can add page and DOM cues when browser scripting is available. Other
+  apps work when they expose selected text through macOS Accessibility or supported browser scripting. The receiving
   agent needs local access to the screenshot file to view its pixels.
 - If you installed the YouTube Bridge, play a disposable YouTube video, start dictation, and
   confirm that specific video pauses and resumes. An initially paused video must stay paused.

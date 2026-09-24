@@ -28,8 +28,8 @@ and make the empty state look like this.
 <local_screenshot path="/Users/you/Desktop/Screenshot 2026-09-24 at 10.41.12.png"/>
 ```
 
-- Long highlights keep only their first and last 46 characters, as `<start>` and `<end>`.
-- A highlight from another app uses `<app_selection source="TextEdit" bundle_id="com.apple.TextEdit">` instead of `<codex_selection>`. The app label does not identify a particular window, document, tab, or chat. Apps that do not expose selected text to Accessibility or supported browser scripting are skipped; VoiceInk++ never issues Copy to capture a highlight.
+- Every final `<text>` contains the full highlight, including long selections; the live recorder keeps only a compact preview. The full text is added after speech recognition, not sent to the real-time speech model. If you highlight repeatedly without a newly recognized word between selections, only the latest highlight remains. Speaking between highlights keeps both in order.
+- A highlight from another app uses `<app_selection source="TextEdit" bundle_id="com.apple.TextEdit">` instead of `<codex_selection>`. Chrome can also include a page title, a query-stripped URL (retaining only a validated YouTube video ID), and the selected range's DOM tag/role/label when its on-demand browser script works. Those optional fields are omitted if Chrome blocks scripting; the app name alone does not identify a tab or element. Other apps get only their app identity. VoiceInk++ never issues Copy to capture a highlight.
 - When Codex's active task is provable, a selection also carries its stable `task_id` and current `task_title`. An uncertain task keeps the plain tag; a title alone never identifies a chat.
 - A screenshot contributes its local path, not image pixels or an attachment. The receiving agent needs access to that file.
 - Placement is best effort because live recognition can revise earlier words. A highlight can be reading context rather than an instruction.

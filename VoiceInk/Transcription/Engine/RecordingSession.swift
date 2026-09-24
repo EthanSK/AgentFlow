@@ -470,7 +470,16 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         // Freeze the live speech visible at selection mouse-up or screenshot
         // save. Final transcription may revise words, so this is an approximate
         // insertion anchor, not an AX range or a live destination write.
-        liveSelectionReferences.append(reference.anchored(after: partialTranscript))
+        let anchored = reference.anchored(after: partialTranscript)
+        if anchored.isSelection,
+           let preceding = liveSelectionReferences.lastIndex(where: \.isSelection),
+           liveSelectionReferences[preceding].spokenWordCount == anchored.spokenWordCount {
+            // Consecutive highlights without another recognized word usually
+            // mean Ethan was adjusting a reading selection. Keep its last
+            // position, even when a screenshot arrived between the gestures.
+            liveSelectionReferences.remove(at: preceding)
+        }
+        liveSelectionReferences.append(anchored)
     }
 
     func endLiveSelectionCapture() {
