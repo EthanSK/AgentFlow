@@ -1,7 +1,7 @@
 {
   "name": "VoiceInk++",
   "short_name": "VoiceInk++",
-  "description": "Speech to text for Mac, built for working with agents.",
+  "description": "Mac dictation for agents, with live Codex highlights and screenshot paths in Ethan's current build.",
   "start_url": "/VoiceInkPlusPlus/",
   "display": "standalone",
   "background_color": "#e5eae8",

@@ -63,7 +63,7 @@ For Codex CLI or Claude Code, the terminal or editor hosting it owns the input, 
 - Start a new recording while earlier ones are still transcribing. Each keeps its own Mode, input and delivery state.
 - The recorder shows on every connected monitor, with the current app and locked destination as separate icons.
 - Double-press Primary to pause and resume one recording. Paused audio is left out.
-- Press Escape to cancel. One-shot raw mode skips processing and auto-send.
+- The recorder's cancel control discards an active recording. One-shot raw mode skips processing and auto-send.
 - Delivery errors show in the recorder instead of being reported as success.
 
 ## YouTube and Chrome companion
