@@ -25,6 +25,17 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-24T23:34:06Z
+**Trigger:** Ethan requested a public signed download with automatic releases.
+**Symptom:** A public VoiceInk++ binary would have shipped with only a GPLv3 preamble and a locally trusted signing path.
+**Root cause:** The inherited LICENSE ended after the preamble, and the existing release process only used a self-signed local identity rather than Developer ID plus notarization.
+**Fix:** Commit e07d69d restored the full official GPLv3 text and added fail-closed Mac Mini test, Developer ID signing/notarization, artifact verification, and draft-first publishing scripts; no public binary was published.
+**Commit:** e07d69d
+**Guard:** LICENSE SHA-256 byte-matched the official GNU GPLv3 text; shell syntax and diff checks passed; the public verifier rejected installed self-signed build 339. Notarized positive-path validation remains pending credentials.
+---
+
+
+---
 **Date:** 2026-09-24T23:10:43Z
 **Trigger:** Ethan asked for whole highlighted text, latest-only contiguous highlights, and richer Chrome context.
 **Symptom:** Long selections reached the agent as first/last excerpts, and adjusting a highlight without speech left redundant cues. Chrome tags identified only the app.
