@@ -25,6 +25,17 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-24T21:13:18Z
+**Trigger:** Ethan requested a shareable VoiceInk++ card and complete setup across app, README and website.
+**Symptom:** The site used a square icon for social previews, native Help linked to upstream and disappeared before a first recording, and setup hid distinct install requirements.
+**Root cause:** The fork app, context skill, Chrome extension, native host, login LaunchAgent, provider and mouse controls were documented separately; an installer or open exit alone cannot prove a live app.
+**Fix:** Commit ddb1379 adds a 1200-by-630 social image, component setup map and guarded first-use installer, public Codex context skill, and fork-owned Help links visible with zero recordings.
+**Commit:** ddb1379
+**Guard:** Static link and 320/390-pixel browser checks; first-use installer requires persistent app/helper processes and loaded LaunchAgent; native build 337 still requires exact-commit Mini suite and signed install.
+---
+
+
+---
 **Date:** 2026-09-24T01:10:00Z
 **Trigger:** The first MacBook launch of tested VoiceInk++ build 336 failed after its ad-hoc-signed Mini Release bundle was installed.
 **Symptom:** `open -g` returned success but no VoiceInk++ process survived; the crash report named `DYLD Library missing` for `whisper.framework` and a library-validation signer mismatch.

@@ -32,6 +32,8 @@ validation contract applies.
 
 For upstream work, read `UPDATING.md` and treat upstream as a feature source, never a branch to merge wholesale. Audit in a disposable clone/worktree, obtain Ethan's approval for one user-visible feature, and manually port only that feature while preserving VoiceInk++'s destination, delivery, vocabulary, identity, and release guards.
 
+For public setup changes, keep `SETUP.md`, README, website and native Help destinations consistent. Treat app launch, provider/permissions, Codex skill discovery, Chrome extension loading, the YouTube helper/native host/login LaunchAgent, and optional mouse mappings as separate receipts. The public `scripts/install-first-use.sh` is only for a Mac without VoiceInk++ installed; it must refuse replacement and never impersonate the guarded Mini-to-MacBook native update. Only the optional YouTube helper installs a login LaunchAgent; the old fork auto-update LaunchAgent stays disabled. A successful build or `open` exit is not a persistent-PID or working-Chrome receipt. Self-improved — 2026-09-24: the shareable setup exposed these distinct installation boundaries.
+
 VoiceInk++ is a commercial-free personal fork. Upstream license validation, trials, purchase/upgrade
 screens, Polar or other checkout clients, affiliate promotions, trial-expiry transcript injection,
 and remotely supplied promotional announcements are rejected systems, not features to restore.
