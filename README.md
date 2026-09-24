@@ -5,7 +5,7 @@
 
   Speech to text for Mac, built for working with agents.
 
-  [Website](https://ethansk.github.io/VoiceInkPlusPlus/) · [Full setup](SETUP.md) · [Ethan's setup](https://ethansk.github.io/ethan-setup/) · [Build guide](BUILDING.md) · [Button glossary](TERMINOLOGY.md) · [Issues](https://github.com/EthanSK/VoiceInkPlusPlus/issues)
+  [Website](https://ethansk.github.io/VoiceInkPlusPlus/) · [Full setup](SETUP.md) · [Ethan's setup](https://ethansk.github.io/ethan-setup/) · [Build guide](BUILDING.md) · [Button glossary](TERMINOLOGY.md) · [GitHub](https://github.com/EthanSK/VoiceInkPlusPlus)
 
   [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-066b55.svg)](LICENSE)
   ![Platform: macOS 14.4+](https://img.shields.io/badge/macOS-14.4%2B-111615.svg)
@@ -93,7 +93,7 @@ The upstream `voiceink` Homebrew cask and downloads install VoiceInk, not VoiceI
 - [Use the self-improving Codex/Claude Code learnings skill](.agents/skills/learnings/SKILL.md)
 - [Install the VoiceInk++ context interpretation skill](.agents/skills/interpret-voiceink-context/SKILL.md)
 - [Review update guidance](UPDATING.md)
-- [Report a VoiceInk++ issue](https://github.com/EthanSK/VoiceInkPlusPlus/issues)
+- [VoiceInk++ on GitHub](https://github.com/EthanSK/VoiceInkPlusPlus)
 
 ## Origin and license
 

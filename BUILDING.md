@@ -176,14 +176,14 @@ make local
 
 ### Still blocked
 
-Search the [VoiceInk++ issues](https://github.com/EthanSK/VoiceInkPlusPlus/issues) and open a new one with:
+Check the [VoiceInk++ repository](https://github.com/EthanSK/VoiceInkPlusPlus) for newer setup guidance. If you ask a contributor for help, include:
 
 - macOS and Xcode versions
 - the command you ran
 - the first relevant build error
 - whether this was a first build or an update
 
-Do not include API keys, tokens, private proxy URLs, or other credentials in issue logs.
+Do not share API keys, tokens, private proxy URLs, or other credentials in logs.
 
 ## Upstream project
 

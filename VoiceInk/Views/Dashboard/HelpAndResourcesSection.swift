@@ -1,14 +1,14 @@
 import SwiftUI
 
 // Fork-owned destinations stay separate from upstream VoiceInk documentation.
-// In particular, VoiceInk++ issue reports must not email upstream support or
-// silently include system information; the Dashboard has an explicit Copy action.
+// In particular, fork Help must not email upstream support or silently include
+// system information; the Dashboard has an explicit Copy action.
 enum VoiceInkPlusPlusResourceURLs {
     static let website = URL(string: "https://ethansk.github.io/VoiceInkPlusPlus/")!
     static let setupGuide = URL(string: "https://github.com/EthanSK/VoiceInkPlusPlus/blob/main/SETUP.md")!
     static let ethanSetup = URL(string: "https://ethansk.github.io/ethan-setup/")!
     static let agenticMouse = URL(string: "https://ethansk.github.io/agentic-mouse/")!
-    static let issues = URL(string: "https://github.com/EthanSK/VoiceInkPlusPlus/issues")!
+    static let repository = URL(string: "https://github.com/EthanSK/VoiceInkPlusPlus")!
     static let originalVoiceInkDocs = URL(string: "https://tryvoiceink.com/docs")!
 }
 
@@ -50,9 +50,9 @@ struct HelpAndResourcesSection: View {
 
                 resourceLink(
                     icon: "exclamationmark.bubble.fill",
-                    title: "Report a VoiceInk++ issue",
+                    title: "VoiceInk++ on GitHub",
                     color: AppTheme.Sidebar.audio,
-                    url: VoiceInkPlusPlusResourceURLs.issues
+                    url: VoiceInkPlusPlusResourceURLs.repository
                 )
 
                 resourceLink(

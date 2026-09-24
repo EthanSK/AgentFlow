@@ -260,7 +260,7 @@ struct VoiceInkTests {
             (VoiceInkPlusPlusResourceURLs.setupGuide, "github.com", "/EthanSK/VoiceInkPlusPlus/blob/main/SETUP.md"),
             (VoiceInkPlusPlusResourceURLs.ethanSetup, "ethansk.github.io", "/ethan-setup"),
             (VoiceInkPlusPlusResourceURLs.agenticMouse, "ethansk.github.io", "/agentic-mouse"),
-            (VoiceInkPlusPlusResourceURLs.issues, "github.com", "/EthanSK/VoiceInkPlusPlus/issues"),
+            (VoiceInkPlusPlusResourceURLs.repository, "github.com", "/EthanSK/VoiceInkPlusPlus"),
         ]
         for (url, host, path) in expected {
             #expect(url.scheme == "https")
