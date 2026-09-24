@@ -256,10 +256,10 @@ private final class PrimaryShortcutHandlerTestState {
 struct VoiceInkTests {
     @Test func dashboardResourcesUseForkOwnedDestinations() throws {
         let expected: [(URL, String, String)] = [
-            (VoiceInkPlusPlusResourceURLs.website, "ethansk.github.io", "/VoiceInkPlusPlus/"),
+            (VoiceInkPlusPlusResourceURLs.website, "ethansk.github.io", "/VoiceInkPlusPlus"),
             (VoiceInkPlusPlusResourceURLs.setupGuide, "github.com", "/EthanSK/VoiceInkPlusPlus/blob/main/SETUP.md"),
-            (VoiceInkPlusPlusResourceURLs.ethanSetup, "ethansk.github.io", "/ethan-setup/"),
-            (VoiceInkPlusPlusResourceURLs.agenticMouse, "ethansk.github.io", "/agentic-mouse/"),
+            (VoiceInkPlusPlusResourceURLs.ethanSetup, "ethansk.github.io", "/ethan-setup"),
+            (VoiceInkPlusPlusResourceURLs.agenticMouse, "ethansk.github.io", "/agentic-mouse"),
             (VoiceInkPlusPlusResourceURLs.issues, "github.com", "/EthanSK/VoiceInkPlusPlus/issues"),
         ]
         for (url, host, path) in expected {
