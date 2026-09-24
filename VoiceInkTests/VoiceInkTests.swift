@@ -473,6 +473,39 @@ struct VoiceInkTests {
         #expect(!unknown.contains("Wrong chat"))
     }
 
+    @Test func liveSelectionFromAnotherAppCarriesOnlyAppIdentity() throws {
+        let selected = try #require(LiveSelectionReference("Look at <this> & that"))
+        let reference = selected
+            .scopedToCodexThread(
+                id: "019f5cec-30d7-7d53-a564-2f73ed8e0784",
+                title: "Unrelated task"
+            )
+            .scopedToApplication(name: "Example & Editor", bundleID: "com.example.Editor")
+        let message = LiveSelectionReference.interleaving(
+            [reference.anchored(after: "Compare")],
+            with: "Compare this"
+        )
+
+        #expect(message.contains("<app_selection index=\"1\" source=\"Example &amp; Editor\""))
+        #expect(message.contains("bundle_id=\"com.example.Editor\""))
+        #expect(message.contains("<text>Look at &lt;this&gt; &amp; that</text>"))
+        #expect(message.contains("</app_selection>"))
+        #expect(!message.contains("codex_selection"))
+        #expect(!message.contains("task_id="))
+        #expect(!message.contains("Unrelated task"))
+        #expect(XMLParser(data: Data("<root>\(message)</root>".utf8)).parse())
+        #expect(LiveSelectionReference.previewParts(
+            [reference], with: ""
+        ) == [.selection("Example & Editor — “Look at <this> & that”")])
+
+        let noBundle = LiveSelectionReference.interleaving(
+            [selected.scopedToApplication(name: nil, bundleID: "bad bundle id")],
+            with: "Compare"
+        )
+        #expect(noBundle.contains("source=\"Application\""))
+        #expect(!noBundle.contains("bundle_id="))
+    }
+
     @Test func codexSelectionTitleIsReadOnlyAndExactIDScoped() throws {
         let threadID = "019f5cec-30d7-7d53-a564-2f73ed8e0784"
         let databaseURL = FileManager.default.temporaryDirectory
@@ -526,6 +559,9 @@ struct VoiceInkTests {
         #expect(LiveSelectionCapture.isSelectionGesture(
             from: point, to: point, clickCount: 2
         ))
+        #expect(LiveSelectionCapture.hasStableSource(expectedPID: 77, currentPID: 77))
+        #expect(!LiveSelectionCapture.hasStableSource(expectedPID: 77, currentPID: 78))
+        #expect(!LiveSelectionCapture.hasStableSource(expectedPID: nil, currentPID: 77))
     }
 
     @Test func selectedTextPreviewInterleavesEveryHighlightWithLiveSpeech() throws {

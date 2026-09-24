@@ -14,7 +14,7 @@
 
 ## Real-time context
 
-Highlight text in Codex or take a macOS screenshot while recording. The black recorder shows each reference in line with your words: selections in cyan, screenshots in purple. The final paste keeps that approximate order:
+Highlight text in any app that exposes its selection to macOS, or take a macOS screenshot while recording. The black recorder shows each reference in line with your words: selections in cyan, screenshots in purple. The final paste keeps that approximate order:
 
 ```text
 Rename this function
@@ -29,6 +29,7 @@ and make the empty state look like this.
 ```
 
 - Long highlights keep only their first and last 46 characters, as `<start>` and `<end>`.
+- A highlight from another app uses `<app_selection source="TextEdit" bundle_id="com.apple.TextEdit">` instead of `<codex_selection>`. The app label does not identify a particular window, document, tab, or chat. Apps that do not expose selected text to Accessibility or supported browser scripting are skipped; VoiceInk++ never issues Copy to capture a highlight.
 - When Codex's active task is provable, a selection also carries its stable `task_id` and current `task_title`. An uncertain task keeps the plain tag; a title alone never identifies a chat.
 - A screenshot contributes its local path, not image pixels or an attachment. The receiving agent needs access to that file.
 - Placement is best effort because live recognition can revise earlier words. A highlight can be reading context rather than an instruction.

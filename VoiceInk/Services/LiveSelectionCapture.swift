@@ -4,10 +4,15 @@ import Darwin
 import Foundation
 import SQLite3
 
-/// A compact, per-recording reference to text selected in Codex. The complete
-/// selection is discarded after making this value; the sent message includes only
-/// its boundaries, so the recipient must already have the source to resolve them.
+/// A compact, per-recording reference to text selected in the frontmost app.
+/// The complete selection is discarded after making this value; the sent message
+/// includes only its boundaries, so the recipient needs the source for long text.
 struct LiveSelectionReference: Equatable {
+    private enum Source: Equatable {
+        case codex
+        case application(name: String, bundleID: String?)
+    }
+
     enum PreviewPart: Equatable {
         case speech(String)
         case selection(String)
@@ -23,6 +28,14 @@ struct LiveSelectionReference: Equatable {
     private var spokenPrefix = ""
     private var codexThreadID: String?
     private var codexThreadTitle: String?
+    private var source: Source = .codex
+
+    private var hudPreview: String {
+        if case let .application(name, _) = source {
+            return "\(name) — \(preview)"
+        }
+        return preview
+    }
 
     init?(_ selectedText: String) {
         let trimmed = selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -76,6 +89,34 @@ struct LiveSelectionReference: Equatable {
         return copy
     }
 
+    func scopedToApplication(name: String?, bundleID: String?) -> Self {
+        var copy = self
+        let normalizedName = (name ?? "")
+            .split(whereSeparator: \.isWhitespace)
+            .joined(separator: " ")
+        let safeName = String(normalizedName.filter { character in
+            character.unicodeScalars.allSatisfy { $0.value >= 0x20 && $0.value != 0x7F }
+        }.prefix(80))
+        let allowedBundleScalars = CharacterSet(
+            charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-"
+        )
+        let validBundleID = bundleID.flatMap { identifier -> String? in
+            guard !identifier.isEmpty, identifier.count <= 128,
+                  identifier.unicodeScalars.allSatisfy({ scalar in
+                      allowedBundleScalars.contains(scalar)
+                  }) else { return nil }
+            return identifier
+        }
+        copy.source = .application(
+            name: safeName.isEmpty ? validBundleID ?? "Application" : safeName,
+            bundleID: validBundleID
+        )
+        // Generic applications do not have a proven Codex task identity.
+        copy.codexThreadID = nil
+        copy.codexThreadTitle = nil
+        return copy
+    }
+
     static func previewParts(_ references: [Self], with partialTranscript: String) -> [PreviewPart] {
         // The HUD uses the same approximate cumulative-word anchor as final
         // delivery, but never writes provisional text into another app. Keep
@@ -95,7 +136,7 @@ struct LiveSelectionReference: Equatable {
             if reference.screenshotPath != nil {
                 parts.append(.screenshot(reference.preview))
             } else {
-                parts.append(.selection(reference.preview))
+                parts.append(.selection(reference.hudPreview))
             }
             previousEnd = insertion
             lastWordCount = wordCount
@@ -146,22 +187,34 @@ struct LiveSelectionReference: Equatable {
         if let screenshotPath {
             return "<local_screenshot path=\"\(Self.xmlEscaped(screenshotPath))\"/>"
         }
-        var attributes = "index=\"\(index)\" source=\"Codex\" characters=\"\(characterCount)\" middle_omitted=\"\(omittedMiddle)\""
-        if let codexThreadID {
+        let tag: String
+        var attributes: String
+        switch source {
+        case .codex:
+            tag = "codex_selection"
+            attributes = "index=\"\(index)\" source=\"Codex\" characters=\"\(characterCount)\" middle_omitted=\"\(omittedMiddle)\""
+        case let .application(name, bundleID):
+            tag = "app_selection"
+            attributes = "index=\"\(index)\" source=\"\(Self.xmlEscaped(name))\" characters=\"\(characterCount)\" middle_omitted=\"\(omittedMiddle)\""
+            if let bundleID {
+                attributes += " bundle_id=\"\(Self.xmlEscaped(bundleID))\""
+            }
+        }
+        if case .codex = source, let codexThreadID {
             attributes += " task_id=\"\(Self.xmlEscaped(codexThreadID))\""
             if let codexThreadTitle {
                 attributes += " task_title=\"\(Self.xmlEscaped(codexThreadTitle))\""
             }
         }
         if let end {
-            return "<codex_selection \(attributes)>\n"
+            return "<\(tag) \(attributes)>\n"
                 + "  <start>\(Self.xmlEscaped(start))</start>\n"
                 + "  <end>\(Self.xmlEscaped(end))</end>\n"
-                + "</codex_selection>"
+                + "</\(tag)>"
         }
-        return "<codex_selection \(attributes)>\n"
+        return "<\(tag) \(attributes)>\n"
             + "  <text>\(Self.xmlEscaped(start))</text>\n"
-            + "</codex_selection>"
+            + "</\(tag)>"
     }
 
     private static func wordEndIndices(in text: String) -> [String.Index] {
@@ -417,43 +470,64 @@ final class LiveSelectionCapture {
                       to: endPoint,
                       clickCount: event.clickCount
                   ),
-                  let app = NSWorkspace.shared.frontmostApplication,
-                  CodexConversationContextReader.isSupportedCodexApplication(
-                    app, fileManager: .default
-                  ) else {
+                  let app = NSWorkspace.shared.frontmostApplication else {
                 return
             }
 
+            // A drag can activate an app that was backgrounded at mouse-down.
+            // Bind to the app at mouse-up, then require it to stay frontmost
+            // throughout the asynchronous selected-text read.
             let sourcePID = app.processIdentifier
+            let isCodex = CodexConversationContextReader.isSupportedCodexApplication(
+                app, fileManager: .default
+            )
             captureTask?.cancel()
             captureTask = Task { @MainActor [weak self] in
                 // The target app finishes its own mouse-up selection update before
                 // this read. A newer gesture or stop cancels the pending read.
                 try? await Task.sleep(nanoseconds: 40_000_000)
-                let threadBefore = CodexConversationContextReader.activeThreadIDIfFrontmost(
-                    frontmostApplication: app
-                )
+                guard !Task.isCancelled,
+                      Self.hasStableSource(expectedPID: sourcePID,
+                                           currentPID: NSWorkspace.shared.frontmostApplication?.processIdentifier) else {
+                    return
+                }
+                let threadBefore = isCodex
+                    ? CodexConversationContextReader.activeThreadIDIfFrontmost(
+                        frontmostApplication: app
+                    ) : nil
                 guard !Task.isCancelled,
                       let text = await SelectedTextService.fetchSelectedText(),
                       !Task.isCancelled,
-                      NSWorkspace.shared.frontmostApplication?.processIdentifier == sourcePID,
+                      Self.hasStableSource(expectedPID: sourcePID,
+                                           currentPID: NSWorkspace.shared.frontmostApplication?.processIdentifier),
                       let reference = LiveSelectionReference(text) else {
                     return
                 }
-                // Switching Codex tasks during selection must not attach the
-                // prior or next task's name. Unproven scope keeps plain XML.
-                let threadAfter = CodexConversationContextReader.activeThreadIDIfFrontmost(
-                    frontmostApplication: app
-                )
-                let labeled = threadBefore.flatMap { threadID -> LiveSelectionReference? in
-                    guard threadID == threadAfter else { return nil }
-                    return reference.scopedToCodexThread(
-                        id: threadID,
-                        title: CodexSelectionThreadTitleReader.title(for: threadID)
+                let labeled: LiveSelectionReference
+                if isCodex {
+                    // Only the verified Codex app may add a task label. A task
+                    // switch during selection leaves the existing plain tag.
+                    let threadAfter = CodexConversationContextReader.activeThreadIDIfFrontmost(
+                        frontmostApplication: app
                     )
-                } ?? reference
+                    labeled = threadBefore.flatMap { threadID -> LiveSelectionReference? in
+                        guard threadID == threadAfter else { return nil }
+                        return reference.scopedToCodexThread(
+                            id: threadID,
+                            title: CodexSelectionThreadTitleReader.title(for: threadID)
+                        )
+                    } ?? reference
+                } else {
+                    // Generic apps expose an app identity, not a proven document,
+                    // tab, or chat. Never infer more from selected text alone.
+                    labeled = reference.scopedToApplication(
+                        name: app.localizedName,
+                        bundleID: app.bundleIdentifier
+                    )
+                }
                 guard !Task.isCancelled,
-                      NSWorkspace.shared.frontmostApplication?.processIdentifier == sourcePID else {
+                      Self.hasStableSource(expectedPID: sourcePID,
+                                           currentPID: NSWorkspace.shared.frontmostApplication?.processIdentifier) else {
                     return
                 }
                 self?.onCapture(labeled)
@@ -471,5 +545,10 @@ final class LiveSelectionCapture {
         let dx = end.x - start.x
         let dy = end.y - start.y
         return clickCount >= 2 || dx * dx + dy * dy >= 16
+    }
+
+    static func hasStableSource(expectedPID: pid_t?, currentPID: pid_t?) -> Bool {
+        guard let expectedPID, let currentPID else { return false }
+        return expectedPID > 0 && expectedPID == currentPID
     }
 }

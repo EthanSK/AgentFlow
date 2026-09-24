@@ -1,7 +1,7 @@
 # Set up VoiceInk++
 
 VoiceInk++ is more than a speech-to-text window: Ethan's fork can combine live speech,
-Codex highlights and saved screenshot paths in one dictated message, then deliver the
+highlights from supported Mac apps and saved screenshot paths in one dictated message, then deliver the
 finished text to the chosen input. The pieces below are deliberately separate so you
 can install only what you need. No private API keys, mouse profiles or personal settings
 are bundled.
@@ -74,8 +74,11 @@ when no recording or transcription is active. The companion has its own
 
 - Make a short disposable recording. Confirm live words appear in the black recorder and one
   final result pastes where you intended. Test auto-send only in a disposable input.
-- While recording, highlight short text in Codex and take a macOS screenshot. Confirm the cyan
-  selection and purple screenshot path appear in the recorder and the final message. The receiving
+- While recording, highlight short text first in Codex, then in a disposable TextEdit document,
+  and take a macOS screenshot. Confirm both cyan selections and the purple screenshot path appear
+  in capture order in the recorder and final message. The Codex highlight uses
+  `<codex_selection>`; TextEdit uses `<app_selection source="TextEdit">`. Other apps work when they
+  expose selected text through macOS Accessibility or supported browser scripting. The receiving
   agent needs local access to the screenshot file to view its pixels.
 - If you installed the YouTube Bridge, play a disposable YouTube video, start dictation, and
   confirm that specific video pauses and resumes. An initially paused video must stay paused.

@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#e5eae8">
-  <meta name="description" content="VoiceInk++ is open-source Mac dictation for agents. Combine live speech, Codex highlights, and screenshot paths in one message.">
+  <meta name="description" content="VoiceInk++ is open-source Mac dictation for agents. Combine live speech, highlights from other apps, and screenshot paths in one message.">
   <meta property="og:type" content="website">
   <meta property="og:title" content="VoiceInk++">
-  <meta property="og:description" content="Combine live speech, Codex highlights, and screenshot paths in one message with VoiceInk++ for Mac.">
+  <meta property="og:description" content="Combine live speech, app highlights, and screenshot paths in one message with VoiceInk++ for Mac.">
   <meta property="og:url" content="https://ethansk.github.io/VoiceInkPlusPlus/">
   <meta property="og:image" content="https://ethansk.github.io/VoiceInkPlusPlus/assets/social-card.png?v=1">
   <meta property="og:image:type" content="image/png">
@@ -59,14 +59,14 @@
       existing parts in order (data-at is milliseconds from start); it holds no copy.
       Example text is invented. Never put Ethan's real selections or screenshot paths here.
       Serialized tags match LiveSelectionReference. This demo deliberately uses
-      the plain selection tag shown when exact Codex task identity is unknown.
+      a generic selection from TextEdit; Codex keeps its own task-aware tag.
     -->
     <section class="hero" aria-labelledby="hero-title" data-demo-root data-stop-at="2800">
       <div class="wrap">
         <div class="hero-head">
           <h1 id="hero-title">Talk while you <span class="g-select" data-at="900">highlight</span> and <span class="g-shot" data-at="2450">screenshot</span></h1>
           <div class="hero-aside">
-            <p class="lede">VoiceInk++ is speech to text for Mac, built for working with agents. Highlight Codex text or take a screenshot mid-sentence; it adds a short excerpt or file path to your message at that point.</p>
+            <p class="lede">VoiceInk++ is speech to text for Mac, built for working with agents. Highlight text in another app or take a screenshot mid-sentence; it adds a short excerpt or file path to your message at that point.</p>
             <p class="caveat">Real-time context is included in VoiceInk++ source. Build it on your Mac to use it.</p>
           </div>
         </div>
@@ -79,7 +79,7 @@
                 <span class="step" data-at="250">Rename</span>
                 <span class="step" data-at="400">this</span>
                 <span class="step" data-at="550">function</span>
-                <span class="step cue cue-select" data-at="900">Selected Text: “func loadRows(from cache: Cache)”</span>
+                <span class="step cue cue-select" data-at="900">Selected Text: TextEdit — “func loadRows(from cache: Cache)”</span>
                 <span class="step" data-at="1200">and</span>
                 <span class="step" data-at="1330">make</span>
                 <span class="step" data-at="1460">the</span>
@@ -106,9 +106,9 @@
             <p class="pane-label">Pasted into Codex</p>
             <div class="composer">
               <p class="msg step" data-at="3050">Rename this function</p>
-              <pre class="msg-xml xml-select step" data-at="3300"><code><span class="t">&lt;codex_selection</span> <span class="a">index="1" source="Codex" characters="32" middle_omitted="false"</span><span class="t">&gt;</span>
+              <pre class="msg-xml xml-select step" data-at="3300"><code><span class="t">&lt;app_selection</span> <span class="a">index="1" source="TextEdit" characters="32" middle_omitted="false" bundle_id="com.apple.TextEdit"</span><span class="t">&gt;</span>
   <span class="t">&lt;text&gt;</span>func loadRows(from cache: Cache)<span class="t">&lt;/text&gt;</span>
-<span class="t">&lt;/codex_selection&gt;</span></code></pre>
+<span class="t">&lt;/app_selection&gt;</span></code></pre>
               <p class="msg step" data-at="3550">and make the empty state look like this.</p>
               <pre class="msg-xml xml-shot step" data-at="3800"><code><span class="t">&lt;local_screenshot</span> <span class="a">path="/Users/you/Desktop/Screenshot 2026-09-24 at 10.41.12.png"</span><span class="t">/&gt;</span></code></pre>
             </div>
@@ -119,6 +119,7 @@
             <ul class="facts">
               <li>Words show only in the recorder until you stop, then paste once.</li>
               <li>Long highlights keep only their first and last 46 characters.</li>
+              <li>Highlight in any app that exposes selected text to macOS. Codex can also label its task.</li>
               <li>Screenshots add their file path, not the image.</li>
               <li>Placement follows the live transcript, so a reference can shift by a word.</li>
             </ul>

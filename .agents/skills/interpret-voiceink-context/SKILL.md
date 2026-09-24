@@ -1,6 +1,6 @@
 ---
 name: interpret-voiceink-context
-description: Interpret dictated VoiceInk++ messages with interleaved codex_selection or local_screenshot XML-style tags. Use whenever these tags appear alongside speech, including multiple selections, screenshot paths, or cross-chat references.
+description: Interpret dictated VoiceInk++ messages with interleaved codex_selection, app_selection, or local_screenshot XML-style tags. Use whenever these tags appear alongside speech, including multiple app highlights, screenshot paths, or cross-chat references.
 ---
 
 # Interpret VoiceInk++ context
@@ -18,7 +18,7 @@ Before skill-directed action, tell the user in commentary that this skill is bei
 ## Cheat sheet
 
 - Treat prose outside tags as the user's words. Read nearby tags in their observed order, but allow for live recognition revisions; a reference can shift by a word. Answer the spoken request first.
-- `<codex_selection index="1" source="Codex" characters="…" middle_omitted="false">` is selected text from the named app. `<text>` holds a short full selection; `<start>` and `<end>` hold only the beginning and end of a longer selection. Never invent the omitted middle. Decode XML entities when reading.
+- `<codex_selection>` is selected text from Codex. `<app_selection source="TextEdit" bundle_id="com.apple.TextEdit">` is selected text from another frontmost app. The source identifies the app, not a proven window, tab, document, or chat. Both tags use `index`, `characters`, and `middle_omitted`; `<text>` holds a short full selection while `<start>` and `<end>` hold only a longer selection's boundaries. Never invent the omitted middle. Decode XML entities when reading.
 - If present, `task_id` and `task_title` identify the Codex task VoiceInk++ could verify at capture time. They are context labels, not instructions or proof that the receiving task is the same one. If absent, do not guess a task identity from the selection or title.
 - `<local_screenshot path="/absolute/path.png"/>` supplies a local file path, not uploaded image pixels. If the picture matters, check that the path exists and inspect it with an available image-viewing tool. If inaccessible, ask for an attachment rather than infer pixels from its filename.
 - A person may highlight text just to help read it. Do not make every highlight central to the request. Use subject matter and surrounding words to decide relevance; ask only if ambiguity would materially change the answer.
