@@ -266,9 +266,39 @@ enum CodexConversationContextReader {
         frontmostApplication: NSRunningApplication? = NSWorkspace.shared.frontmostApplication,
         fileManager: FileManager = .default
     ) -> [CodexConversationContextMessage] {
+        guard let threadID = activeThreadIDIfFrontmost(
+            frontmostApplication: frontmostApplication,
+            fileManager: fileManager
+        ),
+              let rolloutURL = rolloutURL(for: threadID, fileManager: fileManager),
+              let rolloutTail = tailString(
+                at: rolloutURL,
+                maximumBytes: CodexConversationContextPolicy.maximumRolloutTailBytes
+              ) else {
+            logger.info("Codex context unavailable after exact frontmost-app check")
+            return []
+        }
+
+        let messages = CodexConversationContextPolicy.selectedMessages(
+            fromNewestRolloutLines: rolloutTail
+                .split(separator: "\n", omittingEmptySubsequences: true)
+                .reversed()
+                .map(String.init)
+        )
+        logger.info("Codex context captured messages=\(messages.count, privacy: .public)")
+        return messages
+    }
+
+    /// Reuse the same app-owned task boundary for selection labels. A title or a
+    /// recent session is never an identity source; missing exact scope simply
+    /// leaves the selection's optional task attributes out of its XML.
+    static func activeThreadIDIfFrontmost(
+        frontmostApplication: NSRunningApplication? = NSWorkspace.shared.frontmostApplication,
+        fileManager: FileManager = .default
+    ) -> String? {
         guard let app = frontmostApplication,
               isSupportedCodexApplication(app, fileManager: fileManager) else {
-            return []
+            return nil
         }
 
         let events = codexLogURLs(
@@ -288,23 +318,10 @@ enum CodexConversationContextReader {
 
         guard let newestEvent = events.max(by: { $0.timestamp < $1.timestamp }),
               let threadID = newestEvent.threadID,
-              let rolloutURL = rolloutURL(for: threadID, fileManager: fileManager),
-              let rolloutTail = tailString(
-                at: rolloutURL,
-                maximumBytes: CodexConversationContextPolicy.maximumRolloutTailBytes
-              ) else {
-            logger.info("Codex context unavailable after exact frontmost-app check")
-            return []
+              rolloutURL(for: threadID, fileManager: fileManager) != nil else {
+            return nil
         }
-
-        let messages = CodexConversationContextPolicy.selectedMessages(
-            fromNewestRolloutLines: rolloutTail
-                .split(separator: "\n", omittingEmptySubsequences: true)
-                .reversed()
-                .map(String.init)
-        )
-        logger.info("Codex context captured messages=\(messages.count, privacy: .public)")
-        return messages
+        return threadID
     }
 
     static func isSupportedCodexApplication(

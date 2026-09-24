@@ -2,6 +2,7 @@ import AppKit
 import CoreServices
 import Darwin
 import Foundation
+import SQLite3
 
 /// A compact, per-recording reference to text selected in Codex. The complete
 /// selection is discarded after making this value; the sent message includes only
@@ -20,6 +21,8 @@ struct LiveSelectionReference: Equatable {
     private let end: String?
     private let screenshotPath: String?
     private var spokenPrefix = ""
+    private var codexThreadID: String?
+    private var codexThreadTitle: String?
 
     init?(_ selectedText: String) {
         let trimmed = selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -62,6 +65,14 @@ struct LiveSelectionReference: Equatable {
     func anchored(after spokenText: String) -> Self {
         var copy = self
         copy.spokenPrefix = spokenText
+        return copy
+    }
+
+    func scopedToCodexThread(id: String, title: String?) -> Self {
+        guard UUID(uuidString: id) != nil else { return self }
+        var copy = self
+        copy.codexThreadID = id.lowercased()
+        copy.codexThreadTitle = title
         return copy
     }
 
@@ -135,7 +146,13 @@ struct LiveSelectionReference: Equatable {
         if let screenshotPath {
             return "<local_screenshot path=\"\(Self.xmlEscaped(screenshotPath))\"/>"
         }
-        let attributes = "index=\"\(index)\" source=\"Codex\" characters=\"\(characterCount)\" middle_omitted=\"\(omittedMiddle)\""
+        var attributes = "index=\"\(index)\" source=\"Codex\" characters=\"\(characterCount)\" middle_omitted=\"\(omittedMiddle)\""
+        if let codexThreadID {
+            attributes += " task_id=\"\(Self.xmlEscaped(codexThreadID))\""
+            if let codexThreadTitle {
+                attributes += " task_title=\"\(Self.xmlEscaped(codexThreadTitle))\""
+            }
+        }
         if let end {
             return "<codex_selection \(attributes)>\n"
                 + "  <start>\(Self.xmlEscaped(start))</start>\n"
@@ -181,6 +198,46 @@ struct LiveSelectionReference: Equatable {
             .replacingOccurrences(of: ">", with: "&gt;")
             .replacingOccurrences(of: "\"", with: "&quot;")
             .replacingOccurrences(of: "'", with: "&apos;")
+    }
+}
+
+/// The selected-view event proves identity; this read-only lookup only adds a
+/// human-readable label. Titles are mutable and non-unique, so a missing or
+/// malformed row never becomes a substitute for the proven task ID.
+enum CodexSelectionThreadTitleReader {
+    static func title(
+        for threadID: String,
+        databaseURL: URL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/state_5.sqlite")
+    ) -> String? {
+        guard UUID(uuidString: threadID) != nil else { return nil }
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
+              let database else {
+            if let database { sqlite3_close(database) }
+            return nil
+        }
+        defer { sqlite3_close(database) }
+
+        var statement: OpaquePointer?
+        let query = "SELECT COALESCE(NULLIF(name, ''), title) FROM threads WHERE id = ?1 LIMIT 1"
+        guard sqlite3_prepare_v2(database, query, -1, &statement, nil) == SQLITE_OK,
+              let statement else { return nil }
+        defer { sqlite3_finalize(statement) }
+
+        return threadID.withCString { identifier in
+            guard sqlite3_bind_text(statement, 1, identifier, -1, nil) == SQLITE_OK,
+                  sqlite3_step(statement) == SQLITE_ROW,
+                  let rawTitle = sqlite3_column_text(statement, 0) else { return nil }
+            let title = String(cString: rawTitle)
+                .split(whereSeparator: \.isWhitespace)
+                .joined(separator: " ")
+            // An unusually long or control-bearing title adds noise to dictation;
+            // the stable task ID still disambiguates the selection without it.
+            guard !title.isEmpty, title.count <= 120,
+                  title.unicodeScalars.allSatisfy({ $0.value >= 0x20 }) else { return nil }
+            return title
+        }
     }
 }
 
@@ -361,7 +418,9 @@ final class LiveSelectionCapture {
                       clickCount: event.clickCount
                   ),
                   let app = NSWorkspace.shared.frontmostApplication,
-                  app.bundleIdentifier == "com.openai.codex" else {
+                  CodexConversationContextReader.isSupportedCodexApplication(
+                    app, fileManager: .default
+                  ) else {
                 return
             }
 
@@ -371,6 +430,9 @@ final class LiveSelectionCapture {
                 // The target app finishes its own mouse-up selection update before
                 // this read. A newer gesture or stop cancels the pending read.
                 try? await Task.sleep(nanoseconds: 40_000_000)
+                let threadBefore = CodexConversationContextReader.activeThreadIDIfFrontmost(
+                    frontmostApplication: app
+                )
                 guard !Task.isCancelled,
                       let text = await SelectedTextService.fetchSelectedText(),
                       !Task.isCancelled,
@@ -378,7 +440,23 @@ final class LiveSelectionCapture {
                       let reference = LiveSelectionReference(text) else {
                     return
                 }
-                self?.onCapture(reference)
+                // Switching Codex tasks during selection must not attach the
+                // prior or next task's name. Unproven scope keeps plain XML.
+                let threadAfter = CodexConversationContextReader.activeThreadIDIfFrontmost(
+                    frontmostApplication: app
+                )
+                let labeled = threadBefore.flatMap { threadID -> LiveSelectionReference? in
+                    guard threadID == threadAfter else { return nil }
+                    return reference.scopedToCodexThread(
+                        id: threadID,
+                        title: CodexSelectionThreadTitleReader.title(for: threadID)
+                    )
+                } ?? reference
+                guard !Task.isCancelled,
+                      NSWorkspace.shared.frontmostApplication?.processIdentifier == sourcePID else {
+                    return
+                }
+                self?.onCapture(labeled)
             }
         default:
             break

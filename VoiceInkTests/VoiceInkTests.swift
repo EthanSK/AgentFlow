@@ -13,6 +13,7 @@ import CoreGraphics
 import Darwin
 import Foundation
 import ApplicationServices
+import SQLite3
 @testable import VoiceInkPlusPlus
 
 private actor TranscriptionQueueTestGate {
@@ -428,6 +429,50 @@ struct VoiceInkTests {
         #expect(parts[4] == "sections.")
         #expect(XMLParser(data: Data(parts[1].utf8)).parse())
         #expect(XMLParser(data: Data(parts[3].utf8)).parse())
+    }
+
+    @Test func liveSelectionXMLLabelsOnlyAProvenCodexTask() throws {
+        let threadID = "019f5cec-30d7-7d53-a564-2f73ed8e0784"
+        let selected = try #require(LiveSelectionReference("relevant line"))
+        let labeled = selected.scopedToCodexThread(
+            id: threadID,
+            title: "First chat & <second> \"task\""
+        )
+        let xml = LiveSelectionReference.interleaving([labeled], with: "Compare this")
+        #expect(xml.contains("task_id=\"\(threadID)\""))
+        #expect(xml.contains("task_title=\"First chat &amp; &lt;second&gt; &quot;task&quot;\""))
+        #expect(XMLParser(data: Data("<root>\(xml)</root>".utf8)).parse())
+
+        let unknown = LiveSelectionReference.interleaving(
+            [selected.scopedToCodexThread(id: "not-a-task", title: "Wrong chat")],
+            with: "Compare this"
+        )
+        #expect(!unknown.contains("task_id="))
+        #expect(!unknown.contains("Wrong chat"))
+    }
+
+    @Test func codexSelectionTitleIsReadOnlyAndExactIDScoped() throws {
+        let threadID = "019f5cec-30d7-7d53-a564-2f73ed8e0784"
+        let databaseURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voiceink-codex-title-\(UUID().uuidString).sqlite")
+        defer { try? FileManager.default.removeItem(at: databaseURL) }
+        var database: OpaquePointer?
+        #expect(sqlite3_open(databaseURL.path, &database) == SQLITE_OK)
+        defer { if let database { sqlite3_close(database) } }
+        let fixture = """
+            CREATE TABLE threads (id TEXT PRIMARY KEY, name TEXT, title TEXT NOT NULL);
+            INSERT INTO threads VALUES ('\(threadID)', 'First chat & <second>', 'Old title');
+            """
+        #expect(sqlite3_exec(database, fixture, nil, nil, nil) == SQLITE_OK)
+        #expect(CodexSelectionThreadTitleReader.title(
+            for: threadID, databaseURL: databaseURL
+        ) == "First chat & <second>")
+        #expect(CodexSelectionThreadTitleReader.title(
+            for: "019f5cec-30d7-7d53-a564-2f73ed8e0785", databaseURL: databaseURL
+        ) == nil)
+        #expect(CodexSelectionThreadTitleReader.title(
+            for: "not-a-task", databaseURL: databaseURL
+        ) == nil)
     }
 
     @Test @MainActor func liveSelectionBelongsOnlyToItsRecording() throws {
