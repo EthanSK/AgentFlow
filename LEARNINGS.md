@@ -25,6 +25,16 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-24T00:20:46Z
+**Trigger:** Ethan asked to make live dictated Codex selections and screenshots a major website/README feature, and to replace the overlong public site.
+**Symptom:** The existing site buried the installed-only context feature in setup copy; its scroll-reveal sections also appeared blank in a full-page browser capture until they were individually scrolled into view.
+**Root cause:** The site treated progressive reveal and long-form promotion as its primary structure instead of keeping the feature explanation and three destination routes immediately readable in semantic HTML.
+**Fix:** Commit 9589121 puts a short, color-coded speech/selection/screenshot example above the fold, removes the scroll-reveal dependency, keeps the three route definitions in HTML, and explicitly says that public source does not yet include the native context feature. The screenshot example is a file path, not an attached image.
+**Commit:** 9589121
+**Guard:** Validate local references and accessibility IDs, HTML, JavaScript, and README links; keep the finished demo and routes in static HTML so they remain present without JavaScript, and inspect desktop and 320/390-pixel phone layouts in a browser. Never describe the installed-only feature as available from public `main` until that native source is actually published.
+---
+
+---
 **Date:** 2026-09-09T17:48:58Z
 **Trigger:** Ethan asked for a self-contained VoiceInk++ repository including the YouTube/Chrome extension and agent setup.
 **Symptom:** Public VoiceInk++ setup referenced a YouTube workflow whose companion source was absent.
