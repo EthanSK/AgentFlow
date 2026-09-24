@@ -42,7 +42,7 @@ Each entry looks like:
 **Root cause:** The fork app, context skill, Chrome extension, native host, login LaunchAgent, provider and mouse controls were documented separately; an installer or open exit alone cannot prove a live app.
 **Fix:** Commit ddb1379 adds a 1200-by-630 social image, component setup map and guarded first-use installer, public Codex context skill, and fork-owned Help links visible with zero recordings.
 **Commit:** ddb1379
-**Guard:** Static link and 320/390-pixel browser checks; first-use installer requires persistent app/helper processes and loaded LaunchAgent; native build 337 still requires exact-commit Mini suite and signed install.
+**Guard:** Static link and 320/390-pixel browser checks passed; the first-use installer requires persistent app/helper processes and a loaded LaunchAgent, but was not run on a clean Mac. Final native source commit `17c5312` passed 340 named Mini unit tests in 10 suites via the documented direct full-suite fallback after TestManager stalled; the optional YouTube Bridge passed 10 scripted tests. The separate Release candidate was stably signed, passed deep/strict verification with outer Automation enabled, and installed as build 337 (CDHash `4fe4ba6b919776a72032765676f38299e2885812`, executable SHA-256 `0a122bce57556f7dbcdcf84245e23db766d5a4f424b390fd103fc43d1f23f8cb`). A new PID persisted and the live Dashboard showed the fork Help links. Build 336 remains recoverable at `/private/tmp/voiceink-build337-install.gA85Tj/original-build336.app`; official VoiceInk remained unchanged. No unsolicited physical recording/paste test was made.
 ---
 
 
