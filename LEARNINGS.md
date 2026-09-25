@@ -25,6 +25,17 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-25T13:05:07Z
+**Trigger:** Ethan chose an isolated AgentFlow release credential
+**Symptom:** A non-interactive Mini SSH check of the dedicated notarytool profile returned keychainLocked before credential validity could be determined.
+**Root cause:** The remote shell lacked access to the default user Keychain; this failure cannot distinguish a missing profile from a locked Keychain.
+**Fix:** RELEASING.md now requires interactive logged-in setup and actual runner-session validation; packaging uses only AgentFlowRelease rather than another project profile, and the full-suite floor is 362 named tests.
+**Commit:** 4e16135
+**Guard:** Observed notarytool keychainLocked response; bash -n and git diff --check passed. No notarized positive-path or runner access has been verified yet.
+---
+
+
+---
 **Date:** 2026-09-25T12:56:31Z
 **Trigger:** AgentFlow public release test gate
 **Symptom:** The direct full-suite fallback aborted on a missing MediaRemoteAdapter resource despite an already-built test bundle.
