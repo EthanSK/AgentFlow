@@ -25,6 +25,17 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-25T10:57:35Z
+**Trigger:** Ethan reversed latest-only contiguous highlights and requested a best-effort silent reading trail.
+**Symptom:** Consecutive highlights at one live-speech anchor replaced earlier selections; final XML omitted references when the recognized transcript was empty.
+**Root cause:** RecordingSession removed the preceding equal-anchor selection, and LiveSelectionReference.interleaving returned early for an empty transcript.
+**Fix:** Commit 36094d4 preserves every distinct selection and screenshot in capture order, serializes reference-only XML, and updates the HUD comments, README, website, and both interpretation skills. The receiving agent treats a silent sequence as an approximate reading trail, not instructions.
+**Commit:** 36094d4b81666addaf3fa3faeec1e422a2a6994c
+**Guard:** Exact build-343 Mac Mini direct full-suite fallback passed 347 named tests in 10 suites, including repeatedHighlightsWithoutSpeechPreserveReadingTrail, silentHighlightsProduceReferenceOnlyXMLInCaptureOrder, chronological HUD, Primary, Next, and HUD-only guards; canonical focused/full TestManager attempts stalled at zero named tests. Signed Release archive SHA-256 17cddca89ca03a02f7016737176e153136ef613c44e764a11f35dd676cb5c72d; installed CDHash 6d2d13faf0676d03e081ceec2f5bed1f3271c44c, PID 14268 persisted, Automation enabled, official VoiceInk unchanged. A real recording/selection acceptance remains unverified.
+---
+
+
+---
 **Date:** 2026-09-25T00:42:35Z
 **Trigger:** Ethan requested a selection limit of about four or five lines, larger than the old short excerpt.
 **Symptom:** A long Codex or other-app highlight pasted its entire selected passage into final XML, despite the compact recorder preview.
