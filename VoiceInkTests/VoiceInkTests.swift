@@ -740,7 +740,7 @@ struct VoiceInkTests {
 
     @Test func recorderContextGrowsBeforeItsScreenBound() throws {
         #expect(MiniRecorderLayoutMetrics.liveTranscriptWidth == 688)
-        #expect(MiniRecorderLayoutMetrics.liveTranscriptFontSize == 24)
+        #expect(MiniRecorderLayoutMetrics.liveTranscriptFontSize == 18)
         #expect(MiniRecorderLayoutMetrics.notchTranscriptSideExpansion == 360)
         let short = MiniRecorderLayoutMetrics.transcriptHeight(
             parts: [.speech("Hello")],

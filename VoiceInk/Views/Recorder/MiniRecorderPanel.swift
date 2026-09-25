@@ -6,10 +6,11 @@ import AppKit
 /// notification offset previously assumed a 34pt bar and overlapped the 97pt
 /// real-time transcript HUD.
 enum MiniRecorderLayoutMetrics {
-    // Double the live-context width and type together so dictation remains
-    // legible without forcing twice as many wrapped lines into the HUD.
+    // Keep the expanded width for mixed speech/context, but use the midpoint
+    // between the original 12pt and enlarged 24pt type. The separate HUD
+    // slider scales the entire panel without changing this layout measurement.
     static let liveTranscriptWidth: CGFloat = 688
-    static let liveTranscriptFontSize: CGFloat = 24
+    static let liveTranscriptFontSize: CGFloat = 18
     static let notchTranscriptSideExpansion: CGFloat = 360
     static let bottomPadding: CGFloat = 24
     static let controlBarHeight: CGFloat = 40
