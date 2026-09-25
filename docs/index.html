@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#e5eae8">
-  <meta name="description" content="Agent Flow is open-source Mac dictation for agents. Combine live speech, highlights from other apps, and screenshot paths in one message.">
+  <meta name="description" content="Speech to text for Mac that pastes your words with the text you highlight and the paths of screenshots you take.">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Agent Flow">
-  <meta property="og:description" content="Combine live speech, app highlights, and screenshot paths in one message with Agent Flow for Mac.">
+  <meta property="og:description" content="Speech to text for Mac that pastes your words with the text you highlight and the paths of screenshots you take.">
   <meta property="og:url" content="https://ethansk.github.io/AgentFlow/">
   <meta property="og:image" content="https://ethansk.github.io/AgentFlow/assets/social-card.png?v=3">
   <meta property="og:image:type" content="image/png">
@@ -21,7 +21,7 @@
   <link rel="icon" href="assets/agentflow-icon.png">
   <link rel="apple-touch-icon" href="assets/agentflow-icon-512.png">
   <link rel="manifest" href="site.webmanifest">
-  <link rel="stylesheet" href="styles.css?v=agent-flow">
+  <link rel="stylesheet" href="styles.css?v=345-public">
   <script>
     // Pre-hide the demo before first paint so autoplay never flashes the finished
     // example. If script.js hasn't taken over within 2.5 s, show everything.
@@ -44,11 +44,9 @@
       <span>Agent Flow</span>
     </a>
     <nav class="top-nav" aria-label="Site">
-      <a href="#features">Features</a>
-      <a href="#routes">Controls</a>
-      <a href="#setup">Ethan's setup</a>
-      <a href="#build">Build</a>
-      <a href="#pieces">Install pieces</a>
+      <a href="#download">Download</a>
+      <a href="#setup">Setup</a>
+      <a href="#controls">Controls</a>
       <a class="top-github" href="https://github.com/EthanSK/AgentFlow">GitHub <span aria-hidden="true">↗</span></a>
     </nav>
   </header>
@@ -65,10 +63,12 @@
     <section class="hero" aria-labelledby="hero-title" data-demo-root data-stop-at="2800">
       <div class="wrap">
         <div class="hero-head">
-          <h1 id="hero-title">Stay in flow with your agent</h1>
-          <div class="hero-aside">
-            <p class="lede">Speak, <span class="g-select">highlight</span>, and <span class="g-shot">screenshot</span> without breaking your train of thought. Agent Flow weaves those moments into one message, in the order they happened.</p>
-            <p class="caveat">Real-time context is included in Agent Flow source. Build it on your Mac to use it.</p>
+          <h1 id="hero-title">Speech to text, with your <span class="g-select">highlights</span> and <span class="g-shot">screenshots</span></h1>
+          <div class="hero-aside" id="download">
+            <p class="lede">Highlight text or take a screenshot while you talk. Agent Flow pastes your words with each reference near what you were saying, so your agent can see what you were looking at.</p>
+            <p class="actions"><a class="button" href="https://github.com/EthanSK/AgentFlow/releases/download/v2.0.345/AgentFlow-v2.0.345-mac-universal.zip">Download for Mac <span aria-hidden="true">↓</span></a></p>
+            <p class="release-note">v2.0.345 · macOS 14.4+ · Apple silicon and Intel<br>Developer ID signed and Apple notarized.</p>
+            <p class="source-link"><a href="#build">Build from source</a></p>
           </div>
         </div>
 
@@ -118,109 +118,74 @@
           <figcaption class="demo-caption">
             <button class="replay" type="button" data-demo-replay hidden><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v5h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Replay</button>
             <ul class="facts">
-              <li>Words show only in the recorder until you stop, then paste once.</li>
-              <li>Highlights keep up to five lines or 500 characters; the live preview stays short. Selection capture is best effort across apps.</li>
-              <li>Every separate highlight stays in order, even while you're reading silently.</li>
-              <li>Codex can label its task. Chrome can add page and DOM cues when scripting is available.</li>
-              <li>Screenshots add their file path, not the image.</li>
-              <li>Placement follows the live transcript, so a reference can shift by a word.</li>
+              <li>Live words stay in the recorder until you stop, then paste once.</li>
+              <li>Mouse highlights keep up to five lines or 500 characters. Separate highlights stay in order, even without speech between them.</li>
+              <li>Saved screenshots add a file path, not an upload. Your agent needs access to that file.</li>
+              <li>Placement is approximate: live recognition can revise earlier words.</li>
+              <li>Selection capture depends on the app. Codex can add its task label; Chrome can add page details.</li>
+              <li>Highlights are read without pressing Copy. Password fields are skipped.</li>
             </ul>
           </figcaption>
         </figure>
-        <p class="skill-handoff">Using Codex? <a href="https://github.com/EthanSK/AgentFlow/tree/main/.agents/skills/interpret-voiceink-context">Install the Agent Flow context skill</a> so it can read selections and screenshot paths alongside your speech, even across chats.</p>
-      </div>
-    </section>
-
-    <section class="band" id="features" aria-labelledby="features-title">
-      <div class="wrap split">
-        <div class="band-head">
-          <h2 id="features-title">What stays in the flow</h2>
-          <p>These are the parts Ethan actually uses—not a kitchen-sink model showcase.</p>
-        </div>
-        <div class="band-body">
-          <div class="feature-grid">
-            <article class="feature-card"><span class="feature-index">01 · voice</span><h3>Live words</h3><p>GPT Live shows speech in the floating recorder. Stop once to paste the final result. Bring your own OpenAI API key.</p></article>
-            <article class="feature-card"><span class="feature-index">02 · attention</span><h3>Reading trail</h3><p>Each separate highlight records what you were looking at—even when you didn't speak. Codex and Chrome add extra cues when available; other apps use a safe generic path.</p></article>
-            <article class="feature-card"><span class="feature-index">03 · evidence</span><h3>Screenshot cues</h3><p>A screenshot joins the timeline as a purple path reference. Agent Flow doesn't upload its pixels; the receiving agent can open the file.</p></article>
-            <article class="feature-card"><span class="feature-index">04 · delivery</span><h3>Choose the input</h3><p>Primary pastes into today's focused input. Next can pin the starting input or take a second chance while transcription runs. The two destination icons remain visible.</p></article>
-          </div>
-          <p class="note">Selected text is context, not a command. Read-only capture never presses Copy or replaces your clipboard; protected or unreadable selections are left out.</p>
-        </div>
+        <p class="skill-handoff">For Codex, install the <a href="https://github.com/EthanSK/AgentFlow/tree/main/.agents/skills/interpret-voiceink-context">Agent Flow context skill</a> so it reads highlights and screenshot paths as context, not instructions.</p>
       </div>
     </section>
 
     <!--
-      Route contract, kept as plain HTML so it is always visible (no JavaScript copy).
+      Route contract remains in the destination guide, with optional controls below.
       Primary is base VoiceInk current-input delivery and owns no exact input or Mode.
       Only the two Next routes own an exact input plus its Mode/auto-send, and they fail
       closed. Never merge these into one "toggle" or describe Next as toggling a destination.
     -->
-    <section class="band" id="routes" aria-labelledby="routes-title">
+    <section class="band" id="setup" aria-labelledby="setup-title">
       <div class="wrap split">
         <div class="band-head">
-          <h2 id="routes-title">Choose where each transcript goes</h2>
-          <p>Map two mouse buttons: Primary to your Agent Flow recording shortcut, Next to macOS Next Track.</p>
+          <h2 id="setup-title">Setup</h2>
+          <p>No Agent Flow account or subscription. Bring your own OpenAI API key for live words.</p>
         </div>
         <div class="band-body">
-          <dl class="routes">
-            <div class="route">
-              <dt><kbd>Primary</kbd> while recording</dt>
-              <dd>Pastes into the input focused when the text arrives, like base VoiceInk.</dd>
-            </div>
-            <div class="route">
-              <dt><kbd>Next</kbd> while recording</dt>
-              <dd>Sends it back to the input where you started recording.</dd>
-            </div>
-            <div class="route">
-              <dt><kbd>Next</kbd> while transcribing, after a Primary stop</dt>
-              <dd><strong>Second chance:</strong> sends it to the input focused when you press Next.</dd>
-            </div>
-          </dl>
-          <p class="note">Only the Next routes save an exact input along with its app's Mode and auto-send. If Agent Flow can't verify that input, it shows an error instead of pasting somewhere else.</p>
-          <p class="note">For Codex CLI or Claude Code, the terminal or editor hosting it owns the input, so set its Mode and auto-send there.</p>
-          <p class="note"><a href="https://github.com/EthanSK/AgentFlow/blob/main/RECORDING_DESTINATIONS.md">Destination guide</a> · <a href="https://github.com/EthanSK/AgentFlow/blob/main/TERMINOLOGY.md">Button glossary</a></p>
+          <ol class="setup-steps">
+            <li>Download, unzip, and move Agent Flow to Applications.</li>
+            <li>Allow Microphone and Accessibility when asked.</li>
+            <li>Add an <a href="https://platform.openai.com/api-keys">OpenAI API key</a> with API billing for GPT Live transcription. Your ChatGPT subscription doesn't include API credit.</li>
+            <li>Finish setup, which also downloads a local model for transcription without a key.</li>
+          </ol>
+          <p class="note">Auto-send presses Return after pasting. It starts off; enable it per app in Modes if you want it. For Codex CLI or Claude Code, configure the terminal or editor it runs in.</p>
+          <p class="note">Updates aren't automatic yet. New versions are on <a href="https://github.com/EthanSK/AgentFlow/releases">GitHub releases</a>.</p>
+          <details class="optional" id="pieces">
+            <summary>Optional extras</summary>
+            <dl class="pieces">
+              <div><dt>Codex skill</dt><dd>Ask Codex: “Install interpret-voiceink-context from EthanSK/AgentFlow/.agents/skills/interpret-voiceink-context.”</dd></div>
+              <div><dt>YouTube Bridge</dt><dd>Pauses the playing YouTube video in Chrome when recording starts, then resumes only that video. Its helper and login LaunchAgent need a source checkout; you load the Chrome extension once.</dd></div>
+              <div><dt>Chrome details</dt><dd>For page titles and addresses with highlights, enable Chrome's View → Developer → Allow JavaScript from Apple Events, then grant Agent Flow Automation access if asked.</dd></div>
+              <div><dt>Mouse controls</dt><dd>Map a mouse button to your recording shortcut if you want. <a href="https://ethansk.github.io/agentic-mouse/">Agentic Mouse</a> is separate and isn't required.</dd></div>
+              <div><dt>VS Code</dt><dd>The <a href="https://marketplace.visualstudio.com/items?itemName=EthanSK.better-git-vscode">Better Git</a> bridge supports local code and diff editors in isolated tests. Everyday-use verification is still pending; terminals and chat panels aren't covered.</dd></div>
+            </dl>
+          </details>
+          <p class="note"><a href="https://github.com/EthanSK/AgentFlow/blob/main/SETUP.md">Setup guide and app support</a></p>
         </div>
       </div>
     </section>
 
-    <section class="band" id="setup" aria-labelledby="setup-title">
+    <section class="band" id="controls" aria-labelledby="controls-title">
       <div class="wrap split">
         <div class="band-head">
-          <h2 id="setup-title">Ethan's setup</h2>
-          <p><a href="https://ethansk.github.io/ethan-setup/">See the full setup <span aria-hidden="true">↗</span></a></p>
+          <h2 id="controls-title">Controls</h2>
+          <p>Use your keyboard shortcut or a mapped mouse button.</p>
         </div>
         <div class="band-body">
-          <p class="setup-intro"><a href="https://ethansk.github.io/ethan-setup/">Ethan's setup</a> shows the hardware, mouse mappings and companion apps. <a href="https://ethansk.github.io/agentic-mouse/">Agentic Mouse</a> is a separate, optional control layer; Agent Flow records and transcribes without it.</p>
-          <dl class="spec">
-            <div>
-              <dt>Controls</dt>
-              <dd>Two spare mouse buttons, mapped to Agent Flow Primary and macOS Next Track</dd>
-            </div>
-            <div>
-              <dt>Next button</dt>
-              <dd>macOS Next Track. It won't skip music while the recorder is showing.</dd>
-            </div>
-            <div>
-              <dt>Transcription</dt>
-              <dd>GPT Live Transcribe, using Ethan's own OpenAI API account</dd>
-            </div>
-            <div>
-              <dt>AI</dt>
-              <dd>Optional AI actions and enhancement; fast Modes keep enhancement off</dd>
-            </div>
-            <div>
-              <dt>Auto-send</dt>
-              <dd>Return in Codex, Claude, ChatGPT and terminal hosts; off in Chrome</dd>
-            </div>
-          </dl>
-
-          <h3 class="also-title">Also</h3>
-          <ul class="also">
-            <li>Start a new recording while earlier ones are still transcribing.</li>
-            <li>The recorder shows on every connected monitor.</li>
-            <li>While recording, double-press Primary for a recoverable clipboard-only finish; triple-press to pause; press once while paused to resume. A fourth press in that same recording gesture pastes without auto-send.</li>
-            <li>The optional <a href="https://github.com/EthanSK/AgentFlow/tree/main/companions/youtube-bridge">YouTube Bridge</a> pauses YouTube while you talk. Its source is included; install it separately.</li>
+          <ul class="setup-steps">
+            <li>Press once to start, then again to stop and paste.</li>
+            <li>Press twice while recording to finish without pasting. The text stays on your clipboard and in History.</li>
+            <li>Press three times while recording to pause, then once to resume.</li>
+            <li>Start another recording while the last one is still transcribing.</li>
           </ul>
+          <details class="optional" id="routes">
+            <summary>Next Track and saved inputs</summary>
+            <p class="note">While the recorder is visible, Next Track won't skip music. During recording, it stops and sends the text to the input where you started. After a normal stop, while transcription is still running, it can instead choose the input focused now.</p>
+            <p class="note">These saved-input actions use that app's settings and show an error if the target can't be verified. A normal stop simply pastes into the input focused when the result arrives.</p>
+            <p class="note"><a href="https://github.com/EthanSK/AgentFlow/blob/main/RECORDING_DESTINATIONS.md">Destination guide</a></p>
+          </details>
         </div>
       </div>
     </section>
@@ -229,7 +194,7 @@
       <div class="wrap split">
         <div class="band-head">
           <h2 id="build-title">Build from source</h2>
-          <p>Bring your own OpenAI API key. Agent Flow calls OpenAI directly; there's no Agent Flow subscription or shared billing server.</p>
+          <p>Needs macOS 14.4 or later, Xcode and Git.</p>
         </div>
         <div class="band-body">
           <div class="commands">
@@ -242,12 +207,8 @@ cd AgentFlow
             </div>
           </div>
           <ul class="build-notes">
-            <li>The first-use installer builds Agent Flow from public source, including real-time context, and puts it in your Applications folder.</li>
-            <li>Create an <a href="https://platform.openai.com/api-keys">OpenAI API key</a> and enable API billing. Add the key during setup; Agent Flow stores it in macOS Keychain and selects GPT Live for a fresh setup.</li>
-            <li>There is no public binary download or Agent Flow Homebrew cask yet. Building requires macOS 14.4 or later, full Xcode and Git. A local Parakeet model is installed as a fallback.</li>
+            <li>Builds Agent Flow, installs it in <code>~/Applications</code> and opens it. It won't replace an existing installation.</li>
             <li>Use <code>--all</code> to also install the Codex context skill and YouTube helper. Chrome still needs its unpacked extension loaded manually.</li>
-            <li>Allow Microphone and Accessibility on first launch. Exact Terminal and iTerm delivery also needs Automation.</li>
-            <li>The script refuses an existing Agent Flow or legacy VoiceInk++ install; updates need a recording-idle check and rollback.</li>
             <li>The upstream <code>voiceink</code> Homebrew cask installs VoiceInk, not Agent Flow.</li>
           </ul>
           <p class="actions">
@@ -259,23 +220,7 @@ cd AgentFlow
       </div>
     </section>
 
-    <section class="band" id="pieces" aria-labelledby="pieces-title">
-      <div class="wrap split">
-        <div class="band-head">
-          <h2 id="pieces-title">More than talking</h2>
-          <p>Ethan's extensions turn dictation into a live context stream. Install only the pieces you want.</p>
-        </div>
-        <div class="band-body">
-          <dl class="pieces">
-            <div><dt>Core · required</dt><dd>Agent Flow app, a transcription model, and macOS Microphone and Accessibility access.</dd></div>
-            <div><dt>Context · for Codex</dt><dd><a href="https://github.com/EthanSK/AgentFlow/tree/main/.agents/skills/interpret-voiceink-context">Install the context skill</a> to help Codex read speech, selections and screenshot paths together.</dd></div>
-            <div><dt>YouTube · optional</dt><dd><a href="https://github.com/EthanSK/AgentFlow/tree/main/companions/youtube-bridge">YouTube Bridge</a> adds a menu app, Chrome native host and login LaunchAgent. You load its Chrome extension once.</dd></div>
-            <div><dt>Mouse · optional</dt><dd><a href="https://ethansk.github.io/agentic-mouse/">Agentic Mouse</a> and programmable buttons are separate. The Agent Flow keyboard shortcut works without them.</dd></div>
-          </dl>
-          <p class="note">The <a href="https://github.com/EthanSK/AgentFlow/blob/main/SETUP.md">full setup guide</a> covers first install, manual permissions, Chrome loading and a real recording check. <code>--all</code> installs the bundled extras, not Agentic Mouse or your personal settings.</p>
-        </div>
-      </div>
-    </section>
+    <p class="wrap companion-link"><a href="https://ethansk.github.io/ethan-setup/">Ethan's setup</a> shows his hardware, mouse mappings and companion apps.</p>
   </main>
 
   <footer class="foot">
@@ -285,12 +230,11 @@ cd AgentFlow
         <a href="https://github.com/EthanSK/AgentFlow">GitHub</a>
         <a href="https://github.com/EthanSK/AgentFlow/blob/main/BUILDING.md">Build guide</a>
         <a href="https://github.com/EthanSK/AgentFlow/blob/main/SETUP.md">Full setup</a>
-        <a href="https://github.com/EthanSK/AgentFlow/blob/main/TERMINOLOGY.md">Button glossary</a>
+        <a href="https://github.com/EthanSK/AgentFlow/releases">Releases</a>
         <a href="https://github.com/EthanSK/AgentFlow/blob/main/RECORDING_DESTINATIONS.md">Destination guide</a>
         <a href="https://github.com/EthanSK/AgentFlow/tree/main/.agents/skills/interpret-voiceink-context">Context skill</a>
         <a href="https://ethansk.github.io/ethan-setup/">Ethan's setup</a>
         <a href="https://ethansk.github.io/agentic-mouse/">Agentic Mouse</a>
-        <a href="https://github.com/EthanSK/AgentFlow/tree/main/.agents/skills/learnings">Learnings skill</a>
       </nav>
     </div>
   </footer>

@@ -1,9 +1,12 @@
 # Public Agent Flow releases
 
-The website currently offers a source build. Do not add a binary download link until a
-Developer ID-signed, Apple-notarized archive has passed the gates below and a matching GitHub
-Release is public. A `VoiceInk Local Signing` or ad-hoc app is only a local build, even when
-`codesign --verify --deep --strict` succeeds.
+[v2.0.345](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.345) is the first public
+Developer ID-signed, Apple-notarized release. Its universal ZIP was downloaded back from GitHub
+and matched the published SHA-256. Source: `0df26e3d801800b5d9e1025454fd169690710aaf`;
+exact-build gate: 365 named tests across 13 suites.
+
+Every later download must pass the same gates below. A `VoiceInk Local Signing` or ad-hoc app
+is only a local build, even when `codesign --verify --deep --strict` succeeds.
 
 ## Release boundary
 
@@ -26,6 +29,9 @@ Release is public. A `VoiceInk Local Signing` or ad-hoc app is only a local buil
    It checks the source/build and file hashes before extraction, signs nested code and the
    outer app with Developer ID and hardened runtime, retains Automation, submits to Apple,
    staples, and produces the public ZIP, SHA-256 file and source-bound `release.json`.
+   Sparkle's bare `Autoupdate` executable must be signed before its framework, using
+   `Versions/Current/Autoupdate`, not a hard-coded version-A path. Sparkle 2 packages version B;
+   signing only the enclosing framework can pass local checks but fail Apple's notarization.
    The MacBook does not build or run native tests. The optional default `--complete` mode runs
    both stages on the Mini only when its own signing identity and isolated profile are usable.
    Then run `scripts/publish-public-release.sh <transferred-output>`.
@@ -68,8 +74,9 @@ certificate alone does not complete notarization. See Apple's
 [app-specific-password instructions](https://support.apple.com/en-gb/102654) and
 [`notarytool` Keychain guidance](https://developer.apple.com/documentation/technotes/tn3147-migrating-to-the-latest-notarization-tool).
 
-An automatic release runner is not yet registered. Do not enable one, publish a binary, or add
-a download link until its security boundary and the notarized end-to-end gate are verified.
+An automatic release runner is not yet registered. The manually verified public release does not
+establish safe CI access to the signing identity or Keychain. Do not attach those credentials to
+a public-repository self-hosted runner; verify a separate security boundary before automation.
 
 The public release process must never silently fall back to self-signing or skip Apple
 notarization. Publishing a ZIP is separate from implementing an in-app automatic updater.

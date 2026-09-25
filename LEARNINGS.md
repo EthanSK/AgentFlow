@@ -1,5 +1,32 @@
 # Learnings
 
+## 2026-09-25 — Sign Sparkle's resolved helper before notarization
+
+**Trigger:** First public Agent Flow notarization failed despite local deep/strict signing checks.
+**Finding:** The packaged Sparkle framework uses `Versions/B`, but the packaging script silently
+skipped its bare `Autoupdate` executable through a hard-coded `Versions/A` path. Apple's log
+reported an invalid Developer ID signature and missing secure timestamp for both architectures.
+**Fix:** Resolve `Versions/Current/Autoupdate`, require it when Sparkle is present, and sign it
+with hardened runtime and timestamp before nested bundles and the outer app with its entitlements.
+The public verifier independently requires Developer ID, expected team, runtime and timestamp on
+that helper. A signing-only repair of the exact build-345 artifact was Apple Accepted, stapled,
+Gatekeeper accepted, published, and downloaded back with a matching SHA-256; no rebuild was needed.
+**Guard:** `scripts/test-release-signing.py` exercises the production signing block with version-A,
+version-B and missing-helper fixtures. Keep notarization, public download, local installation and
+automated release-runner readiness as separate evidence gates.
+
+## 2026-09-25 — Public copy needs usage and source checks
+
+**Trigger:** Ethan rejected the homepage's internal route table and vague agent-workflow slogans.
+**Finding:** The demo explained actual speech/highlight/screenshot use, while feature cards,
+setup specs and route tables repeated it. The source did not bound reference placement to one word;
+only saved screenshots were captured; VS Code isolated tests were not everyday-use acceptance.
+**Fix:** Lead with the demo and verified download, keep optional controls in disclosures, and put
+installation detail and app-specific coverage in SETUP.md. Do not claim every app works, screenshot
+pixels are uploaded, a precise timeline exists, or optional recent-chat hints are always enabled.
+Current app updater code checks upstream releases for notification only; bundled Sparkle metadata
+does not prove an automatic install path.
+
 ## 2026-09-25 — Display branding is not a technical identity migration
 
 **Trigger:** Ethan requested “two words” for the public brand after choosing AgentFlow.

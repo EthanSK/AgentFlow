@@ -41,6 +41,16 @@ whisper_signature=$(codesign --display --verbose=4 "$whisper" 2>&1)
 grep -Fq 'Authority=Developer ID Application:' <<<"$whisper_signature"
 grep -Fq 'TeamIdentifier=T34G959ZG8' <<<"$whisper_signature"
 
+# A valid outer signature alone did not catch the old version-A signing path
+# skipping Sparkle's version-B Autoupdate executable. Check the resolved helper too.
+sparkle_autoupdate="$app/Contents/Frameworks/Sparkle.framework/Versions/Current/Autoupdate"
+test -f "$sparkle_autoupdate"
+sparkle_signature=$(codesign --display --verbose=4 "$sparkle_autoupdate" 2>&1)
+grep -Fq 'Authority=Developer ID Application:' <<<"$sparkle_signature"
+grep -Fq 'TeamIdentifier=T34G959ZG8' <<<"$sparkle_signature"
+grep -Eq 'flags=.*runtime' <<<"$sparkle_signature"
+grep -Fq 'Timestamp=' <<<"$sparkle_signature"
+
 for binary in "$app/Contents/MacOS/$executable" "$whisper/Versions/A/whisper"; do
   test -f "$binary"
   architectures=$(lipo -archs "$binary")

@@ -230,8 +230,8 @@ main:focus {
 }
 
 .hero h1 {
-  max-width: 15ch;
-  font-size: clamp(2.8rem, 7.6vw, 6rem);
+  max-width: 19ch;
+  font-size: clamp(2.65rem, 5.9vw, 4.8rem);
   /* Leave room for the screenshot marquee above each line's cap height. */
   line-height: 1.14;
   letter-spacing: -0.012em;
@@ -246,7 +246,16 @@ main:focus {
   line-height: 1.5;
 }
 
-/* The public-source caveat sits beside the claim, above the fold. */
+/* Release requirements sit beside the verified download, above the fold.
+   Keep the caveat style for older source-only landing pages. */
+.release-note {
+  margin-top: 0.85rem;
+  color: var(--graphite);
+  font-size: 0.9rem;
+}
+
+.source-link { margin-top: 0.7rem; }
+
 .caveat {
   margin-top: 1rem;
   padding-left: 0.85rem;
@@ -711,6 +720,28 @@ main:focus {
 .band-body {
   min-width: 0;
 }
+
+.setup-steps {
+  display: grid;
+  gap: 0.85rem;
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.optional {
+  margin-top: 1.65rem;
+  padding-block: 1rem;
+  border-block: 1px solid var(--rule);
+}
+
+.optional summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.optional[open] summary { margin-bottom: 1rem; }
+.optional .pieces div:first-child { border-top: 0; }
+.companion-link { padding-bottom: 3rem; color: var(--graphite); }
 
 /* Routes */
 

@@ -127,8 +127,11 @@ fi
 
 # Sign nested code inside-out before the outer bundle. A generic outer-only re-sign both breaks
 # library validation and silently removes Automation unless the checked-in entitlements return.
-sparkle_autoupdate="$app/Contents/Frameworks/Sparkle.framework/Versions/A/Autoupdate"
-if test -f "$sparkle_autoupdate"; then
+sparkle_autoupdate="$app/Contents/Frameworks/Sparkle.framework/Versions/Current/Autoupdate"
+if test -d "$app/Contents/Frameworks/Sparkle.framework"; then
+  # Sparkle 2 uses version B. Never silently skip its bare Mach-O helper because a
+  # historical version-A path is absent: framework signing does not sign this child.
+  test -f "$sparkle_autoupdate" || { echo 'Sparkle Autoupdate helper is missing.' >&2; exit 1; }
   codesign --force --options runtime --timestamp --sign "$identity" "$sparkle_autoupdate"
 fi
 find "$app/Contents" -depth \( -name '*.framework' -o -name '*.xpc' -o -name '*.appex' \

@@ -1,7 +1,7 @@
 {
   "name": "Agent Flow",
   "short_name": "Agent Flow",
-  "description": "Mac dictation for agents, with live Codex highlights and screenshot paths in Agent Flow source.",
+  "description": "Speech to text for Mac, with your highlights and screenshot paths.",
   "start_url": "/AgentFlow/",
   "display": "standalone",
   "background_color": "#e5eae8",

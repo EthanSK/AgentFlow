@@ -1,5 +1,17 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-09-25 — Hard-coded Sparkle version-A helper signing — REJECTED
+
+**Mechanism:** Sign `Sparkle.framework/Versions/A/Autoupdate` only if that path exists, then
+sign nested bundles and the outer app and accept local deep/strict verification as readiness.
+**Failure:** The shipped Sparkle 2 framework used version B. The helper was silently skipped;
+Apple notarization rejected both architectures for invalid Developer ID signing and no secure timestamp.
+**Accepted correction:** Resolve `Versions/Current/Autoupdate`, require the helper, sign it first,
+and independently check its Developer ID team, runtime and timestamp. The repaired build-345
+artifact passed Apple notarization, stapling and Gatekeeper without rebuilding native code.
+**Reconsider only if:** A pinned framework layout has no Current alias and an explicitly verified
+replacement resolves and signs the actual helper. An enclosing framework signature alone is not proof.
+
 > **Mandatory negative evidence.** Read this file completely before changing mouse-button
 > routing, target capture, exact/background delivery, auto-send, focus restoration, the recorder
 > HUD, release installation, or live-test infrastructure. It records approaches that looked
