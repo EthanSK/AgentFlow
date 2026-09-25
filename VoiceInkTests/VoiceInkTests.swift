@@ -6244,7 +6244,7 @@ struct VoiceInkTests {
 
         #expect(presentation.topLine == "v2.0")
         #expect(presentation.bottomLine == ".236")
-        #expect(presentation.accessibilityLabel == "VoiceInk++ version 2.0, build 236")
+        #expect(presentation.accessibilityLabel == "AgentFlow version 2.0, build 236")
     }
 
     @MainActor
@@ -8291,7 +8291,7 @@ struct VoiceInkTests {
         #expect(appSource.contains("There’s a VoiceInk update"))
         #expect(!appSource.contains("SPUStandardUpdaterController"))
         #expect(!appSource.contains("updaterController.checkForUpdates"))
-        #expect(settingsSource.contains("Daily VoiceInk Update Checks"))
+        #expect(settingsSource.contains("Daily Upstream VoiceInk Checks"))
         #expect(settingsSource.contains(
             "never installs or merges upstream updates automatically"
         ))
