@@ -86,6 +86,10 @@ xcodebuild -project "$root/VoiceInk.xcodeproj" -scheme VoiceInk \
 
 built="$derived/Build/Products/Release/AgentFlow.app"
 test -d "$built"
+# Inspect the generated product, not just source settings: Xcode can override plist names.
+test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$built/Contents/Info.plist")" = 'Agent Flow'
+test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$built/Contents/Info.plist")" = 'Agent Flow'
+test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$built/Contents/Info.plist")" = AgentFlow
 if find "$built/Contents" \( -name '*.xctest' -o -name '*XCTest*' \) -print -quit | grep -q .; then
   echo 'Refusing to package an Xcode test host.' >&2
   exit 1
@@ -117,6 +121,8 @@ else
   ditto -xk "$output/AgentFlow-prebuilt.zip" "$output"
   test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")" = "$source_build"
   test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$source_version"
+  test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$app/Contents/Info.plist")" = 'Agent Flow'
+  test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$app/Contents/Info.plist")" = 'Agent Flow'
 fi
 
 # Sign nested code inside-out before the outer bundle. A generic outer-only re-sign both breaks

@@ -6,6 +6,9 @@
 **Finding:** Visible `Agent Flow` copy must remain distinct from `AgentFlow` repository URLs,
 bundle/executable paths, code identifiers, credential-profile names and existing storage identity.
 A broad text replacement can corrupt relative Pages paths and source tests while leaving full URLs intact.
+Xcode's generated `CFBundleName` follows `PRODUCT_NAME` despite a literal source plist and an
+`INFOPLIST_KEY_CFBundleName` override. Use the human product name with explicit stable
+`EXECUTABLE_NAME` and `WRAPPER_NAME`, and check the generated product before packaging.
 **Guard:** `publicDisplayNameKeepsStableTechnicalIdentity` covers the Xcode display settings, stable
 product/bundle identity and website URL; the public release verifier checks both plist display fields
 and the unchanged executable/bundle ID. Historical incident records retain their original names.

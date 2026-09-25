@@ -25,6 +25,7 @@ canonical_result=0
 /usr/bin/python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=900, check=True)' \
   xcodebuild -project "$root/VoiceInk.xcodeproj" -scheme VoiceInk \
   -configuration Debug -destination 'platform=macOS' \
+  -only-testing:VoiceInkTests \
   -derivedDataPath "$derived" -resultBundlePath "$output/FullTests.xcresult" \
   -xcconfig "$root/LocalBuild.xcconfig" \
   CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES \
