@@ -44,10 +44,17 @@ if ! grep -Eq '^✔ Test run with [1-9][0-9]* tests in [1-9][0-9]* suites passed
   host="$derived/Build/Products/Debug/AgentFlow.app"
   bundle="$host/Contents/PlugIns/VoiceInkTests.xctest"
   test -d "$bundle" || { echo 'Xcode did not build the test bundle.' >&2; exit 1; }
+  # The direct runner uses a different Bundle.main. Keep the built host untouched and stage its
+  # package resource beside a disposable framework copy so MediaRemoteAdapter can find it.
+  resource_bundle="$host/Contents/Resources/MediaRemoteAdapter_MediaRemoteAdapter.bundle"
+  test -d "$resource_bundle" || { echo 'MediaRemoteAdapter test resource is missing.' >&2; exit 1; }
+  staged_frameworks="$output/TestFrameworks"
+  ditto "$host/Contents/Frameworks" "$staged_frameworks"
+  ditto "$resource_bundle" \
+    "$staged_frameworks/MediaRemoteAdapter.framework/Versions/A/Resources/MediaRemoteAdapter_MediaRemoteAdapter.bundle"
   passed_log="$output/direct-full-tests.log"
-  PACKAGE_RESOURCE_BUNDLE_PATH="$host/Contents/Resources" \
   DYLD_LIBRARY_PATH="$host/Contents/MacOS" \
-  DYLD_FRAMEWORK_PATH="$host/Contents/Frameworks:$(xcode-select -p)/Platforms/MacOSX.platform/Developer/Library/Frameworks" \
+  DYLD_FRAMEWORK_PATH="$staged_frameworks:$host/Contents/Frameworks:$(xcode-select -p)/Platforms/MacOSX.platform/Developer/Library/Frameworks" \
     /usr/bin/python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=600, check=True)' \
     xcrun xctest "$bundle" >"$passed_log" 2>&1 || {
       echo "Full-suite fallback failed (canonical exit $canonical_result)." >&2

@@ -49,6 +49,10 @@ xcrun notarytool history --keychain-profile "$VOICEINK_NOTARY_PROFILE" --output-
 
 mkdir -p "$output"
 "$root/scripts/test-public-release.sh" "$output"
+# Keep the named test logs, then reclaim only this release's generated test host before building
+# a separate universal Release app. The Mini can run out of space when both DerivedData trees coexist.
+test -d "$output/TestDerivedData"
+rm -rf "$output/TestDerivedData" "$output/TestFrameworks"
 
 build_log="$output/xcode-release-build.log"
 derived="$output/ReleaseDerivedData"
