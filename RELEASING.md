@@ -13,7 +13,7 @@ Release is public. A `VoiceInk Local Signing` or ad-hoc app is only a local buil
 2. Build and run the full named unit suite on Ethan's Mac Mini. `scripts/test-public-release.sh`
    uses Xcode's normal test action first. Only when TestManager executes zero named tests does
    it use the already-built full-suite `xcrun xctest` fallback. The summary and individual
-   named passes must agree, with at least the last accepted 347-test floor. Include the
+   named passes must agree, with at least the last accepted 362-test floor. Include the
    cross-app selection fallback, privacy, and fresh-setup model guards in the
    exact source being signed.
 3. Create and validate the dedicated `AgentFlowRelease` `notarytool` Keychain profile on the Mini
@@ -52,6 +52,11 @@ CI secret, release asset, or log. Omit `--sync` so this profile remains local to
 packaging script uses only this fixed profile name and validates it before building. A separately
 named password can be revoked independently in the Apple Account, but it is **not** an Apple
 per-app permission boundary; treat the Mac Mini and its Keychain access as sensitive.
+
+Create and validate the profile in the Mini's logged-in user session. A non-interactive SSH
+`keychainLocked` error does not establish that the profile is absent or invalid. Do not work
+around it by placing the macOS login password in automation; any release runner must prove it
+can access the intended Keychain profile in its actual execution session before it is enabled.
 
 Apple also supports a **team** App Store Connect API key for `notarytool`, but team keys apply
 across all apps; individual API keys cannot authenticate `notarytool`. A Developer ID
