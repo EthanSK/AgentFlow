@@ -25,6 +25,28 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-25T12:56:31Z
+**Trigger:** AgentFlow public release test gate
+**Symptom:** The direct full-suite fallback aborted on a missing MediaRemoteAdapter resource despite an already-built test bundle.
+**Root cause:** SwiftPM Bundle.module looked beside MediaRemoteAdapter.framework under the direct xctest runner; the host app resource path override did not supply that location.
+**Fix:** scripts/test-public-release.sh now copies the built frameworks and the existing package resource into disposable test staging, leaving the built app unchanged.
+**Commit:** 13528988f82ac94116f10e314978491fad19ec85
+**Guard:** A manual staged fallback passed all 362 named build-344 tests in 12 suites; script syntax passed. The public release script has not run end to end without notarization credentials.
+---
+
+
+---
+**Date:** 2026-09-25T12:56:30Z
+**Trigger:** AgentFlow public release packaging
+**Symptom:** Universal Release lipo failed with No space left on device after a full Debug test build.
+**Root cause:** The Mini could not hold this task’s completed Debug DerivedData and a universal Release DerivedData tree at the same time.
+**Fix:** scripts/package-public-release.sh now removes only its own TestDerivedData and staged test frameworks after the named test gate, retaining test logs before the separate Release build.
+**Commit:** 13528988f82ac94116f10e314978491fad19ec85
+**Guard:** Manually removing the completed task-owned Debug cache freed space; the exact build-344 universal Release then succeeded. Script syntax passed; the full scripted notarized release awaits isolated credentials.
+---
+
+
+---
 **Date:** 2026-09-25T10:57:35Z
 **Trigger:** Ethan reversed latest-only contiguous highlights and requested a best-effort silent reading trail.
 **Symptom:** Consecutive highlights at one live-speech anchor replaced earlier selections; final XML omitted references when the recognized transcript was empty.
