@@ -12,7 +12,7 @@ whisper_repo="$HOME/VoiceInk-Dependencies/whisper.cpp"
 whisper_framework="$whisper_repo/build-apple/whisper.xcframework"
 
 test "$(hostname)" = Ethans-Mac-mini-6.local || {
-  echo 'Public VoiceInk++ builds must run on the dedicated Mac Mini.' >&2
+  echo 'Public AgentFlow builds must run on the dedicated Mac Mini.' >&2
   exit 1
 }
 test ! -e "$output" || { echo 'Use a fresh output directory.' >&2; exit 1; }
@@ -23,8 +23,8 @@ test -z "$(git -C "$root" status --porcelain)" || {
 test "$(wc -l <"$root/LICENSE" | tr -d ' ')" -ge 600
 grep -Fq 'END OF TERMS AND CONDITIONS' "$root/LICENSE"
 source_build=$(grep 'CURRENT_PROJECT_VERSION = ' "$root/VoiceInk.xcodeproj/project.pbxproj" | head -1 | sed -E 's/.*= ([0-9]+);/\1/')
-test "$source_build" -gt 339 || {
-  echo 'Increment the native build beyond the installed build 339 before public distribution.' >&2
+test "$source_build" -gt 343 || {
+  echo 'Increment the native build beyond the last installed VoiceInk++ build 343 before public distribution.' >&2
   exit 1
 }
 source_version=$(grep 'MARKETING_VERSION = ' "$root/VoiceInk.xcodeproj/project.pbxproj" | head -1 | sed -E 's/.*= ([0-9.]+);/\1/')
@@ -63,8 +63,8 @@ xcodebuild -project "$root/VoiceInk.xcodeproj" -scheme VoiceInk \
     exit 1
   }
 
-built="$derived/Build/Products/Release/VoiceInkPlusPlus.app"
-app="$output/VoiceInkPlusPlus.app"
+built="$derived/Build/Products/Release/AgentFlow.app"
+app="$output/AgentFlow.app"
 test -d "$built"
 if find "$built/Contents" \( -name '*.xctest' -o -name '*XCTest*' \) -print -quit | grep -q .; then
   echo 'Refusing to package an Xcode test host.' >&2
@@ -90,7 +90,7 @@ codesign --verify --deep --strict "$app"
 
 version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")
 build=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")
-archive="$output/VoiceInkPlusPlus-v${version}.${build}-mac-universal.zip"
+archive="$output/AgentFlow-v${version}.${build}-mac-universal.zip"
 submission="$output/notary-submission.zip"
 ditto -c -k --keepParent "$app" "$submission"
 xcrun notarytool submit "$submission" --keychain-profile "$VOICEINK_NOTARY_PROFILE" \

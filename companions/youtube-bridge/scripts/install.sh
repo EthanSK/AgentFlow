@@ -28,7 +28,7 @@ python3 - "$manifest_path" "$binary_path" "$host_name" "$extension_id" "$launch_
 import json, plistlib, sys
 manifest, binary, host, extension, agent, label, app = sys.argv[1:]
 with open(manifest, 'w') as out:
-    json.dump({'name': host, 'description': 'VoiceInk YouTube Bridge native host.',
+    json.dump({'name': host, 'description': 'AgentFlow YouTube Bridge native host.',
                'path': binary, 'type': 'stdio',
                'allowed_origins': ['chrome-extension://' + extension + '/']}, out, indent=2)
 with open(agent, 'wb') as out:
@@ -58,4 +58,4 @@ echo
 echo "Load this folder in chrome://extensions:"
 echo "$repo_root/dist/extension"
 echo
-echo "Hardware media-key routing is disabled by design; Accessibility is not required for VoiceInk YouTube auto-pause."
+echo "Hardware media-key routing is disabled by design; Accessibility is not required for AgentFlow YouTube auto-pause."

@@ -1,51 +1,51 @@
-# Copy Ethan's VoiceInk++ setup
+# Copy Ethan's AgentFlow setup
 
-This is a start-to-finish handoff for an agent configuring VoiceInk++ on another person's Mac.
-It records a **2026-07-30 settings snapshot**, not a guarantee of Ethan's current devices, Modes,
+This is a start-to-finish handoff for an agent configuring AgentFlow on another person's Mac.
+It includes a **2026-07-30 settings snapshot**, not a guarantee of Ethan's current devices, Modes,
 or provider choices. It never includes Ethan's API keys, Keychain data, vocabulary, transcripts,
 or other private content. For the current hardware and companion-app picture, use
 [Ethan's setup](https://ethansk.github.io/ethan-setup/). [Agentic Mouse](https://ethansk.github.io/agentic-mouse/)
-is optional and separate from VoiceInk++.
+is optional and separate from AgentFlow.
 
 ## Goal
 
 Reproduce Ethan's low-latency dictation workflow:
 
-- GPT Live Transcribe streams partial text into the black VoiceInk++ recorder HUD.
-- VoiceInk++ performs one final paste and optional Return only after recording stops.
+- GPT Live Transcribe streams partial text into the black AgentFlow recorder HUD.
+- AgentFlow performs one final paste and optional Return only after recording stops.
 - The primary mouse button starts/stops normal dictation.
 - A separate Next button can preserve an exact destination while the user keeps working elsewhere.
 - Soniox V5, AssemblyAI Universal-3.5 Pro, and Deepgram Nova 3 remain available as alternatives.
 
-The target is Ethan's **VoiceInk++** fork, not upstream VoiceInk.
+The target is Ethan's **AgentFlow** fork, not upstream VoiceInk.
 
 ## Why a blind settings copy does not work
 
 There are three important traps:
 
-1. **API keys are intentionally excluded from VoiceInk++ settings exports.** Importing Ethan's JSON
+1. **API keys are intentionally excluded from AgentFlow settings exports.** Importing Ethan's JSON
    can copy model definitions and Modes, but the recipient must add her own provider keys through
-   the VoiceInk++ UI.
+   the AgentFlow UI.
 2. **Each Mode overrides the global model.** Changing only `CurrentTranscriptionModel` can leave every
    real app Mode on its previous provider. Configure and verify every Mode.
-3. **Use VoiceInk++'s public `main`, not upstream VoiceInk.** GPT Live Transcribe and live
-   selection/screenshot context are included in VoiceInk++ source. Upstream VoiceInk or a
+3. **Use AgentFlow's public `main`, not upstream VoiceInk.** GPT Live Transcribe and live
+   selection/screenshot context are included in AgentFlow source. Upstream VoiceInk or a
    previously installed bundle may not show them.
 
 ## Rules for the setup agent
 
 - Use the recipient's own provider accounts and API keys. Never ask Ethan to send his keys and never
   copy his Keychain.
-- Enter keys only into VoiceInk++'s secure provider UI. Do not place them in this document, Git,
+- Enter keys only into AgentFlow's secure provider UI. Do not place them in this document, Git,
   shell commands, screenshots, logs, or chat messages.
-- Export/back up any existing VoiceInk++ settings before changing them.
-- Do not replace or delete `/Applications/VoiceInk.app`; VoiceInk++ is a separate app.
+- Export/back up any existing AgentFlow settings before changing them.
+- Do not replace or delete `/Applications/VoiceInk.app`; AgentFlow is a separate app.
 - Do not enable automatic Return in a browser, terminal, or chat until the recipient understands
   that stopping a recording can immediately submit the text.
 - Test with disposable inputs. Do not test exact delivery in a valuable Notion page, task board,
   production terminal, or important chat.
 
-## 1. Install the correct VoiceInk++ source
+## 1. Install the correct AgentFlow source
 
 Requirements:
 
@@ -56,20 +56,20 @@ Requirements:
 Run:
 
 ```sh
-git clone https://github.com/EthanSK/VoiceInkPlusPlus.git
-cd VoiceInkPlusPlus
+git clone https://github.com/EthanSK/AgentFlow.git
+cd AgentFlow
 make local
-open ~/Downloads/VoiceInkPlusPlus.app
+open ~/Downloads/AgentFlow.app
 ```
 
-The built bundle is `~/Downloads/VoiceInkPlusPlus.app`, displayed as **VoiceInk++**, with bundle identifier
+The built bundle is `~/Downloads/AgentFlow.app`, displayed as **AgentFlow**, with bundle identifier
 `com.ethansk.VoiceInkPlusPlus`.
 
 If GPT Live Transcribe is missing from **Settings → AI Models**, stop and verify the repository, commit,
 and running app identity. Do not recreate it as a generic custom multipart model: it requires the
 dedicated realtime WebSocket integration.
 
-Ethan's July settings snapshot came from VoiceInk++ **v2.0 build 268**. That build number is historical;
+Ethan's July settings snapshot came from AgentFlow **v2.0 build 268**. That build number is historical;
 the recipient should build current public `main`, not attempt to reproduce the old binary.
 
 ## 2. Grant macOS permissions
@@ -85,9 +85,9 @@ Additional permissions are route-specific:
 
 - **Automation → System Events** may be requested by the AppleScript paste method.
 - **Automation → Terminal/iTerm** is needed only for exact native terminal-session delivery.
-- **Screen Recording** is needed only for VoiceInk++'s pinned Telegram exact-chat identity fallback.
+- **Screen Recording** is needed only for AgentFlow's pinned Telegram exact-chat identity fallback.
 
-Restart VoiceInk++ after changing a permission if macOS does not apply it immediately.
+Restart AgentFlow after changing a permission if macOS does not apply it immediately.
 
 ## 3. Configure the two mouse buttons
 
@@ -96,22 +96,24 @@ outputs can work.
 
 ### Primary button
 
-In VoiceInk++:
+In AgentFlow:
 
 - **Settings → Primary Shortcut:** modifier-only `Shift + Control + Option`
 - **Shortcut mode:** `Toggle`
 
 In G HUB, Ethan's upper side thumb control runs a `speech to text` macro that taps those three
-modifiers. This is the primary button: one press starts recording and one press stops it. A double
-press during recording pauses/resumes capture.
+modifiers. This is the primary button: one press starts recording and one press stops it. While
+recording, double-press for a recoverable clipboard-only finish, triple-press to pause, or continue
+to a fourth press to paste without auto-send. From Pause, one fresh press resumes and two finish to
+the clipboard. Read [TERMINOLOGY.md](TERMINOLOGY.md) before teaching or changing these gestures.
 
 ### Next button
 
 Map a different physical mouse control to the standard macOS **Next Track** media action.
 
 Do not map it as raw Mouse Button 5 merely because it is described as “forward,” and do not add a
-second VoiceInk++ keyboard shortcut for it. VoiceInk++ listens for the macOS Next Track event. While
-the black recorder/transcription bar is visible, VoiceInk++ consumes that event; after the bar hides,
+second AgentFlow keyboard shortcut for it. AgentFlow listens for the macOS Next Track event. While
+the black recorder/transcription bar is visible, AgentFlow consumes that event; after the bar hides,
 it returns to ordinary media control.
 
 ## 4. Add the recipient's provider keys
@@ -130,7 +132,7 @@ Optional alternatives require their own funded accounts and keys:
 - AssemblyAI
 - Deepgram
 
-VoiceInk++'s settings export will not provide any of these keys.
+AgentFlow's settings export will not provide any of these keys.
 
 ## 5. Configure Ethan's active GPT realtime preset
 
@@ -151,7 +153,7 @@ In the model picker, select:
 | Screen-capture context | Off |
 | Auto-send | Return for Ethan's agent/chat Modes; choose deliberately for the recipient |
 
-VoiceInk++ automatically supplies these implementation settings; do not add them as custom fields:
+AgentFlow automatically supplies these implementation settings; do not add them as custom fields:
 
 - Realtime endpoint: `wss://api.openai.com/v1/realtime?intent=transcription`
 - Transcription model inside the session: `gpt-live-transcribe`
@@ -160,13 +162,13 @@ VoiceInk++ automatically supplies these implementation settings; do not add them
 - Turn detection: off; the physical stop finalizes the utterance
 - Empty/failed live fallback: `gpt-transcribe` at `/v1/audio/transcriptions`
 - Language hint: `en`
-- Vocabulary: up to 100 validated VoiceInk++ Vocabulary entries sent as keywords
+- Vocabulary: up to 100 validated AgentFlow Vocabulary entries sent as keywords
 
 Do not put `gpt-live-transcribe` in the WebSocket URL. It belongs inside the transcription session
 update; using it as the connection model is rejected by the API.
 
-Realtime words remain inside VoiceInk++'s black HUD. They must not be written provisionally into the
-destination app. On stop, VoiceInk++ delivers exactly one final result.
+Realtime words remain inside AgentFlow's black HUD. They must not be written provisionally into the
+destination app. On stop, AgentFlow delivers exactly one final result.
 
 Provider reference: [OpenAI Realtime transcription](https://developers.openai.com/api/docs/guides/realtime-transcription).
 
@@ -213,7 +215,7 @@ The last three values are an exact snapshot, not a universal recommendation:
 no effect on the active transcription path. The recipient can leave enhancement unconfigured unless
 she intentionally wants a slower rewrite stage.
 
-## 7. Match the remaining VoiceInk++ preferences
+## 7. Match the remaining AgentFlow preferences
 
 Ethan's inspected values were:
 
@@ -235,7 +237,7 @@ simulated Command-V events and is normally the more portable choice.
 
 ## 8. Add Vocabulary
 
-Add names, projects, acronyms, and unusual proper nouns under VoiceInk++ Vocabulary. Do not copy
+Add names, projects, acronyms, and unusual proper nouns under AgentFlow Vocabulary. Do not copy
 Ethan's personal dictionary unless he intentionally provides it.
 
 Provider handling:
@@ -275,7 +277,7 @@ required. An exhausted balance can connect and then leave the recorder stuck whi
 | Language | English (`en`) |
 | Quality mode selected automatically | `max_accuracy` |
 
-VoiceInk++ uses AssemblyAI's v3 streaming endpoint with PCM16 at 16 kHz and supplies language,
+AgentFlow uses AssemblyAI's v3 streaming endpoint with PCM16 at 16 kHz and supplies language,
 prompt, and Vocabulary keyterms during the handshake. Old names such as `universal-3-pro` and
 `u3-rt-pro` are migrated; use `universal-3-5-pro` for a new setup.
 
@@ -309,7 +311,7 @@ port 51337. Do not copy it as though it were a hosted provider. Use built-in Nov
 Perform these checks in disposable inputs:
 
 1. Select GPT Live Transcribe in every intended Mode, with realtime on and language `en`.
-2. Start recording. Confirm live partial text appears in the black VoiceInk++ HUD before stopping.
+2. Start recording. Confirm live partial text appears in the black AgentFlow HUD before stopping.
 3. Stop with the primary button. Confirm one final transcript pastes into the currently focused input.
 4. In a Mode with Return enabled, confirm it submits once. In a Mode with Return disabled, confirm it
    only pastes.
@@ -322,7 +324,7 @@ Perform these checks in disposable inputs:
 8. If testing Terminal/iTerm, use a disposable shell prompt and confirm the required Automation
    permission before relying on exact native delivery.
 
-For a GPT run, VoiceInk++ logs should identify `Streaming start requested model=GPT Live Transcribe`
+For a GPT run, AgentFlow logs should identify `Streaming start requested model=GPT Live Transcribe`
 and finish with a nonzero final character count. Never treat a model appearing in the picker as proof
 that its API key, billing, streaming connection, paste, and Return all work.
 
@@ -339,9 +341,9 @@ Open every Mode and change its transcription model. Mode settings override the g
 
 ### GPT Live Transcribe is absent
 
-Verify that the running bundle is current VoiceInk++ from
-`https://github.com/EthanSK/VoiceInkPlusPlus` and that the selected Mode uses GPT Live Transcribe.
-Upstream VoiceInk and a stale installed VoiceInk++ bundle are not substitutes.
+Verify that the running bundle is current AgentFlow from
+`https://github.com/EthanSK/AgentFlow` and that the selected Mode uses GPT Live Transcribe.
+Upstream VoiceInk and a stale installed AgentFlow bundle are not substitutes.
 
 ### Realtime text does not appear
 
@@ -362,7 +364,7 @@ and may fail closed instead of submitting an uncertain target.
 
 ## Final acceptance checklist
 
-- [ ] Current VoiceInk++ public `main` built and launched
+- [ ] Current AgentFlow public `main` built and launched
 - [ ] Microphone and Accessibility granted
 - [ ] Recipient's own OpenAI API key added and verified
 - [ ] GPT Live Transcribe selected in every intended Mode

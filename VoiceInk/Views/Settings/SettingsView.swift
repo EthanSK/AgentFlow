@@ -146,7 +146,7 @@ struct SettingsView: View {
                     isExpanded: $isRestoreClipboardExpanded,
                     isEnabled: $restoreClipboardAfterPaste,
                     label: "Keep Clipboard Content",
-                    infoMessage: "VoiceInk temporarily uses the clipboard to paste transcription. When enabled, it restores your previous clipboard content after the selected delay. When disabled, the pasted transcription stays on your clipboard."
+                    infoMessage: "AgentFlow temporarily uses the clipboard to paste transcription. When enabled, it restores your previous clipboard content after the selected delay. When disabled, the pasted transcription stays on your clipboard."
                 ) {
                     Picker("Restore Delay", selection: $clipboardRestoreDelay) {
                         Text("250ms").tag(0.25)
@@ -214,8 +214,8 @@ struct SettingsView: View {
                     set: { updaterViewModel.setAutomaticallyChecksForUpdates($0) }
                 )) {
                     HStack(spacing: 4) {
-                        Text("Daily VoiceInk Update Checks")
-                        InfoTip("Checks the official VoiceInk GitHub releases once a day and notifies you when there is something new to review. VoiceInk++ never installs or merges upstream updates automatically.")
+                        Text("Daily Upstream VoiceInk Checks")
+                        InfoTip("Checks official VoiceInk releases once a day. AgentFlow never installs or merges upstream updates automatically.")
                     }
                 }
 
@@ -236,7 +236,7 @@ struct SettingsView: View {
             } header: {
                 Text("Privacy")
             } footer: {
-                Text("Control how VoiceInk handles your transcription data and audio recordings.")
+                Text("Control how AgentFlow handles your transcription data and audio recordings.")
             }
 
             Section {

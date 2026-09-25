@@ -5,8 +5,10 @@ set -euo pipefail
 # release signature. Refusing an existing bundle is safer than pretending this
 # public, ad-hoc build script can perform Ethan's guarded in-place release.
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-app_target="$HOME/Applications/VoiceInkPlusPlus.app"
-system_app="/Applications/VoiceInkPlusPlus.app"
+app_target="$HOME/Applications/AgentFlow.app"
+system_app="/Applications/AgentFlow.app"
+legacy_user_app="$HOME/Applications/VoiceInkPlusPlus.app"
+legacy_system_app="/Applications/VoiceInkPlusPlus.app"
 bridge_app="$HOME/Applications/YouTube Spotify Media Key.app"
 bridge_agent="$HOME/Library/LaunchAgents/com.ethan.youtubeSpotifyMediaKey.plist"
 bridge_manifest="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.ethan.youtube_spotify_media_key.json"
@@ -17,7 +19,7 @@ check_only=false
 
 usage() {
   echo "Usage: ./scripts/install-first-use.sh [--all | --with-youtube-bridge] [--with-codex-skill] [--check]"
-  echo "Installs a new VoiceInk++ app into ~/Applications; never replaces an existing app."
+  echo "Installs a new AgentFlow app into ~/Applications; never replaces an existing app."
   echo "--all adds the optional YouTube Bridge and Codex context skill."
   echo "Chrome extension loading, macOS permissions, provider keys and mouse mapping remain guided steps."
 }
@@ -47,12 +49,12 @@ for option in "$@"; do
 done
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
-  echo "VoiceInk++ requires macOS." >&2
+  echo "AgentFlow requires macOS." >&2
   exit 1
 fi
 
 if "$check_only"; then
-  for path in "$system_app" "$app_target" "$bridge_app" "$bridge_agent" "$bridge_manifest" "$skill_target"; do
+  for path in "$system_app" "$app_target" "$legacy_system_app" "$legacy_user_app" "$bridge_app" "$bridge_agent" "$bridge_manifest" "$skill_target"; do
     if [[ -e "$path" || -L "$path" ]]; then
       echo "Present: $path"
     else
@@ -70,9 +72,10 @@ for command in make xcodebuild codesign ditto plutil open; do
   fi
 done
 
-if [[ -e "$app_target" || -L "$app_target" || -e "$system_app" || -L "$system_app" ]] || \
-   pgrep -x VoiceInkPlusPlus >/dev/null 2>&1; then
-  echo "VoiceInk++ is already installed or running. This first-use installer will not replace it." >&2
+if [[ -e "$app_target" || -L "$app_target" || -e "$system_app" || -L "$system_app" || \
+      -e "$legacy_user_app" || -L "$legacy_user_app" || -e "$legacy_system_app" || -L "$legacy_system_app" ]] || \
+   pgrep -x VoiceInkPlusPlus >/dev/null 2>&1 || pgrep -x AgentFlow >/dev/null 2>&1; then
+  echo "AgentFlow or VoiceInk++ is already installed or running. This first-use installer will not replace it." >&2
   echo "Use BUILDING.md and the guarded update procedure instead." >&2
   exit 1
 fi
@@ -96,9 +99,9 @@ if "$with_skill" && [[ -e "$skill_target" || -L "$skill_target" ]]; then
 fi
 
 mkdir -p "$HOME/Applications"
-stage_dir="$(mktemp -d "$HOME/Applications/.voiceinkplusplus-install.XXXXXX")"
-candidate="$stage_dir/VoiceInkPlusPlus.app"
-echo "Building VoiceInk++ from this checkout into $stage_dir..."
+stage_dir="$(mktemp -d "$HOME/Applications/.agentflow-install.XXXXXX")"
+candidate="$stage_dir/AgentFlow.app"
+echo "Building AgentFlow from this checkout into $stage_dir..."
 make -C "$repo_root" local "LOCAL_APP_OUTPUT=$candidate"
 if [[ ! -d "$candidate" ]]; then
   echo "Build completed without the expected app bundle: $candidate. Staging directory retained." >&2
@@ -117,7 +120,7 @@ if [[ -e "$app_target" || -L "$app_target" ]]; then
 fi
 mv "$candidate" "$app_target"
 rmdir "$stage_dir"
-echo "Installed VoiceInk++ at $app_target"
+echo "Installed AgentFlow at $app_target"
 
 if "$with_skill"; then
   mkdir -p "$HOME/.agents/skills"
@@ -143,13 +146,13 @@ if "$with_bridge"; then
 fi
 
 open -g "$app_target"
-if ! wait_for_process "$app_target/Contents/MacOS/VoiceInkPlusPlus" VoiceInkPlusPlus; then
-  echo "VoiceInk++ was installed but did not remain running. The app is at $app_target; check the macOS launch error before recording." >&2
+if ! wait_for_process "$app_target/Contents/MacOS/AgentFlow" AgentFlow; then
+  echo "AgentFlow was installed but did not remain running. The app is at $app_target; check the macOS launch error before recording." >&2
   exit 1
 fi
-echo "VoiceInk++ is running from $app_target"
+echo "AgentFlow is running from $app_target"
 echo
-echo "Next: grant VoiceInk++ Microphone and Accessibility access, choose a transcription provider, and verify one short recording."
+echo "Next: grant AgentFlow Microphone and Accessibility access, add your OpenAI API key for GPT Live, and verify one short recording."
 if "$with_bridge"; then
   echo "In Chrome, load $repo_root/companions/youtube-bridge/dist/extension at chrome://extensions and test one disposable YouTube video."
 fi

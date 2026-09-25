@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# This is the public-download gate, not the local VoiceInk++ signing check.
+# This is the public-download gate, not the local AgentFlow signing check.
 # A locally trusted self-signed app must never be presented as a Gatekeeper-ready release.
-app=${1:?Pass the staged VoiceInkPlusPlus.app path}
+app=${1:?Pass the staged AgentFlow.app path}
 test -d "$app"
 
 plist="$app/Contents/Info.plist"
@@ -49,4 +49,4 @@ done
 
 xcrun stapler validate "$app"
 spctl --assess --type execute --verbose "$app"
-printf 'Verified notarized VoiceInk++ %s build %s: %s\n' "$version" "$build" "$app"
+printf 'Verified notarized AgentFlow %s build %s: %s\n' "$version" "$build" "$app"

@@ -88,24 +88,31 @@ installed `.app`).
 # on the Mac Mini:
 cd ~/Projects/VoiceInk-build        # the Mini's clone of this fork
 make local                          # builds whisper.cpp (cached after first time) + ad-hoc-signed xcodebuild
-# output: ~/Downloads/VoiceInkPlusPlus.app  (quarantine already stripped by the Makefile)
+# output: ~/Downloads/AgentFlow.app  (quarantine already stripped by the Makefile)
 ```
 
-VoiceInk++ contains no commercial license, trial, purchase, affiliate-promotion, or remote
+AgentFlow contains no commercial license, trial, purchase, affiliate-promotion, or remote
 promotional-announcement runtime. Do not reintroduce those upstream systems during a feature port.
 `make local` still injects the `LOCAL_BUILD` compile flag for standalone capabilities and uses
 ad-hoc `CODE_SIGN_IDENTITY = -`, so no paid Apple Developer certificate is needed. Mic /
 Accessibility / Screen-Recording are normal TCC grants on first launch.
 
-The built bundle is **`VoiceInkPlusPlus.app`** (output: `~/Downloads/VoiceInkPlusPlus.app`) — the
-`PRODUCT_NAME` is the build-path-safe `VoiceInkPlusPlus`; the user-visible name is **VoiceInk++** via
+The built bundle is **`AgentFlow.app`** (output: `~/Downloads/AgentFlow.app`) — the
+`PRODUCT_NAME` is `AgentFlow`; the user-visible name is **AgentFlow** via
 `CFBundleDisplayName`.
 
 ### Install completed fixes into the running app (mandatory)
 
-A VoiceInk++ code fix is not complete when the source builds: install that exact build into
-`/Applications/VoiceInkPlusPlus.app` and relaunch it so Ethan is testing the corrected binary. Never
+A native AgentFlow fix is not complete when the source builds: install that exact build into
+`/Applications/AgentFlow.app` and relaunch it so Ethan is testing the corrected binary. Never
 replace or stop `/Applications/VoiceInk.app`, which is the separate official app.
+
+For the first AgentFlow release, `/Applications/VoiceInkPlusPlus.app` is the legacy path. After the
+idle check and restart notice, preserve the entire old bundle as a rollback, install the new-named
+bundle, and verify only one instance of bundle ID `com.ethansk.VoiceInkPlusPlus` is running. Keep
+that identifier, preferences, Keychain service, recordings and user settings unchanged; changing
+the app filename and display name is not a data migration. A fresh Accessibility grant may still
+be needed if macOS ties the permission to the old path.
 
 Before every native release, increment `CURRENT_PROJECT_VERSION` in both main-app build configurations.
 The recorder bar renders `v<MARKETING_VERSION>` on its first row and
@@ -113,34 +120,34 @@ The recorder bar renders `v<MARKETING_VERSION>` on its first row and
 have a unique build number. Do not reuse a build number after changing native source, and do not call
 source-only work released or installed.
 
-Before every update that quits or replaces the running VoiceInk++ app, warn Ethan and give him a real
+Before every update that quits or replaces the running AgentFlow app, warn Ethan and give him a real
 five-second recovery window:
 
 ```sh
-osascript -e 'display notification "VoiceInk++ will restart in 5 seconds" with title "VoiceInk++ update"'
+osascript -e 'display notification "AgentFlow will restart in 5 seconds" with title "AgentFlow update"'
 sleep 5
 ```
 
-Only after that delay: quit VoiceInk++, preserve a timestamped rollback bundle, replace the app,
+Only after that delay: quit the installed app, preserve a timestamped rollback bundle, replace it,
 relaunch it, and verify the new PID plus the strict/deep code signature and stable designated
 requirement. Do not claim a live fix while an older PID/build remains running.
 
-## Standalone-fork identity — VoiceInk++ (separate app from the official VoiceInk)
+## Standalone-fork identity — AgentFlow (separate app from the official VoiceInk)
 
-This fork is rebranded to **VoiceInk++** with its **own** bundle id so it installs and permissions
+This fork is branded **AgentFlow** with its **own** bundle ID so it installs and permissions
 **alongside** the official VoiceInk without colliding on TCC permissions, UserDefaults/prefs, keychain,
 or Application Support storage.
 
 - **Bundle id:** `com.ethansk.VoiceInkPlusPlus` (main app). Tests use
   `com.ethansk.VoiceInkPlusPlus.Tests` / `.UITests`. (Was `com.prakashjoshipax.VoiceInk` upstream.)
-- **Product name / file:** `VoiceInkPlusPlus` → builds `VoiceInkPlusPlus.app`.
-- **Display name (CFBundleDisplayName):** `VoiceInk++` (what the user sees in the menu bar, Dock,
+- **Product name / file:** `AgentFlow` → builds `AgentFlow.app`.
+- **Display name (CFBundleDisplayName):** `AgentFlow` (what the user sees in the menu bar, Dock,
   About panel, window title).
 - **Self-storage moved to the new id:** Application Support folder
   (`~/Library/Application Support/com.ethansk.VoiceInkPlusPlus/`), the `Recordings` subfolder, and the
-  keychain service name (`com.ethansk.VoiceInkPlusPlus`) all use the new id, so VoiceInk++ keeps its
+  keychain service name (`com.ethansk.VoiceInkPlusPlus`) all use the stable ID, so AgentFlow keeps its
   own data/models/recordings/secrets separate from the official app.
-- **Prefs plist:** macOS auto-derives it from the bundle id, so VoiceInk++'s prefs live at
+- **Prefs plist:** macOS auto-derives it from the bundle ID, so AgentFlow's prefs live at
   `~/Library/Preferences/com.ethansk.VoiceInkPlusPlus.plist` — no longer shared with the official app.
 - **Deliberately LEFT as the upstream id (don't change without provisioning):** the iCloud CloudKit
   container `iCloud.com.prakashjoshipax.VoiceInk` (entitlements + `VoiceInk.swift`). It must match a
@@ -160,9 +167,8 @@ identifier "com.ethansk.VoiceInkPlusPlus" and certificate leaf = H"..."
 
 (was `identifier "com.prakashjoshipax.VoiceInk" and ...`). Update any DR/codesign verification on the
 Mini to match `com.ethansk.VoiceInkPlusPlus`, and point any app-path references at
-`VoiceInkPlusPlus.app` (display name `VoiceInk++`). The first launch of the rebranded app will prompt
-fresh TCC grants (Mic / Accessibility / Screen Recording) because it's a brand-new identity to macOS —
-this is expected and is the whole point of the split.
+`AgentFlow.app` (display name `AgentFlow`). The bundle ID and designated requirement remain stable
+through the AgentFlow name change; verify permissions rather than assuming they transfer or reset.
 
 The final outer-app signing step must also pass the checked-in
 `VoiceInk/VoiceInk.local.entitlements`. Replacing only the outer signature without that file can
@@ -176,7 +182,7 @@ checked-in entitlements as argument 2, refuses a missing file, and verifies Auto
 
 ```sh
 ~/Projects/VoiceInk-build/resign-local.sh \
-  ~/Downloads/VoiceInkPlusPlus.app \
+  ~/Downloads/AgentFlow.app \
   "$PWD/VoiceInk/VoiceInk.local.entitlements"
 ```
 

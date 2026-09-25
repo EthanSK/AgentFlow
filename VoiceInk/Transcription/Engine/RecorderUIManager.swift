@@ -378,7 +378,7 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
         guard reportedRecorderPresentationIssue.shouldReport(.failure) else { return }
         reportedRecorderPresentationIssue = .failure
         let title = isRecorderPanelVisible
-            ? String(localized: "Recorder controls could not be restored. VoiceInk++ kept the current recorder state.")
+            ? String(localized: "Recorder controls could not be restored. AgentFlow kept the current recorder state.")
             : String(localized: "Recorder controls could not be shown. Recording did not start.")
         NotificationManager.shared.showNotification(
             title: title,
@@ -394,7 +394,7 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
         guard reportedRecorderPresentationIssue.shouldReport(.incomplete) else { return }
         reportedRecorderPresentationIssue = .incomplete
         NotificationManager.shared.showNotification(
-            title: String(localized: "Recorder controls are visible on only some displays. VoiceInk++ will retry when the display environment changes."),
+            title: String(localized: "Recorder controls are visible on only some displays. AgentFlow will retry when the display environment changes."),
             type: .error,
             playSound: false
         )

@@ -1,4 +1,4 @@
-# Public VoiceInk++ releases
+# Public AgentFlow releases
 
 The website currently offers a source build. Do not add a binary download link until a
 Developer ID-signed, Apple-notarized archive has passed the gates below and a matching GitHub
@@ -13,7 +13,9 @@ Release is public. A `VoiceInk Local Signing` or ad-hoc app is only a local buil
 2. Build and run the full named unit suite on Ethan's Mac Mini. `scripts/test-public-release.sh`
    uses Xcode's normal test action first. Only when TestManager executes zero named tests does
    it use the already-built full-suite `xcrun xctest` fallback. The summary and individual
-   named passes must agree, with at least the current 344-test floor.
+   named passes must agree, with at least the last accepted 347-test floor. Include the
+   cross-app selection fallback, privacy, and fresh-setup model guards in the
+   exact source being signed.
 3. Set `VOICEINK_NOTARY_PROFILE` to a working `notarytool` Keychain profile on the Mini, then
    run `scripts/package-public-release.sh /private/tmp/<fresh-task-output>`. The script checks
    the pinned universal `whisper.cpp` dependency, builds a separate Release app, embeds the

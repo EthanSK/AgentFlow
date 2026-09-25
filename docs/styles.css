@@ -1,5 +1,5 @@
 /*
-  VoiceInk++ site
+  AgentFlow site
 
   The page is a quiet light desk; the only black object is the recorder HUD.
   Its two signal colours are copied from the real HUD: cyan marks selected
@@ -184,19 +184,6 @@ main:focus {
 
 .brand img {
   border-radius: 8px;
-}
-
-/* The ++ echoes the mint badge on the app icon. */
-.brand b {
-  display: inline-block;
-  margin-left: 0.14em;
-  padding: 0.02em 0.22em 0.04em;
-  border-radius: 0.22em;
-  background: var(--mint);
-  color: var(--hud);
-  font-size: 0.78em;
-  line-height: 1.15;
-  vertical-align: 0.12em;
 }
 
 .top-nav {
@@ -501,6 +488,49 @@ main:focus {
   background: rgba(255, 255, 255, 0.48);
   color: var(--graphite);
   font-size: 0.95rem;
+}
+
+/* Four real workflow stages, not a provider catalogue. */
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+  margin-bottom: 1.2rem;
+}
+
+.feature-card {
+  min-width: 0;
+  padding: 1.15rem 1.2rem 1.3rem;
+  border: 1px solid var(--rule);
+  border-radius: 15px;
+  background: var(--sheet);
+}
+
+.feature-index {
+  display: block;
+  margin-bottom: 1rem;
+  color: var(--mint-ink);
+  font-family: var(--mono);
+  font-size: 0.73rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.feature-card h3 {
+  margin-bottom: 0.5rem;
+  font-size: clamp(1.45rem, 2vw, 2rem);
+}
+
+.feature-card p {
+  color: var(--graphite);
+  font-size: 0.93rem;
+}
+
+@media (max-width: 36rem) {
+  .feature-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .replay {

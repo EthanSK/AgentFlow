@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
-  <title id="title">VoiceInk++ — live context for Mac dictation</title>
-  <desc id="desc">A black VoiceInk++ recorder on a pale desk shows spoken words, a cyan Codex selection, a purple screenshot reference, and a mint waveform.</desc>
+  <title id="title">AgentFlow — live context for Mac dictation</title>
+  <desc id="desc">A black AgentFlow recorder on a pale desk shows spoken words, a cyan Codex selection, a purple screenshot reference, and a mint waveform.</desc>
   <!-- This is an invented example. Keep private dictated text and real screenshot paths out of public cards. -->
   <defs>
     <filter id="shadow" x="-20%" y="-30%" width="140%" height="170%">
@@ -8,8 +8,8 @@
     </filter>
   </defs>
   <rect width="1200" height="630" fill="#e5eae8"/>
-  <text x="73" y="96" fill="#111615" font-family="Avenir Next Condensed, Avenir Next, Helvetica Neue, Arial, sans-serif" font-size="53" font-weight="700" letter-spacing="-1.2">VoiceInk<tspan fill="#066b55">++</tspan></text>
-  <text x="75" y="139" fill="#4a5452" font-family="Seravek, Helvetica Neue, Arial, sans-serif" font-size="23">Speak to agents with the context you see.</text>
+  <text x="73" y="96" fill="#111615" font-family="Avenir Next Condensed, Avenir Next, Helvetica Neue, Arial, sans-serif" font-size="53" font-weight="700" letter-spacing="-1.2">Agent<tspan fill="#066b55">Flow</tspan></text>
+  <text x="75" y="139" fill="#4a5452" font-family="Seravek, Helvetica Neue, Arial, sans-serif" font-size="23">Speak, highlight, screenshot. Keep your agent in the flow.</text>
 
   <g filter="url(#shadow)">
     <rect x="73" y="177" width="1054" height="334" rx="30" fill="#0a0b0b"/>
@@ -26,5 +26,5 @@
     <path d="M188 428v12 M207 420v27 M226 424v19 M245 414v39 M264 421v25 M283 417v34 M302 425v18 M321 419v30 M340 424v18 M359 414v39 M378 427v15 M397 418v31 M416 423v20 M435 414v39 M454 426v16 M473 419v29 M492 424v19 M511 416v35 M530 427v14 M549 418v30 M568 423v19 M587 413v39 M606 426v16 M625 420v27 M644 423v20 M663 415v35 M682 428v14 M701 420v27 M720 423v20 M739 414v38 M758 425v17 M777 419v29 M796 423v20 M815 414v38 M834 427v15 M853 420v27 M872 424v19 M891 415v36 M910 426v16 M929 419v28 M948 424v19 M967 414v38 M986 426v16 M1005 419v28 M1024 424v19 M1043 415v36 M1062 427v15 M1081 420v27"/>
   </g>
   <text x="74" y="575" fill="#4a5452" font-family="Seravek, Helvetica Neue, Arial, sans-serif" font-size="23">Speech + selections + screenshots, in one message</text>
-  <text x="1128" y="575" text-anchor="end" fill="#066b55" font-family="Seravek, Helvetica Neue, Arial, sans-serif" font-size="23" font-weight="700">ethansk.github.io/VoiceInkPlusPlus</text>
+  <text x="1128" y="575" text-anchor="end" fill="#066b55" font-family="Seravek, Helvetica Neue, Arial, sans-serif" font-size="23" font-weight="700">ethansk.github.io/AgentFlow</text>
 </svg>

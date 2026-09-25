@@ -2,7 +2,9 @@ import AppKit
 import Foundation
 
 enum StarterModeFactory {
-    static let transcriptionModelName = "parakeet-tdt-0.6b-v3"
+    static func recommendedTranscriptionModelName(hasOpenAIKey: Bool) -> String {
+        hasOpenAIKey ? OpenAITranscriptionConfiguration.liveModelName : "parakeet-tdt-0.6b-v3"
+    }
 
     static func install(
         kinds: [StarterModeKind],
@@ -15,6 +17,13 @@ enum StarterModeFactory {
         let availableInstalledApps = requestedKinds.contains(.email)
             ? (installedApps ?? InstalledApps.load())
             : []
+        // Resolve once for the entire starter set. A verified BYO OpenAI key
+        // makes GPT Live the fresh-install voice default; the local Parakeet
+        // model remains a key-free fallback. Existing saved Modes are not
+        // rewritten by this setup-only factory.
+        let transcriptionModelName = recommendedTranscriptionModelName(
+            hasOpenAIKey: APIKeyManager.shared.hasAPIKey(forProvider: "OpenAI")
+        )
 
         let starterConfigs = StarterModeCatalog.templates
             .filter { requestedKinds.contains($0.kind) }
@@ -23,6 +32,7 @@ enum StarterModeFactory {
                     from: $0,
                     provider: provider,
                     modelName: modelName,
+                    transcriptionModelName: transcriptionModelName,
                     installedApps: availableInstalledApps
                 )
             }
@@ -60,6 +70,7 @@ enum StarterModeFactory {
         from template: StarterModeTemplate,
         provider: AIProvider,
         modelName: String?,
+        transcriptionModelName: String,
         installedApps: [InstalledAppInfo]
     ) -> ModeConfig {
         ModeConfig(

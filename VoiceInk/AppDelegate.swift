@@ -46,7 +46,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // installer abort before it renames the bundle. Force-kill/crash recovery is a
         // separate boundary; this guard protects every cooperative app replacement.
         NotificationManager.shared.showNotification(
-            title: String(localized: "VoiceInk++ is still recording or transcribing — finish or cancel it before quitting"),
+            title: String(localized: "AgentFlow is still recording or transcribing — finish or cancel it before quitting"),
             type: .error,
             duration: 12
         )

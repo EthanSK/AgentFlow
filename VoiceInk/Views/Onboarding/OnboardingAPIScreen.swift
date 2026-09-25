@@ -20,6 +20,17 @@ struct OnboardingAPIScreen: View {
             stage: .api,
             contentMaxWidth: contentMaxWidth
         ) {
+            if selectedProvider == .openAI {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Start with GPT Live")
+                        .font(.headline)
+                    Text("Add your own OpenAI API key for live transcription and optional AI actions. Your key stays in macOS Keychain; OpenAI bills your API account directly.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Link("Get an OpenAI API key", destination: URL(string: "https://platform.openai.com/api-keys")!)
+                        .font(.subheadline)
+                }
+            }
             AIProviderVerificationCard(
                 aiService: aiService,
                 providerOptions: providerOptions,

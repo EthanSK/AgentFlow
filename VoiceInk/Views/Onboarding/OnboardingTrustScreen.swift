@@ -10,7 +10,7 @@ struct OnboardingTrustScreen: View {
         OnboardingStepScreen(
             systemImage: "lock.shield",
             title: "Privacy Starts Here",
-            subtitle: "Review how VoiceInk handles your data before finishing setup.",
+            subtitle: "Review how AgentFlow handles your data before finishing setup.",
             contentMaxWidth: max(contentMaxWidth, 720),
             showsHeader: false,
             contentYOffset: 0
@@ -56,7 +56,7 @@ private struct TrustHeader: View {
                         .fill(AppTheme.Surface.controlActive)
                 )
 
-            Text("VoiceInk is private by default")
+            Text("You choose where audio goes")
                 .font(.system(size: 32, weight: .bold))
                 .foregroundColor(AppTheme.Text.primary)
                 .multilineTextAlignment(.center)
@@ -74,12 +74,12 @@ private struct TrustBody: View {
                 .padding(.bottom, 28)
 
             VStack(spacing: 10) {
-                Text("Your data never has to leave your device.")
+                Text("Local models stay on your Mac. GPT Live sends audio and bounded voice hints to OpenAI; highlights and screenshot paths join the message after recognition.")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(AppTheme.Text.primary)
                     .multilineTextAlignment(.center)
 
-                Text("VoiceInk is also open source, so you can inspect every single line of code.")
+                Text("AgentFlow is open source. Your API key stays in macOS Keychain, and you choose the model each Mode uses.")
                     .font(.system(size: 13))
                     .foregroundColor(AppTheme.Text.secondary)
                     .multilineTextAlignment(.center)

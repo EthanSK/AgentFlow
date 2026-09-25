@@ -1,5 +1,5 @@
 {
-  "repository": "https://github.com/EthanSK/VoiceInkPlusPlus",
+  "repository": "https://github.com/EthanSK/AgentFlow",
   "branch": "main",
   "path": ".agents/skills/interpret-voiceink-context",
   "distribution": "git-or-copy"

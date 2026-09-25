@@ -3,7 +3,7 @@ DEPS_DIR := $(HOME)/VoiceInk-Dependencies
 WHISPER_CPP_DIR := $(DEPS_DIR)/whisper.cpp
 FRAMEWORK_PATH := $(WHISPER_CPP_DIR)/build-apple/whisper.xcframework
 LOCAL_DERIVED_DATA := $(CURDIR)/.local-build
-LOCAL_APP_OUTPUT := $(HOME)/Downloads/VoiceInkPlusPlus.app
+LOCAL_APP_OUTPUT := $(HOME)/Downloads/AgentFlow.app
 
 .PHONY: all clean whisper setup build local check healthcheck help dev run
 
@@ -47,7 +47,7 @@ build: setup
 
 # Build for local use without Apple Developer certificate
 local: check setup
-	@echo "Building VoiceInk for local use (no Apple Developer certificate required)..."
+	@echo "Building AgentFlow for local use (no Apple Developer certificate required)..."
 	@rm -rf "$(LOCAL_DERIVED_DATA)"
 	xcodebuild -project VoiceInk.xcodeproj -scheme VoiceInk -configuration Debug \
 		-derivedDataPath "$(LOCAL_DERIVED_DATA)" \
@@ -59,11 +59,10 @@ local: check setup
 		CODE_SIGN_ENTITLEMENTS="$(CURDIR)/VoiceInk/VoiceInk.local.entitlements" \
 		SWIFT_ACTIVE_COMPILATION_CONDITIONS='$$(inherited) LOCAL_BUILD' \
 		build
-	@# Standalone-fork: PRODUCT_NAME is VoiceInkPlusPlus, so the built bundle is VoiceInkPlusPlus.app
-	@# (build-path-safe name; user-visible name is "VoiceInk++" via CFBundleDisplayName).
-	@APP_PATH="$(LOCAL_DERIVED_DATA)/Build/Products/Debug/VoiceInkPlusPlus.app" && \
+	@# AgentFlow keeps the existing bundle ID so users retain their settings and permissions.
+	@APP_PATH="$(LOCAL_DERIVED_DATA)/Build/Products/Debug/AgentFlow.app" && \
 	if [ -d "$$APP_PATH" ]; then \
-		echo "Copying VoiceInkPlusPlus.app to $(LOCAL_APP_OUTPUT)..."; \
+		echo "Copying AgentFlow.app to $(LOCAL_APP_OUTPUT)..."; \
 		mkdir -p "$(dir $(LOCAL_APP_OUTPUT))"; \
 		rm -rf "$(LOCAL_APP_OUTPUT)"; \
 		ditto "$$APP_PATH" "$(LOCAL_APP_OUTPUT)"; \
@@ -76,24 +75,23 @@ local: check setup
 		echo "  - No iCloud dictionary sync"; \
 		echo "  - No automatic updates (pull new code and rebuild to update)"; \
 	else \
-		echo "Error: Could not find built VoiceInkPlusPlus.app at $$APP_PATH"; \
+		echo "Error: Could not find built AgentFlow.app at $$APP_PATH"; \
 		exit 1; \
 	fi
 
 # Run application
 run:
-	@# Standalone-fork: built bundle is VoiceInkPlusPlus.app (PRODUCT_NAME), display name "VoiceInk++".
-	@if [ -d "$$HOME/Downloads/VoiceInkPlusPlus.app" ]; then \
-		echo "Opening ~/Downloads/VoiceInkPlusPlus.app..."; \
-		open "$$HOME/Downloads/VoiceInkPlusPlus.app"; \
+	@if [ -d "$$HOME/Downloads/AgentFlow.app" ]; then \
+		echo "Opening ~/Downloads/AgentFlow.app..."; \
+		open "$$HOME/Downloads/AgentFlow.app"; \
 	else \
-		echo "Looking for VoiceInkPlusPlus.app in DerivedData..."; \
-		APP_PATH=$$(find "$$HOME/Library/Developer/Xcode/DerivedData" -name "VoiceInkPlusPlus.app" -type d | head -1) && \
+		echo "Looking for AgentFlow.app in DerivedData..."; \
+		APP_PATH=$$(find "$$HOME/Library/Developer/Xcode/DerivedData" -name "AgentFlow.app" -type d | head -1) && \
 		if [ -n "$$APP_PATH" ]; then \
 			echo "Found app at: $$APP_PATH"; \
 			open "$$APP_PATH"; \
 		else \
-			echo "VoiceInkPlusPlus.app not found. Please run 'make build' or 'make local' first."; \
+			echo "AgentFlow.app not found. Please run 'make build' or 'make local' first."; \
 			exit 1; \
 		fi; \
 	fi

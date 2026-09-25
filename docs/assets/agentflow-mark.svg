@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title description">
+  <title id="title">AgentFlow</title>
+  <desc id="description">Three context trails join into one forward flow.</desc>
+  <rect x="34" y="34" width="956" height="956" rx="218" fill="#111918"/>
+  <path d="M258 284c133 0 157 165 260 228" fill="none" stroke="#5ce7c1" stroke-width="68" stroke-linecap="round"/>
+  <path d="M258 512h260" fill="none" stroke="#79d7f6" stroke-width="68" stroke-linecap="round"/>
+  <path d="M258 740c133 0 157-165 260-228" fill="none" stroke="#c783f4" stroke-width="68" stroke-linecap="round"/>
+  <path d="M511 512h252" fill="none" stroke="#e6fbf4" stroke-width="80" stroke-linecap="round"/>
+  <path d="m704 414 111 98-111 98" fill="none" stroke="#e6fbf4" stroke-width="80" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

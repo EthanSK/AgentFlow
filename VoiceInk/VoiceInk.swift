@@ -71,7 +71,7 @@ struct VoiceInkApp: App {
                 DispatchQueue.main.async {
                     let alert = NSAlert()
                     alert.messageText = String(localized: "Storage Warning")
-                    alert.informativeText = String(localized: "VoiceInk couldn't access its storage location. Your transcriptions will not be saved between sessions.")
+                    alert.informativeText = String(localized: "AgentFlow couldn't access its storage location. Your transcriptions will not be saved between sessions.")
                     alert.alertStyle = .warning
                     alert.addButton(withTitle: String(localized: "OK"))
                     alert.runModal()
@@ -485,7 +485,7 @@ private final class VoiceInkUpdateNotificationDelegate: NSObject, UNUserNotifica
         content.title = "There’s a VoiceInk update"
         let candidateName = release.name?.trimmingCharacters(in: .whitespacesAndNewlines)
         let displayName = candidateName.flatMap { $0.isEmpty ? nil : $0 } ?? release.tagName
-        content.body = "\(displayName) is available upstream. Open it to review for VoiceInk++."
+        content.body = "\(displayName) is available upstream. Open it to review for AgentFlow."
         content.sound = .default
         content.userInfo = [releaseURLKey: release.htmlURL.absoluteString]
         return content

@@ -3,6 +3,7 @@ import AppKit
 
 struct AIProviderVerificationCard: View {
     @ObservedObject var aiService: AIService
+    @EnvironmentObject private var transcriptionModelManager: TranscriptionModelManager
 
     let providerOptions: [AIProvider]
     @Binding var selectedProvider: AIProvider
@@ -281,7 +282,7 @@ struct AIProviderVerificationCard: View {
                 if result.isValid {
                     guard APIKeyManager.shared.saveAPIKey(key, forProvider: provider.rawValue) else {
                         verificationSucceeded = false
-                        verificationMessage = String(localized: "The key worked, but VoiceInk could not save it securely.")
+                        verificationMessage = String(localized: "The key worked, but AgentFlow could not save it securely.")
                         verificationDetailMessage = nil
                         onVerificationChanged()
                         return
@@ -291,6 +292,16 @@ struct AIProviderVerificationCard: View {
                     aiService.selectModel(modelName, for: provider)
                     aiService.apiKey = key
                     aiService.isAPIKeyValid = true
+                    // An OpenAI key powers both the guided AI actions and GPT Live transcription.
+                    // Only choose the recommended voice model on a fresh setup; existing users'
+                    // explicit transcription-model choices must survive this provider step.
+                    if provider == .openAI,
+                       transcriptionModelManager.currentTranscriptionModel == nil,
+                       let liveModel = transcriptionModelManager.allAvailableModels.first(where: {
+                           $0.name == OpenAITranscriptionConfiguration.liveModelName
+                       }) {
+                        transcriptionModelManager.setDefaultTranscriptionModel(liveModel)
+                    }
                     apiKey = ""
                     verificationMessage = String(format: String(localized: "%@ connection verified."), provider.rawValue)
                     verificationDetailMessage = nil

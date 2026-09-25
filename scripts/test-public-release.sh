@@ -41,7 +41,7 @@ if ! grep -Eq '^✔ Test run with [1-9][0-9]* tests in [1-9][0-9]* suites passed
     tail -35 "$canonical_log" >&2
     exit 1
   fi
-  host="$derived/Build/Products/Debug/VoiceInkPlusPlus.app"
+  host="$derived/Build/Products/Debug/AgentFlow.app"
   bundle="$host/Contents/PlugIns/VoiceInkTests.xctest"
   test -d "$bundle" || { echo 'Xcode did not build the test bundle.' >&2; exit 1; }
   passed_log="$output/direct-full-tests.log"
@@ -63,7 +63,7 @@ summary=$(grep -E '^✔ Test run with [1-9][0-9]* tests in [1-9][0-9]* suites pa
 }
 count=${BASH_REMATCH[1]}
 named=$(grep -E '^✔ Test .* passed after' "$passed_log" | grep -v '^✔ Test run' | wc -l | tr -d ' ')
-test "$count" -ge 344
+test "$count" -ge 347
 test "$named" = "$count" || {
   echo "Test summary names $count tests but output contains $named named passes." >&2
   exit 1

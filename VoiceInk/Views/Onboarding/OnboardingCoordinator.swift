@@ -58,7 +58,7 @@ final class OnboardingCoordinator: ObservableObject {
         self.storedActivePermission = defaults.string(forKey: OnboardingStorageKeys.activePermission) ?? OnboardingPermissionKind.microphone.rawValue
         self.hasRequestedScreenRecording = defaults.bool(forKey: OnboardingStorageKeys.requestedScreenRecording)
         self.experienceStepIndex = defaults.integer(forKey: OnboardingStorageKeys.experienceIndex)
-        self.storedOnboardingAIProvider = defaults.string(forKey: OnboardingStorageKeys.aiProvider) ?? AIProvider.groq.rawValue
+        self.storedOnboardingAIProvider = defaults.string(forKey: OnboardingStorageKeys.aiProvider) ?? AIProvider.openAI.rawValue
         self.hasSkippedAPISetup = defaults.bool(forKey: OnboardingStorageKeys.skippedAPISetup)
     }
 
@@ -200,10 +200,10 @@ final class OnboardingCoordinator: ObservableObject {
 
     var onboardingProviderOptions: [AIProvider] {
         let preferredOrder: [AIProvider] = [
+            .openAI,
             .groq,
             .cerebras,
             .gemini,
-            .openAI,
             .openRouter,
             .anthropic,
             .mistral
@@ -270,11 +270,11 @@ final class OnboardingCoordinator: ObservableObject {
             return storedProvider
         }
 
-        if onboardingProviderOptions.contains(.groq) {
-            return .groq
+        if onboardingProviderOptions.contains(.openAI) {
+            return .openAI
         }
 
-        return onboardingProviderOptions.first ?? .groq
+        return onboardingProviderOptions.first ?? .openAI
     }
 
     var requiredTranscriptionModel: FluidAudioModel? {
@@ -286,7 +286,7 @@ final class OnboardingCoordinator: ObservableObject {
     func selectedOnboardingProviderBinding(aiService: AIService) -> Binding<AIProvider> {
         Binding(
             get: { [weak self] in
-                self?.selectedOnboardingProvider ?? .groq
+                self?.selectedOnboardingProvider ?? .openAI
             },
             set: { [weak self] provider in
                 self?.flow.selectOnboardingProvider(provider, aiService: aiService)

@@ -358,17 +358,22 @@ enum ChromeSelectionContextReader {
         )
     }
 
+    /// This reads only the current selection, its common DOM ancestor and
+    /// active page identity. It does not install all-sites extension access,
+    /// inspect surrounding text, mutate DOM, or send page content to GPT Live.
+    /// A focused password input is excluded: its selection API would otherwise
+    /// expose the secret behind the dots.
+    static let selectionJavaScript = #"(()=>{const s=window.getSelection();let t=s?.toString()??'';let e=s?.rangeCount?s.getRangeAt(0).commonAncestorContainer:null;e=e?.nodeType===1?e:e?.parentElement;if(!t){const a=document.activeElement;if(a&&a.type!=='password'&&typeof a.selectionStart==='number'&&typeof a.selectionEnd==='number'&&typeof a.value==='string'){t=a.value.slice(a.selectionStart,a.selectionEnd);e=a}}const o={selectedText:t,url:location.href,title:document.title};if(e&&e!==document.body&&e!==document.documentElement){o.elementTag=e.tagName?.toLowerCase()??'';o.elementRole=e.getAttribute('role')??'';o.elementLabel=e.getAttribute('aria-label')??e.getAttribute('title')??''}return JSON.stringify(o)})()"#
+
     static func capture() async -> Context? {
-        // This reads only the current selection, its common DOM ancestor and
-        // active page identity. It does not install all-sites extension access,
-        // inspect surrounding text, mutate DOM, or send page content to GPT Live.
-        let javascript = #"(()=>{const s=window.getSelection();let t=s?.toString()??'';let e=s?.rangeCount?s.getRangeAt(0).commonAncestorContainer:null;e=e?.nodeType===1?e:e?.parentElement;if(!t){const a=document.activeElement;if(a&&typeof a.selectionStart==='number'&&typeof a.selectionEnd==='number'&&typeof a.value==='string'){t=a.value.slice(a.selectionStart,a.selectionEnd);e=a}}const o={selectedText:t,url:location.href,title:document.title};if(e&&e!==document.body&&e!==document.documentElement){o.elementTag=e.tagName?.toLowerCase()??'';o.elementRole=e.getAttribute('role')??'';o.elementLabel=e.getAttribute('aria-label')??e.getAttribute('title')??''}return JSON.stringify(o)})()"#
-        let quoted = javascript.replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        let script = "tell application id \"com.google.Chrome\"\n"
-            + "tell active tab of front window\n"
-            + "execute javascript \"\(quoted)\"\n"
-            + "end tell\nend tell"
+        // Chrome's app-specific override runs before the generic Accessibility
+        // chain only because it also yields scrubbed page context. If Chrome's
+        // "Allow JavaScript from Apple Events" or Automation consent is off,
+        // this returns nil and LiveSelectionCapture falls through to the
+        // generic read-only tiers.
+        let script = LiveSelectionBrowserScript.chromium(
+            bundleID: "com.google.Chrome", javascript: selectionJavaScript
+        )
         guard let result = try? await BoundedAppleScriptRunner.run(source: script, timeout: 1.0) else {
             return nil
         }
@@ -419,8 +424,20 @@ enum CodexSelectionThreadTitleReader {
 /// Watches genuine selection gestures only while a VoiceInk recording owns the
 /// microphone. No copy command or pasteboard restoration is allowed here: an older
 /// transcription may be writing the clipboard concurrently for Primary delivery.
+/// Text comes from the ordered read-only fallback chain documented in
+/// LiveSelectionTextReader.swift; an app with no readable selection fails
+/// closed rather than borrowing the clipboard.
 @MainActor
 final class LiveSelectionCapture {
+    /// The pointer is sampled synchronously in the monitor callback. Bounds
+    /// evidence compares it with the selection's on-screen rect, so a later
+    /// MainActor hop must not substitute wherever the pointer moved next.
+    private struct MouseEdge {
+        let type: NSEvent.EventType
+        let clickCount: Int
+        let location: NSPoint
+    }
+
     private let onCapture: (LiveSelectionReference) -> Void
     private var monitor: Any?
     private var mouseDownPoint: NSPoint?
@@ -440,8 +457,13 @@ final class LiveSelectionCapture {
         monitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .leftMouseUp]
         ) { [weak self] event in
+            let edge = MouseEdge(
+                type: event.type,
+                clickCount: event.clickCount,
+                location: NSEvent.mouseLocation
+            )
             Task { @MainActor [weak self] in
-                self?.handle(event)
+                self?.handle(edge)
             }
         }
         startScreenshotWatch()
@@ -577,20 +599,20 @@ final class LiveSelectionCapture {
         return (value as? NSNumber)?.boolValue == true
     }
 
-    private func handle(_ event: NSEvent) {
+    private func handle(_ edge: MouseEdge) {
         guard monitor != nil else { return }
-        switch event.type {
+        switch edge.type {
         case .leftMouseDown:
-            mouseDownPoint = NSEvent.mouseLocation
+            mouseDownPoint = edge.location
         case .leftMouseUp:
-            let endPoint = NSEvent.mouseLocation
+            let endPoint = edge.location
             let startPoint = mouseDownPoint
             mouseDownPoint = nil
             guard let startPoint,
                   Self.isSelectionGesture(
                       from: startPoint,
                       to: endPoint,
-                      clickCount: event.clickCount
+                      clickCount: edge.clickCount
                   ),
                   let app = NSWorkspace.shared.frontmostApplication else {
                 return
@@ -600,6 +622,12 @@ final class LiveSelectionCapture {
             // Bind to the app at mouse-up, then require it to stay frontmost
             // throughout the asynchronous selected-text read.
             let sourcePID = app.processIdentifier
+            let bundleID = app.bundleIdentifier
+            let gesture = LiveSelectionGesture.fromCocoa(
+                mouseDown: startPoint,
+                mouseUp: endPoint,
+                screenFrames: NSScreen.screens.map(\.frame)
+            )
             let isCodex = CodexConversationContextReader.isSupportedCodexApplication(
                 app, fileManager: .default
             )
@@ -617,17 +645,36 @@ final class LiveSelectionCapture {
                     ? CodexConversationContextReader.activeThreadIDIfFrontmost(
                         frontmostApplication: app
                     ) : nil
-                let chromeContext = app.bundleIdentifier == "com.google.Chrome"
+                let startedAt = DispatchTime.now().uptimeNanoseconds
+                // Chrome's DOM override has no selection geometry of its own.
+                // If the gesture was visibly outside Chrome's windows, do not
+                // borrow an older selection from its active tab.
+                if bundleID == "com.google.Chrome",
+                   !LiveSelectionBrowserScriptReader.mayReadForGesture(
+                       gesture, processIdentifier: sourcePID,
+                       windows: LiveSelectionWindow.onScreen()
+                   ) {
+                    return
+                }
+                let chromeContext = bundleID == "com.google.Chrome"
                     ? await ChromeSelectionContextReader.capture() : nil
                 let selectedText: String?
                 if let chromeContext {
                     selectedText = chromeContext.selectedText
+                    LiveSelectionDiagnostics.captured(
+                        tier: .chromeDOM, source: nil, evidence: nil, attempt: 1,
+                        bundleID: bundleID, startedAt: startedAt
+                    )
                 } else {
-                    selectedText = await SelectedTextService.fetchSelectedText()
+                    selectedText = await Self.readSelectedText(
+                        sourcePID: sourcePID,
+                        bundleID: bundleID,
+                        gesture: gesture,
+                        startedAt: startedAt
+                    )
                 }
                 guard !Task.isCancelled,
                       let text = selectedText,
-                      !Task.isCancelled,
                       Self.hasStableSource(expectedPID: sourcePID,
                                            currentPID: NSWorkspace.shared.frontmostApplication?.processIdentifier),
                       let reference = LiveSelectionReference(text) else {
@@ -665,6 +712,65 @@ final class LiveSelectionCapture {
         default:
             break
         }
+    }
+
+    /// Generic tiers after Chrome's override: app-scoped Accessibility (with one
+    /// bounded settle re-read), then Safari/Edge read-only scripting. The source
+    /// must stay frontmost before every attempt; any doubt yields no reference.
+    private static func readSelectedText(
+        sourcePID: pid_t,
+        bundleID: String?,
+        gesture: LiveSelectionGesture?,
+        startedAt: UInt64
+    ) async -> String? {
+        var last = LiveSelectionResolution()
+        var attempts = 0
+        for delay in LiveSelectionReadPolicy.accessibilityRetryDelays {
+            if delay > 0 {
+                try? await Task.sleep(nanoseconds: delay)
+            }
+            guard !Task.isCancelled,
+                  hasStableSource(expectedPID: sourcePID,
+                                  currentPID: NSWorkspace.shared.frontmostApplication?.processIdentifier) else {
+                return nil
+            }
+            attempts += 1
+            last = await LiveSelectionTextReader.resolveAccessibility(
+                processIdentifier: sourcePID, gesture: gesture
+            )
+            if let candidate = last.candidate {
+                LiveSelectionDiagnostics.captured(
+                    tier: candidate.tier, source: candidate.source,
+                    evidence: candidate.evidence, attempt: attempts,
+                    bundleID: bundleID, startedAt: startedAt
+                )
+                return candidate.text
+            }
+            // Without Accessibility trust a re-read cannot succeed.
+            if !last.accessibilityTrusted { break }
+        }
+
+        guard !Task.isCancelled,
+              hasStableSource(expectedPID: sourcePID,
+                              currentPID: NSWorkspace.shared.frontmostApplication?.processIdentifier) else {
+            return nil
+        }
+        if LiveSelectionBrowserScriptReader.engine(for: bundleID) != nil,
+           LiveSelectionBrowserScriptReader.mayReadForGesture(
+               gesture, processIdentifier: sourcePID,
+               windows: LiveSelectionWindow.onScreen()
+           ),
+           let text = await LiveSelectionBrowserScriptReader.read(bundleID: bundleID) {
+            LiveSelectionDiagnostics.captured(
+                tier: .browserScript, source: nil, evidence: nil, attempt: attempts,
+                bundleID: bundleID, startedAt: startedAt
+            )
+            return text
+        }
+        LiveSelectionDiagnostics.unavailable(
+            last, attempts: attempts, bundleID: bundleID, startedAt: startedAt
+        )
+        return nil
     }
 
     static func isSelectionGesture(

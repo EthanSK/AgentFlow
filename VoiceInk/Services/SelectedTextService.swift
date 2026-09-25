@@ -3,6 +3,10 @@ import ApplicationServices
 import os
 import SelectedTextKit
 
+/// Recording-start context snapshot only. Live highlights made during a
+/// recording use LiveSelectionTextReader's app-scoped, gesture-verified chain
+/// instead, because the system-wide focused element here is not bound to the
+/// frontmost source app or to the user's selection gesture.
 @MainActor
 final class SelectedTextService {
     private static let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "SelectedTextService")

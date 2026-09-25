@@ -255,13 +255,13 @@ struct DashboardContent: View {
                         .font(.system(size: 36, design: .rounded))
                         .foregroundColor(.white)
 
-                    Text("You have saved \(highlightedTime) with VoiceInk")
+                    Text("You have saved \(highlightedTime) with AgentFlow")
                         .fontWeight(.bold)
                         .foregroundColor(.white.opacity(0.85))
                         .font(.system(size: 30))
                         .multilineTextAlignment(.center)
                 } else {
-                    Text("VoiceInk Insights")
+                    Text("AgentFlow Insights")
                         .font(.system(size: 32, weight: .black, design: .rounded))
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
@@ -298,7 +298,7 @@ struct DashboardContent: View {
                 icon: "mic.fill",
                 title: "Sessions Recorded",
                 value: hasLoadedStatsSnapshot ? "\(totalCount)" : "–",
-                detail: "VoiceInk sessions completed",
+                detail: "AgentFlow sessions completed",
                 color: AppTheme.Sidebar.audio
             )
 
@@ -316,7 +316,7 @@ struct DashboardContent: View {
                 value: hasLoadedStatsSnapshot && averageWordsPerMinute > 0
                     ? String(format: "%.1f", averageWordsPerMinute)
                     : "–",
-                detail: "VoiceInk vs. typing by hand",
+                detail: "AgentFlow vs. typing by hand",
                 color: AppTheme.Sidebar.dashboard
             )
             
@@ -392,7 +392,7 @@ struct DashboardContent: View {
         }
 
         guard totalCount > 0 else {
-            return String(localized: "Your VoiceInk journey starts with your first recording.")
+            return String(localized: "Your AgentFlow journey starts with your first recording.")
         }
 
         let wordsText = Formatters.formattedNumber(totalWords)
@@ -456,7 +456,7 @@ private struct DashboardAccessibilityReminder: View {
                     .foregroundStyle(.primary)
                     .lineLimit(1)
 
-                Text("Required for VoiceInk shortcuts and app-wide controls to work properly.")
+                Text("Required for AgentFlow shortcuts and app-wide controls to work properly.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)

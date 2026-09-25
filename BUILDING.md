@@ -1,6 +1,6 @@
-# Build VoiceInk++
+# Build AgentFlow
 
-VoiceInk++ is currently distributed as source. The local build path creates a standalone, ad-hoc signed `VoiceInkPlusPlus.app` without requiring a paid Apple Developer account.
+AgentFlow is currently distributed as source. The local build path creates a standalone, ad-hoc signed `AgentFlow.app` without requiring a paid Apple Developer account.
 
 ## Requirements
 
@@ -29,19 +29,19 @@ sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
 For a safe **first** installation in `~/Applications`, use the [guided installer](SETUP.md):
 
 ```sh
-git clone https://github.com/EthanSK/VoiceInkPlusPlus.git
-cd VoiceInkPlusPlus
+git clone https://github.com/EthanSK/AgentFlow.git
+cd AgentFlow
 ./scripts/install-first-use.sh
 ```
 
-It refuses an existing VoiceInk++ app, so it is not an in-place updater. To build a candidate
+It refuses an existing AgentFlow app, so it is not an in-place updater. To build a candidate
 without installing it, use the existing development command:
 
 ```sh
-git clone https://github.com/EthanSK/VoiceInkPlusPlus.git
-cd VoiceInkPlusPlus
+git clone https://github.com/EthanSK/AgentFlow.git
+cd AgentFlow
 make local
-open ~/Downloads/VoiceInkPlusPlus.app
+open ~/Downloads/AgentFlow.app
 ```
 
 The first build takes longer because the Makefile prepares `whisper.xcframework` under `~/VoiceInk-Dependencies` and resolves the Swift package graph. Later builds reuse that dependency directory.
@@ -49,14 +49,14 @@ The first build takes longer because the Makefile prepares `whisper.xcframework`
 When the build succeeds, the standalone app is copied to:
 
 ```text
-~/Downloads/VoiceInkPlusPlus.app
+~/Downloads/AgentFlow.app
 ```
 
-The bundle is named `VoiceInkPlusPlus.app`; macOS shows the user-facing name **VoiceInk++**.
+The bundle is named `AgentFlow.app`; macOS shows the user-facing name **AgentFlow**.
 
 ## First launch
 
-VoiceInk++ needs two macOS permissions for its core workflow:
+AgentFlow needs two macOS permissions for its core workflow:
 
 1. **Microphone** — records your voice.
 2. **Accessibility** — captures, restores, pastes into, and verifies the editable destination you chose.
@@ -69,7 +69,7 @@ An ad-hoc local build is separate from the upstream VoiceInk app. It uses the bu
 
 After the app launches:
 
-1. Configure the normal VoiceInk++ recording shortcut in toggle mode.
+1. Configure the normal AgentFlow recording shortcut in toggle mode.
 2. In your mouse software, assign one button to that shortcut.
 3. Assign a second button to the standard macOS **Next Track** media action.
 4. Read [RECORDING_DESTINATIONS.md](RECORDING_DESTINATIONS.md) for the three destination routes.
@@ -83,16 +83,16 @@ Ethan uses a Logitech G502 X LIGHTSPEED with Logitech G HUB, but any programmabl
 | `make check` | Verify Git, Xcode's build tools, and Swift |
 | `make whisper` | Prepare `whisper.xcframework` in `~/VoiceInk-Dependencies` |
 | `make setup` | Confirm the Whisper framework is available |
-| `make local` | Build and copy the standalone VoiceInk++ app to `~/Downloads` |
+| `make local` | Build and copy the standalone AgentFlow app to `~/Downloads` |
 | `make build` | Build the normal Debug configuration |
-| `make run` | Open the available VoiceInk++ build |
+| `make run` | Open the available AgentFlow build |
 | `make dev` | Build and run for development |
 | `make clean` | Remove the shared dependency directory |
 | `make help` | List the available targets |
 
-When starting an installed background build, use `open -g /Applications/VoiceInkPlusPlus.app`.
+When starting an installed background build, use `open -g /Applications/AgentFlow.app`.
 Never add `-j`: that globally hides the application, and AppKit cannot put any recorder panel on
-screen while its owner remains hidden. VoiceInk++ defensively recovers that state at HUD
+screen while its owner remains hidden. AgentFlow defensively recovers that state at HUD
 presentation, but the release launcher must not create it.
 
 ## Local-build limitations
@@ -100,9 +100,9 @@ presentation, but the release launcher must not create it.
 The ad-hoc local configuration intentionally omits capabilities that require Ethan's Apple signing setup:
 
 - No iCloud dictionary sync
-- No automatic install channel; VoiceInk++ can check the official VoiceInk GitHub releases once
+- No automatic install channel; AgentFlow can check the official VoiceInk GitHub releases once
   per day and notify you when a newer upstream release is available to review, but it never installs
-  or merges that release. Pull reviewed VoiceInk++ source and rebuild instead.
+  or merges that release. Pull reviewed AgentFlow source and rebuild instead.
 
 Transcription providers may require your own API credentials. Ethan's personal Deepgram local proxy is not part of this repository.
 
@@ -149,17 +149,17 @@ Check the network connection, open the project in Xcode, and use **File → Pack
 
 Verify both Microphone and Accessibility access in System Settings. After rebuilding, macOS may treat the new ad-hoc signature as a fresh app and ask for permission again.
 
-Exact Apple Terminal/iTerm delivery also needs the optional Automation grant shown on first use. If the first native terminal attempt times out or fails, open **System Settings → Privacy & Security → Automation**, allow VoiceInk++ to control that terminal host, then retry on a disposable tab/pane.
+Exact Apple Terminal/iTerm delivery also needs the optional Automation grant shown on first use. If the first native terminal attempt times out or fails, open **System Settings → Privacy & Security → Automation**, allow AgentFlow to control that terminal host, then retry on a disposable tab/pane.
 
 If you re-sign a local build after Xcode finishes, the outer app signature must explicitly use `VoiceInk/VoiceInk.local.entitlements`. A generic replacement signature can remove the Automation entitlement even when `codesign --verify --deep --strict` still accepts the nested bundle. Inspect the final outer entitlements and require `com.apple.security.automation.apple-events` to be true before testing Terminal or iTerm delivery.
 
-Before archiving an install candidate, sign its nested frameworks and outer app with the Mini's stable `VoiceInk Local Signing` identity. Verify that both the outer app and `whisper.framework` report that authority. An ad-hoc Release bundle may pass deep/strict verification and entitlement inspection but abort at launch on the MacBook with `DYLD Library missing` because library validation finds mismatched signer identities. A successful `open` exit code is not a launch receipt; require a live VoiceInk++ PID after startup.
+Before archiving an install candidate, sign its nested frameworks and outer app with the Mini's stable `VoiceInk Local Signing` identity. Verify that both the outer app and `whisper.framework` report that authority. An ad-hoc Release bundle may pass deep/strict verification and entitlement inspection but abort at launch on the MacBook with `DYLD Library missing` because library validation finds mismatched signer identities. A successful `open` exit code is not a launch receipt; require a live AgentFlow PID after startup.
 
 On Ethan's Mac Mini, pass that checked-in file to the local signing helper explicitly:
 
 ```sh
 ~/Projects/VoiceInk-build/resign-local.sh \
-  ~/Downloads/VoiceInkPlusPlus.app \
+  ~/Downloads/AgentFlow.app \
   "$PWD/VoiceInk/VoiceInk.local.entitlements"
 ```
 
@@ -176,7 +176,7 @@ make local
 
 ### Still blocked
 
-Check the [VoiceInk++ repository](https://github.com/EthanSK/VoiceInkPlusPlus) for newer setup guidance. If you ask a contributor for help, include:
+Check the [AgentFlow repository](https://github.com/EthanSK/AgentFlow) for newer setup guidance. If you ask a contributor for help, include:
 
 - macOS and Xcode versions
 - the command you ran
@@ -187,7 +187,7 @@ Do not share API keys, tokens, private proxy URLs, or other credentials in logs.
 
 ## Upstream project
 
-VoiceInk++ is an independent fork of [VoiceInk by Beingpax](https://github.com/Beingpax/VoiceInk). Upstream build and download instructions install VoiceInk, not this VoiceInk++ fork.
+AgentFlow is an independent fork of [VoiceInk by Beingpax](https://github.com/Beingpax/VoiceInk). Upstream build and download instructions install VoiceInk, not this AgentFlow fork.
 
 ## Optional YouTube / Chrome companion
 

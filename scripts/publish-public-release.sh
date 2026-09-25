@@ -19,7 +19,7 @@ print("\t".join(str(d[key]) for key in ("version", "build", "sourceCommit", "arc
 ' "$manifest")
 [[ "$version" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]
 [[ "$build" =~ ^[1-9][0-9]*$ && "$source_sha" =~ ^[0-9a-f]{40}$ ]]
-[[ "$archive_name" == "VoiceInkPlusPlus-v${version}.${build}-mac-universal.zip" ]]
+[[ "$archive_name" == "AgentFlow-v${version}.${build}-mac-universal.zip" ]]
 archive="$release_dir/$archive_name"
 test -f "$archive"
 actual_sha=$(shasum -a 256 "$archive" | awk '{print $1}')
@@ -29,31 +29,31 @@ test "$actual_sha" = "$expected_sha"
 inspect=$(mktemp -d "${TMPDIR:-/private/tmp}/voiceink-public-inspect.XXXXXX")
 trap 'rm -rf "$inspect"' EXIT
 ditto -xk "$archive" "$inspect"
-"$root/scripts/verify-public-release.sh" "$inspect/VoiceInkPlusPlus.app"
-test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$inspect/VoiceInkPlusPlus.app/Contents/Info.plist")" = "$build"
+"$root/scripts/verify-public-release.sh" "$inspect/AgentFlow.app"
+test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$inspect/AgentFlow.app/Contents/Info.plist")" = "$build"
 
-repo=EthanSK/VoiceInkPlusPlus
+repo=EthanSK/AgentFlow
 tag="v${version}.${build}"
 test "$(gh api "repos/$repo/commits/$source_sha" --jq .sha)" = "$source_sha"
 if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
   echo "Release $tag already exists. Refusing to overwrite its assets." >&2
   exit 1
 fi
-notes="Developer ID-signed and Apple-notarized VoiceInk++ for Apple silicon and Intel, macOS 14.4 or later.
+notes="Developer ID-signed and Apple-notarized AgentFlow for Apple silicon and Intel, macOS 14.4 or later.
 
-Download the ZIP, extract VoiceInkPlusPlus.app, and move it to Applications. Give the app Microphone and Accessibility access, then configure your transcription provider. The YouTube Bridge, Chrome extension, context skill, and Agentic Mouse are separate optional setup steps.
+Download the ZIP, extract AgentFlow.app, and move it to Applications. Give the app Microphone and Accessibility access, then add your OpenAI API key for GPT Live. The YouTube Bridge, Chrome extension, context skill, and Agentic Mouse are separate optional setup steps.
 
-This is a public download, not an automatic in-app update. Before replacing an existing VoiceInk++ install, stop any recording and keep a backup of the old app. The official VoiceInk app is a separate product.
+This is a public download, not an automatic in-app update. Before replacing an existing AgentFlow or VoiceInk++ install, stop any recording and keep a backup of the old app. The official VoiceInk app is a separate product.
 
 Setup: https://github.com/$repo/blob/$source_sha/SETUP.md
 Corresponding GPLv3 source: https://github.com/$repo/tree/$source_sha
 SHA-256: $expected_sha"
 gh release create "$tag" --repo "$repo" --target "$source_sha" --draft \
-  --title "VoiceInk++ $tag" --notes "$notes" \
+  --title "AgentFlow $tag" --notes "$notes" \
   "$archive" "$release_dir/SHA256SUMS" "$manifest"
 assets=$(gh release view "$tag" --repo "$repo" --json assets --jq '.assets[].name')
 for name in "$archive_name" SHA256SUMS release.json; do
   grep -Fxq "$name" <<<"$assets"
 done
 gh release edit "$tag" --repo "$repo" --draft=false --latest
-printf 'Published verified VoiceInk++ release: https://github.com/%s/releases/tag/%s\n' "$repo" "$tag"
+printf 'Published verified AgentFlow release: https://github.com/%s/releases/tag/%s\n' "$repo" "$tag"

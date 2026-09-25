@@ -31,7 +31,7 @@ class WindowManager: NSObject {
         window.titleVisibility = .hidden
         window.backgroundColor = .clear
         window.isReleasedWhenClosed = false
-        window.title = "VoiceInk++"  // user-visible app name for the standalone fork
+        window.title = "AgentFlow"  // user-visible brand; the stable bundle ID keeps existing data and permissions.
         window.collectionBehavior = [.fullScreenPrimary]
         window.level = .normal
         window.isOpaque = false

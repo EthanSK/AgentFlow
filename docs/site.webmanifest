@@ -1,14 +1,14 @@
 {
-  "name": "VoiceInk++",
-  "short_name": "VoiceInk++",
-  "description": "Mac dictation for agents, with live Codex highlights and screenshot paths in VoiceInk++ source.",
-  "start_url": "/VoiceInkPlusPlus/",
+  "name": "AgentFlow",
+  "short_name": "AgentFlow",
+  "description": "Mac dictation for agents, with live Codex highlights and screenshot paths in AgentFlow source.",
+  "start_url": "/AgentFlow/",
   "display": "standalone",
   "background_color": "#e5eae8",
   "theme_color": "#e5eae8",
   "icons": [
     {
-      "src": "https://raw.githubusercontent.com/EthanSK/VoiceInkPlusPlus/main/VoiceInk/Assets.xcassets/AppIcon.appiconset/512-mac.png",
+      "src": "assets/agentflow-icon-512.png",
       "sizes": "512x512",
       "type": "image/png"
     }
