@@ -5,9 +5,16 @@ import Foundation
 import SQLite3
 
 /// A per-recording reference to text selected in the frontmost app. The HUD
-/// shows only a compact preview; the complete text is added to the final
+/// shows only a compact preview; a bounded excerpt is added to the final
 /// destination message after transcription, never to live provider context.
 struct LiveSelectionReference: Equatable {
+    // Five hard lines or roughly five wrapped prose lines, whichever is shorter.
+    // Bound at capture so a whole document is neither retained for the recording
+    // nor slipped into the final agent message. `characterCount` still describes
+    // the original selection, and XML explicitly marks a truncated excerpt.
+    static let maxSelectionLines = 5
+    static let maxSelectionCharacters = 500
+
     private enum Source: Equatable {
         case codex
         case application(name: String, bundleID: String?)
@@ -22,6 +29,7 @@ struct LiveSelectionReference: Equatable {
     let preview: String
     let characterCount: Int
     let omittedMiddle: Bool
+    let truncated: Bool
     private let selectedText: String
     private let screenshotPath: String?
     private var spokenPrefix = ""
@@ -39,15 +47,22 @@ struct LiveSelectionReference: Equatable {
 
     init?(_ selectedText: String) {
         let trimmed = selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let normalized = trimmed
+        guard !trimmed.split(whereSeparator: \.isWhitespace).isEmpty else { return nil }
+        let lineLimited = trimmed
+            .split(separator: "\n", maxSplits: Self.maxSelectionLines,
+                   omittingEmptySubsequences: false)
+            .prefix(Self.maxSelectionLines)
+            .joined(separator: "\n")
+        let excerpt = String(lineLimited.prefix(Self.maxSelectionCharacters))
+        let normalized = excerpt
             .split(whereSeparator: \.isWhitespace)
             .joined(separator: " ")
-        guard !normalized.isEmpty else { return nil }
 
         characterCount = trimmed.count
         screenshotPath = nil
-        self.selectedText = trimmed
+        self.selectedText = excerpt
         omittedMiddle = false
+        truncated = excerpt != trimmed
         if normalized.count <= 96 {
             preview = "“\(normalized)”"
         } else {
@@ -68,6 +83,7 @@ struct LiveSelectionReference: Equatable {
         preview = screenshotURL.lastPathComponent
         characterCount = 0
         omittedMiddle = false
+        truncated = false
         self.selectedText = ""
     }
 
@@ -202,10 +218,10 @@ struct LiveSelectionReference: Equatable {
         switch source {
         case .codex:
             tag = "codex_selection"
-            attributes = "index=\"\(index)\" source=\"Codex\" characters=\"\(characterCount)\" middle_omitted=\"\(omittedMiddle)\""
+            attributes = "index=\"\(index)\" source=\"Codex\" characters=\"\(characterCount)\" middle_omitted=\"\(omittedMiddle)\" truncated=\"\(truncated)\""
         case let .application(name, bundleID):
             tag = "app_selection"
-            attributes = "index=\"\(index)\" source=\"\(Self.xmlEscaped(name))\" characters=\"\(characterCount)\" middle_omitted=\"\(omittedMiddle)\""
+            attributes = "index=\"\(index)\" source=\"\(Self.xmlEscaped(name))\" characters=\"\(characterCount)\" middle_omitted=\"\(omittedMiddle)\" truncated=\"\(truncated)\""
             if let bundleID {
                 attributes += " bundle_id=\"\(Self.xmlEscaped(bundleID))\""
             }

@@ -19,7 +19,7 @@ Highlight text in any app that exposes its selection to macOS, or take a macOS s
 ```text
 Rename this function
 
-<codex_selection index="1" source="Codex" characters="32" middle_omitted="false">
+<codex_selection index="1" source="Codex" characters="32" middle_omitted="false" truncated="false">
   <text>func loadRows(from cache: Cache)</text>
 </codex_selection>
 
@@ -28,7 +28,7 @@ and make the empty state look like this.
 <local_screenshot path="/Users/you/Desktop/Screenshot 2026-09-24 at 10.41.12.png"/>
 ```
 
-- Every final `<text>` contains the full highlight, including long selections; the live recorder keeps only a compact preview. The full text is added after speech recognition, not sent to the real-time speech model. If you highlight repeatedly without a newly recognized word between selections, only the latest highlight remains. Speaking between highlights keeps both in order.
+- Final `<text>` keeps up to five selected lines or 500 characters, whichever is shorter; `truncated="true"` marks a longer highlight, and `characters` still counts the original selection. The live recorder keeps only a compact preview. Selected text is added after speech recognition, not sent to the real-time speech model. If you highlight repeatedly without a newly recognized word between selections, only the latest highlight remains. Speaking between highlights keeps both in order.
 - A highlight from another app uses `<app_selection source="TextEdit" bundle_id="com.apple.TextEdit">` instead of `<codex_selection>`. Chrome can also include a page title, a query-stripped URL (retaining only a validated YouTube video ID), and the selected range's DOM tag/role/label when its on-demand browser script works. Those optional fields are omitted if Chrome blocks scripting; the app name alone does not identify a tab or element. Other apps get only their app identity. VoiceInk++ never issues Copy to capture a highlight.
 - When Codex's active task is provable, a selection also carries its stable `task_id` and current `task_title`. An uncertain task keeps the plain tag; a title alone never identifies a chat.
 - A screenshot contributes its local path, not image pixels or an attachment. The receiving agent needs access to that file.

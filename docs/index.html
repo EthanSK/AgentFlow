@@ -66,7 +66,7 @@
         <div class="hero-head">
           <h1 id="hero-title">Talk while you <span class="g-select" data-at="900">highlight</span> and <span class="g-shot" data-at="2450">screenshot</span></h1>
           <div class="hero-aside">
-            <p class="lede">VoiceInk++ is speech to text for Mac, built for working with agents. Highlight text in another app or take a screenshot mid-sentence; your final message puts the full selected text or screenshot path alongside the words you spoke.</p>
+            <p class="lede">VoiceInk++ is speech to text for Mac, built for working with agents. Highlight text in another app or take a screenshot mid-sentence; your final message puts a selected-text excerpt or screenshot path alongside the words you spoke.</p>
             <p class="caveat">Real-time context is included in VoiceInk++ source. Build it on your Mac to use it.</p>
           </div>
         </div>
@@ -106,7 +106,7 @@
             <p class="pane-label">Pasted into Codex</p>
             <div class="composer">
               <p class="msg step" data-at="3050">Rename this function</p>
-              <pre class="msg-xml xml-select step" data-at="3300"><code><span class="t">&lt;app_selection</span> <span class="a">index="1" source="TextEdit" characters="32" middle_omitted="false" bundle_id="com.apple.TextEdit"</span><span class="t">&gt;</span>
+              <pre class="msg-xml xml-select step" data-at="3300"><code><span class="t">&lt;app_selection</span> <span class="a">index="1" source="TextEdit" characters="32" middle_omitted="false" truncated="false" bundle_id="com.apple.TextEdit"</span><span class="t">&gt;</span>
   <span class="t">&lt;text&gt;</span>func loadRows(from cache: Cache)<span class="t">&lt;/text&gt;</span>
 <span class="t">&lt;/app_selection&gt;</span></code></pre>
               <p class="msg step" data-at="3550">and make the empty state look like this.</p>
@@ -118,7 +118,7 @@
             <button class="replay" type="button" data-demo-replay hidden><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v5h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Replay</button>
             <ul class="facts">
               <li>Words show only in the recorder until you stop, then paste once.</li>
-              <li>Full highlights paste at the end; the live preview stays short.</li>
+              <li>Highlights keep up to five lines or 500 characters; the live preview stays short.</li>
               <li>Without speech between highlights, only the latest remains.</li>
               <li>Codex can label its task. Chrome can add page and DOM cues when scripting is available.</li>
               <li>Screenshots add their file path, not the image.</li>
