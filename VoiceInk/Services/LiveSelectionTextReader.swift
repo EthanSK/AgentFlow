@@ -46,6 +46,7 @@ import os
 /// final `<app_selection>`/`<codex_selection>` grammar deliberately omits it.
 enum LiveSelectionTier: String, Equatable, Sendable {
     case chromeDOM
+    case vscodeBridge
     case focusedElement
     case pointerElement
     case browserScript

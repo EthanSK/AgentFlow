@@ -13,6 +13,7 @@ are bundled.
 | [Context interpretation skill](.agents/skills/interpret-voiceink-context/SKILL.md) | Helping Codex read the XML-style selection and screenshot references across tasks | Optional installer flag, or ask Codex to install this skill as a personal skill |
 | [AgentFlow YouTube Bridge](companions/youtube-bridge/README.md) | Pausing the YouTube tab playing when dictation starts, plus optional Agentic Mouse Chrome controls | Optional installer flag; helper, native host and login LaunchAgent install locally, but Chrome needs one manual extension step |
 | [Agentic Mouse](https://ethansk.github.io/agentic-mouse/) | Optional hardware control layer and extra mouse actions | Separate app and setup; not bundled with AgentFlow |
+| [Better Git VS Code](https://marketplace.visualstudio.com/items?itemName=EthanSK.better-git-vscode) 1.2.99+ | Mouse highlights from local VS Code code and diff editors, even with screen-reader mode off | Install from the VS Code Marketplace and activate the updated extension; no extra LaunchAgent or permission grant |
 | Programmable mouse | Optional hands-free Primary and Next buttons | Map in your own mouse software; AgentFlow also works from its keyboard shortcut |
 
 The YouTube helper is the only login LaunchAgent installed by this repository's setup. AgentFlow
@@ -90,6 +91,11 @@ when no recording or transcription is active. The companion has its own
   confirm that specific video pauses and resumes. An initially paused video must stay paused.
 - If you installed Agentic Mouse, test its physical buttons separately. Installing AgentFlow
   does not program your mouse or prove device-specific shortcuts work.
+- For VS Code, start recording and drag-select text in a disposable code editor, then a diff.
+  Confirm each selection appears in the recorder and final `<app_selection>` message.
+  Better Git's optional bridge reads only a fresh mouse selection in the focused editor;
+  automatic Git hunk navigation and stale selections are ignored. Terminals/chat webviews
+  still depend on their own Accessibility exposure, not the code-editor bridge.
 
 For a guided agent-assisted setup, use the [companion setup prompt](companions/youtube-bridge/AGENT_SETUP.md)
 and tell the agent which optional pieces you actually want. Report app build, app launch, native

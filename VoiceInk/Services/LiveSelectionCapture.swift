@@ -436,11 +436,13 @@ final class LiveSelectionCapture {
         let type: NSEvent.EventType
         let clickCount: Int
         let location: NSPoint
+        let occurredAt: Date
     }
 
     private let onCapture: (LiveSelectionReference) -> Void
     private var monitor: Any?
     private var mouseDownPoint: NSPoint?
+    private var mouseDownDate: Date?
     private var captureTask: Task<Void, Never>?
     private var screenshotSource: DispatchSourceFileSystemObject?
     private var screenshotDirectory: URL?
@@ -460,7 +462,8 @@ final class LiveSelectionCapture {
             let edge = MouseEdge(
                 type: event.type,
                 clickCount: event.clickCount,
-                location: NSEvent.mouseLocation
+                location: NSEvent.mouseLocation,
+                occurredAt: Date(timeIntervalSinceNow: event.timestamp - ProcessInfo.processInfo.systemUptime)
             )
             Task { @MainActor [weak self] in
                 self?.handle(edge)
@@ -477,6 +480,7 @@ final class LiveSelectionCapture {
         captureTask?.cancel()
         captureTask = nil
         mouseDownPoint = nil
+        mouseDownDate = nil
         screenshotScanTask?.cancel()
         screenshotScanTask = nil
         screenshotSource?.cancel()
@@ -603,11 +607,17 @@ final class LiveSelectionCapture {
         guard monitor != nil else { return }
         switch edge.type {
         case .leftMouseDown:
+            // A second gesture must not let an older in-flight read borrow its
+            // newer selection before the next mouse-up cancels that task.
+            captureTask?.cancel()
             mouseDownPoint = edge.location
+            mouseDownDate = edge.occurredAt
         case .leftMouseUp:
             let endPoint = edge.location
             let startPoint = mouseDownPoint
+            let gestureStartedAt = mouseDownDate ?? edge.occurredAt
             mouseDownPoint = nil
+            mouseDownDate = nil
             guard let startPoint,
                   Self.isSelectionGesture(
                       from: startPoint,
@@ -670,6 +680,7 @@ final class LiveSelectionCapture {
                         sourcePID: sourcePID,
                         bundleID: bundleID,
                         gesture: gesture,
+                        gestureStartedAt: gestureStartedAt,
                         startedAt: startedAt
                     )
                 }
@@ -721,8 +732,21 @@ final class LiveSelectionCapture {
         sourcePID: pid_t,
         bundleID: String?,
         gesture: LiveSelectionGesture?,
+        gestureStartedAt: Date,
         startedAt: UInt64
     ) async -> String? {
+        // VS Code's default Monaco editor intentionally exposes no AX text.
+        // Better Git can prove a fresh mouse selection in the focused editor;
+        // ask only during capture, never enable screen-reader mode or copy.
+        if VSCodeSelectionBridge.supports(bundleID),
+           gesture?.touchesWindow(ownedBy: sourcePID, in: LiveSelectionWindow.onScreen()) == true,
+           let text = await VSCodeSelectionBridge.read(sourcePID: sourcePID, gestureStartedAt: gestureStartedAt) {
+            LiveSelectionDiagnostics.captured(
+                tier: .vscodeBridge, source: nil, evidence: .atGesture, attempt: 1,
+                bundleID: bundleID, startedAt: startedAt
+            )
+            return text
+        }
         var last = LiveSelectionResolution()
         var attempts = 0
         for delay in LiveSelectionReadPolicy.accessibilityRetryDelays {

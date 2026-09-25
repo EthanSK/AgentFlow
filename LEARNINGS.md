@@ -1,5 +1,12 @@
 # Learnings
 
+## 2026-09-25 — VS Code selection bridge
+
+**Trigger:** Chrome highlights reached AgentFlow but VS Code code/diff highlights did not.
+**Evidence:** The live VS Code 1.138.0 Accessibility tree labels both diff editors “The editor is not accessible at this time” with screen-reader mode disabled. Generic AX fallback tests never established physical all-app coverage.
+**Fix:** AgentFlow queries Better Git's per-user Unix socket for a fresh mouse selection from the focused local VS Code editor. The extension reads the public selection API on demand, never caches selected text, uses no TCP listener or clipboard, rejects stale/programmatic/background/ambiguous selections, and caps transport text. Native capture cancels an old query on the next mouse-down and derives gesture time from the original NSEvent timestamp rather than MainActor scheduling time. Generic app XML and five-line/500-character output limits remain unchanged; bridge input is bounded to 8,192 UTF-16 units, so its captured character count can understate huge selections.
+**Guard:** Isolated Mini VS Code 1.132.0 and 1.138.0 workbenches passed actual mouse selections in a plain and diff editor with accessibilitySupport=off; the production Swift socket reader matched the actual editor selection. Wrong-process, malformed, stale and programmatic requests returned no selection, and fixture files remained unchanged. This does not establish support for terminals, chat webviews, remote hosts, multi-cursor selections, or every app. Release/install verification is separate.
+
 Per-repo institutional memory for fixes. Every entry below is a real bug we hit + how we solved it. Check this file BEFORE attempting a same-looking fix. Read [FAILED_APPROACHES.md](FAILED_APPROACHES.md) as the mandatory negative-evidence companion before retrying a mechanism that previously compiled, passed tests, or returned API success without satisfying the real app.
 
 Maintained by the public, self-improving `learnings` skill at `.agents/skills/learnings/SKILL.md`. Codex discovers that canonical folder directly; Claude Code follows `.claude/skills/learnings` to the same skill. Newer entries and the failure ledger may explicitly supersede an older entry whose initial evidence was later disproved; never select a historical implementation by version number alone.
