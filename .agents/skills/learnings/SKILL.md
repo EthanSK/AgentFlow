@@ -320,6 +320,13 @@ Keep each field concise but specific enough to prevent rediscovery. Name the sym
    If that direct full-suite fallback aborts because `MediaRemoteAdapter_MediaRemoteAdapter.bundle` is invisible to the command-line runner, do not count the partial run or alter the built app. Copy the host's `Frameworks` directory to a disposable staging directory, place the host's existing package resource bundle under the staged `MediaRemoteAdapter.framework/Resources`, put the staging directory first in `DYLD_FRAMEWORK_PATH`, and rerun the complete bundle. Require the same named-test and zero-failure checks; this is a runner-resource repair, not permission to patch test code or production resources.
    After a release-boundary suite passes, retain its named logs but remove only that release output's generated Debug test DerivedData and staged framework copy before the separate universal Release build. Never clean unrelated Mini state to make space. Self-improved — 2026-09-25: build 344 reached universal `lipo` with both test and Release caches present and failed for disk capacity; deleting only the completed task-owned test cache let the same Release build succeed.
 2. Land the implementation commit before recording its SHA.
+   For public distribution, follow `RELEASING.md` and the separate Developer ID/notarization
+   verifier rather than the local-signing route. Resolve Sparkle's bare helper through
+   `Versions/Current/Autoupdate`, sign it before its framework, and require its Developer ID,
+   team, runtime and secure timestamp. Run `python3 scripts/test-release-signing.py` after
+   packaging changes; its fixtures need no native build. Self-improved — 2026-09-25: Apple's
+   rejection of an unsigned version-B helper established this boundary; see the Sparkle
+   entries in `LEARNINGS.md` and `FAILED_APPROACHES.md`.
 3. Add the newest entry with:
 
    ```sh

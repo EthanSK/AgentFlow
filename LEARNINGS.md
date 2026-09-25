@@ -1,32 +1,5 @@
 # Learnings
 
-## 2026-09-25 — Sign Sparkle's resolved helper before notarization
-
-**Trigger:** First public Agent Flow notarization failed despite local deep/strict signing checks.
-**Finding:** The packaged Sparkle framework uses `Versions/B`, but the packaging script silently
-skipped its bare `Autoupdate` executable through a hard-coded `Versions/A` path. Apple's log
-reported an invalid Developer ID signature and missing secure timestamp for both architectures.
-**Fix:** Resolve `Versions/Current/Autoupdate`, require it when Sparkle is present, and sign it
-with hardened runtime and timestamp before nested bundles and the outer app with its entitlements.
-The public verifier independently requires Developer ID, expected team, runtime and timestamp on
-that helper. A signing-only repair of the exact build-345 artifact was Apple Accepted, stapled,
-Gatekeeper accepted, published, and downloaded back with a matching SHA-256; no rebuild was needed.
-**Guard:** `scripts/test-release-signing.py` exercises the production signing block with version-A,
-version-B and missing-helper fixtures. Keep notarization, public download, local installation and
-automated release-runner readiness as separate evidence gates.
-
-## 2026-09-25 — Public copy needs usage and source checks
-
-**Trigger:** Ethan rejected the homepage's internal route table and vague agent-workflow slogans.
-**Finding:** The demo explained actual speech/highlight/screenshot use, while feature cards,
-setup specs and route tables repeated it. The source did not bound reference placement to one word;
-only saved screenshots were captured; VS Code isolated tests were not everyday-use acceptance.
-**Fix:** Lead with the demo and verified download, keep optional controls in disclosures, and put
-installation detail and app-specific coverage in SETUP.md. Do not claim every app works, screenshot
-pixels are uploaded, a precise timeline exists, or optional recent-chat hints are always enabled.
-Current app updater code checks upstream releases for notification only; bundled Sparkle metadata
-does not prove an automatic install path.
-
 ## 2026-09-25 — Display branding is not a technical identity migration
 
 **Trigger:** Ethan requested “two words” for the public brand after choosing AgentFlow.
@@ -72,6 +45,26 @@ Each entry looks like:
 ## Entries
 
 (newest first)
+
+---
+**Date:** 2026-09-25
+**Trigger:** First public Agent Flow notarization failed despite local deep/strict signing checks.
+**Symptom:** Apple rejected Sparkle Autoupdate for invalid Developer ID signing and no secure timestamp on both architectures.
+**Root cause:** The packaged framework uses Versions/B, but packaging silently skipped its bare executable through a hard-coded Versions/A path; signing the enclosing framework did not repair it.
+**Fix:** Resolve Versions/Current/Autoupdate, require it, and sign it with hardened runtime and timestamp before nested bundles and the outer app with its entitlements. The public verifier independently checks the helper's Developer ID, team, runtime and timestamp. A signing-only repair of exact build 345 was Apple Accepted, stapled, Gatekeeper accepted, published and downloaded back with a matching SHA-256; no rebuild was needed.
+**Commit:** db609d7a7110fe65b945c32c42d8ef1ff714503b
+**Guard:** scripts/test-release-signing.py exercises the production block with version-A, version-B and missing-helper fixtures. Notarization, public download, local installation and release-runner readiness remain separate gates.
+---
+
+---
+**Date:** 2026-09-25
+**Trigger:** Ethan rejected the homepage's internal route table and vague agent-workflow slogans.
+**Symptom:** Feature cards, setup specs and route tables repeated the demo and obscured actual speech/highlight/screenshot use.
+**Root cause:** Public copy was based on internal contracts without rechecking use and evidence limits: placement was not bounded to one word, only saved screenshots were captured, and VS Code isolated tests did not establish everyday-use acceptance.
+**Fix:** Lead with the demo and verified download; keep optional controls in disclosures and app coverage in SETUP.md. Do not promise every app works, screenshot uploads, precise timing, or always-on recent-chat hints. Current updater code is upstream notification-only; bundled Sparkle metadata is not an automatic install path.
+**Commit:** db609d7a7110fe65b945c32c42d8ef1ff714503b
+**Guard:** Read actual source and safe settings; verify desktop/mobile screenshots, disclosure interaction, deployment and live asset bytes. Keep personal settings out of universal defaults.
+---
 
 ---
 **Date:** 2026-09-25T13:05:07Z
