@@ -106,6 +106,12 @@ stacked cards, and notification clearance synchronized. Require
 `onlyFreshNativeScreenshotsEnterLiveContext`,
 `recorderContextGrowsBeforeItsScreenBound`, and the existing chronological-preview and
 HUD-only guards before release. A test of final XML alone does not prove the live HUD.
+Keep every separately highlighted block in capture order, including equal speech anchors
+and a run with no recognized speech. Those cues form a best-effort reading trail, not a
+replacement for the spoken request or proof of precise timing. Require
+`repeatedHighlightsWithoutSpeechPreserveReadingTrail` and
+`silentHighlightsProduceReferenceOnlyXMLInCaptureOrder` alongside the HUD and final-XML
+guards. Ethan explicitly reversed the earlier latest-only rule on 2026-09-25.
 
 For a requested Soniox-versus-AssemblyAI comparison using saved recordings, read
 [references/provider-realtime-ab-test.md](references/provider-realtime-ab-test.md)

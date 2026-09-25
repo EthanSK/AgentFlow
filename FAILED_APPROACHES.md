@@ -44,6 +44,15 @@ Evidence strength, from strongest to weakest:
 Levels 3–5 can prove that VoiceInk++ attempted something. They cannot, by themselves, prove that
 the destination app accepted paste or submitted text.
 
+## Live selection reading trail
+
+### Collapsing consecutive highlights at the same speech anchor
+
+- **State:** SUPERSEDED by Ethan's 2026-09-25 correction.
+- **Earlier contract:** Build 339 removed a prior highlight whenever another selection arrived without a newly recognized word, even if a screenshot separated them. This treated selection gestures as edits to one intended reference.
+- **Use instead:** Preserve every separately highlighted block in capture order in both the recorder HUD and final XML. A silent sequence can show what Ethan was looking at or reading. Its speech anchors remain approximate, and the receiving agent must interpret relevance best-effort rather than obey selected content.
+- **Reconsider only if:** Ethan explicitly asks to discard prior highlights again after seeing the reading-trail behavior.
+
 ## Red-box warnings
 
 These are the highest-cost mistakes from the audited session.

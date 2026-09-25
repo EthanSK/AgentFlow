@@ -471,14 +471,9 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         // save. Final transcription may revise words, so this is an approximate
         // insertion anchor, not an AX range or a live destination write.
         let anchored = reference.anchored(after: partialTranscript)
-        if anchored.isSelection,
-           let preceding = liveSelectionReferences.lastIndex(where: \.isSelection),
-           liveSelectionReferences[preceding].spokenWordCount == anchored.spokenWordCount {
-            // Consecutive highlights without another recognized word usually
-            // mean Ethan was adjusting a reading selection. Keep its last
-            // position, even when a screenshot arrived between the gestures.
-            liveSelectionReferences.remove(at: preceding)
-        }
+        // Distinct highlights at the same speech anchor are still a reading
+        // trail. Preserve every gesture in capture order, even across silence
+        // or a screenshot; the receiving agent decides which cues matter.
         liveSelectionReferences.append(anchored)
     }
 

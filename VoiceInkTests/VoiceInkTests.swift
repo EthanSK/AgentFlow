@@ -434,7 +434,8 @@ struct VoiceInkTests {
         #expect(!message.contains("<end>"))
         #expect(reference.preview.count < source.count)
         #expect(XMLParser(data: Data("<root>\(message)</root>".utf8)).parse())
-        #expect(LiveSelectionReference.interleaving([reference], with: "") == "")
+        #expect(LiveSelectionReference.interleaving([reference], with: "")
+                .contains("<codex_selection index=\"1\""))
     }
 
     @Test func liveSelectionReferenceKeepsAtMostFiveHardLinesAcrossApps() throws {
@@ -609,7 +610,7 @@ struct VoiceInkTests {
         #expect(second.liveSelectionReferences.isEmpty)
     }
 
-    @Test @MainActor func repeatedHighlightsWithoutSpeechKeepOnlyLatest() throws {
+    @Test @MainActor func repeatedHighlightsWithoutSpeechPreserveReadingTrail() throws {
         let session = RecordingSession()
         let first = try #require(LiveSelectionReference("first highlight"))
         let second = try #require(LiveSelectionReference("second highlight"))
@@ -621,24 +622,39 @@ struct VoiceInkTests {
         session.partialTranscript = "Look"
         session.recordLiveSelection(first)
         session.recordLiveSelection(second)
-        #expect(session.liveSelectionReferences == [second.anchored(after: "Look")])
+        #expect(session.liveSelectionReferences == [
+            first.anchored(after: "Look"), second.anchored(after: "Look")
+        ])
 
         session.recordLiveSelection(screenshot)
         session.recordLiveSelection(third)
         #expect(session.liveSelectionReferences == [
+            first.anchored(after: "Look"), second.anchored(after: "Look"),
             screenshot.anchored(after: "Look"), third.anchored(after: "Look")
         ])
         #expect(LiveSelectionReference.previewParts(
             session.liveSelectionReferences, with: "Look"
         ) == [
-            .speech("Look"), .screenshot("example.png"),
+            .speech("Look"), .selection("“first highlight”"),
+            .selection("“second highlight”"), .screenshot("example.png"),
             .selection("“third highlight”")
         ])
+
+        let message = LiveSelectionReference.interleaving(
+            session.liveSelectionReferences, with: "Look"
+        )
+        #expect(message.range(of: "first highlight")!.lowerBound
+                < message.range(of: "second highlight")!.lowerBound)
+        #expect(message.range(of: "second highlight")!.lowerBound
+                < message.range(of: "<local_screenshot")!.lowerBound)
+        #expect(message.range(of: "<local_screenshot")!.lowerBound
+                < message.range(of: "third highlight")!.lowerBound)
+        #expect(message.contains("<codex_selection index=\"3\""))
 
         session.partialTranscript = "Look again"
         session.recordLiveSelection(first)
         #expect(session.liveSelectionReferences.last == first.anchored(after: "Look again"))
-        #expect(session.liveSelectionReferences.count == 3)
+        #expect(session.liveSelectionReferences.count == 5)
     }
 
     @Test @MainActor func liveSelectionNeedsASelectionGesture() {
@@ -671,12 +687,13 @@ struct VoiceInkTests {
             .speech("I am"), .selection("“second highlight”"),
             .speech("talking now")
         ])
-        // The serializer accepts already-anchored references, but the session
-        // collapses equal-anchor selection gestures before they reach this HUD.
+        // Equal-anchor gestures stay separate in the HUD as a reading trail.
         #expect(LiveSelectionReference.previewParts(
-            [second.anchored(after: "Hello")], with: "Hello again"
+            [first.anchored(after: "Hello"), second.anchored(after: "Hello")],
+            with: "Hello again"
         ) == [
-            .speech("Hello"), .selection("“second highlight”"), .speech("again")
+            .speech("Hello"), .selection("“first highlight”"),
+            .selection("“second highlight”"), .speech("again")
         ])
         #expect(LiveSelectionReference.previewParts(references, with: "") == [
             .selection("“first highlight”"), .selection("“second highlight”")
@@ -692,6 +709,38 @@ struct VoiceInkTests {
             #expect(source.contains("selectionReferences: stateProvider.liveSelectionReferences"))
             #expect(!source.contains("speech + \"\\n\" + selection"))
         }
+    }
+
+    @Test @MainActor func silentHighlightsProduceReferenceOnlyXMLInCaptureOrder() throws {
+        let session = RecordingSession()
+        let first = try #require(LiveSelectionReference("first thing read"))
+        let second = try #require(LiveSelectionReference("second thing read"))
+        let screenshot = try #require(LiveSelectionReference(
+            screenshotURL: URL(fileURLWithPath: "/Users/test/Screenshots/reading.png")
+        ))
+        session.recordLiveSelection(first)
+        session.recordLiveSelection(second)
+        session.recordLiveSelection(screenshot)
+
+        #expect(LiveSelectionReference.previewParts(
+            session.liveSelectionReferences, with: ""
+        ) == [
+            .selection("“first thing read”"),
+            .selection("“second thing read”"), .screenshot("reading.png")
+        ])
+        let message = LiveSelectionReference.interleaving(
+            session.liveSelectionReferences, with: ""
+        )
+        #expect(message.contains("<codex_selection index=\"1\""))
+        #expect(message.contains("<codex_selection index=\"2\""))
+        #expect(message.range(of: "first thing read")!.lowerBound
+                < message.range(of: "second thing read")!.lowerBound)
+        #expect(message.range(of: "second thing read")!.lowerBound
+                < message.range(of: "<local_screenshot")!.lowerBound)
+        #expect(XMLParser(data: Data("<root>\(message)</root>".utf8)).parse())
+        #expect(LiveSelectionReference.interleaving(
+            session.liveSelectionReferences, with: " \n "
+        ) == message)
     }
 
     @Test @MainActor func savedScreenshotPathJoinsSpeechAndSelectionsInCaptureOrder() throws {

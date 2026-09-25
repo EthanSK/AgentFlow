@@ -146,8 +146,8 @@ struct LiveSelectionReference: Equatable {
     static func previewParts(_ references: [Self], with partialTranscript: String) -> [PreviewPart] {
         // The HUD uses the same approximate cumulative-word anchor as final
         // delivery, but never writes provisional text into another app. Keep
-        // selections in sequence with speech. RecordingSession replaces the
-        // preceding highlight when no new speech appeared between gestures.
+        // selections in sequence with speech. Equal anchors retain their
+        // capture order: they can be a silent trail of what was being read.
         let wordEnds = wordEndIndices(in: partialTranscript)
         var lastWordCount = 0
         var previousEnd = partialTranscript.startIndex
@@ -174,14 +174,14 @@ struct LiveSelectionReference: Equatable {
     }
 
     static func interleaving(_ references: [Self], with transcript: String) -> String {
-        guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              !references.isEmpty else {
+        guard !references.isEmpty else {
             return transcript
         }
 
         // Live provider text is a cumulative preview, not word-timestamped audio.
         // Its word count places each selection near the speech already shown when
-        // the mouse came up. Never send a fake native Codex message/range anchor.
+        // the mouse came up. Preserve a reference-only reading trail when no
+        // words were recognized. Never send a fake native Codex message/range anchor.
         let wordEnds = wordEndIndices(in: transcript)
         var lastWordCount = 0
         var selectionIndex = 0
