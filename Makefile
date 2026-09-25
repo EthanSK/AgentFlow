@@ -47,7 +47,7 @@ build: setup
 
 # Build for local use without Apple Developer certificate
 local: check setup
-	@echo "Building AgentFlow for local use (no Apple Developer certificate required)..."
+	@echo "Building Agent Flow for local use (no Apple Developer certificate required)..."
 	@rm -rf "$(LOCAL_DERIVED_DATA)"
 	xcodebuild -project VoiceInk.xcodeproj -scheme VoiceInk -configuration Debug \
 		-derivedDataPath "$(LOCAL_DERIVED_DATA)" \

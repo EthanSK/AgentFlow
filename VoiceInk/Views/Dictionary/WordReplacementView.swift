@@ -282,7 +282,7 @@ struct WordReplacementInfoPopover: View {
                         Text("Replacement:")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                        Text("AgentFlow")
+                        Text("Agent Flow")
                             .font(.callout)
                     }
                 }

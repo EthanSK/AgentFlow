@@ -290,7 +290,7 @@ struct ModelManagementView: View {
             .buttonStyle(.plain)
 
             InfoTip(
-                "Add a custom fine-tuned Whisper model to use with AgentFlow. Select the downloaded .bin file.",
+                "Add a custom fine-tuned Whisper model to use with Agent Flow. Select the downloaded .bin file.",
                 learnMoreURL: "https://tryvoiceink.com/docs/custom-local-whisper-models"
             )
             .help("Read more about custom local models")

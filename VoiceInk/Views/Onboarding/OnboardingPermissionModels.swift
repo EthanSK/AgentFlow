@@ -58,28 +58,28 @@ enum OnboardingStage: String, CaseIterable {
         case .api:
             return String(localized: "Verify API Key")
         case .experience:
-            return String(localized: "Experience AgentFlow")
+            return String(localized: "Experience Agent Flow")
         case .contextAwareness:
-            return String(localized: "AgentFlow is Context-Aware")
+            return String(localized: "Agent Flow is Context-Aware")
         case .trust:
-            return String(localized: "AgentFlow is Open Source")
+            return String(localized: "Agent Flow is Open Source")
         }
     }
 
     var subtitle: String {
         switch self {
         case .permissions:
-            return String(localized: "Allow AgentFlow to work across all your apps.")
+            return String(localized: "Allow Agent Flow to work across all your apps.")
         case .microphone:
-            return String(localized: "Pick the microphone AgentFlow should use for recordings.")
+            return String(localized: "Pick the microphone Agent Flow should use for recordings.")
         case .model:
-            return String(localized: "AgentFlow will download NVIDIA's Parakeet model to set up fast local transcription.")
+            return String(localized: "Agent Flow will download NVIDIA's Parakeet model to set up fast local transcription.")
         case .api:
             return String(localized: "Add your own OpenAI API key for GPT Live transcription and optional AI actions.")
         case .experience:
-            return String(localized: "Try a few short samples and see how AgentFlow works before you start.")
+            return String(localized: "Try a few short samples and see how Agent Flow works before you start.")
         case .contextAwareness:
-            return String(localized: "AgentFlow can select the right mode from the app you are using and the rules you configure.")
+            return String(localized: "Agent Flow can select the right mode from the app you are using and the rules you configure.")
         case .trust:
             return String(localized: "Local models stay on your Mac; cloud models send audio to the provider you choose.")
         }
@@ -110,19 +110,19 @@ enum OnboardingPermissionKind: String, CaseIterable, Identifiable {
         case .microphone:
             return OnboardingPermissionDescriptor(
                 title: "Microphone",
-                subtitle: String(localized: "AgentFlow uses your microphone to capture your voice.")
+                subtitle: String(localized: "Agent Flow uses your microphone to capture your voice.")
             )
 
         case .accessibility:
             return OnboardingPermissionDescriptor(
                 title: String(localized: "Accessibility"),
-                subtitle: String(localized: "AgentFlow uses Accessibility to type transcriptions directly into any app.")
+                subtitle: String(localized: "Agent Flow uses Accessibility to type transcriptions directly into any app.")
             )
 
         case .screenRecording:
             return OnboardingPermissionDescriptor(
                 title: String(localized: "Screen Recording"),
-                subtitle: String(localized: "Some context and exact-delivery checks need Screen Recording. AgentFlow does not send screenshot pixels to the voice model.")
+                subtitle: String(localized: "Some context and exact-delivery checks need Screen Recording. Agent Flow does not send screenshot pixels to the voice model.")
             )
         }
     }

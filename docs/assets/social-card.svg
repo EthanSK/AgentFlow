@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
-  <title id="title">AgentFlow — live context for Mac dictation</title>
-  <desc id="desc">A black AgentFlow recorder on a pale desk shows spoken words, a cyan Codex selection, a purple screenshot reference, and a mint waveform.</desc>
+  <title id="title">Agent Flow — live context for Mac dictation</title>
+  <desc id="desc">A black Agent Flow recorder on a pale desk shows spoken words, a cyan Codex selection, a purple screenshot reference, and a mint waveform.</desc>
   <!-- This is an invented example. Keep private dictated text and real screenshot paths out of public cards. -->
   <defs>
     <filter id="shadow" x="-20%" y="-30%" width="140%" height="170%">
@@ -8,7 +8,7 @@
     </filter>
   </defs>
   <rect width="1200" height="630" fill="#e5eae8"/>
-  <text x="73" y="96" fill="#111615" font-family="Avenir Next Condensed, Avenir Next, Helvetica Neue, Arial, sans-serif" font-size="53" font-weight="700" letter-spacing="-1.2">Agent<tspan fill="#066b55">Flow</tspan></text>
+  <text x="73" y="96" fill="#111615" font-family="Avenir Next Condensed, Avenir Next, Helvetica Neue, Arial, sans-serif" font-size="53" font-weight="700" letter-spacing="-1.2">Agent <tspan fill="#066b55">Flow</tspan></text>
   <text x="75" y="139" fill="#4a5452" font-family="Seravek, Helvetica Neue, Arial, sans-serif" font-size="23">Speak, highlight, screenshot. Keep your agent in the flow.</text>
 
   <g filter="url(#shadow)">

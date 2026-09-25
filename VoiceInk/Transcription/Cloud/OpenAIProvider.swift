@@ -19,7 +19,7 @@ struct OpenAIProvider: CloudProvider {
         CloudModel(
             name: OpenAITranscriptionConfiguration.liveModelName,
             displayName: "GPT Live Transcribe",
-            description: "OpenAI live transcription with xhigh context delay, English hints, and AgentFlow Vocabulary keywords.",
+            description: "OpenAI live transcription with xhigh context delay, English hints, and Agent Flow Vocabulary keywords.",
             provider: .openAI,
             speed: 0.92,
             accuracy: 0.98,

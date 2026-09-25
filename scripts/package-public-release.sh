@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Run only from a clean, exact release checkout on the dedicated Mac Mini.
+# Build/test only on the dedicated Mac Mini. Signing a source-bound prebuilt archive may run
+# on the MacBook, keeping its isolated notarization credential in that machine's Keychain.
 # Keep output outside the source tree. Never overwrite the installed app or a published release.
 root=$(cd "$(dirname "$0")/.." && pwd)
 output=${1:?Pass a fresh, task-scoped output directory}
+mode=${2:---complete}
+case "$mode" in --complete|--build-only|--sign-prebuilt) ;; *) echo 'Unknown release mode.' >&2; exit 1 ;; esac
 # This release uses a dedicated local Keychain profile, never another project's credential.
 # The profile name is public configuration; notarytool securely stores the secret itself.
 notary_profile=AgentFlowRelease
@@ -13,11 +16,16 @@ whisper_commit=0ec0845110dc934911dc48e8c5beb5ad3189b3f3
 whisper_repo="$HOME/VoiceInk-Dependencies/whisper.cpp"
 whisper_framework="$whisper_repo/build-apple/whisper.xcframework"
 
-test "$(hostname)" = Ethans-Mac-mini-6.local || {
-  echo 'Public AgentFlow builds must run on the dedicated Mac Mini.' >&2
-  exit 1
-}
-test ! -e "$output" || { echo 'Use a fresh output directory.' >&2; exit 1; }
+if test "$mode" != --sign-prebuilt; then
+  test "$(hostname)" = Ethans-Mac-mini-6.local || {
+    echo 'Public Agent Flow builds must run on the dedicated Mac Mini.' >&2
+    exit 1
+  }
+  test ! -e "$output" || { echo 'Use a fresh output directory.' >&2; exit 1; }
+else
+  test -f "$output/build-receipt.json"
+  test ! -e "$output/AgentFlow.app" || { echo 'Prebuilt signing needs a fresh staging directory.' >&2; exit 1; }
+fi
 test -z "$(git -C "$root" status --porcelain)" || {
   echo 'Release checkout is dirty; commit the exact source first.' >&2
   exit 1
@@ -38,8 +46,12 @@ case "$tag_result" in
   2) ;;
   *) echo 'Could not check remote release tags; refusing an uncertain build.' >&2; exit 1 ;;
 esac
-test "$(git -C "$whisper_repo" rev-parse HEAD)" = "$whisper_commit"
-test -d "$whisper_framework"
+source_sha=$(git -C "$root" rev-parse HEAD)
+if test "$mode" != --sign-prebuilt; then
+  test "$(git -C "$whisper_repo" rev-parse HEAD)" = "$whisper_commit"
+  test -d "$whisper_framework"
+fi
+if test "$mode" != --build-only; then
 security find-identity -v -p codesigning | grep -Fq "\"$identity\"" || {
   echo 'Developer ID signing identity is unavailable.' >&2
   exit 1
@@ -48,9 +60,12 @@ xcrun notarytool history --keychain-profile "$notary_profile" --output-format js
   echo 'Notary credentials are unavailable; refusing an unnotarized public build.' >&2
   exit 1
 }
+fi
 
+app="$output/AgentFlow.app"
+if test "$mode" != --sign-prebuilt; then
 mkdir -p "$output"
-"$root/scripts/test-public-release.sh" "$output"
+"$root/scripts/test-public-release.sh" "$output" | tee "$output/test-summary.txt"
 # Keep the named test logs, then reclaim only this release's generated test host before building
 # a separate universal Release app. The Mini can run out of space when both DerivedData trees coexist.
 test -d "$output/TestDerivedData"
@@ -70,7 +85,6 @@ xcodebuild -project "$root/VoiceInk.xcodeproj" -scheme VoiceInk \
   }
 
 built="$derived/Build/Products/Release/AgentFlow.app"
-app="$output/AgentFlow.app"
 test -d "$built"
 if find "$built/Contents" \( -name '*.xctest' -o -name '*XCTest*' \) -print -quit | grep -q .; then
   echo 'Refusing to package an Xcode test host.' >&2
@@ -78,6 +92,32 @@ if find "$built/Contents" \( -name '*.xctest' -o -name '*XCTest*' \) -print -qui
 fi
 ditto "$built" "$app"
 ditto "$root/LICENSE" "$app/Contents/Resources/COPYING"
+if test "$mode" = --build-only; then
+  # ditto preserves framework symlinks and bundle metadata; raw recursive scp does not.
+  prebuilt="$output/AgentFlow-prebuilt.zip"
+  ditto -c -k --keepParent "$app" "$prebuilt"
+  prebuilt_sha=$(shasum -a 256 "$prebuilt" | awk '{print $1}')
+  summary_sha=$(shasum -a 256 "$output/test-summary.txt" | awk '{print $1}')
+  printf '{"sourceCommit":"%s","version":"%s","build":"%s","sha256":"%s","testSummarySha256":"%s","builder":"Ethans-Mac-mini-6.local"}\n' \
+    "$source_sha" "$source_version" "$source_build" "$prebuilt_sha" "$summary_sha" >"$output/build-receipt.json"
+  echo 'Mini build and full tests finished. Transfer AgentFlow-prebuilt.zip, build-receipt.json and test-summary.txt to a fresh signing directory.'
+  exit 0
+fi
+else
+  # Do not rebuild on the signing Mac or accept an archive from a different source/build.
+  IFS=$'\t' read -r receipt_source receipt_version receipt_build expected_sha expected_summary_sha builder < <(
+    /usr/bin/python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("\t".join(d[k] for k in ("sourceCommit","version","build","sha256","testSummarySha256","builder")))' "$output/build-receipt.json")
+  test "$receipt_source" = "$source_sha"
+  test "$receipt_version" = "$source_version"
+  test "$receipt_build" = "$source_build"
+  test "$builder" = Ethans-Mac-mini-6.local
+  test "$(shasum -a 256 "$output/AgentFlow-prebuilt.zip" | awk '{print $1}')" = "$expected_sha"
+  test "$(shasum -a 256 "$output/test-summary.txt" | awk '{print $1}')" = "$expected_summary_sha"
+  grep -Eq "^Full release suite passed: [1-9][0-9]* named tests, [1-9][0-9]* suites; source $source_sha, build $source_build\\.$" "$output/test-summary.txt"
+  ditto -xk "$output/AgentFlow-prebuilt.zip" "$output"
+  test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")" = "$source_build"
+  test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$source_version"
+fi
 
 # Sign nested code inside-out before the outer bundle. A generic outer-only re-sign both breaks
 # library validation and silently removes Automation unless the checked-in entitlements return.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Publish only the Mini-produced, notarized artifact. Never rebuild or re-sign on the MacBook.
+# Publish only the Mini-built artifact after signing/notarization. Publication never rebuilds it.
 root=$(cd "$(dirname "$0")/.." && pwd)
 release_dir=${1:?Pass the directory containing release.json and the notarized ZIP}
 manifest="$release_dir/release.json"
@@ -39,21 +39,21 @@ if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
   echo "Release $tag already exists. Refusing to overwrite its assets." >&2
   exit 1
 fi
-notes="Developer ID-signed and Apple-notarized AgentFlow for Apple silicon and Intel, macOS 14.4 or later.
+notes="Developer ID-signed and Apple-notarized Agent Flow for Apple silicon and Intel, macOS 14.4 or later.
 
 Download the ZIP, extract AgentFlow.app, and move it to Applications. Give the app Microphone and Accessibility access, then add your OpenAI API key for GPT Live. The YouTube Bridge, Chrome extension, context skill, and Agentic Mouse are separate optional setup steps.
 
-This is a public download, not an automatic in-app update. Before replacing an existing AgentFlow or VoiceInk++ install, stop any recording and keep a backup of the old app. The official VoiceInk app is a separate product.
+This is a public download, not an automatic in-app update. Before replacing an existing Agent Flow or VoiceInk++ install, stop any recording and keep a backup of the old app. The official VoiceInk app is a separate product.
 
 Setup: https://github.com/$repo/blob/$source_sha/SETUP.md
 Corresponding GPLv3 source: https://github.com/$repo/tree/$source_sha
 SHA-256: $expected_sha"
 gh release create "$tag" --repo "$repo" --target "$source_sha" --draft \
-  --title "AgentFlow $tag" --notes "$notes" \
+  --title "Agent Flow $tag" --notes "$notes" \
   "$archive" "$release_dir/SHA256SUMS" "$manifest"
 assets=$(gh release view "$tag" --repo "$repo" --json assets --jq '.assets[].name')
 for name in "$archive_name" SHA256SUMS release.json; do
   grep -Fxq "$name" <<<"$assets"
 done
 gh release edit "$tag" --repo "$repo" --draft=false --latest
-printf 'Published verified AgentFlow release: https://github.com/%s/releases/tag/%s\n' "$repo" "$tag"
+printf 'Published verified Agent Flow release: https://github.com/%s/releases/tag/%s\n' "$repo" "$tag"

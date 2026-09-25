@@ -39,7 +39,7 @@ struct AudioSetupView: View {
                     "Pause Spotify on MacBook Speakers",
                     isOn: $playbackController.isPauseMediaOnBuiltInSpeakersEnabled
                 )
-                .help("When MacBook speakers are the system output, pause the Spotify playback detected at recording start. AgentFlow resumes only the same Spotify process and track.")
+                .help("When MacBook speakers are the system output, pause the Spotify playback detected at recording start. Agent Flow resumes only the same Spotify process and track.")
 
                 LabeledContent("Resume Delay") {
                     resumeDelayMenu
@@ -95,7 +95,7 @@ struct AudioSetupView: View {
     @ViewBuilder
     private var priorityOrderRows: some View {
         if prioritizedDevicesInDisplayOrder.isEmpty {
-            Text("Add microphones in the order AgentFlow should try them.")
+            Text("Add microphones in the order Agent Flow should try them.")
                 .foregroundStyle(.secondary)
         } else {
             ForEach(prioritizedDevicesInDisplayOrder) { device in

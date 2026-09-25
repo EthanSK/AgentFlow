@@ -6244,7 +6244,7 @@ struct VoiceInkTests {
 
         #expect(presentation.topLine == "v2.0")
         #expect(presentation.bottomLine == ".236")
-        #expect(presentation.accessibilityLabel == "AgentFlow version 2.0, build 236")
+        #expect(presentation.accessibilityLabel == "Agent Flow version 2.0, build 236")
     }
 
     @MainActor

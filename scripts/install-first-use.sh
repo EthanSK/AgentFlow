@@ -19,7 +19,7 @@ check_only=false
 
 usage() {
   echo "Usage: ./scripts/install-first-use.sh [--all | --with-youtube-bridge] [--with-codex-skill] [--check]"
-  echo "Installs a new AgentFlow app into ~/Applications; never replaces an existing app."
+  echo "Installs a new Agent Flow app into ~/Applications; never replaces an existing app."
   echo "--all adds the optional YouTube Bridge and Codex context skill."
   echo "Chrome extension loading, macOS permissions, provider keys and mouse mapping remain guided steps."
 }
@@ -49,7 +49,7 @@ for option in "$@"; do
 done
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
-  echo "AgentFlow requires macOS." >&2
+  echo "Agent Flow requires macOS." >&2
   exit 1
 fi
 
@@ -75,7 +75,7 @@ done
 if [[ -e "$app_target" || -L "$app_target" || -e "$system_app" || -L "$system_app" || \
       -e "$legacy_user_app" || -L "$legacy_user_app" || -e "$legacy_system_app" || -L "$legacy_system_app" ]] || \
    pgrep -x VoiceInkPlusPlus >/dev/null 2>&1 || pgrep -x AgentFlow >/dev/null 2>&1; then
-  echo "AgentFlow or VoiceInk++ is already installed or running. This first-use installer will not replace it." >&2
+  echo "Agent Flow or VoiceInk++ is already installed or running. This first-use installer will not replace it." >&2
   echo "Use BUILDING.md and the guarded update procedure instead." >&2
   exit 1
 fi
@@ -101,7 +101,7 @@ fi
 mkdir -p "$HOME/Applications"
 stage_dir="$(mktemp -d "$HOME/Applications/.agentflow-install.XXXXXX")"
 candidate="$stage_dir/AgentFlow.app"
-echo "Building AgentFlow from this checkout into $stage_dir..."
+echo "Building Agent Flow from this checkout into $stage_dir..."
 make -C "$repo_root" local "LOCAL_APP_OUTPUT=$candidate"
 if [[ ! -d "$candidate" ]]; then
   echo "Build completed without the expected app bundle: $candidate. Staging directory retained." >&2
@@ -120,7 +120,7 @@ if [[ -e "$app_target" || -L "$app_target" ]]; then
 fi
 mv "$candidate" "$app_target"
 rmdir "$stage_dir"
-echo "Installed AgentFlow at $app_target"
+echo "Installed Agent Flow at $app_target"
 
 if "$with_skill"; then
   mkdir -p "$HOME/.agents/skills"
@@ -147,12 +147,12 @@ fi
 
 open -g "$app_target"
 if ! wait_for_process "$app_target/Contents/MacOS/AgentFlow" AgentFlow; then
-  echo "AgentFlow was installed but did not remain running. The app is at $app_target; check the macOS launch error before recording." >&2
+  echo "Agent Flow was installed but did not remain running. The app is at $app_target; check the macOS launch error before recording." >&2
   exit 1
 fi
-echo "AgentFlow is running from $app_target"
+echo "Agent Flow is running from $app_target"
 echo
-echo "Next: grant AgentFlow Microphone and Accessibility access, add your OpenAI API key for GPT Live, and verify one short recording."
+echo "Next: grant Agent Flow Microphone and Accessibility access, add your OpenAI API key for GPT Live, and verify one short recording."
 if "$with_bridge"; then
   echo "In Chrome, load $repo_root/companions/youtube-bridge/dist/extension at chrome://extensions and test one disposable YouTube video."
 fi

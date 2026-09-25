@@ -53,7 +53,7 @@ final class LogExporter {
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
 
-        logLines.append("=== AgentFlow Diagnostic Logs ===")
+        logLines.append("=== Agent Flow Diagnostic Logs ===")
         logLines.append("Export Date: \(dateFormatter.string(from: Date()))")
         logLines.append("Subsystem: \(subsystem)")
         logLines.append("Total Sessions: \(sessionStartDates.count)")

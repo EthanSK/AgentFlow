@@ -22,7 +22,7 @@ struct HelpAndResourcesSection: View {
             VStack(alignment: .leading, spacing: 10) {
                 resourceLink(
                     icon: "waveform",
-                    title: "AgentFlow website",
+                    title: "Agent Flow website",
                     color: AppTheme.Sidebar.dashboard,
                     url: AgentFlowResourceURLs.website
                 )
@@ -50,7 +50,7 @@ struct HelpAndResourcesSection: View {
 
                 resourceLink(
                     icon: "exclamationmark.bubble.fill",
-                    title: "AgentFlow on GitHub",
+                    title: "Agent Flow on GitHub",
                     color: AppTheme.Sidebar.audio,
                     url: AgentFlowResourceURLs.repository
                 )

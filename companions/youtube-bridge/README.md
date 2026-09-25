@@ -1,28 +1,28 @@
-# AgentFlow YouTube Bridge
+# Agent Flow YouTube Bridge
 
-Personal macOS + Chrome helper for pausing a playing YouTube tab while AgentFlow is recording and resuming only that same tab when recording stops.
+Personal macOS + Chrome helper for pausing a playing YouTube tab while Agent Flow is recording and resuming only that same tab when recording stops.
 
 ## How It Works
 
-- Hardware media-key routing is intentionally disabled. Do not re-enable the macOS media-key event tap for the AgentFlow flow.
-- The menu bar app listens for AgentFlow recording lifecycle notifications and relays directional YouTube commands through the native bridge.
+- Hardware media-key routing is intentionally disabled. Do not re-enable the macOS media-key event tap for the Agent Flow flow.
+- The menu bar app listens for Agent Flow recording lifecycle notifications and relays directional YouTube commands through the native bridge.
 - The Chrome extension watches YouTube tabs and reports video play/pause state through a thin native bridge.
 - The same extension records each Chrome window's tab-activation order for Agentic Mouse tab-history navigation.
 - Agentic Mouse can also ask the extension to open one fixed website immediately beside Chrome's active tab.
 
-## AgentFlow dictation auto-pause
+## Agent Flow dictation auto-pause
 
-The menu bar app also pauses a playing YouTube tab while you dictate with AgentFlow and resumes it when you finish:
+The menu bar app also pauses a playing YouTube tab while you dictate with Agent Flow and resumes it when you finish:
 
-- Compatible AgentFlow versions (bundle `com.ethansk.VoiceInkPlusPlus`) broadcasts `com.ethansk.voiceink.recordingStarted`, `com.ethansk.voiceink.recordingStopped`, or the triple-click-specific `com.ethansk.voiceink.recordingStoppedPreservingPlayback` over macOS `DistributedNotificationCenter` from its recorder lifecycle.
+- Compatible Agent Flow versions (bundle `com.ethansk.VoiceInkPlusPlus`) broadcasts `com.ethansk.voiceink.recordingStarted`, `com.ethansk.voiceink.recordingStopped`, or the triple-click-specific `com.ethansk.voiceink.recordingStoppedPreservingPlayback` over macOS `DistributedNotificationCenter` from its recorder lifecycle.
 - On `recordingStarted`, the menu bar app sends an untargeted directional `pause-youtube`; the extension prefers PiP, then the active YouTube tab in Chrome's last-focused window, then audible/active/playback-recency fallbacks, and remembers the tab it actually paused.
 - On `recordingStopped`, the extension sends `resume-youtube` **only** to the tab it paused — so it never starts a video that wasn't already playing. An immediate new start supersedes that resume and keeps ownership of the same tab.
 - If you manually press Play or Pause after recording starts, that user action relinquishes the saved playback target for the whole recording session. Later stop/cancel edges still balance bridge state but never play or pause YouTube; page autoplay, seeking, volume, speed, timeouts, and bridge reloads do not count as manual takeover.
-- On `recordingStoppedPreservingPlayback`, it balances/clears the same dictation ownership without sending any play or pause command. Current AgentFlow source emits this event for the recording-time double-press clipboard finish; installing the companion alone does not add a recording gesture to an older app.
+- On `recordingStoppedPreservingPlayback`, it balances/clears the same dictation ownership without sending any play or pause command. Current Agent Flow source emits this event for the recording-time double-press clipboard finish; installing the companion alone does not add a recording gesture to an older app.
 - If the extension's four-minute stale-session watchdog fires, it clears only its saved dictation ownership. Timeout, extension startup, helper restart, and content-script reinjection never call `play()`; an explicit matching `recordingStopped` event is required to resume a video paused for dictation.
-- This is complementary to AgentFlow's own media pause (Spotify / Apple Music / MediaRemote): those apps stay on the VoiceInk side; YouTube tabs in Chrome — which MediaRemote can't reliably pause — are covered here.
+- This is complementary to Agent Flow's own media pause (Spotify / Apple Music / MediaRemote): those apps stay on the VoiceInk side; YouTube tabs in Chrome — which MediaRemote can't reliably pause — are covered here.
 
-The notification-name strings are the cross-app contract and live in both `shared/YoutubeSpotifyMediaKeyShared.swift` (`VoiceInkRecordingNotification`) and the AgentFlow repo's `RecordingActivityNotifier.swift`; keep them in sync.
+The notification-name strings are the cross-app contract and live in both `shared/YoutubeSpotifyMediaKeyShared.swift` (`VoiceInkRecordingNotification`) and the Agent Flow repo's `RecordingActivityNotifier.swift`; keep them in sync.
 
 ## Agentic Mouse YouTube scrub
 
@@ -81,14 +81,14 @@ site as the active tab immediately to its right without focusing another Chrome 
 
 This directory includes the Chrome extension, Swift native messaging host, menu bar app,
 icon, build/install/uninstall scripts, and regression tests. It needs no private repository,
-submodule, package registry, or credentials. It can also be copied out of AgentFlow and built
-on its own. AgentFlow and Agentic Mouse are separate apps that send the documented notifications.
+submodule, package registry, or credentials. It can also be copied out of Agent Flow and built
+on its own. Agent Flow and Agentic Mouse are separate apps that send the documented notifications.
 
 - macOS 13 or later, Google Chrome, and Apple Command Line Tools (`xcode-select --install`).
 - Python 3 for the installer; Node.js 22 or later for tests.
 - Normal builds use the included icon and ad-hoc signing; no Apple Developer account or Pillow is needed.
 - Only regenerating artwork with `scripts/generate-icon.sh` requires Pillow.
-- The main AgentFlow app has its own Xcode and macOS requirements in [BUILDING.md](../../BUILDING.md).
+- The main Agent Flow app has its own Xcode and macOS requirements in [BUILDING.md](../../BUILDING.md).
 
 See [AGENT_SETUP.md](AGENT_SETUP.md) for the agent setup prompt and verification checklist.
 
@@ -108,7 +108,7 @@ load the extension from its new location.
 
 ## Install
 
-From the AgentFlow repository root:
+From the Agent Flow repository root:
 
 ```sh
 cd companions/youtube-bridge
@@ -142,7 +142,7 @@ kjcofljkanbdomkahdicnibojcoagmjl
 
 ## macOS Permissions
 
-The AgentFlow YouTube auto-pause path does not require macOS Accessibility, Input Monitoring, or Spotify Automation permissions.
+The Agent Flow YouTube auto-pause path does not require macOS Accessibility, Input Monitoring, or Spotify Automation permissions.
 
 If macOS asks for Accessibility for this helper, that is a bug or an old installed build. Rebuild/install from this repo and reload the unpacked Chrome extension.
 

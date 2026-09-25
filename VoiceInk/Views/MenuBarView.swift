@@ -40,7 +40,7 @@ struct MenuBarView: View {
 
             Divider()
 
-            Button("Quit AgentFlow") {
+            Button("Quit Agent Flow") {
                 NSApplication.shared.terminate(nil)
             }
         }
@@ -164,7 +164,7 @@ struct MenuBarView: View {
             }
             .disabled(!updaterViewModel.canCheckForUpdates)
 
-            Button("Quit AgentFlow") {
+            Button("Quit Agent Flow") {
                 NSApplication.shared.terminate(nil)
             }
         }

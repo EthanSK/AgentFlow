@@ -282,7 +282,7 @@ struct AIProviderVerificationCard: View {
                 if result.isValid {
                     guard APIKeyManager.shared.saveAPIKey(key, forProvider: provider.rawValue) else {
                         verificationSucceeded = false
-                        verificationMessage = String(localized: "The key worked, but AgentFlow could not save it securely.")
+                        verificationMessage = String(localized: "The key worked, but Agent Flow could not save it securely.")
                         verificationDetailMessage = nil
                         onVerificationChanged()
                         return

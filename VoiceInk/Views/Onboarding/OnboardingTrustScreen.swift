@@ -10,7 +10,7 @@ struct OnboardingTrustScreen: View {
         OnboardingStepScreen(
             systemImage: "lock.shield",
             title: "Privacy Starts Here",
-            subtitle: "Review how AgentFlow handles your data before finishing setup.",
+            subtitle: "Review how Agent Flow handles your data before finishing setup.",
             contentMaxWidth: max(contentMaxWidth, 720),
             showsHeader: false,
             contentYOffset: 0
@@ -79,7 +79,7 @@ private struct TrustBody: View {
                     .foregroundColor(AppTheme.Text.primary)
                     .multilineTextAlignment(.center)
 
-                Text("AgentFlow is open source. Your API key stays in macOS Keychain, and you choose the model each Mode uses.")
+                Text("Agent Flow is open source. Your API key stays in macOS Keychain, and you choose the model each Mode uses.")
                     .font(.system(size: 13))
                     .foregroundColor(AppTheme.Text.secondary)
                     .multilineTextAlignment(.center)

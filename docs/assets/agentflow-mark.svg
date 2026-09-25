@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title description">
-  <title id="title">AgentFlow</title>
+  <title id="title">Agent Flow</title>
   <desc id="description">Three context trails join into one forward flow.</desc>
   <rect x="34" y="34" width="956" height="956" rx="218" fill="#111918"/>
   <path d="M258 284c133 0 157 165 260 228" fill="none" stroke="#5ce7c1" stroke-width="68" stroke-linecap="round"/>

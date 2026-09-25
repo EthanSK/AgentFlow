@@ -13,6 +13,9 @@ executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$plist")
 version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist")
 build=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist")
 test "$bundle_id" = com.ethansk.VoiceInkPlusPlus
+test "$executable" = AgentFlow
+test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$plist")" = 'Agent Flow'
+test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$plist")" = 'Agent Flow'
 [[ "$build" =~ ^[1-9][0-9]*$ ]]
 test -x "$app/Contents/MacOS/$executable"
 
@@ -49,4 +52,4 @@ done
 
 xcrun stapler validate "$app"
 spctl --assess --type execute --verbose "$app"
-printf 'Verified notarized AgentFlow %s build %s: %s\n' "$version" "$build" "$app"
+printf 'Verified notarized Agent Flow %s build %s: %s\n' "$version" "$build" "$app"

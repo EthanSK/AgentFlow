@@ -19,19 +19,19 @@ struct RecorderVersionPresentation: Equatable {
         case let (marketing?, build?) where !marketing.isEmpty && !build.isEmpty:
             topLine = "v\(marketing)"
             bottomLine = ".\(build)"
-            accessibilityLabel = "AgentFlow version \(marketing), build \(build)"
+            accessibilityLabel = "Agent Flow version \(marketing), build \(build)"
         case let (marketing?, _) where !marketing.isEmpty:
             topLine = "v\(marketing)"
             bottomLine = nil
-            accessibilityLabel = "AgentFlow version \(marketing)"
+            accessibilityLabel = "Agent Flow version \(marketing)"
         case let (_, build?) where !build.isEmpty:
             topLine = "v?"
             bottomLine = ".\(build)"
-            accessibilityLabel = "AgentFlow build \(build)"
+            accessibilityLabel = "Agent Flow build \(build)"
         default:
             topLine = "v?"
             bottomLine = nil
-            accessibilityLabel = "AgentFlow version unavailable"
+            accessibilityLabel = "Agent Flow version unavailable"
         }
     }
 }

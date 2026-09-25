@@ -1,4 +1,4 @@
-# Public AgentFlow releases
+# Public Agent Flow releases
 
 The website currently offers a source build. Do not add a binary download link until a
 Developer ID-signed, Apple-notarized archive has passed the gates below and a matching GitHub
@@ -13,18 +13,22 @@ Release is public. A `VoiceInk Local Signing` or ad-hoc app is only a local buil
 2. Build and run the full named unit suite on Ethan's Mac Mini. `scripts/test-public-release.sh`
    uses Xcode's normal test action first. Only when TestManager executes zero named tests does
    it use the already-built full-suite `xcrun xctest` fallback. The summary and individual
-   named passes must agree, with at least the last accepted 362-test floor. Include the
+   named passes must agree, with at least the current 365-test floor. Include the
    cross-app selection fallback, privacy, and fresh-setup model guards in the
    exact source being signed.
-3. Create and validate the dedicated `AgentFlowRelease` `notarytool` Keychain profile on the Mini
-   using the steps below, then run `scripts/package-public-release.sh /private/tmp/<fresh-task-output>`.
-   The script checks
-   the pinned universal `whisper.cpp` dependency, builds a separate Release app, embeds the
-   complete GPLv3 copy, signs nested code and the outer app with Ethan's Developer ID and
-   hardened runtime, retains the outer Automation entitlement, submits to Apple, staples the
-   ticket, and creates a ZIP, SHA-256 file, and source-bound `release.json`.
-4. Transfer the output directory as a bundle-preserving archive, not raw recursive `scp` of
-   the `.app`. On the MacBook, run `scripts/publish-public-release.sh <transferred-output>`.
+3. On the Mini run `scripts/package-public-release.sh /private/tmp/<fresh-task-output> --build-only`.
+   It checks the pinned universal `whisper.cpp` dependency, runs the exact full suite, builds
+   a separate universal Release app, embeds GPLv3, and writes a bundle-preserving prebuilt ZIP,
+   `build-receipt.json` and `test-summary.txt`. Keep the detailed test logs on the Mini.
+4. Transfer those three files to a fresh directory on the signing Mac, not raw recursive `scp`
+   of the `.app`. With the exact same clean source commit and the dedicated Keychain profile
+   below, run `scripts/package-public-release.sh <transferred-output> --sign-prebuilt`.
+   It checks the source/build and file hashes before extraction, signs nested code and the
+   outer app with Developer ID and hardened runtime, retains Automation, submits to Apple,
+   staples, and produces the public ZIP, SHA-256 file and source-bound `release.json`.
+   The MacBook does not build or run native tests. The optional default `--complete` mode runs
+   both stages on the Mini only when its own signing identity and isolated profile are usable.
+   Then run `scripts/publish-public-release.sh <transferred-output>`.
    It verifies the notarized extracted app again, checks the exact source commit exists on
    GitHub, creates a draft, checks its three assets, then publishes the release. It refuses
    to overwrite an existing tag's release.
@@ -33,11 +37,11 @@ Release is public. A `VoiceInk Local Signing` or ad-hoc app is only a local buil
    five-second warned local install/restart and live PID, CDHash, signature, entitlement and
    rollback checks in `AGENTS.md`.
 
-## Isolated AgentFlow notarization credential
+## Isolated Agent Flow notarization credential
 
-Create a new Apple app-specific password named **AgentFlow notarization** at
+Create a new Apple app-specific password named **Agent Flow notarization** at
 [account.apple.com](https://account.apple.com/) under **Sign-In and Security → App-Specific
-Passwords**. Do not reuse another project's password. On the Mini, run this in an interactive
+Passwords**. Do not reuse another project's password. On the signing Mac, run this in an interactive
 Terminal session under the signing user's account, substituting only the Apple Account email:
 
 ```sh
@@ -48,12 +52,12 @@ xcrun notarytool history --keychain-profile AgentFlowRelease --output-format jso
 
 Let `notarytool` prompt for the new app-specific password. Do not add `--password` to the command,
 paste the password into chat, or put it in an environment variable, shell history, repository file,
-CI secret, release asset, or log. Omit `--sync` so this profile remains local to the Mini. The
-packaging script uses only this fixed profile name and validates it before building. A separately
+CI secret, release asset, or log. Omit `--sync` so this profile remains local to that Mac. The
+packaging script uses only this fixed profile name and validates it before signing. A separately
 named password can be revoked independently in the Apple Account, but it is **not** an Apple
-per-app permission boundary; treat the Mac Mini and its Keychain access as sensitive.
+per-app permission boundary; treat the signing Mac and its Keychain access as sensitive.
 
-Create and validate the profile in the Mini's logged-in user session. A non-interactive SSH
+Create and validate the profile in the signing Mac's logged-in user session. A non-interactive SSH
 `keychainLocked` error does not establish that the profile is absent or invalid. Do not work
 around it by placing the macOS login password in automation; any release runner must prove it
 can access the intended Keychain profile in its actual execution session before it is enabled.

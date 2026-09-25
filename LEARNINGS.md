@@ -1,5 +1,17 @@
 # Learnings
 
+## 2026-09-25 — Display branding is not a technical identity migration
+
+**Trigger:** Ethan requested “two words” for the public brand after choosing AgentFlow.
+**Finding:** Visible `Agent Flow` copy must remain distinct from `AgentFlow` repository URLs,
+bundle/executable paths, code identifiers, credential-profile names and existing storage identity.
+A broad text replacement can corrupt relative Pages paths and source tests while leaving full URLs intact.
+**Guard:** `publicDisplayNameKeepsStableTechnicalIdentity` covers the Xcode display settings, stable
+product/bundle identity and website URL; the public release verifier checks both plist display fields
+and the unchanged executable/bundle ID. Historical incident records retain their original names.
+The SVG social-card source must be rendered and viewed after edits: ImageMagick's fallback renderer
+collapsed this card's tspan wordmark and omitted its waveform, while Sharp's SVG renderer preserved both.
+
 ## 2026-09-25 — VS Code selection bridge
 
 **Trigger:** Chrome highlights reached AgentFlow but VS Code code/diff highlights did not.

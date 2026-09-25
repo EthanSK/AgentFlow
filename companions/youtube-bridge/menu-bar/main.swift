@@ -818,7 +818,7 @@ private final class MenuBarMediaKeyController {
   private func disableMediaKeyTap() {
     isAccessibilityTrusted = false
     isMediaKeyTapInstalled = false
-    mediaKeyTapError = "Hardware media-key routing is disabled by design; AgentFlow YouTube auto-pause uses recording notifications instead."
+    mediaKeyTapError = "Hardware media-key routing is disabled by design; Agent Flow YouTube auto-pause uses recording notifications instead."
   }
 
   private func handleYouTubeState(_ message: BridgeMessage) {
@@ -1073,7 +1073,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 if CommandLine.arguments.contains("--request-accessibility") {
-  print("Hardware media-key routing is disabled; Accessibility is not required for AgentFlow YouTube auto-pause.")
+  print("Hardware media-key routing is disabled; Accessibility is not required for Agent Flow YouTube auto-pause.")
   exit(0)
 }
 

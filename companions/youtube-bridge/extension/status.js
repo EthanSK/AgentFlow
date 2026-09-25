@@ -296,7 +296,7 @@ const render = (status) => {
     } else if (voiceInkResumePending) {
       label = `${label}, resume pending`;
     } else if (youtubePausedForDictation) {
-      label = `${label}, paused for AgentFlow`;
+      label = `${label}, paused for Agent Flow`;
     }
 
     setRow(

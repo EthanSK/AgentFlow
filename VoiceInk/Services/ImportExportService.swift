@@ -209,7 +209,7 @@ class ImportExportService {
             let savePanel = NSSavePanel()
             savePanel.allowedContentTypes = [UTType.json]
             savePanel.nameFieldStringValue = "AgentFlow_Settings_Backup.json"
-            savePanel.title = String(localized: "Export AgentFlow Settings")
+            savePanel.title = String(localized: "Export Agent Flow Settings")
             savePanel.message = String(localized: "Choose a location to save your settings.")
 
             DispatchQueue.main.async {
@@ -238,7 +238,7 @@ class ImportExportService {
         openPanel.canChooseFiles = true
         openPanel.canChooseDirectories = false
         openPanel.allowsMultipleSelection = false
-        openPanel.title = String(localized: "Import AgentFlow Settings")
+        openPanel.title = String(localized: "Import Agent Flow Settings")
         openPanel.message = String(localized: "Choose a settings backup, then select what you want to import.")
 
         guard openPanel.runModal() == .OK else {
@@ -348,7 +348,7 @@ class ImportExportService {
             if needsAPIKeyReminder {
                 informativeText += "\n\n" + String(localized: "IMPORTANT: If you were using AI enhancement features, please make sure to reconfigure your API keys in the AI Models section.")
             }
-            informativeText += "\n\n" + String(localized: "Restart AgentFlow for all changes to take full effect.")
+            informativeText += "\n\n" + String(localized: "Restart Agent Flow for all changes to take full effect.")
             alert.informativeText = informativeText
             alert.alertStyle = .informational
             alert.addButton(withTitle: String(localized: "OK"))
