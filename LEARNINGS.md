@@ -25,6 +25,17 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-25T00:22:23Z
+**Trigger:** Ethan requested a live text default halfway between the original and enlarged sizes while retaining the HUD slider.
+**Symptom:** The live transcript at the enlarged 24pt default felt too large even with a separate whole-HUD size slider.
+**Root cause:** Build 335 had doubled the shared live transcript font from its original 12pt to 24pt; the later 85% whole-HUD scale did not change that logical typography default.
+**Fix:** Build 341 sets MiniRecorderLayoutMetrics.liveTranscriptFontSize to 18pt, keeps the 688pt preview width and persisted whole-HUD scale, and uses the same constant for rendered text and measured height.
+**Commit:** 103a675e305a5191123e6ae158d5c8606d15c94d
+**Guard:** `recorderContextGrowsBeforeItsScreenBound` and `recorderHUDSizePersistsAndScalesTheWholeHost` passed; exact build-341 Mac mini full suite passed 345 named tests in 10 suites via the documented direct full-suite fallback after canonical TestManager stalled. The separately built stable-signed app passed deep/strict and outer Automation checks and launched on MacBook. Live transcript pixels during a real dictation remain unverified; no unsolicited recording was started.
+---
+
+
+---
 **Date:** 2026-09-24T23:56:04Z
 **Trigger:** Ethan asked for a saved size slider like Agentic Mouse because the VoiceInk++ float felt too large.
 **Symptom:** The enlarged live-context preview had no way to reduce its complete footprint; shrinking only SwiftUI pixels would leave the transparent recorder window intercepting clicks at its former size.
