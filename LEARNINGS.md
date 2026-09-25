@@ -25,6 +25,17 @@ Each entry looks like:
 (newest first)
 
 ---
+**Date:** 2026-09-25T00:42:35Z
+**Trigger:** Ethan requested a selection limit of about four or five lines, larger than the old short excerpt.
+**Symptom:** A long Codex or other-app highlight pasted its entire selected passage into final XML, despite the compact recorder preview.
+**Root cause:** LiveSelectionReference retained the full trimmed selection for final delivery; the existing preview limit did not bound the message sent to the agent.
+**Fix:** Build 342 bounds retained selected text at capture to the first five hard lines or 500 characters, whichever ends first, and marks truncated XML while retaining the original character count. The README, site, and public/personal interpretation skills now explain that boundary.
+**Commit:** 614188e
+**Guard:** Mac mini exact-build-342 direct full-suite fallback passed 346 named tests in 10 suites after focused and full Xcode TestManager runs stalled before named execution; both cap-specific tests passed. The separately signed app passed deep/strict and Automation/audio-input checks and is installed with CDHash 0bd2eda0d486d381dd1dd4f5d79e169f8e21c741. No unsolicited live recording was made.
+---
+
+
+---
 **Date:** 2026-09-25T00:22:23Z
 **Trigger:** Ethan requested a live text default halfway between the original and enlarged sizes while retaining the HUD slider.
 **Symptom:** The live transcript at the enlarged 24pt default felt too large even with a separate whole-HUD size slider.
