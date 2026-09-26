@@ -1,5 +1,19 @@
 # Learnings
 
+## 2026-09-26 — Filter captured context by the paste recipient, not the selection source
+
+Ethan explicitly restricted automatically pasted selection/screenshot XML to native Codex,
+ChatGPT and Claude. `LiveContextPastePolicy` allowlists their exact bundle IDs; browsers,
+terminals, editors and unknown recipients get authored speech/typing only. A Chrome highlight
+can still be captured and sent to Codex. The decision is after the asynchronous delivery lease:
+Primary reads the current foreground app's bundle ID without capturing an AX input; Next uses
+the recipient already owned by its saved target. This formats content only and never changes
+generic Primary paste/Return, exact Next routing, focus or Mode ownership. Explicit clipboard-only
+and cancellation recovery retain their complete context. Missing/unknown app identity fails
+closed by omitting optional context, never by dropping authored prose.
+Guards: `capturedContextIsOnlyPastedIntoNativeAgentApps`,
+`excludingCapturedContextKeepsInterleavedTypingAndSpeech`, and the Primary/Next route guards.
+
 ## 2026-09-26 — Styled highlight previews are per-Mode, display-only, and above exact XML
 
 Ethan confirmed that short `\(\textsf{\color{#rrggbb}…}\)` spans render in a sent Codex

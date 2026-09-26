@@ -366,7 +366,10 @@ struct StyledContextPresentationTests {
         #expect(decision.contains("outputForPasteTarget.mode?.isStyledContextEnabled == true"))
         #expect(decision.contains("outputForPasteTarget.outputMode == .paste"))
         #expect(decision.contains("!skipPostProcessingNow"))
-        #expect(decision.contains("presentation: contextPresentation"))
+        let finalBoundary = try #require(pipeline.range(of: "pipeline: about to DELIVER", range: lease.upperBound..<pipeline.endIndex))
+        let afterQueue = pipeline[lease.upperBound..<finalBoundary.lowerBound]
+        #expect(afterQueue.contains("presentation: contextPresentation"))
+        #expect(afterQueue.contains("LiveContextPastePolicy.includesSourceContext("))
 
         // Presentation never reaches Primary/Next delivery, paste, or capture code.
         for path in [
@@ -385,6 +388,53 @@ struct StyledContextPresentationTests {
         #expect(!capture.contains("NSPasteboard"))
         #expect(!capture.contains("NSImage"))
         #expect(!capture.contains("Data(contentsOf"))
+    }
+
+    @Test func capturedContextIsOnlyPastedIntoNativeAgentApps() {
+        for bundle in ["com.openai.codex", "com.openai.chat", "com.anthropic.claudefordesktop"] {
+            #expect(LiveContextPastePolicy.includesSourceContext(
+                destination: .primaryCurrentInput,
+                currentApplicationBundleIdentifier: bundle,
+                savedTargetBundleIdentifier: "com.google.Chrome"
+            ))
+            for route in [RecordingPasteDestination.recordingStart, .focusedDuringTranscription] {
+                #expect(LiveContextPastePolicy.includesSourceContext(
+                    destination: route,
+                    currentApplicationBundleIdentifier: "com.google.Chrome",
+                    savedTargetBundleIdentifier: bundle
+                ))
+            }
+        }
+        for bundle in [nil, "com.google.Chrome", "com.apple.Safari", "com.microsoft.VSCode",
+                       "com.apple.Terminal", "ru.keepcoder.Telegram", "unknown.app"] as [String?] {
+            #expect(!LiveContextPastePolicy.includesSourceContext(
+                destination: .primaryCurrentInput,
+                currentApplicationBundleIdentifier: bundle,
+                savedTargetBundleIdentifier: "com.openai.codex"
+            ))
+            for route in [RecordingPasteDestination.recordingStart, .focusedDuringTranscription] {
+                #expect(!LiveContextPastePolicy.includesSourceContext(
+                    destination: route,
+                    currentApplicationBundleIdentifier: "com.openai.codex",
+                    savedTargetBundleIdentifier: bundle
+                ))
+            }
+        }
+    }
+
+    @Test func excludingCapturedContextKeepsInterleavedTypingAndSpeech() throws {
+        let highlight = try #require(LiveSelectionReference("selected source"))
+        let screenshot = try #require(LiveSelectionReference(
+            screenshotURL: URL(fileURLWithPath: "/Users/test/shot.png")
+        ))
+        let typed = try #require(LiveSelectionReference(typedText: "typed words"))
+        let references = [highlight, typed, screenshot].map { $0.anchored(after: "One") }
+        let proseOnly = LiveSelectionReference.interleaving(
+            references.filter(\.isTypedText), with: "One two", presentation: .styledMath
+        )
+        #expect(proseOnly == "One\n\ntyped words\n\ntwo")
+        #expect(!proseOnly.contains("<"))
+        #expect(!proseOnly.contains("\\("))
     }
 
     // MARK: - Helpers

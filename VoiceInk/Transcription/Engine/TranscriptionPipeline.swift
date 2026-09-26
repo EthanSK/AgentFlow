@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import SwiftData
 import os
 
@@ -700,8 +701,9 @@ class TranscriptionPipeline {
         let outputForPasteTarget = routeResolvedOutput
         // Styled highlight previews are a presentation choice of the Mode this
         // route already resolved: Primary's current Mode at delivery, or a Next
-        // route's frozen destination Mode. No recipient classifier, target probe, or
-        // extra paste is added. Every other case keeps the plain canonical XML: other
+        // route's frozen destination Mode. This never selects an app-specific
+        // delivery mechanism, probes a target, or adds a paste. Every other case
+        // keeps the plain canonical XML (subject to the recipient filter below): other
         // Modes, raw/skip, clipboard-only (it returned above without resolving a
         // Mode), earlier cancellation, and HUD recovery drafts. A cancel after this
         // point retains exactly the text that would have been pasted.
@@ -712,10 +714,6 @@ class TranscriptionPipeline {
                 && outputForPasteTarget.mode?.isStyledContextEnabled == true
                 ? .styledMath
                 : .plain
-        attachLiveSelectionsToFinalText(
-            includeSourceContext: outputForPasteTarget.outputMode == .paste,
-            presentation: contextPresentation
-        )
         let deliveryLeasePolicy: TranscriptionDeliveryLeasePolicy =
             pasteTargetForDelivery.destination == .primaryCurrentInput
                 && outputForPasteTarget.outputMode == .paste
@@ -750,6 +748,25 @@ class TranscriptionPipeline {
             return
         }
 
+        // Ethan only wants captured selections/screenshots in native Codex,
+        // ChatGPT and Claude messages. Decide after the async delivery-queue wait,
+        // not from the source of a highlight or a stale recording-start app.
+        // This changes optional TEXT CONTENT only: no input capture, AX probe,
+        // app-specific paste, saved Primary destination or new delivery route.
+        // Next uses its existing saved recipient even when another app is frontmost.
+        // Typed prose survives this filter in every app. Retained clipboard/history
+        // recovery above remains complete and plain; it is not an automatic paste.
+        let includesSourceContext = outputForPasteTarget.outputMode == .paste
+            && LiveContextPastePolicy.includesSourceContext(
+                destination: pasteTargetForDelivery.destination,
+                currentApplicationBundleIdentifier: NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+                savedTargetBundleIdentifier: pasteTargetForDelivery.focusedInput?.bundleIdentifier
+            )
+        attachLiveSelectionsToFinalText(
+            includeSourceContext: includesSourceContext,
+            presentation: contextPresentation
+        )
+        vippLog.info("pipeline: captured context paste included=\(includesSourceContext, privacy: .public) destination=\(String(describing: pasteTargetForDelivery.destination), privacy: .public)")
         vippLog.info("pipeline: about to DELIVER finalChars=\(finalText?.count ?? -1, privacy: .public) finalDigest=\(TranscriptionLineageDigest.make(finalText ?? ""), privacy: .public) outputMode=\(String(describing: outputForPasteTarget.outputMode), privacy: .public) targetAutoSend=\(outputForPasteTarget.autoSendKey.rawValue, privacy: .public) autoSendDisposition=\(String(describing: autoSendDispositionNow), privacy: .public) queuedPrimaryDecision=deferredUntilReturnBoundary leasePolicy=\(String(describing: deliveryLeasePolicy), privacy: .public) destination=\(String(describing: pasteTargetForDelivery.destination), privacy: .public) skip=\(skipPostProcessingNow, privacy: .public) \(jobIdentity.logDescription, privacy: .public)")
         await delivery.deliver(
             TranscriptionDelivery.Request(

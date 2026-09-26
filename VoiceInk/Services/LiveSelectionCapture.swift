@@ -622,6 +622,28 @@ enum LiveSelectionStyledMath {
     }
 }
 
+/// Optional captured context is for native agent/chat apps only. This is text
+/// formatting, not delivery authority: Primary still owns no input or saved Mode
+/// and still posts its single generic Cmd-V. Never inspect browser URLs, window
+/// titles, AX editors or app contents to broaden this allowlist. Unknown apps and
+/// browser-hosted chats deliberately get only authored speech/typing.
+enum LiveContextPastePolicy {
+    static let recipientBundleIdentifiers: Set<String> = [
+        "com.openai.codex", "com.openai.chat", "com.anthropic.claudefordesktop"
+    ]
+
+    static func includesSourceContext(
+        destination: RecordingPasteDestination,
+        currentApplicationBundleIdentifier: String?,
+        savedTargetBundleIdentifier: String?
+    ) -> Bool {
+        let recipient = destination.usesBaseCurrentInputDelivery
+            ? currentApplicationBundleIdentifier
+            : savedTargetBundleIdentifier
+        return recipient.map { recipientBundleIdentifiers.contains($0) } ?? false
+    }
+}
+
 /// Optional Chrome-only enrichment from the same selected DOM range. A failed or
 /// blocked Apple Event is not permission to use the clipboard or guess a page.
 enum ChromeSelectionContextReader {
