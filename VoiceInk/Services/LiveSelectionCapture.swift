@@ -1116,19 +1116,26 @@ final class LiveSelectionCapture {
         )
         captureTask?.cancel()
         captureTask = Task { @MainActor [weak self] in
+            let startedAt = DispatchTime.now().uptimeNanoseconds
+            var outcome = "canceled-by-new-gesture-or-stop"
+            defer {
+                LiveSelectionDiagnostics.finished(
+                    outcome: outcome, bundleID: bundleID, startedAt: startedAt
+                )
+            }
             // The target app finishes its own mouse-up selection update before
             // this read. A newer gesture or stop cancels the pending read.
             try? await Task.sleep(nanoseconds: 40_000_000)
-            guard !Task.isCancelled,
-                  Self.hasStableSource(expectedPID: sourcePID,
+            guard !Task.isCancelled else { return }
+            guard Self.hasStableSource(expectedPID: sourcePID,
                                        currentPID: NSWorkspace.shared.frontmostApplication?.processIdentifier) else {
+                outcome = "source-changed-before-read"
                 return
             }
             let threadsBefore = isCodex
                 ? CodexConversationContextReader.visibleSelectionThreadIDsIfFrontmost(
                     frontmostApplication: app
                 ) : []
-            let startedAt = DispatchTime.now().uptimeNanoseconds
             // Chrome's DOM override has no selection geometry of its own.
             // If the gesture was visibly outside Chrome's windows, do not
             // borrow an older selection from its active tab.
@@ -1137,6 +1144,7 @@ final class LiveSelectionCapture {
                    gesture, processIdentifier: sourcePID,
                    windows: LiveSelectionWindow.onScreen()
                ) {
+                outcome = "gesture-outside-source-window"
                 return
             }
             let chromeContext = bundleID == "com.google.Chrome"
@@ -1157,11 +1165,14 @@ final class LiveSelectionCapture {
                     startedAt: startedAt
                 )
             }
-            guard !Task.isCancelled,
-                  let text = selectedText,
-                  Self.hasStableSource(expectedPID: sourcePID,
-                                       currentPID: NSWorkspace.shared.frontmostApplication?.processIdentifier),
-                  let reference = LiveSelectionReference(text) else {
+            guard !Task.isCancelled else { return }
+            guard Self.hasStableSource(expectedPID: sourcePID,
+                                       currentPID: NSWorkspace.shared.frontmostApplication?.processIdentifier) else {
+                outcome = "source-changed-during-read"
+                return
+            }
+            guard let text = selectedText, let reference = LiveSelectionReference(text) else {
+                outcome = "selection-unavailable"
                 return
             }
             let labeled: LiveSelectionReference
@@ -1189,17 +1200,21 @@ final class LiveSelectionCapture {
                     bundleID: app.bundleIdentifier
                 ).scopedToChrome(chromeContext)
             }
-            guard !Task.isCancelled,
-                  Self.hasStableSource(expectedPID: sourcePID,
+            guard !Task.isCancelled else { return }
+            guard Self.hasStableSource(expectedPID: sourcePID,
                                        currentPID: NSWorkspace.shared.frontmostApplication?.processIdentifier) else {
+                outcome = "source-changed-before-emit"
                 return
             }
-            self?.onCapture(labeled, precedesSpeech)
+            guard let self else { return }
+            self.onCapture(labeled, precedesSpeech)
+            outcome = "emitted-to-session"
         }
     }
 
     /// Generic tiers after Chrome's override: app-scoped Accessibility (with one
-    /// bounded settle re-read), then Safari/Edge read-only scripting. The source
+    /// bounded settle re-read, plus one late Codex/ChatGPT retry), then Safari/Edge
+    /// read-only scripting. The source
     /// must stay frontmost before every attempt; any doubt yields no reference.
     private static func readSelectedText(
         sourcePID: pid_t,
@@ -1222,7 +1237,7 @@ final class LiveSelectionCapture {
         }
         var last = LiveSelectionResolution()
         var attempts = 0
-        for delay in LiveSelectionReadPolicy.accessibilityRetryDelays {
+        for delay in LiveSelectionReadPolicy.accessibilityRetryDelays(for: bundleID) {
             if delay > 0 {
                 try? await Task.sleep(nanoseconds: delay)
             }

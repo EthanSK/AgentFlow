@@ -39,7 +39,7 @@ import os
 // - Never read password fields.
 // - Every query is scoped to the stable frontmost source process, limited by a
 //   per-message timeout plus a whole-attempt budget, and yields nothing rather
-//   than a guess. The XML grammar and five-line/500-character cap are owned by
+//   than a guess. The XML grammar and 8,000-character cap are owned by
 //   LiveSelectionReference and are unchanged by which tier produced the text.
 
 /// Which read-only mechanism produced a live highlight. Diagnostic only: the
@@ -81,6 +81,16 @@ enum LiveSelectionReadPolicy {
     /// The first attempt runs immediately after LiveSelectionCapture's
     /// existing 40 ms settle delay.
     static let accessibilityRetryDelays: [UInt64] = [0, 150_000_000]
+    /// A newly foregrounded Electron window may publish its selected range
+    /// after both ordinary reads have returned empty. Give the Codex/ChatGPT
+    /// host one later chance, not a poller or a wider Accessibility search.
+    /// Every attempt still requires the same frontmost source and is canceled
+    /// by a new mouse-down or recording stop. No extra wait follows success.
+    static func accessibilityRetryDelays(for bundleID: String?) -> [UInt64] {
+        bundleID == "com.openai.codex"
+            ? accessibilityRetryDelays + [350_000_000]
+            : accessibilityRetryDelays
+    }
     /// Whole-attempt budget across every Accessibility message.
     static let accessibilityBudget: TimeInterval = 0.35
     /// Per-message timeout so one wedged app cannot hold capture for the
@@ -679,6 +689,15 @@ enum LiveSelectionDiagnostics {
     ) {
         logger.info(
             "Live selection unavailable trusted=\(resolution.accessibilityTrusted, privacy: .public) attempts=\(attempts, privacy: .public) examined=\(resolution.examinedElements, privacy: .public) elsewhere=\(resolution.rejectedElsewhere, privacy: .public) outsideSourceWindow=\(resolution.rejectedOutsideSourceWindow, privacy: .public) secure=\(resolution.refusedSecure, privacy: .public) bundle=\(bundleID ?? "unknown", privacy: .public) durationMs=\(elapsedMilliseconds(since: startedAt), privacy: .public)"
+        )
+    }
+
+    /// One persisted, text-free outcome per attempted gesture. Info-only AX
+    /// traces were absent from historical logs, and a successful AX read did
+    /// not prove that focus/cancellation checks allowed it into the HUD.
+    static func finished(outcome: String, bundleID: String?, startedAt: UInt64) {
+        logger.notice(
+            "Live selection finished outcome=\(outcome, privacy: .public) bundle=\(bundleID ?? "unknown", privacy: .public) durationMs=\(elapsedMilliseconds(since: startedAt), privacy: .public)"
         )
     }
 

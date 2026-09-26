@@ -69,6 +69,17 @@ private final class FakeSelectionProbe: LiveSelectionAccessibilityProbe {
 }
 
 struct LiveSelectionFallbackTests {
+    @Test func codexSelectionRetryBudgetIsBoundedAndAppScoped() {
+        let ordinary = LiveSelectionReadPolicy.accessibilityRetryDelays
+        #expect(ordinary == [0, 150_000_000])
+        #expect(LiveSelectionReadPolicy.accessibilityRetryDelays(for: "com.openai.codex")
+                == [0, 150_000_000, 350_000_000])
+        for bundle in ["com.google.Chrome", "com.microsoft.VSCode", "org.telegram.desktop"] {
+            #expect(LiveSelectionReadPolicy.accessibilityRetryDelays(for: bundle) == ordinary)
+        }
+        #expect(LiveSelectionReadPolicy.accessibilityRetryDelays(for: nil) == ordinary)
+    }
+
     private let display = CGRect(x: 0, y: 0, width: 1440, height: 900)
 
     private func gesture(_ down: CGPoint, _ up: CGPoint) -> LiveSelectionGesture {
