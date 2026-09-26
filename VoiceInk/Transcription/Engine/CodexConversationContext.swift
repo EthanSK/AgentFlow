@@ -40,12 +40,12 @@ enum CodexConversationContextPolicy {
             $0.contains("thread_stream_view_activity_changed")
         }.map(String.init).sorted()
         for line in events {
-            guard line.contains("rendererWindowAppearance=primary"),
-                  line.contains("rendererWindowVisible=true"),
+            guard (line.contains("rendererWindowAppearance=primary")
+                    || line.contains("rendererWindowAppearance=hotkeyWindowThread")),
                   let window = token(after: "rendererWindowId=", in: line),
                   let id = token(after: "conversationId=", in: line),
                   UUID(uuidString: id) != nil else { continue }
-            if line.contains("active=true") {
+            if line.contains("active=true"), line.contains("rendererWindowVisible=true") {
                 active[window, default: []].insert(id.lowercased())
             } else {
                 active[window, default: []].remove(id.lowercased())

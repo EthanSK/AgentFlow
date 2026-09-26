@@ -14,6 +14,10 @@ struct CodexConversationContextTests {
         let closed = both + "\n" + event(3, side, false)
         #expect(CodexConversationContextPolicy.visibleSelectionThreadIDs(from: closed) == [main])
         #expect(CodexConversationContextPolicy.visibleSelectionThreadIDs(
+            from: both + "\n" + event(3, side, false)
+                .replacingOccurrences(of: "rendererWindowVisible=true", with: "rendererWindowVisible=false")
+        ) == [main])
+        #expect(CodexConversationContextPolicy.visibleSelectionThreadIDs(
             from: closed + "\n" + event(4, main, false)
         ).isEmpty)
         let selection = try #require(LiveSelectionReference("same words in either pane"))
