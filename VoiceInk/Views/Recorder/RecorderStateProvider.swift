@@ -10,6 +10,7 @@ protocol RecorderStateProvider: AnyObject {
     var liveContextPreviewReferences: [LiveSelectionReference] { get }
     var canTypeInHUD: Bool { get }
     var typedInput: String { get }
+    var typingFocusController: RecorderTypingFocus? { get }
     func updateTypedInput(_ value: String)
     func endTypingRun()
     // A realtime provider owns a live-text HUD from recording start, even before
@@ -43,6 +44,7 @@ extension RecorderStateProvider {
     var liveContextPreviewReferences: [LiveSelectionReference] { liveSelectionReferences }
     var canTypeInHUD: Bool { false }
     var typedInput: String { "" }
+    var typingFocusController: RecorderTypingFocus? { nil }
     func updateTypedInput(_ value: String) {}
     func endTypingRun() {}
 

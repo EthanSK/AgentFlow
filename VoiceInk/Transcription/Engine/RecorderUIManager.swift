@@ -176,15 +176,15 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
 
         let transcriptHeight: CGFloat
         if let baseSession, showsRealtimeTranscript {
-            transcriptHeight = MiniRecorderLayoutMetrics.transcriptHeight(
+            transcriptHeight = MiniRecorderLayoutMetrics.contextHeight(
                 parts: LiveSelectionReference.previewParts(
                     baseSession.liveContextPreviewReferences,
                     with: baseSession.partialTranscript
                 ),
+                typedText: baseSession.canTypeInHUD ? baseSession.typedInput : nil,
                 width: MiniRecorderLayoutMetrics.liveTranscriptWidth,
                 maxHeight: screen.visibleFrame.height / CGFloat(RecorderHUDScaleStore.shared.scale) - 150
-                    - (baseSession.canTypeInHUD ? MiniRecorderLayoutMetrics.typedInputHeight : 0)
-            ) + (baseSession.canTypeInHUD ? MiniRecorderLayoutMetrics.typedInputHeight : 0)
+            )
         } else {
             transcriptHeight = MiniRecorderLayoutMetrics.liveTranscriptHeight
         }

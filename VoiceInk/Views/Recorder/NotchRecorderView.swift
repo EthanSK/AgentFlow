@@ -277,7 +277,9 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                         get: { stateProvider.typedInput },
                         set: { stateProvider.updateTypedInput($0) }
                     ) : nil,
-                    onEndTyping: { stateProvider.endTypingRun() }
+                    onEndTyping: { stateProvider.endTypingRun() },
+                    typingFocus: stateProvider.typingFocusController,
+                    width: notchWidth + transcriptSideExpansion * 2 - 16
                 )
                     .padding(.horizontal, 8)
             }

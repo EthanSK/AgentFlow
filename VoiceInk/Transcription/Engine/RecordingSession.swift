@@ -232,6 +232,8 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     @Published private(set) var typedInput = ""
     private var typedReferenceIndex: Int?
     private var typedSpeechAnchor: String?
+    lazy var typingFocus = RecorderTypingFocus { [weak self] in self?.canTypeInHUD == true }
+    var typingFocusController: RecorderTypingFocus? { typingFocus }
 
     var canTypeInHUD: Bool {
         phase == .recording && liveRecordingState.isRecordingOrPaused && useCase == .newSession
@@ -519,9 +521,11 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         // trail. Preserve every gesture in capture order, even across silence
         // or a screenshot; the receiving agent decides which cues matter.
         liveSelectionReferences.append(anchored)
+        typingFocus.returnAfterContext()
     }
 
     func endLiveSelectionCapture() {
+        typingFocus.disable(releaseKeyboard: false)
         endTypingRun()
         liveSelectionCapture?.stop()
         liveSelectionCapture = nil

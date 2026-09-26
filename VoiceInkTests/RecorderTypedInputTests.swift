@@ -5,6 +5,85 @@ import Testing
 @testable import VoiceInkPlusPlus
 
 struct RecorderTypedInputTests {
+    @Test @MainActor func liveTypingHeightGrowsBeforeBlurAndCapsAtScreenBudget() {
+        let short = MiniRecorderLayoutMetrics.typingHeight(text: "hello", width: 640, maxHeight: 500)
+        let long = MiniRecorderLayoutMetrics.typingHeight(text: String(repeating: "long typed line\n", count: 15), width: 640, maxHeight: 500)
+        #expect(short == 60)
+        #expect(long > short)
+        #expect(MiniRecorderLayoutMetrics.typingHeight(text: String(repeating: "word ", count: 900), width: 640, maxHeight: 500) == 500)
+        let empty = MiniRecorderLayoutMetrics.contextHeight(parts: [], typedText: "", width: 640, maxHeight: 500)
+        let active = MiniRecorderLayoutMetrics.contextHeight(parts: [], typedText: String(repeating: "line\n", count: 12), width: 640, maxHeight: 500)
+        #expect(active > empty)
+        #expect(active <= 500)
+    }
+
+    @Test @MainActor func trailingNewlineAndNarrowerEditorIncreaseHeight() {
+        let text = "one\ntwo\nthree"
+        #expect(MiniRecorderLayoutMetrics.typingHeight(text: text + "\n", width: 640, maxHeight: 500)
+            > MiniRecorderLayoutMetrics.typingHeight(text: text, width: 640, maxHeight: 500))
+        let prose = String(repeating: "a few typed words ", count: 30)
+        #expect(MiniRecorderLayoutMetrics.typingHeight(text: prose, width: 300, maxHeight: 1000)
+            > MiniRecorderLayoutMetrics.typingHeight(text: prose, width: 640, maxHeight: 1000))
+    }
+
+    @Test @MainActor func focusIsOptInAndFinishDisarmsIt() throws {
+        let session = RecordingSession()
+        session.recordLiveSelection(try #require(LiveSelectionReference("before typing")))
+        #expect(!session.typingFocus.isEnabled)
+        let editor = RecorderTypingTextView()
+        session.typingFocus.enable(editor)
+        #expect(session.typingFocus.isEnabled)
+        session.recordLiveSelection(try #require(LiveSelectionReference("after typing")))
+        #expect(session.typingFocus.isEnabled)
+        session.typingFocus.disable(releaseKeyboard: false)
+        session.recordLiveSelection(try #require(LiveSelectionReference("after unfocus")))
+        #expect(!session.typingFocus.isEnabled)
+        session.typingFocus.enable(editor)
+        session.endLiveSelectionCapture()
+        #expect(!session.typingFocus.isEnabled)
+    }
+
+    @Test @MainActor func initialFocusCannotArmFinishedSessionOrSurviveUnfocus() {
+        let finished = RecordingSession(phase: .transcribing)
+        finished.typingFocus.requestInitialFocus()
+        #expect(!finished.typingFocus.isEnabled)
+        let active = RecordingSession()
+        active.typingFocus.requestInitialFocus()
+        #expect(active.typingFocus.initialFocusPending)
+        active.typingFocus.disable(releaseKeyboard: false)
+        #expect(!active.typingFocus.initialFocusPending)
+        #expect(!active.typingFocus.isEnabled)
+    }
+
+    @Test func commandExtendedPrimaryChordKeepsOnePressAndForwardsReleases() {
+        let shortcut = Shortcut.modifierOnly(keyCode: nil, modifierFlags: [.shift, .control, .option])
+        #expect(ShortcutMonitor.supportsTypingVariant(shortcut))
+        #expect(ShortcutMonitor.isTypingModifierChord([.shift, .control, .option, .command]))
+        for commandFirst in [false, true] {
+            var down = false
+            var starts = 0
+            var stops = 0
+            let keys: [(UInt16, NSEvent.ModifierFlags)] = commandFirst ? [
+                (55, [.command]), (56, [.command, .shift]), (59, [.command, .shift, .control]),
+                (58, [.command, .shift, .control, .option]), (55, [.shift, .control, .option]),
+                (58, [.shift, .control]), (59, [.shift]), (56, [])
+            ] : [
+                (56, [.shift]), (59, [.shift, .control]), (58, [.shift, .control, .option]),
+                (55, [.command, .shift, .control, .option]), (55, [.shift, .control, .option]),
+                (58, [.shift, .control]), (59, [.shift]), (56, [])
+            ]
+            for (index, event) in keys.enumerated() {
+                let result = ShortcutMonitor.typingAwareModifierTransition(shortcut: shortcut,
+                    typingVariant: true, wasDown: down, keyCode: event.0, modifierFlags: event.1)
+                down = result.isDown
+                if result.dispatchKeyDown { starts += 1 }
+                if result.dispatchKeyUp { stops += 1 }
+                if index >= 4 { #expect(!result.suppressDownstream) }
+            }
+            #expect(starts == 1 && stops == 1 && !down)
+        }
+    }
+
     @Test @MainActor func nativeEditorReturnAddsNewlineAndBlurSealsOnlyOnce() {
         let session = RecordingSession()
         let input = RecorderTypedInput(

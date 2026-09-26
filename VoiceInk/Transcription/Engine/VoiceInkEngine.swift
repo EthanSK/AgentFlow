@@ -242,6 +242,21 @@ class VoiceInkEngine: NSObject, ObservableObject {
     // session before either scheduled MainActor task appends one, creating two mic owners.
     private var recordingStartReservation = RecordingStartReservation()
     private var preparedRecordingStart: PreparedRecordingStart?
+    private var typingFocusStartID: UUID?
+
+    /// HUD-only presentation intent, keyed to an already-owned start. It cannot
+    /// create a recording, retarget delivery, or focus any other/newer session.
+    func requestTypingFocus(forStart requestID: UUID) {
+        if let session = activeRecordingSession, session.startID == requestID {
+            if session.canTypeInHUD {
+                session.typingFocus.requestInitialFocus()
+            } else if session.liveRecordingState == .starting {
+                typingFocusStartID = requestID
+            }
+        } else if recordingStartReservation.pendingID == requestID {
+            typingFocusStartID = requestID
+        }
+    }
 
     /// Recorder-panel visibility must include the synchronous start lifecycle, not
     /// only materialized session cards. An older pipeline may finish while this token
@@ -696,6 +711,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
     }
 
     func cancelRecordingStartReservation(_ requestID: UUID) {
+        if typingFocusStartID == requestID { typingFocusStartID = nil }
         guard recordingStartReservation.pendingID == requestID else { return }
         if preparedRecordingStart?.requestID == requestID {
             preparedRecordingStart = nil
@@ -1156,6 +1172,10 @@ class VoiceInkEngine: NSObject, ObservableObject {
             session.liveRecordingState = .recording
             session.phase = .recording
             recomputeDerivedState()
+            if typingFocusStartID == startID {
+                typingFocusStartID = nil
+                session.typingFocus.requestInitialFocus()
+            }
             session.beginLiveSelectionCapture()
             if session.recordingStartFocusedInput == nil {
                 let retryTarget = FocusLockService.shared

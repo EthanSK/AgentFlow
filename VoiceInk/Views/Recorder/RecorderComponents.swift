@@ -514,7 +514,17 @@ struct LiveTranscriptView: View {
     let height: CGFloat
     var typedInput: Binding<String>? = nil
     var onEndTyping: () -> Void = {}
+    var typingFocus: RecorderTypingFocus? = nil
+    var width: CGFloat = MiniRecorderLayoutMetrics.liveTranscriptWidth
     @State private var typingFocusRequest = UUID()
+
+    private var editorHeight: CGFloat {
+        guard let typedInput else { return 0 }
+        return MiniRecorderLayoutMetrics.typingHeight(
+            text: typedInput.wrappedValue, width: width,
+            maxHeight: height - MiniRecorderLayoutMetrics.liveTranscriptHeight
+        )
+    }
 
     private var previewParts: [LiveSelectionReference.PreviewPart] {
         LiveSelectionReference.previewParts(selectionReferences, with: text)
@@ -553,7 +563,7 @@ struct LiveTranscriptView: View {
                     .padding(.vertical, 6)
                     .id("bottom")
             }
-            .frame(height: max(0, height - (typedInput == nil ? 0 : MiniRecorderLayoutMetrics.typedInputHeight)))
+            .frame(height: max(0, height - editorHeight))
             .contentShape(Rectangle())
             .onTapGesture {
                 if typedInput != nil { typingFocusRequest = UUID() }
@@ -585,9 +595,12 @@ struct LiveTranscriptView: View {
                         .allowsHitTesting(false)
                 }
                 RecorderTypedInput(text: typedInput, focusRequest: typingFocusRequest,
-                                   onEndEditing: onEndTyping)
+                                   onEndEditing: onEndTyping, typingFocus: typingFocus)
             }
-            .frame(height: MiniRecorderLayoutMetrics.typedInputHeight)
+            .frame(height: editorHeight)
+            .overlay(alignment: .bottomTrailing) {
+                if let typingFocus { RecorderTypingFocusControl(focus: typingFocus) }
+            }
         }
         }
         .transaction { $0.disablesAnimations = true }

@@ -52,6 +52,14 @@ class RecordingShortcutManager: ObservableObject {
     private var recorderPanelShortcutManager: RecorderPanelShortcutManager
     private let modeShortcutManager: ModeShortcutManager
     private let shortcutMonitor = ShortcutMonitor()
+    private var keyboardTypingStart: KeyboardTypingStart?
+
+    private final class KeyboardTypingStart {
+        let eventTime: TimeInterval
+        var requestID: UUID?
+        var focusRequested = false
+        init(eventTime: TimeInterval) { self.eventTime = eventTime }
+    }
     private var shortcutChangeObserver: NSObjectProtocol?
     private let shortcutModeHandler: RecordingShortcutModeHandler
     private let primaryRecordingShortcutModeSource: RecordingShortcutModeSource
@@ -466,6 +474,19 @@ class RecordingShortcutManager: ObservableObject {
             shortcuts: shortcuts,
             interruptibleActions: interruptibleRecordingActions,
             onKeyDown: { [weak self] action, eventTime in
+                // Bind presentation intent to the reservation made by this exact
+                // keyboard press. Mouse starts and active-session stop presses
+                // cannot inherit a Command modifier from an unrelated gesture.
+                let typingStart = MainActor.assumeIsolated { () -> KeyboardTypingStart? in
+                    guard let self else { return nil }
+                    let intent = action == .primaryRecording
+                        && self.recordingMode(for: action) == .toggle
+                        && self.engine.recordingState == .idle
+                        && !self.engine.hasPendingRecordingStart
+                        ? KeyboardTypingStart(eventTime: eventTime) : nil
+                    self.keyboardTypingStart = intent
+                    return intent
+                }
                 Task { @MainActor in
                     guard let self else { return }
                     guard let mode = self.recordingMode(for: action) else { return }
@@ -479,7 +500,15 @@ class RecordingShortcutManager: ObservableObject {
                     await self.shortcutModeHandler.handleKeyDown(
                         action: action,
                         eventTime: eventTime,
-                        mode: mode
+                        mode: mode,
+                        didReserveStart: { [weak self, weak typingStart] requestID in
+                            guard let self, let typingStart,
+                                  self.keyboardTypingStart === typingStart else { return }
+                            typingStart.requestID = requestID
+                            if typingStart.focusRequested {
+                                self.engine.requestTypingFocus(forStart: requestID)
+                            }
+                        }
                     )
                 }
             },
@@ -562,6 +591,16 @@ class RecordingShortcutManager: ObservableObject {
                         }
                         self.logger.info("Next Track key-down passed through because no recording or retargetable transcription is active")
                         return false
+                    }
+                }
+            },
+            onPrimaryTypingFocus: { [weak self] eventTime in
+                MainActor.assumeIsolated {
+                    guard let self, let intent = self.keyboardTypingStart,
+                          intent.eventTime == eventTime else { return }
+                    intent.focusRequested = true
+                    if let requestID = intent.requestID {
+                        self.engine.requestTypingFocus(forStart: requestID)
                     }
                 }
             }
@@ -1349,7 +1388,8 @@ final class RecordingShortcutModeHandler {
         action: ShortcutAction,
         eventTime: TimeInterval,
         mode: RecordingShortcutManager.Mode,
-        modeId: UUID? = nil
+        modeId: UUID? = nil,
+        didReserveStart: @escaping @MainActor (UUID) -> Void = { _ in }
     ) async {
         if interruptedRecordingActions.remove(action) != nil {
             return
@@ -1398,7 +1438,8 @@ final class RecordingShortcutModeHandler {
             lastPrimaryGestureWasMouse = false
             await handlePrimaryToggleKeyDown(
                 eventTime: eventTime,
-                modeId: modeId
+                modeId: modeId,
+                didReserveStart: didReserveStart
             )
             return
         }

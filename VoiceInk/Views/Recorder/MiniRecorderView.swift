@@ -173,7 +173,8 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                         get: { stateProvider.typedInput },
                         set: { stateProvider.updateTypedInput($0) }
                     ) : nil,
-                    onEndTyping: { stateProvider.endTypingRun() }
+                    onEndTyping: { stateProvider.endTypingRun() },
+                    typingFocus: stateProvider.typingFocusController
                 )
                 Divider().background(Color.white.opacity(0.15))
             }

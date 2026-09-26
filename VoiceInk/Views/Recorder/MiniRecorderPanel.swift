@@ -20,6 +20,28 @@ enum MiniRecorderLayoutMetrics {
     static let assistantPanelHeight: CGFloat = 320
     static let stackedCardSpacing: CGFloat = 46
 
+    static func typingHeight(text: String, width: CGFloat, maxHeight: CGFloat) -> CGFloat {
+        let limit = max(typedInputHeight, maxHeight)
+        // Include the trailing insertion line: NSString otherwise omits it after Return.
+        if text.count > 3_000 { return limit }
+        let bounds = ((text + "\u{200B}") as NSString).boundingRect(
+            with: NSSize(width: max(1, width - 34), height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: NSFont.systemFont(ofSize: liveTranscriptFontSize)]
+        )
+        return min(limit, max(typedInputHeight, ceil(bounds.height) + 16))
+    }
+
+    static func contextHeight(
+        parts: [LiveSelectionReference.PreviewPart], typedText: String?,
+        width: CGFloat, maxHeight: CGFloat
+    ) -> CGFloat {
+        let editor = typedText.map {
+            typingHeight(text: $0, width: width, maxHeight: maxHeight - liveTranscriptHeight)
+        } ?? 0
+        return editor + transcriptHeight(parts: parts, width: width, maxHeight: maxHeight - editor)
+    }
+
     static func transcriptHeight(
         parts: [LiveSelectionReference.PreviewPart],
         width: CGFloat,

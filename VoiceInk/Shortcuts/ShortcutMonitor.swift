@@ -61,6 +61,7 @@ final class ShortcutMonitor {
         var isDown = false
         var pressedAt: TimeInterval?
         var isInterrupted = false
+        var typingFocusRequested = false
     }
 
     private var shortcuts: [ShortcutAction: ShortcutState] = [:]
@@ -70,6 +71,7 @@ final class ShortcutMonitor {
     private var onShortcutInterrupted: ((ShortcutAction, TimeInterval) -> Void)?
     private var onModifierOnlySequenceProgress: ((ShortcutAction, TimeInterval) -> Void)?
     private var onNextTrackKeyDown: (() -> Bool)?
+    private var onPrimaryTypingFocus: ((TimeInterval) -> Void)?
     private var isConsumingNextTrackPress = false
     private var eventTap: CFMachPort?
     private var eventTapRunLoopSource: CFRunLoopSource?
@@ -89,7 +91,8 @@ final class ShortcutMonitor {
         onKeyUp: @escaping (ShortcutAction, TimeInterval) -> Void,
         onShortcutInterrupted: ((ShortcutAction, TimeInterval) -> Void)? = nil,
         onModifierOnlySequenceProgress: ((ShortcutAction, TimeInterval) -> Void)? = nil,
-        onNextTrackKeyDown: (() -> Bool)? = nil
+        onNextTrackKeyDown: (() -> Bool)? = nil,
+        onPrimaryTypingFocus: ((TimeInterval) -> Void)? = nil
     ) -> Bool {
         stop()
 
@@ -107,6 +110,7 @@ final class ShortcutMonitor {
         self.onShortcutInterrupted = onShortcutInterrupted
         self.onModifierOnlySequenceProgress = onModifierOnlySequenceProgress
         self.onNextTrackKeyDown = onNextTrackKeyDown
+        self.onPrimaryTypingFocus = onPrimaryTypingFocus
 
         return installEventTap()
     }
@@ -179,6 +183,7 @@ final class ShortcutMonitor {
         onShortcutInterrupted = nil
         onModifierOnlySequenceProgress = nil
         onNextTrackKeyDown = nil
+        onPrimaryTypingFocus = nil
         isConsumingNextTrackPress = false
     }
 
@@ -302,6 +307,7 @@ final class ShortcutMonitor {
                 state.isDown = false
                 state.pressedAt = nil
                 state.isInterrupted = false
+                state.typingFocusRequested = false
                 shortcuts[action] = state
             }
             dispatchKeyUp(for: action, eventTime: eventTime)
@@ -420,6 +426,14 @@ final class ShortcutMonitor {
             return false
         }
 
+        // Command extends only the configured Shift-Control-Option Primary chord.
+        // Strip it for that chord's existing down/up reducer so Command-first and
+        // Command-last are one press, and releasing Command cannot start a second
+        // recording. The extra callback is presentation intent, never a stop route.
+        let typingVariant = action == .primaryRecording && Self.supportsTypingVariant(state.shortcut)
+        let hasTypingModifiers = typingVariant && Self.isTypingModifierChord(modifierFlags)
+        let effectiveFlags = typingVariant ? modifierFlags.subtracting(.command) : modifierFlags
+
         // Ethan's G HUB Primary macro presses Shift, Control, and Option in a
         // sequence. Electron may replace the focused AXTextArea with an AXGroup or
         // AXWebArea by the time the final modifier completes the owned chord. Observe
@@ -429,7 +443,7 @@ final class ShortcutMonitor {
             shortcut: state.shortcut,
             wasDown: state.isDown,
             keyCode: keyCode,
-            modifierFlags: modifierFlags
+            modifierFlags: effectiveFlags
         ) {
             dispatchModifierOnlySequenceProgress(
                 for: action,
@@ -437,8 +451,9 @@ final class ShortcutMonitor {
             )
         }
 
-        let transition = Self.modifierOnlySequenceTransition(
+        let transition = Self.typingAwareModifierTransition(
             shortcut: state.shortcut,
+            typingVariant: typingVariant,
             wasDown: state.isDown,
             keyCode: keyCode,
             modifierFlags: modifierFlags
@@ -448,6 +463,7 @@ final class ShortcutMonitor {
             state.isDown = false
             state.pressedAt = nil
             state.isInterrupted = false
+            state.typingFocusRequested = false
             shortcuts[action] = state
             dispatchKeyUp(for: action, eventTime: eventTime)
             return transition.suppressDownstream
@@ -462,7 +478,41 @@ final class ShortcutMonitor {
         } else {
             shortcuts[action] = state
         }
+        if hasTypingModifiers, state.isDown, !state.typingFocusRequested,
+           let startedAt = state.pressedAt {
+            state.typingFocusRequested = true
+            shortcuts[action] = state
+            DispatchQueue.main.async { [onPrimaryTypingFocus] in
+                onPrimaryTypingFocus?(startedAt)
+            }
+        }
         return transition.suppressDownstream
+    }
+
+    static func typingAwareModifierTransition(
+        shortcut: Shortcut, typingVariant: Bool, wasDown: Bool,
+        keyCode: UInt16, modifierFlags: NSEvent.ModifierFlags
+    ) -> ModifierOnlySequenceTransition {
+        let transition = modifierOnlySequenceTransition(
+            shortcut: shortcut, wasDown: wasDown, keyCode: keyCode,
+            modifierFlags: typingVariant ? modifierFlags.subtracting(.command) : modifierFlags
+        )
+        // Command-up is a release even while the three base modifiers remain
+        // held. Forward it so the foreground app never retains a stuck modifier.
+        if typingVariant, [UInt16(54), 55].contains(keyCode), !modifierFlags.contains(.command) {
+            return .init(isDown: transition.isDown, suppressDownstream: false,
+                         dispatchKeyDown: transition.dispatchKeyDown,
+                         dispatchKeyUp: transition.dispatchKeyUp)
+        }
+        return transition
+    }
+
+    static func supportsTypingVariant(_ shortcut: Shortcut) -> Bool {
+        shortcut.isModifierOnly && shortcut.modifierFlags == [.shift, .control, .option]
+    }
+
+    static func isTypingModifierChord(_ flags: NSEvent.ModifierFlags) -> Bool {
+        Shortcut.normalizedModifierFlags(flags, forKeyCode: nil) == [.shift, .control, .option, .command]
     }
 
     private func handleShortcutInterruptions(keyCode: UInt16, eventTime: TimeInterval) {

@@ -76,12 +76,12 @@ struct MiniRecorderStackView: View {
             baseSession.liveContextPreviewReferences,
             with: baseSession.partialTranscript
         )
-        return MiniRecorderLayoutMetrics.transcriptHeight(
+        return MiniRecorderLayoutMetrics.contextHeight(
             parts: parts,
+            typedText: baseSession.canTypeInHUD ? baseSession.typedInput : nil,
             width: MiniRecorderLayoutMetrics.liveTranscriptWidth,
             maxHeight: screenHeight / CGFloat(hudScale.scale) - 150
-                - (baseSession.canTypeInHUD ? MiniRecorderLayoutMetrics.typedInputHeight : 0)
-        ) + (baseSession.canTypeInHUD ? MiniRecorderLayoutMetrics.typedInputHeight : 0)
+        )
     }
 
     private var baseCardHeight: CGFloat {
@@ -101,6 +101,7 @@ struct MiniRecorderStackView: View {
     }
 
     var body: some View {
+        let _ = layoutTick // Register the session-change dependency for host geometry.
         ZStack(alignment: .bottom) {
             if showAssistantOnlyCard {
                 MiniRecorderView(
@@ -131,7 +132,7 @@ struct MiniRecorderStackView: View {
         // offset shuffles) animate the pile growing/collapsing.
         .animation(.spring(response: 0.38, dampingFraction: 0.85), value: engine.sessions.map(\.id))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .onReceive(baseSession?.objectWillChange ?? ObservableObjectPublisher()) { _ in
+        .onReceive((baseSession?.objectWillChange ?? ObservableObjectPublisher()).receive(on: RunLoop.main)) { _ in
             // The engine's session array does not publish changes to a session's
             // screenshot/selection list. Refresh host height on those changes too.
             layoutTick &+= 1
@@ -243,15 +244,15 @@ struct NotchRecorderStackView: View {
 
     private var liveTranscriptHeight: CGFloat {
         guard let pillSession else { return MiniRecorderLayoutMetrics.liveTranscriptHeight }
-        return MiniRecorderLayoutMetrics.transcriptHeight(
+        return MiniRecorderLayoutMetrics.contextHeight(
             parts: LiveSelectionReference.previewParts(
                 pillSession.liveContextPreviewReferences,
                 with: pillSession.partialTranscript
             ),
+            typedText: pillSession.canTypeInHUD ? pillSession.typedInput : nil,
             width: notchWidth + MiniRecorderLayoutMetrics.notchTranscriptSideExpansion * 2 - 16,
             maxHeight: screenHeight / CGFloat(hudScale.scale) - notchHeight - 150
-                - (pillSession.canTypeInHUD ? MiniRecorderLayoutMetrics.typedInputHeight : 0)
-        ) + (pillSession.canTypeInHUD ? MiniRecorderLayoutMetrics.typedInputHeight : 0)
+        )
     }
 
     private var desiredPanelHeight: CGFloat {
@@ -269,6 +270,7 @@ struct NotchRecorderStackView: View {
     }
 
     var body: some View {
+        let _ = layoutTick
         VStack(spacing: 6) {
             // The pill at the top (the notch itself).
             if let pillSession {
@@ -311,7 +313,7 @@ struct NotchRecorderStackView: View {
         }
         .animation(.spring(response: 0.38, dampingFraction: 0.85), value: engine.sessions.map(\.id))
         .frame(maxWidth: .infinity, alignment: .top)
-        .onReceive(pillSession?.objectWillChange ?? ObservableObjectPublisher()) { _ in
+        .onReceive((pillSession?.objectWillChange ?? ObservableObjectPublisher()).receive(on: RunLoop.main)) { _ in
             layoutTick &+= 1
         }
         .background(RecorderPanelHeightSync(
