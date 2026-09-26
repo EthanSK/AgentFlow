@@ -1,0 +1,73 @@
+{
+  "about": "Spoken audio for the Agent Flow promo. render.mjs places each segment at its start time, times the scene from it and writes the captions. promo/README.md explains every field.",
+  "voice": {
+    "speaker": "One natural-sounding synthetic female voice for every segment. Never the macOS say command or another robotic voice.",
+    "narration": "Warm, relaxed and conversational, like showing a friend something you use every day. Quietly impressed on the first line, never salesy or shouty.",
+    "dictation": "The same voice dictating to her Mac: casual, natural, a little quieter, as if thinking aloud.",
+    "accent": "British English preferred; any clear, natural English accent is fine.",
+    "pace": "Unhurried, about 150 words per minute, with a short natural pause at each full stop.",
+    "pronunciation": "Agent Flow is two words.",
+    "files": "One speech-only file per segment, named <id>.wav (44.1 or 48 kHz, mono or stereo). No music, effects or processing."
+  },
+  "bpm": 100,
+  "duration": 33,
+  "minGap": 0.3,
+  "segments": [
+    {
+      "id": "intro",
+      "kind": "narration",
+      "start": 0.5,
+      "text": "Wow. This is the future of speech to text.",
+      "picture": "Title card: Agent Flow, Speech to text, with your highlights and screenshots."
+    },
+    {
+      "id": "talk",
+      "kind": "narration",
+      "start": 4.8,
+      "text": "Press your shortcut and just talk.",
+      "picture": "Mac desktop. The recorder rises above the Dock."
+    },
+    {
+      "id": "dictate1",
+      "kind": "dictation",
+      "start": 8.4,
+      "text": "Rename this function",
+      "picture": "Each word appears live in the recorder as she says it."
+    },
+    {
+      "id": "highlight",
+      "kind": "narration",
+      "start": 10.2,
+      "text": "Highlight the code you mean, no copying needed.",
+      "picture": "The pointer drags across a function in TextEdit; a Selected Text reference joins the live words."
+    },
+    {
+      "id": "dictate2",
+      "kind": "dictation",
+      "start": 14.4,
+      "text": "and make the empty state look like this.",
+      "picture": "More live words in the recorder."
+    },
+    {
+      "id": "screenshot",
+      "kind": "narration",
+      "start": 18,
+      "text": "Take a screenshot to show what you want.",
+      "picture": "A screenshot of the design window; a Screenshot reference joins the live words."
+    },
+    {
+      "id": "paste",
+      "kind": "narration",
+      "start": 21,
+      "text": "Press again, and Agent Flow pastes it all in one go, so your agent can see what you were looking at.",
+      "picture": "Stop. The words, the selection and the screenshot path paste into Codex together."
+    },
+    {
+      "id": "outro",
+      "kind": "narration",
+      "start": 28.2,
+      "text": "Agent Flow. Open source, for Mac.",
+      "picture": "End card with the download link."
+    }
+  ]
+}
