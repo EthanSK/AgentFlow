@@ -1,13 +1,13 @@
 {
   "sourceLanguage": "en",
   "strings": {
-    "Adds colored previews above highlight and screenshot tags. The tags keep the exact text and paths. For apps that render LaTeX, such as Codex.": {
+    "Colors highlight and screenshot XML and adds local screenshot links. For apps that render LaTeX, such as Codex.": {
       "extractionState": "manual",
       "comment": "Help for the per-Mode styled context option. Other apps keep plain XML by default."
     },
     "Styled highlights": {
       "extractionState": "manual",
-      "comment": "Per-Mode option for display-only colored previews above canonical context tags."
+      "comment": "Per-Mode option that now colors context XML itself instead of adding display-only previews above it."
     },
     "": {
       "localizations": {

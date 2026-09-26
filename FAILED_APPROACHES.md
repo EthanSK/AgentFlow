@@ -58,6 +58,24 @@ the destination app accepted paste or submitted text.
 
 ## Live selection reading trail
 
+### A coloured preview above an unchanged white XML duplicate
+
+- **State:** SUPERSEDED by Ethan's build-350 live feedback on 2026-09-26.
+- **Evidence:** Delivered messages showed coloured selected text or a screenshot filename,
+  followed by a second white XML block. The screenshot filename was not a link.
+- **Use instead:** Colour the XML itself with reversible escaping, once, and put the normal
+  local Markdown screenshot reference outside math. Preserve the plain fallback budget.
+- **Reconsider only if:** Ethan explicitly asks for a separate display preview again.
+
+### Treating the last active Codex stream as the highlighted pane
+
+- **State:** REJECTED by current Codex activity logs on 2026-09-26.
+- **Evidence:** Main and side chats can both emit active=true in the same primary renderer.
+  The later event is not evidence that its pane contains a subsequent selection.
+- **Use instead:** Carry the stable visible candidate IDs with explicit ambiguity. Never
+  infer a parent relationship or selected side chat from event order or a title.
+- **Reconsider only if:** A read-only source proves selection-to-pane identity at capture time.
+
 ### Collapsing consecutive highlights at the same speech anchor
 
 - **State:** SUPERSEDED by Ethan's 2026-09-25 correction.

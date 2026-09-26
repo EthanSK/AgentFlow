@@ -29,11 +29,14 @@ struct LiveSelectionReference: Equatable {
     /// How source references are written into the one final destination message.
     /// `.plain` is the canonical XML grammar that every recipient and the
     /// interpretation skill already understand, and remains the default.
-    /// `.styledMath` keeps that exact XML but places a display-only KaTeX preview
+    /// Historically `.styledMath` kept exact XML with a display-only KaTeX preview
     /// immediately above each highlight/screenshot tag, for Markdown renderers with
     /// `\(...\)` inline math such as the Codex desktop user bubble. The tag then says
     /// `display_copy="above"`, so neither Ethan's agent nor a reader without the skill
-    /// can mistake the preview for a second selection, instruction, or context event.
+    /// could mistake the preview for a second selection, instruction, or context event.
+    /// Build 351 instead colours the XML itself, once, with reversible TeX escaping.
+    /// Screenshot references also receive a normal local Markdown image link outside
+    /// math. That is still text in this one paste, not an attached pixel payload.
     /// The choice comes from the Mode that the existing route already resolved, never
     /// from an app classifier, and it adds no paste, attachment, or delivery route.
     enum Presentation: Equatable {
@@ -65,6 +68,7 @@ struct LiveSelectionReference: Equatable {
     private var spokenPrefix = ""
     private var codexThreadID: String?
     private var codexThreadTitle: String?
+    private var visibleCodexThreadIDs: [String] = []
     private var chromeContext: ChromeSelectionContextReader.Context?
     private var source: Source = .codex
 
@@ -148,6 +152,21 @@ struct LiveSelectionReference: Equatable {
         var copy = self
         copy.codexThreadID = id.lowercased()
         copy.codexThreadTitle = title
+        copy.visibleCodexThreadIDs = []
+        return copy
+    }
+
+    /// Multiple visible chats are context, not proof of the selected pane.
+    /// In particular, a side chat's later activity event must not relabel text
+    /// selected in its main chat. Consumers receive candidate IDs explicitly.
+    func scopedToVisibleCodexThreads(_ ids: [String]) -> Self {
+        var copy = self
+        copy.codexThreadID = nil
+        copy.codexThreadTitle = nil
+        copy.visibleCodexThreadIDs = Array(Set(ids.filter {
+            UUID(uuidString: $0) != nil
+        }.map { $0.lowercased() })).sorted()
+        if copy.visibleCodexThreadIDs.count > 4 { copy.visibleCodexThreadIDs = [] }
         return copy
     }
 
@@ -176,6 +195,7 @@ struct LiveSelectionReference: Equatable {
         // Generic applications do not have a proven Codex task identity.
         copy.codexThreadID = nil
         copy.codexThreadTitle = nil
+        copy.visibleCodexThreadIDs = []
         return copy
     }
 
@@ -265,32 +285,42 @@ struct LiveSelectionReference: Equatable {
         return styled(parts, canonical: canonical)
     }
 
-    /// Adds previews in capture order only while the whole message stays inside
+    /// The previous implementation added previews in capture order only while the message stayed inside
     /// the renderer's paste budget. A preview that does not fit is omitted and its
     /// tag stays exactly canonical, so `display_copy="above"` never appears without
-    /// the preview it describes. The canonical message itself is never shortened.
+    /// the preview it described. The canonical message itself was never shortened.
+    /// Now style that same XML in place: a second white copy was confusing in the
+    /// actual user bubble. Optional colour still yields to complete source context
+    /// at the paste budget; local screenshot links are part of the base output.
     private static func styled(_ parts: [InterleavedPart], canonical: [String]) -> String {
+        let base = parts.enumerated().map { offset, part -> String in
+            guard case let .reference(reference, _) = part,
+                  let path = reference.screenshotPath else { return canonical[offset] }
+            return canonical[offset] + "\n\n" + LiveSelectionStyledMath.localImageReference(path: path)
+        }
         var remaining = LiveSelectionStyledMath.messageUTF16Budget
-            - canonical.joined(separator: "\n\n").utf16.count
+            - base.joined(separator: "\n\n").utf16.count
         var output: [String] = []
         for (offset, part) in parts.enumerated() {
-            guard case let .reference(reference, index) = part,
-                  let preview = reference.styledDisplayCopy(index: index) else {
-                output.append(canonical[offset])
+            guard case let .reference(reference, _) = part, !reference.isTypedText else {
+                output.append(base[offset])
                 continue
             }
-            let marked = reference.xml(index: index, hasDisplayCopy: true)
-            let cost = preview.utf16.count + 2
-                + marked.utf16.count - canonical[offset].utf16.count
+            let color = reference.screenshotPath == nil
+                ? LiveSelectionStyledMath.selectionColor : LiveSelectionStyledMath.screenshotColor
+            var colored = LiveSelectionStyledMath.coloredXML(canonical[offset], color: color)
+            if let path = reference.screenshotPath {
+                colored += "\n\n" + LiveSelectionStyledMath.localImageReference(path: path)
+            }
+            let cost = colored.utf16.count - base[offset].utf16.count
             guard cost <= remaining else {
-                output.append(canonical[offset])
+                output.append(base[offset])
                 continue
             }
             remaining -= cost
-            // A separate paragraph before the tag: Codex renders an XML block as
-            // literal text, so a preview inside it would never become math.
-            output.append(preview)
-            output.append(marked)
+            // Previously a separate preview preceded the tag because raw XML
+            // renders literally. Wrapping the tag itself removes that duplicate.
+            output.append(colored)
         }
         return output.joined(separator: "\n\n")
     }
@@ -360,6 +390,10 @@ struct LiveSelectionReference: Equatable {
                 attributes += " task_title=\"\(Self.xmlEscaped(codexThreadTitle))\""
             }
         }
+        if case .codex = source, visibleCodexThreadIDs.count > 1 {
+            attributes += " task_scope=\"multiple_visible_chats\""
+            attributes += " visible_task_ids=\"\(visibleCodexThreadIDs.joined(separator: ","))\""
+        }
         attributes += displayCopy
         return "<\(tag) \(attributes)>\n"
             + "  <text>\(Self.xmlEscaped(selectedText))</text>\n"
@@ -403,7 +437,7 @@ struct LiveSelectionReference: Equatable {
     }
 }
 
-/// Display-only KaTeX preview for `LiveSelectionReference.Presentation.styledMath`.
+/// KaTeX context presentation for `LiveSelectionReference.Presentation.styledMath`.
 ///
 /// Offline, read-only inspection of the running Codex host, ChatGPT.app
 /// 26.924.22138 (build 11645, Contents/Resources/app.asar), established these limits:
@@ -419,13 +453,14 @@ struct LiveSelectionReference: Equatable {
 ///   attachment when that feature is enabled. Rich-text paste processing also
 ///   exists, so preview text must not create Markdown emphasis or link syntax.
 /// Ethan verified that short `\(\textsf{\color{#rrggbb}…}\)` spans render in a
-/// sent Codex bubble. Everything here is lossy presentation: the adjacent XML tag
-/// always carries the exact bounded text and source metadata.
+/// sent Codex bubble. The original preview helpers below remain legacy fixtures;
+/// production now uses reversible `coloredXML`, never their lossy sanitization.
+/// XML entities protect unsupported/invisible scalars without deleting source data.
 enum LiveSelectionStyledMath {
     /// Ethan's verified bubble cyan; selections stay cyan as in the recorder HUD.
     static let selectionColor = "#67e8f9"
-    /// Screenshot names stay purple, mirroring the HUD's screenshot references.
-    static let screenshotColor = "#d8b4fe"
+    /// Screenshot XML is magenta, distinct from cyan selected-text context.
+    static let screenshotColor = "#e879f9"
     /// Quiet captions let the coloured source text carry the emphasis.
     static let captionColor = "#94a3b8"
     /// Conservative width (wide CJK/emoji and ASCII M/W count twice) per formula,
@@ -439,6 +474,44 @@ enum LiveSelectionStyledMath {
     /// Joins pieces of one over-long token: no visible space, but still a
     /// line-break opportunity between formulas.
     static let zeroWidthSpace = "\u{200B}"
+
+    /// Colour the complete XML, not a second caption or text copy. The receiving
+    /// skill unwraps the limited TeX vocabulary, joins zero-width chunk breaks,
+    /// then decodes XML entities. Never feed this through lossy preview cleanup.
+    static func coloredXML(_ xml: String, color: String) -> String {
+        var renderable = ""
+        for scalar in xml.unicodeScalars {
+            let category = scalar.properties.generalCategory
+            if scalar.value == 0x09 || scalar.value == 0x0D || scalar.value == 0x2A
+                || (0x7F...0x9F).contains(scalar.value)
+                || category == .nonspacingMark || category == .spacingMark
+                || category == .enclosingMark || category == .format
+                || category == .lineSeparator || category == .paragraphSeparator {
+                renderable += "&#x\(String(scalar.value, radix: 16));"
+            } else {
+                renderable.unicodeScalars.append(scalar)
+            }
+        }
+        return renderable.components(separatedBy: "\n").map { line in
+            pieces(of: line).map { piece in
+                let escaped = escapedTeX(piece).replacingOccurrences(of: " ", with: "\\ ")
+                return "\\(\\textsf{\\color{\(color)}\(escaped)}\\)"
+            }.joined(separator: zeroWidthSpace)
+        }.joined(separator: "\n")
+    }
+
+    /// An ordinary local Markdown image reference, never a KaTeX command or a
+    /// second paste. Codex may render user-message images as links; it cannot be
+    /// forced to attach pixels by surrounding the path with colour commands.
+    /// Percent-encode delimiter/URL characters so a filename cannot escape the
+    /// destination or inject another link. The XML retains the unencoded path.
+    static func localImageReference(path: String) -> String {
+        let allowed = CharacterSet.urlPathAllowed.subtracting(
+            CharacterSet(charactersIn: " #%?<>\\()[]\"'`\t\r\n")
+        )
+        let encoded = path.addingPercentEncoding(withAllowedCharacters: allowed) ?? ""
+        return "![Screenshot](<\(encoded)>)"
+    }
 
     static func selectionPreview(
         text: String,
@@ -1052,10 +1125,10 @@ final class LiveSelectionCapture {
                                        currentPID: NSWorkspace.shared.frontmostApplication?.processIdentifier) else {
                 return
             }
-            let threadBefore = isCodex
-                ? CodexConversationContextReader.activeThreadIDIfFrontmost(
+            let threadsBefore = isCodex
+                ? CodexConversationContextReader.visibleSelectionThreadIDsIfFrontmost(
                     frontmostApplication: app
-                ) : nil
+                ) : []
             let startedAt = DispatchTime.now().uptimeNanoseconds
             // Chrome's DOM override has no selection geometry of its own.
             // If the gesture was visibly outside Chrome's windows, do not
@@ -1096,16 +1169,19 @@ final class LiveSelectionCapture {
             if isCodex {
                 // Only the verified Codex app may add a task label. A task
                 // switch during selection leaves the existing plain tag.
-                let threadAfter = CodexConversationContextReader.activeThreadIDIfFrontmost(
+                let threadsAfter = CodexConversationContextReader.visibleSelectionThreadIDsIfFrontmost(
                     frontmostApplication: app
                 )
-                labeled = threadBefore.flatMap { threadID -> LiveSelectionReference? in
-                    guard threadID == threadAfter else { return nil }
-                    return reference.scopedToCodexThread(
-                        id: threadID,
-                        title: CodexSelectionThreadTitleReader.title(for: threadID)
+                if threadsBefore == threadsAfter, threadsBefore.count == 1,
+                   let id = threadsBefore.first {
+                    labeled = reference.scopedToCodexThread(
+                        id: id, title: CodexSelectionThreadTitleReader.title(for: id)
                     )
-                } ?? reference
+                } else if threadsBefore == threadsAfter {
+                    labeled = reference.scopedToVisibleCodexThreads(threadsBefore)
+                } else {
+                    labeled = reference
+                }
             } else {
                 // Generic apps expose an app identity, not a proven document,
                 // tab, or chat. Never infer more from selected text alone.

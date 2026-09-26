@@ -544,7 +544,7 @@ struct ModeConfigFormView: View {
                 Toggle(isOn: $draft.isStyledContextEnabled) {
                     HStack(spacing: 6) {
                         Text("Styled highlights")
-                        InfoTip("Adds colored previews above highlight and screenshot tags. The tags keep the exact text and paths. For apps that render LaTeX, such as Codex.")
+                        InfoTip("Colors highlight and screenshot XML and adds local screenshot links. For apps that render LaTeX, such as Codex.")
                     }
                 }
             }

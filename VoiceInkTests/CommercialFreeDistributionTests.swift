@@ -4,6 +4,19 @@ import Testing
 
 @Suite("Commercial-free VoiceInk++ distribution")
 struct CommercialFreeDistributionTests {
+    @Test func forkDoesNotAdvertiseAnUpstreamBinaryInstaller() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let data = try Data(contentsOf: root.appendingPathComponent("VoiceInk/Info.plist"))
+        let plist = try #require(PropertyListSerialization.propertyList(
+            from: data, format: nil
+        ) as? [String: Any])
+        for key in ["SUFeedURL", "SUPublicEDKey", "SUEnableInstallerLauncherService",
+                    "SUEnableAutomaticChecks", "SUScheduledCheckInterval"] {
+            #expect(plist[key] == nil)
+        }
+    }
+
     @Test
     func appExposesNoCommercialGateOrPurchaseSurface() throws {
         #expect(!OnboardingStage.allCases.contains { $0.rawValue == "license" })

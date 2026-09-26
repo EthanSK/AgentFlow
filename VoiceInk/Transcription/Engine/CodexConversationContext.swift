@@ -30,6 +30,36 @@ struct CodexContextComposition: Equatable {
 /// then read only bounded user/assistant text from that thread's native local session. If
 /// any boundary is missing or ambiguous, no Codex text leaves the Mac.
 enum CodexConversationContextPolicy {
+    /// Side chats and their main chat can both be active in the same renderer.
+    /// Activity proves visibility, not which pane contains a mouse selection.
+    /// Keep all currently active IDs; never promote the latest event to a source
+    /// identity when another chat is also visible. No selected text is needed.
+    static func visibleSelectionThreadIDs(from logText: String) -> [String] {
+        var active: [String: Set<String>] = [:]
+        let events = logText.split(separator: "\n").filter {
+            $0.contains("thread_stream_view_activity_changed")
+        }.map(String.init).sorted()
+        for line in events {
+            guard line.contains("rendererWindowAppearance=primary"),
+                  line.contains("rendererWindowVisible=true"),
+                  let window = token(after: "rendererWindowId=", in: line),
+                  let id = token(after: "conversationId=", in: line),
+                  UUID(uuidString: id) != nil else { continue }
+            if line.contains("active=true") {
+                active[window, default: []].insert(id.lowercased())
+            } else {
+                active[window, default: []].remove(id.lowercased())
+            }
+        }
+        // Window focus at an old activity event is not current mouse ownership.
+        // Keep candidates across primary windows rather than guessing the last.
+        let ids = active.values.reduce(into: Set<String>()) { $0.formUnion($1) }
+        guard ids.count <= 4 else {
+            return []
+        }
+        return ids.sorted()
+    }
+
     // These limits are app choices, not an OpenAI-recommended conversation size. Proven
     // task identity does not prove every excerpt is relevant to the next spoken sentence.
     // Keep guidance small; never fill the cap or add instructions merely because they fit.
@@ -257,6 +287,21 @@ enum CodexConversationContextPolicy {
 /// or participates in VoiceInk++ destination/delivery selection.
 @MainActor
 enum CodexConversationContextReader {
+    static func visibleSelectionThreadIDsIfFrontmost(
+        frontmostApplication: NSRunningApplication?,
+        fileManager: FileManager = .default
+    ) -> [String] {
+        guard let app = frontmostApplication,
+              isSupportedCodexApplication(app, fileManager: fileManager) else { return [] }
+        let logs = codexLogURLs(processIdentifier: app.processIdentifier, fileManager: fileManager)
+            .prefix(CodexConversationContextPolicy.maximumLogFiles)
+            .compactMap { tailString(at: $0,
+                maximumBytes: CodexConversationContextPolicy.maximumLogTailBytes) }
+        return CodexConversationContextPolicy.visibleSelectionThreadIDs(
+            from: logs.joined(separator: "\n")
+        )
+    }
+
     private static let logger = Logger(
         subsystem: "com.ethansk.VoiceInkPlusPlus",
         category: "CodexConversationContext"

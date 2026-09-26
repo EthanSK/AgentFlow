@@ -2,8 +2,9 @@ import Foundation
 import Testing
 @testable import VoiceInkPlusPlus
 
-/// Styled highlight previews are display-only KaTeX paragraphs above the exact
-/// context XML. These tests pin the renderer-safety, ordering, budget, Mode, and
+/// Build 350 used display-only KaTeX paragraphs above the exact context XML.
+/// Build 351 colours the XML once; legacy preview tests remain negative/escaping
+/// fixtures. These tests pin the renderer-safety, ordering, budget, Mode, and
 /// route boundaries established from the installed Codex bundle (see the
 /// `LiveSelectionStyledMath` comment). They cannot prove live bubble pixels.
 struct StyledContextPresentationTests {
@@ -43,7 +44,7 @@ struct StyledContextPresentationTests {
             """)
     }
 
-    @Test func styledPresentationAddsMarkedPreviewAboveExactXML() throws {
+    @Test func styledPresentationColorsExactXMLWithoutDuplicatePreview() throws {
         let selection = try #require(LiveSelectionReference("Look at <this> & that"))
             .scopedToCodexThread(
                 id: "019f5cec-30d7-7d53-a564-2f73ed8e0784",
@@ -56,20 +57,21 @@ struct StyledContextPresentationTests {
         )
         let parts = message.components(separatedBy: "\n\n")
 
-        #expect(parts.count == 4)
+        #expect(parts.count == 3)
         #expect(parts[0] == "Compare")
-        #expect(parts[1].hasPrefix(
-            "\\(\\textsf{\\color{\(LiveSelectionStyledMath.captionColor)}Selection 1 from Codex}\\)\n"
+        #expect(parts[1].hasPrefix("\\(\\textsf{\\color{\(LiveSelectionStyledMath.selectionColor)}"))
+        let xml = try unwrappedXML(parts[1])
+        #expect(xml.contains("task_title=\"Task &amp; title\">"))
+        #expect(xml.contains("<text>Look at &lt;this&gt; &amp; that</text>"))
+        #expect(parts[2] == "this now")
+        #expect(XMLParser(data: Data(xml.utf8)).parse())
+        // One tag, formerly one declared display copy: never a second selection event.
+        #expect(xml.components(separatedBy: "<codex_selection").count == 2)
+        #expect(!message.contains("display_copy"))
+        #expect(!message.contains("Selection 1 from"))
+        #expect(try unwrappedXML(message) == LiveSelectionReference.interleaving(
+            [selection.anchored(after: "Compare")], with: "Compare this now"
         ))
-        #expect(parts[1].contains("\\color{\(LiveSelectionStyledMath.selectionColor)}Look at <this> \\& that}"))
-        #expect(parts[2].hasPrefix("<codex_selection index=\"1\" source=\"Codex\""))
-        #expect(parts[2].contains("task_title=\"Task &amp; title\" display_copy=\"above\">"))
-        #expect(parts[2].contains("<text>Look at &lt;this&gt; &amp; that</text>"))
-        #expect(parts[3] == "this now")
-        #expect(XMLParser(data: Data(parts[2].utf8)).parse())
-        // One tag and one declared display copy: never a second selection event.
-        #expect(message.components(separatedBy: "<codex_selection").count == 2)
-        #expect(message.components(separatedBy: "display_copy=\"above\"").count == 2)
     }
 
     @Test func previewKeepsHostileSourceTextInsideInertFormulas() throws {
@@ -188,7 +190,7 @@ struct StyledContextPresentationTests {
         messages.append(LiveSelectionReference.interleaving(
             [screenshot], with: "Screenshot example", presentation: .styledMath
         ))
-        #expect(messages.allSatisfy { $0.contains("display_copy=\"above\"") })
+        #expect(messages.allSatisfy { $0.contains("\\textsf{\\color{") && !$0.contains("display_copy") })
         if let path = ProcessInfo.processInfo.environment["AGENTFLOW_STYLED_CONTEXT_FIXTURE_PATH"] {
             try JSONEncoder().encode(messages).write(to: URL(fileURLWithPath: path), options: .atomic)
         }
@@ -214,7 +216,7 @@ struct StyledContextPresentationTests {
         #expect(disguised.contains("safetxt.exe😀"))
     }
 
-    @Test func previewsStayInsideCodexPasteBudgetAndNeverMarkAMissingPreview() throws {
+    @Test func coloredXMLFitsBudgetOrFallsBackWithoutLosingContext() throws {
         let long = (0..<5)
             .map { line in String(repeating: "word\(line) ", count: 16) }
             .joined(separator: "\n")
@@ -224,26 +226,14 @@ struct StyledContextPresentationTests {
         let styled = LiveSelectionReference.interleaving(
             references, with: "Look", presentation: .styledMath
         )
-        let parts = styled.components(separatedBy: "\n\n")
-        let marked = styled.components(separatedBy: "display_copy=\"above\"").count - 1
-        let captions = styled.components(separatedBy: "}Selection ").count - 1
-
         #expect(plain.utf16.count < LiveSelectionStyledMath.messageUTF16Budget)
         #expect(styled.utf16.count <= LiveSelectionStyledMath.messageUTF16Budget)
-        #expect(marked >= 1)
-        #expect(marked < references.count)
-        #expect(marked == captions)
+        #expect(styled.contains("\\textsf{"))
+        #expect(styled.contains("<codex_selection index=\"4\""))
+        #expect(!styled.contains("display_copy"))
         // Capture order wins the budget; a tag without a preview stays canonical.
-        let first = try #require(parts.first { $0.hasPrefix("<codex_selection index=\"1\"") })
-        let last = try #require(parts.first { $0.hasPrefix("<codex_selection index=\"4\"") })
-        #expect(first.contains("display_copy=\"above\""))
-        #expect(!last.contains("display_copy"))
-        // Removing previews and markers recovers the exact plain message.
-        let restored = parts
-            .filter { !$0.hasPrefix("\\(") }
-            .joined(separator: "\n\n")
-            .replacingOccurrences(of: " display_copy=\"above\"", with: "")
-        #expect(restored == plain)
+        // Unwrapping colour (formerly removing previews) recovers the exact plain message.
+        #expect(try unwrappedXML(styled) == plain)
 
         let crowded = Array(repeating: selection.anchored(after: "Look"), count: 9)
         let crowdedPlain = LiveSelectionReference.interleaving(crowded, with: "Look")
@@ -253,7 +243,7 @@ struct StyledContextPresentationTests {
         ) == crowdedPlain)
     }
 
-    @Test func screenshotPreviewIsPurpleAndKeepsExactPathTag() throws {
+    @Test func screenshotXMLIsMagentaWithSafeLocalImageReference() throws {
         let screenshot = try #require(LiveSelectionReference(
             screenshotURL: URL(fileURLWithPath: "/Users/test/Screenshots/Screenshot & <one> at 20.59.11.png")
         ))
@@ -263,16 +253,15 @@ struct StyledContextPresentationTests {
         let parts = message.components(separatedBy: "\n\n")
 
         #expect(parts.count == 2)
-        #expect(parts[0].hasPrefix(
-            "\\(\\textsf{\\color{\(LiveSelectionStyledMath.captionColor)}Screenshot}\\) "
-            + "\\(\\textsf{\\color{\(LiveSelectionStyledMath.screenshotColor)}"
-        ))
+        #expect(parts[0].hasPrefix("\\(\\textsf{\\color{#e879f9}"))
         #expect(parts[0].contains("\\&"))
-        #expect(parts[1] == "<local_screenshot path=\"/Users/test/Screenshots/Screenshot &amp; &lt;one&gt; at 20.59.11.png\" display_copy=\"above\"/>")
-        #expect(XMLParser(data: Data(parts[1].utf8)).parse())
-        // A saved path only: no Markdown image or pixel payload is invented.
-        #expect(!message.contains("!["))
+        let xml = try unwrappedXML(parts[0])
+        #expect(xml == "<local_screenshot path=\"/Users/test/Screenshots/Screenshot &amp; &lt;one&gt; at 20.59.11.png\"/>")
+        #expect(XMLParser(data: Data(xml.utf8)).parse())
+        // A saved path only: the Markdown image reference is not a pixel payload.
+        #expect(parts[1] == "![Screenshot](</Users/test/Screenshots/Screenshot%20&%20%3Cone%3E%20at%2020.59.11.png>)")
         #expect(!message.contains("includegraphics"))
+        #expect(!message.contains("display_copy"))
     }
 
     @Test func styledPresentationKeepsSpeechTypedTextAndReferenceOrder() throws {
@@ -291,32 +280,26 @@ struct StyledContextPresentationTests {
         )
         let parts = message.components(separatedBy: "\n\n")
 
-        #expect(parts.count == 8)
+        #expect(parts.count == 6)
         #expect(parts[0] == "One")
-        #expect(parts[1].contains("Selection 1 from Codex"))
-        #expect(parts[2].hasPrefix("<codex_selection index=\"1\""))
-        #expect(parts[3] == "two")
+        #expect(try unwrappedXML(parts[1]).hasPrefix("<codex_selection index=\"1\""))
+        #expect(parts[2] == "two")
         // Authored keyboard prose is neither styled nor escaped.
-        #expect(parts[4] == "typed *words* stay_verbatim")
-        // The caption names the app where text was highlighted, not a recipient.
-        #expect(parts[5].contains("Selection 2 from"))
-        #expect(parts[5].contains("TextEdit"))
-        #expect(parts[6].hasPrefix("<app_selection index=\"2\" source=\"TextEdit\""))
-        #expect(parts[6].contains("bundle_id=\"com.apple.TextEdit\" display_copy=\"above\">"))
-        #expect(parts[7] == "three")
+        #expect(parts[3] == "typed *words* stay_verbatim")
+        // The XML source (formerly caption) names the app where text was highlighted, not a recipient.
+        #expect(try unwrappedXML(parts[4]).hasPrefix("<app_selection index=\"2\" source=\"TextEdit\""))
+        #expect(try unwrappedXML(parts[4]).contains("bundle_id=\"com.apple.TextEdit\">"))
+        #expect(parts[5] == "three")
     }
 
-    @Test func truncatedSelectionPreviewEndsWithQuietEllipsis() throws {
+    @Test func truncatedSelectionKeepsExplicitXMLMetadata() throws {
         let reference = try #require(LiveSelectionReference(String(repeating: "abc ", count: 200)))
         #expect(reference.truncated)
         let message = LiveSelectionReference.interleaving(
             [reference], with: "", presentation: .styledMath
         )
-        let preview = try #require(message.components(separatedBy: "\n\n").first)
-        #expect(preview.hasSuffix(
-            " \\(\\textsf{\\color{\(LiveSelectionStyledMath.captionColor)}…}\\)"
-        ))
-        #expect(message.contains("truncated=\"true\" display_copy=\"above\">"))
+        #expect(try unwrappedXML(message).contains("truncated=\"true\">"))
+        #expect(!message.contains(LiveSelectionStyledMath.captionColor))
     }
 
     @Test @MainActor func styledHighlightsModeSettingDefaultsOffAndRoundTrips() throws {
@@ -437,7 +420,85 @@ struct StyledContextPresentationTests {
         #expect(!proseOnly.contains("\\("))
     }
 
+    @Test func coloredXMLPreservesUnicodeWhitespaceAndHostileText() throws {
+        let text = "  cafe\u{0301}\t*bold* a\u{0331} 😀\u{200D}😀\u{202E} <tag> & \\) {x} [link](x) 50% a_b\nnext  line"
+        let reference = try #require(LiveSelectionReference(text))
+        let plain = LiveSelectionReference.interleaving([reference], with: "")
+        let styled = LiveSelectionReference.interleaving([reference], with: "", presentation: .styledMath)
+        let restored = try unwrappedXML(styled)
+        let actual = XMLTextCollector()
+        let expected = XMLTextCollector()
+        let actualParser = XMLParser(data: Data(restored.utf8))
+        let expectedParser = XMLParser(data: Data(plain.utf8))
+        actualParser.delegate = actual
+        expectedParser.delegate = expected
+        #expect(actualParser.parse())
+        #expect(expectedParser.parse())
+        #expect(actual.text == expected.text)
+        #expect(!styled.contains("\u{202E}"))
+        #expect(!styled.contains("\\includegraphics"))
+        for body in formulaBodies(in: styled) { #expect(hasBalancedGroups(body)) }
+        #expect(textOutsideFormulas(in: styled).allSatisfy {
+            $0 == "\n" || $0 == "\u{200B}"
+        })
+    }
+
+    @Test func localImageReferenceCannotEscapeItsMarkdownDestination() throws {
+        let path = "/Users/test/shot )>[bad](https://evil.example)#?%\n.png"
+        let reference = LiveSelectionStyledMath.localImageReference(path: path)
+        #expect(reference.hasPrefix("![Screenshot](</Users/test/"))
+        #expect(reference.hasSuffix(">)"))
+        #expect(!reference.contains("\n"))
+        #expect(!reference.contains("[bad]"))
+        #expect(reference.components(separatedBy: "](").count == 2)
+        let destination = String(reference.dropFirst("![Screenshot](<".count).dropLast(2))
+        #expect(destination.removingPercentEncoding == path)
+    }
+
     // MARK: - Helpers
+
+    private final class XMLTextCollector: NSObject, XMLParserDelegate {
+        var text = ""
+        func parser(_ parser: XMLParser, foundCharacters string: String) { text += string }
+    }
+
+    /// Independent decoder for the exact small styling vocabulary. This proves
+    /// the colour layer does not silently sanitize or duplicate canonical data.
+    private func unwrappedXML(_ styled: String) throws -> String {
+        let prefix = "\\(\\textsf{\\color{"
+        let commands: [(String, String)] = [
+            ("\\textbackslash{}", "\\"), ("\\textasciicircum{}", "^"),
+            ("\\textasciitilde{}", "~"), ("\\{", "{"), ("\\}", "}"),
+            ("\\$", "$"), ("\\&", "&"), ("\\#", "#"), ("\\%", "%"),
+            ("\\_", "_"), ("\\ ", " "), ("{[}", "["), ("{]}", "]"), ("{}", "")
+        ]
+        var output = ""
+        var cursor = styled.startIndex
+        while let start = styled.range(of: prefix, range: cursor..<styled.endIndex) {
+            output += styled[cursor..<start.lowerBound]
+            let colorEnd = try #require(styled[start.upperBound...].firstIndex(of: "}"))
+            let bodyStart = styled.index(after: colorEnd)
+            let end = try #require(styled.range(of: "\\)", range: bodyStart..<styled.endIndex))
+            let body = String(styled[bodyStart..<end.lowerBound].dropLast())
+            var index = body.startIndex
+            while index < body.endIndex {
+                if let (encoded, decoded) = commands.first(where: { body[index...].hasPrefix($0.0) }) {
+                    output += decoded
+                    index = body.index(index, offsetBy: encoded.count)
+                } else {
+                    #expect(body[index] != "\\")
+                    output.append(body[index])
+                    index = body.index(after: index)
+                }
+            }
+            cursor = end.upperBound
+            if styled[cursor...].hasPrefix("\u{200B}" + prefix) {
+                cursor = styled.index(after: cursor)
+            }
+        }
+        output += styled[cursor...]
+        return output
+    }
 
     /// Mirrors Codex's inline math tokenizer: `\(` up to the first `\)`.
     private func formulaBodies(in text: String) -> [String] {

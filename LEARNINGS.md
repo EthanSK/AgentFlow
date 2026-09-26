@@ -1,5 +1,34 @@
 # Learnings
 
+## 2026-09-26 — Visible Codex side chats are not a selected-pane identity
+
+The live host logs both main and side chats with `active=true` in one primary renderer.
+The last activity event therefore cannot identify the source of a highlight. Selection labels
+now replay bounded activity events and preserve a stable set across the selected-text read.
+One candidate can receive its task label; multiple candidates receive explicit
+`task_scope="multiple_visible_chats"` and `visible_task_ids`, never a guessed source ID/title.
+This is best-effort visibility context, not proof of the selected pane or parent relationship.
+The capture path reads no extra chat messages and does not add them to GPT Live prompts.
+
+## 2026-09-26 — Colour the XML once and keep screenshot links outside math
+
+Ethan's actual build-350 messages proved the renderer showed the coloured preview followed
+by white XML, and the screenshot filename had no local link. He rejected that duplication.
+Styled serialization now wraps canonical XML with reversible TeX escapes and uses XML
+numeric entities for renderer-sensitive scalars; ordinary speech stays literal. Screenshot
+XML is magenta and followed by one normal, percent-encoded local Markdown image reference.
+That reference is still not an uploaded image, and the current host may render it as a link.
+The 4,800 UTF-16 presentation budget drops colour, never canonical context or authored prose.
+The earlier preview implementation below is historical, not the current desired presentation.
+
+## 2026-09-26 — The fork must not advertise upstream binary installation
+
+An upstream VoiceInk 2.20 Sparkle/license dialog appeared while the separate original
+VoiceInk application was running. Agent Flow's updater is notification-only, but its plist
+still carried the original upstream installer URL/key and automatic-check configuration.
+Those dormant installer settings are removed; the intentional upstream notification check
+remains. Do not update, uninstall or modify the original VoiceInk app to fix the fork.
+
 ## 2026-09-26 — A timed-out compilation is not a ready test bundle
 
 Shortening a canonical test timeout while Swift is still compiling can leave an older runnable

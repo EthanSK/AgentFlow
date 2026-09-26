@@ -3,6 +3,34 @@ import Testing
 @testable import VoiceInkPlusPlus
 
 struct CodexConversationContextTests {
+    @Test func selectionScopeRetainsMainAndSideChatUntilEachCloses() throws {
+        let main = "01a01b14-a352-7ad3-9bb2-295990e39fe2"
+        let side = "01a059fd-8dde-7510-a57a-9ef42b8c8228"
+        func event(_ time: Int, _ id: String, _ active: Bool) -> String {
+            "2026-09-26T21:00:0\(time)Z thread_stream_view_activity_changed active=\(active) conversationId=\(id) rendererWindowAppearance=primary rendererWindowFocused=true rendererWindowId=1 rendererWindowVisible=true"
+        }
+        let both = event(1, main, true) + "\n" + event(2, side, true)
+        #expect(CodexConversationContextPolicy.visibleSelectionThreadIDs(from: both) == [main, side])
+        let closed = both + "\n" + event(3, side, false)
+        #expect(CodexConversationContextPolicy.visibleSelectionThreadIDs(from: closed) == [main])
+        #expect(CodexConversationContextPolicy.visibleSelectionThreadIDs(
+            from: closed + "\n" + event(4, main, false)
+        ).isEmpty)
+        let selection = try #require(LiveSelectionReference("same words in either pane"))
+            .scopedToCodexThread(id: main, title: "Must not imply main")
+            .scopedToVisibleCodexThreads([main, side])
+        let xml = LiveSelectionReference.interleaving([selection], with: "")
+        #expect(xml.contains("task_scope=\"multiple_visible_chats\""))
+        #expect(xml.contains("visible_task_ids=\"\(main),\(side)\""))
+        #expect(!xml.contains(" task_id="))
+        #expect(!xml.contains("task_title="))
+        #expect(XMLParser(data: Data(xml.utf8)).parse())
+        let other = LiveSelectionReference.interleaving([
+            selection.scopedToApplication(name: "TextEdit", bundleID: "com.apple.TextEdit")
+        ], with: "")
+        #expect(!other.contains("visible_task_ids"))
+    }
+
     private var repositoryRoot: URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
