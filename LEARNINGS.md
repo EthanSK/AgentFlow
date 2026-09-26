@@ -1,5 +1,13 @@
 # Learnings
 
+## 2026-09-26 — Show the recorder as a desktop panel, not a web widget
+
+The homepage now places its one semantic HUD over a decorative Mac/TextEdit scene.
+The selected code and HUD cue share the existing `data-at` animation; the decorative
+desktop is aria-hidden and does not duplicate the accessible transcript. Final content
+remains visible without JavaScript and with reduced motion. Desktop, 960/390/320px layouts,
+Replay and live Pages deployment were verified; the existing 35.5-second promo still plays.
+
 ## 2026-09-26 — Visible Codex side chats are not a selected-pane identity
 
 The live host logs both main and side chats with `active=true` in one primary renderer.
