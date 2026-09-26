@@ -1,5 +1,38 @@
 # Learnings
 
+## 2026-09-27 — Selection-read success is not capture delivery
+
+The selection reader can return text and then be canceled by another mouse-down,
+recording stop, or a frontmost-app change before its callback runs. Its previous
+info-level diagnostics did not distinguish those drops, and a bounded three-hour
+unified-log query returned no retained selection messages during this investigation.
+Build 353 emits one notice-level, text-free final outcome per attempted gesture:
+source changed before/during/after the read, cancellation, unavailable text, a browser
+gesture outside its source window, or emission to the recording session. Emission
+does not itself prove HUD rendering or final paste acceptance.
+Codex/ChatGPT's shared bundle gets one additional 350ms retry only after both ordinary
+AX attempts returned empty. Other apps, immediate success, source checks, cancellation,
+secure-field refusal, clipboard isolation and the idle watcher's cost are unchanged.
+Exact-source build 353 passed 409 named tests across 16 suites through the documented
+full-suite fallback after the canonical focused retries/full runner stalled at zero tests.
+Ethan's rare post-focus highlight miss was not reproduced; this is bounded hardening
+plus diagnostic coverage, not a proven root-cause repair or physical acceptance.
+
+## 2026-09-27 — Narrated promos need one measured timing source
+
+The Opus-authored promo uses `promo/narration.json` for speech, picture, captions and
+the original synthesized music. Real speech takes can exceed estimated slots: render
+from measured, trimmed take lengths and shift dependent cues together, rather than
+timing captions or live words independently. Split captions at measured pauses without
+overlap; the published 33-second cut has nine non-overlapping cues and a matching HTML
+transcript. The final H.264/AAC file measured -16 LUFS and -1.9dBFS true peak; independent
+ASR recovered the spoken script, which is not a subjective listening-quality judgment.
+Visible Chrome playback/captions and the public Pages asset hashes were verified.
+Version MP4, poster and caption URLs when replacing assets: a tab opened during rendering
+kept the old 35-second video until its source query changed to the new content hash.
+Keep the synthetic-voice disclosure, native controls, no audible autoplay, and invented
+demo content; never turn a screenshot path into a claim that an image was uploaded.
+
 ## 2026-09-26 — Long highlights preserve source text, not a five-line excerpt
 
 Ethan superseded the five-line/500-character cap after coloured context became easier
