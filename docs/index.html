@@ -183,23 +183,36 @@
     <!--
       Promo video, rendered from promo/scene.html by promo/render.mjs (see promo/README.md).
       It reuses the hero demo's invented example and only states claims this page already
-      makes, so re-render it whenever the demo example or those claims change. No audio
-      track: the "no sound" note keeps visitors from hunting for a volume control.
+      makes, so re-render it whenever the demo example or those claims change. Speech,
+      music and captions share the same timeline; audio starts only after a visitor plays it.
     -->
     <section class="band" id="video" aria-labelledby="video-title">
       <div class="wrap">
         <div class="band-head">
           <h2 id="video-title">Video</h2>
-          <p>35 seconds, no sound.</p>
+          <p>33 seconds. Voice, highlights and screenshots in one message.</p>
         </div>
         <figure class="promo-video">
           <video controls playsinline preload="metadata" width="1920" height="1080"
-            poster="assets/agentflow-promo-poster.jpg"
+            poster="assets/agentflow-promo-poster.jpg?v=e3126f64"
             aria-label="Agent Flow in use: dictating into the recorder, highlighting a function and taking a screenshot, then pasting the words with both references into Codex">
-            <source src="assets/agentflow-promo.mp4" type="video/mp4">
-            <a href="assets/agentflow-promo.mp4">Agent Flow video (MP4)</a>
+            <source src="assets/agentflow-promo.mp4?v=3eaac33f" type="video/mp4">
+            <track kind="captions" src="assets/agentflow-promo.vtt?v=b80ec054" srclang="en" label="English">
+            <a href="assets/agentflow-promo.mp4?v=3eaac33f">Agent Flow video (MP4)</a>
           </video>
+          <figcaption class="note">An illustrated demo with an AI-generated voice and original music.</figcaption>
         </figure>
+        <details class="optional">
+          <summary>Video transcript</summary>
+          <p>Wow. This is the future of speech to text.</p>
+          <p>Press your shortcut and just talk.</p>
+          <p>“Rename this function”</p>
+          <p>Highlight the code you mean, no copying needed.</p>
+          <p>“and make the empty state look like this.”</p>
+          <p>Take a screenshot to show what you want.</p>
+          <p>Press again, and Agent Flow pastes it all in one go, so your agent can see what you were looking at.</p>
+          <p>Agent Flow. Open source, for Mac.</p>
+        </details>
       </div>
     </section>
 

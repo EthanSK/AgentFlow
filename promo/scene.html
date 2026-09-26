@@ -6,24 +6,31 @@
 <!--
   Agent Flow promo video, authored as one deterministic 1920×1080 web scene.
 
-  How it becomes a video: promo/render.mjs opens this file in headless Chrome, calls
-  window.renderAt(seconds) for every frame, screenshots the stage, and pipes the frames
-  into ffmpeg. Nothing here uses CSS transitions, CSS animations, timers or
-  requestAnimationFrame: every visible property is a pure function of the requested
-  time, so any frame (including the website poster) can be re-rendered exactly.
+  How it becomes a video: promo/render.mjs injects window.PROMO (the timeline built from
+  narration.json by timeline.mjs, plus the dictation loudness per frame), opens this file in
+  headless Chrome, calls window.renderAt(seconds) for every frame and screenshots the stage.
+  Nothing uses CSS transitions, CSS animations, timers or requestAnimationFrame: every visible
+  property is a pure function of the requested time, so any frame can be re-rendered exactly.
+  Don't add will-change: it makes Chrome scale cached bitmaps, which blurs text when the
+  camera zooms.
 
-  Truthfulness rules for this file (it is public marketing for a real product):
-  - Every claim in the captions mirrors copy already published in docs/index.html.
-  - The example dictation, selection and screenshot path are the same invented example
-    the website demo uses. Never put Ethan's real selections, paths or messages here.
-  - The recorder is the website's accepted stylized HUD (black panel, live words above a
-    stop control and mint waveform), not a pixel copy of the native SwiftUI view.
-  - No third-party logos: "TextEdit" and "Codex" appear only as plain text labels, exactly
-    as they do in the website demo and the serialized <app_selection> tag.
+  The picture is one continuous shot of a Mac desktop, like the website hero: wallpaper, menu
+  bar, windows, the recorder bottom-centred above a quiet Dock. A camera glides to whatever the
+  narrator is describing. The one flourish is that each captured reference visibly flies into
+  the recorder, because that capture is the product.
+
+  Truthfulness rules (this is public marketing for a real product):
+  - Narration says only what docs/index.html already claims. The dictation, selection and
+    screenshot path are the website demo's invented example. Never use real selections,
+    paths or messages.
+  - The recorder is the website's stylized HUD, not a pixel copy of the native SwiftUI view.
+  - A normal stop pastes into the input focused when the result arrives, so Codex is brought
+    forward (focused composer) before the stop. Auto-send starts off, so nothing is sent.
+  - No third-party logos: TextEdit and Codex appear only as plain text labels. The Codex Dock
+    icon is a generic glyph.
 -->
 <style>
   :root {
-    --desk: #e5eae8;
     --sheet: #ffffff;
     --ink: #111615;
     --graphite: #4a5452;
@@ -51,135 +58,93 @@
     width: 1920px;
     height: 1080px;
     overflow: hidden;
-    background: var(--desk);
+    background: #8fa9bd;
   }
 
-  /* The stage is the exact video frame. Everything is absolutely positioned inside it. */
   #stage {
     position: relative;
     width: 1920px;
     height: 1080px;
     overflow: hidden;
-    background:
-      radial-gradient(1400px 900px at 50% 38%, #f1f5f3 0%, rgba(241, 245, 243, 0) 70%),
-      var(--desk);
     font-family: var(--body);
     color: var(--ink);
   }
 
-  .scene {
-    position: absolute;
-    inset: 0;
-    will-change: opacity, transform;
-  }
-
-  /* ---------- Title card ---------- */
-
-  #title {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 34px;
-  }
-
-  .brand-row {
-    display: flex;
-    align-items: center;
-    gap: 34px;
-  }
-
-  .brand-row img {
-    width: 150px;
-    height: 150px;
-    border-radius: 34px;
-    box-shadow: 0 30px 60px -30px rgba(8, 22, 18, 0.55);
-  }
-
-  .wordmark {
-    font-family: var(--display);
-    font-weight: 700;
-    font-size: 168px;
-    line-height: 1;
-    letter-spacing: -0.01em;
-  }
-
-  .wordmark .flow { color: var(--mint-ink); }
-
-  .tagline {
-    font-family: var(--display);
-    font-weight: 600;
-    font-size: 64px;
-    color: var(--ink);
-    letter-spacing: -0.005em;
-  }
-
-  /* Same two highlight treatments as the website hero: a cyan selection wash and a
-     dashed violet screenshot marquee. Their growth is driven from JS. */
-  .hl-select {
-    padding-inline: 0.06em;
-    margin-inline: -0.06em;
-    background: linear-gradient(var(--cyan-wash), var(--cyan-wash)) left 58% / 0% 84% no-repeat;
-  }
-
-  .hl-shot {
-    position: relative;
-    display: inline-block;
-    isolation: isolate;
-  }
-
-  .hl-shot .marquee {
-    position: absolute;
-    inset: 0.16em -0.14em 0.02em;
-    border: 3px dashed var(--violet-ink);
-    background: rgba(191, 90, 242, 0.08);
-    z-index: -1;
-  }
-
-  .hl-shot .marquee i {
-    position: absolute;
-    width: 12px;
-    height: 12px;
-    background: var(--violet-ink);
-  }
-
-  .hl-shot .marquee i:nth-child(1) { left: -7px; top: -7px; }
-  .hl-shot .marquee i:nth-child(2) { right: -7px; top: -7px; }
-  .hl-shot .marquee i:nth-child(3) { left: -7px; bottom: -7px; }
-  .hl-shot .marquee i:nth-child(4) { right: -7px; bottom: -7px; }
-
-  /* ---------- Desk scene ---------- */
-
+  /* The desktop, in its own 1920×1080 coordinates. The camera transforms this layer only. */
   #world {
     position: absolute;
-    inset: 0;
-    transform-origin: 50% 46%;
+    left: 0;
+    top: 0;
+    width: 1920px;
+    height: 1080px;
+    transform-origin: 0 0;
   }
 
-  .caption {
+  /* Same abstract wallpaper as the website hero: broad curved ridges, dusk colours. */
+  #wall {
     position: absolute;
-    left: 120px;
-    top: 66px;
-    font-family: var(--display);
-    font-weight: 700;
-    font-size: 66px;
-    line-height: 1.05;
-    letter-spacing: -0.005em;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 110% 78% at 110% 108%, #355e89 0 43%, #729fbe 44% 51%, transparent 52%),
+      radial-gradient(ellipse 108% 110% at -18% -20%, #dfeef0 0 49%, #abc9da 50% 60%, transparent 61%),
+      linear-gradient(145deg, #90b5cf 14%, #e1cad4 53%, #efc6aa 77%, #c9b0c3);
+  }
+
+  #desk { position: absolute; inset: 0; }
+
+  /* ---------- Menu bar ---------- */
+
+  #menubar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 1920px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    padding: 0 26px;
+    background: rgba(255, 255, 255, 0.52);
+    border-bottom: 1px solid rgba(17, 22, 21, 0.07);
+    font-family: var(--system);
+    font-size: 19px;
+    color: var(--ink);
     white-space: nowrap;
   }
 
+  .mb-app { font-weight: 700; }
+  .mb-items { display: flex; gap: 28px; }
+
+  .mb-status {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* macOS's own microphone-in-use dot, shown while any app records. */
+  #micDot {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: #ff9f0a;
+  }
+
+  /* ---------- Windows ---------- */
+
   .window {
     position: absolute;
-    border-radius: 18px;
+    border-radius: 16px;
     background: var(--sheet);
-    border: 1px solid rgba(17, 22, 21, 0.08);
-    box-shadow: 0 34px 70px -38px rgba(8, 22, 18, 0.45), 0 2px 6px rgba(8, 22, 18, 0.05);
+    border: 1px solid rgba(17, 22, 21, 0.12);
+    box-shadow: 0 2px 6px rgba(8, 22, 18, 0.08), 0 36px 70px -34px rgba(8, 22, 18, 0.5);
     overflow: hidden;
   }
 
   .titlebar {
     position: relative;
-    height: 54px;
+    height: 50px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -187,72 +152,66 @@
     background: #f6f8f7;
     color: #6b7472;
     font-family: var(--system);
-    font-size: 20px;
+    font-size: 19px;
     font-weight: 600;
   }
 
   .lights {
     position: absolute;
     left: 20px;
-    top: 20px;
+    top: 18px;
     display: flex;
     gap: 9px;
   }
 
-  .lights i {
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-  }
-
-  .lights i:nth-child(1) { background: #ff5f57; }
+  .lights i { width: 14px; height: 14px; border-radius: 50%; background: #ff5f57; }
   .lights i:nth-child(2) { background: #febc2e; }
   .lights i:nth-child(3) { background: #28c840; }
 
-  #editor { left: 120px; top: 196px; width: 860px; height: 520px; }
+  #editor { left: 96px; top: 88px; width: 860px; height: 470px; }
 
   .code {
     position: relative;
     z-index: 1;
     margin: 0;
-    padding: 34px 40px;
+    padding: 32px 40px;
     font-family: var(--mono);
-    font-size: 25px;
-    line-height: 1.72;
+    font-size: 26px;
+    line-height: 1.66;
     color: #1d2322;
     white-space: pre;
   }
 
-  /* The selection wash is a separate absolutely positioned box so its width can grow
-     under the dragged I-beam without reflowing the monospaced text. */
+  /* The selection wash is its own box so it can grow under the dragged I-beam without
+     reflowing the monospaced text. It turns grey when TextEdit is no longer frontmost. */
   #selWash {
     position: absolute;
     z-index: 0;
-    background: var(--cyan-wash);
     border-radius: 3px;
+    background: var(--cyan-wash);
   }
 
-  #preview { left: 1030px; top: 196px; width: 770px; height: 520px; }
+  #design { left: 1000px; top: 88px; width: 824px; height: 470px; }
 
   .empty {
     position: absolute;
     left: 0;
     right: 0;
-    top: 54px;
+    top: 50px;
     bottom: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 18px;
+    gap: 16px;
     background: #fbfcfc;
     font-family: var(--system);
   }
 
   .empty-art {
-    width: 118px;
-    height: 118px;
-    border-radius: 30px;
+    width: 112px;
+    height: 112px;
+    border-radius: 28px;
     background: #e7f7f1;
     display: grid;
     place-items: center;
@@ -260,41 +219,111 @@
 
   .empty-art span {
     display: block;
-    width: 58px;
+    width: 56px;
     height: 8px;
+    margin: 6px 0;
     border-radius: 4px;
     background: var(--mint-ink);
     opacity: 0.8;
-    margin: 6px 0;
   }
 
-  .empty-art span:nth-child(2) { width: 42px; opacity: 0.55; }
-  .empty-art span:nth-child(3) { width: 50px; opacity: 0.35; }
+  .empty-art span:nth-child(2) { width: 40px; opacity: 0.55; }
+  .empty-art span:nth-child(3) { width: 48px; opacity: 0.35; }
 
-  .empty h3 {
-    margin: 10px 0 0;
-    font-size: 38px;
-    font-weight: 700;
-    letter-spacing: -0.01em;
-  }
-
-  .empty p {
-    margin: 0;
-    font-size: 23px;
-    color: #69716f;
-  }
+  .empty h3 { margin: 8px 0 0; font-size: 36px; font-weight: 700; letter-spacing: -0.01em; }
+  .empty p { margin: 0; font-size: 22px; color: #69716f; }
 
   .empty .pill {
-    margin-top: 12px;
-    padding: 13px 28px;
+    margin-top: 10px;
+    padding: 12px 26px;
     border-radius: 999px;
     background: var(--mint-ink);
     color: #fff;
-    font-size: 21px;
+    font-size: 20px;
     font-weight: 600;
   }
 
-  /* macOS screenshot region: translucent grey fill with a thin outline. */
+  /* Codex opens from the Dock just before the stop. Plain label, no logo. */
+  #codex {
+    left: 300px;
+    top: 100px;
+    width: 1320px;
+    height: 826px;
+    background: #fbfcfc;
+  }
+
+  #composer {
+    position: absolute;
+    left: 60px;
+    right: 60px;
+    bottom: 44px;
+    overflow: hidden;
+    border: 1px solid var(--rule);
+    border-radius: 26px;
+    background: var(--sheet);
+    box-shadow: 0 18px 40px -30px rgba(8, 22, 18, 0.45);
+    font-family: var(--system);
+    font-size: 31px;
+    line-height: 1.4;
+  }
+
+  /* Bottom-aligned so the composer grows upward, like a chat input. */
+  #composerBody {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 30px 36px 84px;
+  }
+
+  #composerBody p { margin: 0; }
+
+  .xml {
+    margin: 0;
+    padding: 14px 20px;
+    border-left: 5px solid;
+    border-radius: 6px 12px 12px 6px;
+    font-family: var(--mono);
+    font-size: 21px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    color: var(--ink);
+  }
+
+  .xml .a { color: var(--graphite); }
+  .xml-select { border-color: var(--cyan-ink); background: var(--cyan-tint); }
+  .xml-select .t { color: var(--cyan-ink); }
+  .xml-shot { border-color: var(--violet-ink); background: var(--violet-tint); }
+  .xml-shot .t { color: var(--violet-ink); }
+
+  .caret {
+    display: inline-block;
+    width: 3px;
+    height: 1.1em;
+    margin-left: 2px;
+    vertical-align: -0.2em;
+    background: var(--ink);
+  }
+
+  #emptyCaret {
+    position: absolute;
+    left: 38px;
+    top: 32px;
+    height: 38px;
+  }
+
+  .send {
+    position: absolute;
+    right: 18px;
+    bottom: 16px;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: #d9dfdd;
+    display: grid;
+    place-items: center;
+  }
+
+  /* macOS region screenshot: translucent grey fill with a thin outline. */
   #shotRegion {
     position: absolute;
     background: rgba(120, 128, 126, 0.22);
@@ -302,19 +331,15 @@
     outline: 1px solid rgba(17, 22, 21, 0.35);
   }
 
-  #flash {
+  #shotFlash {
     position: absolute;
-    inset: 0;
     background: #fff;
-    pointer-events: none;
   }
 
-  /* Floating screenshot thumbnail, bottom-right like macOS. It contains a scaled clone
-     of the captured region, built once in init(). */
-  #thumb {
+  /* Floating screenshot thumbnail, bottom-right like macOS. It holds a scaled clone of the
+     captured region, built once in init(). */
+  .thumb {
     position: absolute;
-    right: 52px;
-    bottom: 64px;
     width: 250px;
     height: 170px;
     border-radius: 10px;
@@ -324,45 +349,46 @@
     background: #fbfcfc;
   }
 
-  #thumb .clone {
-    position: absolute;
-    left: 0;
-    top: 0;
-    transform-origin: 0 0;
-  }
+  #thumb { left: 1630px; top: 760px; }
 
-  /* ---------- Recorder HUD (matches the website's stylized recorder) ---------- */
+  .clone { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+
+  /* ---------- Recorder HUD (the website's stylized recorder) ---------- */
 
   #hud {
     position: absolute;
-    left: 370px;
-    bottom: 58px;
-    width: 1180px;
-    border-radius: 30px;
+    left: 460px;
+    bottom: 132px;
+    width: 1000px;
+    border-radius: 28px;
     background: var(--hud);
-    color: rgba(255, 255, 255, 0.86);
+    color: rgba(255, 255, 255, 0.87);
     font-family: var(--system);
     box-shadow:
       inset 0 1px 0 rgba(255, 255, 255, 0.07),
-      0 40px 80px -36px rgba(8, 22, 18, 0.75);
-    overflow: hidden;
+      0 2px 6px rgba(8, 22, 18, 0.2),
+      0 40px 80px -34px rgba(8, 22, 18, 0.75);
   }
 
+  /* Bottom-aligned: new words appear on the last line and earlier lines scroll up as the
+     recorder grows, the way the real panel grows from its bottom edge. */
   #hudTextBox {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
     overflow: hidden;
   }
 
   #hudText {
     margin: 0;
-    padding: 30px 38px 6px;
-    font-size: 31px;
-    line-height: 1.52;
+    padding: 26px 34px 4px;
+    font-size: 29px;
+    line-height: 1.5;
   }
 
-  .w { display: none; }
+  .part { display: none; }
 
   .cue {
-    display: none;
     margin-inline: 0.28em;
     border-radius: 8px;
     padding: 0 0.14em;
@@ -375,16 +401,16 @@
     display: flex;
     align-items: center;
     gap: 18px;
-    margin: 18px 38px 0;
-    padding: 20px 0 24px;
+    margin: 14px 34px 0;
+    padding: 18px 0 22px;
     border-top: 1px solid rgba(255, 255, 255, 0.1);
   }
 
   #stopBtn {
     position: relative;
     flex: none;
-    width: 42px;
-    height: 42px;
+    width: 40px;
+    height: 40px;
     border-radius: 12px;
     background: rgba(255, 255, 255, 0.13);
   }
@@ -392,7 +418,7 @@
   #stopBtn::after {
     content: "";
     position: absolute;
-    inset: 13px;
+    inset: 12px;
     border-radius: 3px;
     background: #fff;
   }
@@ -412,7 +438,7 @@
     align-items: center;
     justify-content: space-between;
     gap: 5px;
-    height: 42px;
+    height: 40px;
   }
 
   #wave i {
@@ -423,6 +449,107 @@
     background: var(--mint);
   }
 
+  /* ---------- Captured references in flight to the recorder ---------- */
+
+  .flyer {
+    position: absolute;
+    left: 0;
+    top: 0;
+    transform-origin: 50% 50%;
+  }
+
+  #flySel {
+    padding: 0 4px;
+    border-radius: 5px;
+    background: var(--cyan-wash);
+    font-family: var(--mono);
+    font-size: 26px;
+    line-height: 1.5;
+    white-space: pre;
+    color: #1d2322;
+  }
+
+  #flyShot { border-color: var(--violet); }
+
+  /* ---------- Dock ---------- */
+
+  #dock {
+    position: absolute;
+    left: 50%;
+    bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    border-radius: 22px;
+    background: rgba(231, 240, 248, 0.42);
+    box-shadow: 0 4px 12px rgba(29, 49, 74, 0.14);
+  }
+
+  #dock > i {
+    position: relative;
+    display: block;
+    width: 60px;
+    height: 60px;
+    border-radius: 14px;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+  }
+
+  .dock-finder { background: linear-gradient(90deg, #64b9ec 50%, #d3eafa 50%); }
+  .dock-finder::after {
+    content: "";
+    position: absolute;
+    inset: 25% 25% 24%;
+    border-bottom: 3px solid #295476;
+    border-radius: 0 0 45% 45%;
+  }
+  .dock-browser { background: radial-gradient(circle, #5ca9dc 52%, #e9f3f8 55% 66%, #a0c7dd 69%); }
+  .dock-browser::after {
+    content: "";
+    position: absolute;
+    inset: 21% 43%;
+    background: linear-gradient(#e4776e 50%, #f7fbff 50%);
+    transform: rotate(35deg);
+  }
+  .dock-notes { background: linear-gradient(#e4bd60 0 28%, #f6f2e5 29% 100%); }
+  .dock-notes::after {
+    content: "";
+    position: absolute;
+    inset: 44% 22% 22%;
+    background: repeating-linear-gradient(transparent 0 7px, #c5c8c8 7px 9px);
+  }
+  .dock-photos { background: conic-gradient(#e6a876, #e3cb77, #83b9a5, #7ea8d1, #b599c9, #da9cac, #e6a876); }
+  .dock-settings { background: radial-gradient(circle, #87939d 0 18%, #d7dfe4 20% 34%, #8f9da8 36% 49%, #d2dce3 51%); }
+  /* Generic chat glyph for Codex: no third-party logo. */
+  .dock-codex { background: linear-gradient(160deg, #3b4543, #161b1a); }
+  .dock-codex::after {
+    content: "";
+    position: absolute;
+    left: 15px;
+    top: 16px;
+    width: 30px;
+    height: 22px;
+    border: 3px solid #f2f5f4;
+    border-radius: 9px 9px 9px 3px;
+  }
+  #dock > .dock-divider { width: 2px; height: 50px; margin-inline: 2px; border-radius: 1px; background: rgba(58, 82, 103, 0.2); box-shadow: none; }
+  #dock > .dock-trash { width: 44px; margin-inline: 4px; border-radius: 6px 6px 10px 10px; background: repeating-linear-gradient(90deg, #cedae3 0 6px, #e7edf2 6px 10px); }
+
+  #dockTip {
+    position: absolute;
+    left: 0;
+    top: 0;
+    padding: 6px 14px;
+    border-radius: 8px;
+    background: rgba(246, 248, 247, 0.92);
+    border: 1px solid rgba(17, 22, 21, 0.1);
+    box-shadow: 0 6px 16px -8px rgba(8, 22, 18, 0.4);
+    font-family: var(--system);
+    font-size: 19px;
+    white-space: nowrap;
+  }
+
   /* ---------- Pointer ---------- */
 
   #pointer {
@@ -431,7 +558,6 @@
     top: 0;
     width: 0;
     height: 0;
-    z-index: 20;
   }
 
   #pointer svg {
@@ -440,105 +566,84 @@
     filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.3));
   }
 
-  /* ---------- Composer scene ---------- */
+  /* ---------- Title and end cards (outside the camera) ---------- */
 
-  #paste .pane-label {
+  #veil {
     position: absolute;
-    left: 200px;
-    top: 250px;
-    font-family: var(--system);
-    font-size: 26px;
-    font-weight: 600;
-    color: var(--graphite);
+    inset: 0;
+    background: radial-gradient(1200px 700px at 50% 48%, rgba(246, 249, 248, 0.82), rgba(246, 249, 248, 0.5));
   }
 
-  #composer {
+  .card {
     position: absolute;
-    left: 200px;
-    top: 302px;
-    width: 1520px;
-    padding: 40px 44px 44px;
-    border-radius: 26px;
-    border: 1px solid var(--rule);
-    background: var(--sheet);
-    box-shadow: 0 40px 80px -44px rgba(8, 22, 18, 0.45);
+    inset: 0;
     display: flex;
     flex-direction: column;
-    gap: 22px;
-    font-family: var(--system);
-    font-size: 38px;
-    line-height: 1.4;
-  }
-
-  #composer p { margin: 0; }
-
-  .xml {
-    margin: 0;
-    padding: 16px 22px;
-    border-left: 5px solid;
-    border-radius: 6px 12px 12px 6px;
-    font-family: var(--mono);
-    font-size: 23px;
-    line-height: 1.6;
-    white-space: pre-wrap;
-    color: var(--ink);
-  }
-
-  .xml .a { color: var(--graphite); }
-  .xml-select { border-color: var(--cyan-ink); background: var(--cyan-tint); }
-  .xml-select .t { color: var(--cyan-ink); }
-  .xml-shot { border-color: var(--violet-ink); background: var(--violet-tint); }
-  .xml-shot .t { color: var(--violet-ink); }
-
-  .caret {
-    display: inline-block;
-    width: 3px;
-    height: 1.05em;
-    margin-left: 3px;
-    vertical-align: -0.16em;
-    background: var(--ink);
-  }
-
-  /* ---------- Facts scene ---------- */
-
-  #facts {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    padding-left: 220px;
-    gap: 40px;
-  }
-
-  .fact {
-    display: flex;
     align-items: center;
-    gap: 34px;
+    justify-content: center;
+  }
+
+  .brand-row { display: flex; align-items: center; gap: 34px; }
+
+  .brand-row img {
+    width: 150px;
+    height: 150px;
+    border-radius: 34px;
+    box-shadow: 0 30px 60px -30px rgba(8, 22, 18, 0.55);
+  }
+
+  .wordmark {
     font-family: var(--display);
     font-weight: 700;
-    font-size: 72px;
-    line-height: 1.05;
+    font-size: 168px;
+    line-height: 1;
+    letter-spacing: -0.01em;
+  }
+
+  .wordmark .flow { color: var(--mint-ink); }
+
+  .tagline {
+    margin-top: 36px;
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 64px;
     letter-spacing: -0.005em;
   }
 
-  .fact b {
-    flex: none;
-    width: 26px;
-    height: 26px;
-    border-radius: 7px;
+  /* The website hero's two highlight treatments: cyan selection wash, violet screenshot
+     marquee. Their growth is driven from JS. */
+  .hl-select {
+    padding-inline: 0.06em;
+    margin-inline: -0.06em;
+    background: linear-gradient(var(--cyan-wash), var(--cyan-wash)) left 58% / 0% 84% no-repeat;
   }
 
-  /* ---------- End card ---------- */
+  .hl-shot { position: relative; display: inline-block; isolation: isolate; }
 
-  #end {
+  .hl-shot .marquee {
+    position: absolute;
+    inset: 0.16em -0.14em 0.02em;
+    border: 3px dashed var(--violet-ink);
+    background: rgba(191, 90, 242, 0.08);
+    z-index: -1;
+  }
+
+  .hl-shot .marquee i { position: absolute; width: 12px; height: 12px; background: var(--violet-ink); }
+  .hl-shot .marquee i:nth-child(1) { left: -7px; top: -7px; }
+  .hl-shot .marquee i:nth-child(2) { right: -7px; top: -7px; }
+  .hl-shot .marquee i:nth-child(3) { left: -7px; bottom: -7px; }
+  .hl-shot .marquee i:nth-child(4) { right: -7px; bottom: -7px; }
+
+  #end .brand-row img { width: 132px; height: 132px; border-radius: 30px; }
+  #end .wordmark { font-size: 144px; }
+
+  .end-details {
+    margin-top: 44px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    gap: 40px;
+    gap: 26px;
   }
-
-  #end .brand-row img { width: 130px; height: 130px; border-radius: 30px; }
-  #end .wordmark { font-size: 140px; }
 
   .download {
     display: inline-flex;
@@ -553,41 +658,31 @@
     font-weight: 600;
   }
 
-  .url {
-    font-family: var(--body);
-    font-size: 40px;
-    color: var(--mint-ink);
-    font-weight: 600;
-  }
-
-  .fine {
-    font-family: var(--body);
-    font-size: 28px;
-    color: var(--graphite);
-  }
+  .url { font-family: var(--body); font-size: 40px; font-weight: 600; color: var(--mint-ink); }
+  .fine { font-family: var(--body); font-size: 28px; color: var(--graphite); }
 </style>
 </head>
 <body>
 <div id="stage">
+  <div id="world">
+    <div id="wall"></div>
+    <div id="desk">
+      <div id="menubar">
+        <span class="mb-app" id="mbApp">TextEdit</span>
+        <span class="mb-items" id="mbTextEdit"><span>File</span><span>Edit</span><span>Format</span><span>View</span><span>Window</span><span>Help</span></span>
+        <span class="mb-items" id="mbCodex"><span>File</span><span>Edit</span><span>View</span><span>Window</span><span>Help</span></span>
+        <span class="mb-status">
+          <i id="micDot"></i>
+          <svg viewBox="0 0 16 12" width="26" height="20"><path d="M1.6 4.6a9 9 0 0 1 12.8 0M3.8 6.8a6 6 0 0 1 8.4 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="8" cy="9.6" r="1.6" fill="currentColor"/></svg>
+          <svg viewBox="0 0 25 12" width="38" height="18"><rect x="0.75" y="0.75" width="21" height="10.5" rx="3" fill="none" stroke="currentColor" stroke-opacity="0.45" stroke-width="1.5"/><rect x="2.6" y="2.6" width="14" height="6.8" rx="1.6" fill="currentColor"/><path d="M23.4 4.3v3.4" stroke="currentColor" stroke-opacity="0.45" stroke-width="1.6" stroke-linecap="round"/></svg>
+          <span>Thu 24 Sep 10:41</span>
+        </span>
+      </div>
 
-  <!-- 1. Title card: the website's hero heading, word for word. -->
-  <section class="scene" id="title">
-    <div class="brand-row">
-      <img src="../docs/assets/agentflow-icon-512.png" alt="">
-      <div class="wordmark">Agent <span class="flow">Flow</span></div>
-    </div>
-    <div class="tagline">Speech to text, with your <span class="hl-select" id="tagSelect">highlights</span> and <span class="hl-shot">screenshots<span class="marquee" id="tagShot"><i></i><i></i><i></i><i></i></span></span></div>
-  </section>
-
-  <!-- 2. Desk: dictate, highlight, screenshot, stop. -->
-  <section class="scene" id="desk">
-    <div id="world">
       <div class="window" id="editor">
-        <div class="titlebar"><span class="lights"><i></i><i></i><i></i></span>Rows.swift — TextEdit</div>
+        <div class="titlebar"><span class="lights"><i></i><i></i><i></i></span>Rows.swift</div>
         <div id="selWash"></div>
-        <pre class="code" id="code">import Foundation
-
-struct RowStore {
+        <pre class="code">struct RowStore {
     let cache: Cache
 
     <span id="selTarget">func loadRows(from cache: Cache)</span> -&gt; [Row] {
@@ -596,9 +691,9 @@ struct RowStore {
 }</pre>
       </div>
 
-      <div class="window" id="preview">
+      <div class="window" id="design">
         <div class="titlebar"><span class="lights"><i></i><i></i><i></i></span>Rows — Design</div>
-        <div class="empty" id="emptyState">
+        <div class="empty">
           <div class="empty-art"><div><span></span><span></span><span></span></div></div>
           <h3>No rows yet</h3>
           <p>Rows you save will appear here.</p>
@@ -606,19 +701,42 @@ struct RowStore {
         </div>
       </div>
 
+      <div class="window" id="codex">
+        <div class="titlebar"><span class="lights"><i></i><i></i><i></i></span>Codex</div>
+        <div id="composer">
+          <span class="caret" id="emptyCaret"></span>
+          <div id="composerBody">
+            <p id="pasteWords1"></p>
+            <pre class="xml xml-select" id="xmlSelect"><span class="t">&lt;app_selection</span> <span class="a">index="1" source="TextEdit" characters="32" middle_omitted="false" truncated="false" bundle_id="com.apple.TextEdit"</span><span class="t">&gt;</span>
+  <span class="t">&lt;text&gt;</span>func loadRows(from cache: Cache)<span class="t">&lt;/text&gt;</span>
+<span class="t">&lt;/app_selection&gt;</span></pre>
+            <p id="pasteWords2"></p>
+            <pre class="xml xml-shot" id="xmlShot"><span class="t">&lt;local_screenshot</span> <span class="a">path="/Users/you/Desktop/Screenshot 2026-09-24 at 10.41.12.png"</span><span class="t">/&gt;</span><span class="caret" id="pasteCaret"></span></pre>
+          </div>
+          <span class="send"><svg viewBox="0 0 24 24" width="24" height="24"><path d="M12 19V5m-6 6 6-6 6 6" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </div>
+      </div>
+
       <div id="shotRegion"></div>
+      <div id="shotFlash"></div>
 
       <div id="hud">
-        <div id="hudTextBox">
-          <p id="hudText"><span class="w" data-at="5.9">Rename </span><span class="w" data-at="6.15">this </span><span class="w" data-at="6.4">function</span><span class="cue cue-select" data-at="8.6">Selected Text: TextEdit — “func loadRows(from cache: Cache)”</span><span class="w" data-at="9.05">and </span><span class="w" data-at="9.25">make </span><span class="w" data-at="9.43">the </span><span class="w" data-at="9.61">empty </span><span class="w" data-at="9.81">state </span><span class="w" data-at="10.01">look </span><span class="w" data-at="10.19">like </span><span class="w" data-at="10.39">this.</span><span class="cue cue-shot" data-at="12.75">Screenshot: Screenshot 2026-09-24 at 10.41.12.png</span></p>
-        </div>
+        <div id="hudTextBox"><p id="hudText"></p></div>
         <div class="hud-bar">
           <span id="stopBtn"><span id="stopRing"></span></span>
           <span id="wave"></span>
         </div>
       </div>
 
-      <div id="thumb"></div>
+      <div class="thumb" id="thumb"></div>
+
+      <div class="flyer" id="flySel">func loadRows(from cache: Cache)</div>
+      <div class="flyer thumb" id="flyShot"></div>
+
+      <div id="dock">
+        <i class="dock-finder"></i><i class="dock-browser"></i><i class="dock-notes"></i><i class="dock-photos"></i><i class="dock-settings"></i><i class="dock-codex" id="dockCodex"></i><i class="dock-divider"></i><i class="dock-trash"></i>
+      </div>
+      <div id="dockTip">Codex</div>
 
       <div id="pointer">
         <!-- macOS-style arrow, I-beam and screenshot crosshair, drawn locally. -->
@@ -634,59 +752,47 @@ struct RowStore {
           <path d="M11 1v20M1 11h20" stroke="#111" stroke-width="1.2"/>
         </svg>
       </div>
-
-      <div class="caption" id="cap1">Press your shortcut and talk.</div>
-      <div class="caption" id="cap2">Highlight text while you talk.</div>
-      <div class="caption" id="cap3">Take a screenshot.</div>
-      <div class="caption" id="cap4">Press again to stop and paste.</div>
     </div>
-    <div id="flash"></div>
-  </section>
+  </div>
 
-  <!-- 3. Paste: one paste, references near the words they belong to. Same XML as the site. -->
-  <section class="scene" id="paste">
-    <div class="caption" id="cap5">Each reference lands near what you were saying.</div>
-    <div class="caption" id="cap6">So your agent can see what you were looking at.</div>
-    <div class="pane-label">Pasted into Codex</div>
-    <div id="composer">
-      <p>Rename this function</p>
-      <pre class="xml xml-select" id="xmlSelect"><span class="t">&lt;app_selection</span> <span class="a">index="1" source="TextEdit" characters="32" middle_omitted="false" truncated="false" bundle_id="com.apple.TextEdit"</span><span class="t">&gt;</span>
-  <span class="t">&lt;text&gt;</span>func loadRows(from cache: Cache)<span class="t">&lt;/text&gt;</span>
-<span class="t">&lt;/app_selection&gt;</span></pre>
-      <p>and make the empty state look like this.</p>
-      <pre class="xml xml-shot" id="xmlShot"><span class="t">&lt;local_screenshot</span> <span class="a">path="/Users/you/Desktop/Screenshot 2026-09-24 at 10.41.12.png"</span><span class="t">/&gt;</span><span class="caret" id="caret"></span></pre>
-    </div>
-  </section>
+  <div id="veil"></div>
 
-  <!-- 4. Facts, each lifted from the website's demo notes and setup copy. -->
-  <section class="scene" id="facts">
-    <div class="fact" data-at="23.5"><b style="background: var(--mint)"></b>Live words stay in the recorder until you stop.</div>
-    <div class="fact" data-at="24.7"><b style="background: var(--cyan)"></b>Highlights are read without pressing Copy.</div>
-    <div class="fact" data-at="25.9"><b style="background: var(--violet)"></b>Screenshots add a file path, not an upload.</div>
-    <div class="fact" data-at="27.1"><b style="background: var(--ink)"></b>No Agent Flow account or subscription.</div>
-  </section>
-
-  <!-- 5. End card. -->
-  <section class="scene" id="end">
+  <!-- Title: the website's hero heading, word for word. -->
+  <section class="card" id="title">
     <div class="brand-row">
       <img src="../docs/assets/agentflow-icon-512.png" alt="">
       <div class="wordmark">Agent <span class="flow">Flow</span></div>
     </div>
-    <div class="download">Download for Mac <span>↓</span></div>
-    <div class="url">ethansk.github.io/AgentFlow</div>
-    <div class="fine">Open source · macOS 14.4+ · Apple silicon and Intel</div>
+    <div class="tagline">Speech to text, with your <span class="hl-select" id="tagSelect">highlights</span> and <span class="hl-shot">screenshots<span class="marquee" id="tagShot"><i></i><i></i><i></i><i></i></span></span></div>
   </section>
 
+  <!-- End card: "Agent Flow. Open source, for Mac." -->
+  <section class="card" id="end">
+    <div class="brand-row">
+      <img src="../docs/assets/agentflow-icon-512.png" alt="">
+      <div class="wordmark">Agent <span class="flow">Flow</span></div>
+    </div>
+    <div class="end-details" id="endDetails">
+      <div class="download">Download for Mac <span>↓</span></div>
+      <div class="url">ethansk.github.io/AgentFlow</div>
+      <div class="fine">Open source · macOS 14.4+ · Apple silicon and Intel</div>
+    </div>
+  </section>
 </div>
 
 <script>
-  // Total running time in seconds; render.mjs reads this to know how many frames to capture.
-  window.DURATION = 35.5;
+  const P = window.PROMO;
+  if (!P) throw new Error("scene.html needs window.PROMO. Render it with render.mjs.");
+  window.DURATION = P.duration;
+  const M = P.moments;
+  const SEG = P.seg;
 
-  // ---------- Timing helpers (all pure functions of time) ----------
+  // ---------- Timing helpers (pure functions of time) ----------
 
   const easeOut = (k) => 1 - Math.pow(1 - k, 3);
   const easeInOut = (k) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
+  const linear = (k) => k;
+  const lerp = (a, b, k) => a + (b - a) * k;
 
   // Eased 0→1 progress between times a and b (clamped).
   function prog(t, a, b, ease = easeInOut) {
@@ -695,239 +801,344 @@ struct RowStore {
     return ease((t - a) / (b - a));
   }
 
-  const lerp = (a, b, k) => a + (b - a) * k;
-
-  // Visibility window with fades: 0 before `a`, fades in over `fin`, holds, fades out
-  // over `fout` ending at `b`.
-  function win(t, a, b, fin = 0.35, fout = 0.35) {
+  // 0 before a, fades in over fin, holds, fades out over fout ending at b.
+  function win(t, a, b, fin = 0.3, fout = 0.3) {
     return Math.min(prog(t, a, a + fin, easeOut), 1 - prog(t, b - fout, b));
   }
 
-  // Piecewise keyframes [[time, value], ...] with easing between neighbours.
-  function keys(t, list) {
-    if (t <= list[0][0]) return list[0][1];
+  // Keyframes [[time, v1, v2, ..., ease?], ...]; returns [v1, v2, ...] at time t. A keyframe
+  // may end with an easing function for the move that arrives at it (default easeInOut).
+  function track(t, list) {
+    const values = (key) => key.slice(1).filter((v) => typeof v === "number");
+    if (t <= list[0][0]) return values(list[0]);
     for (let i = 1; i < list.length; i++) {
       if (t <= list[i][0]) {
-        return lerp(list[i - 1][1], list[i][1], prog(t, list[i - 1][0], list[i][0]));
+        const last = list[i][list[i].length - 1];
+        const k = prog(t, list[i - 1][0], list[i][0], typeof last === "function" ? last : easeInOut);
+        const from = values(list[i - 1]);
+        return values(list[i]).map((v, j) => lerp(from[j], v, k));
       }
     }
-    return list[list.length - 1][1];
+    return values(list[list.length - 1]);
   }
+
+  // Keyframes must run forward in time even if a long voice take moved some of them.
+  const ordered = (list) => list.filter((key, i) => i === 0 || key[0] > list[i - 1][0]);
+
+  // Quadratic Bézier point.
+  const bez = (p0, p1, p2, k) => [
+    (1 - k) * (1 - k) * p0[0] + 2 * (1 - k) * k * p1[0] + k * k * p2[0],
+    (1 - k) * (1 - k) * p0[1] + 2 * (1 - k) * k * p1[1] + k * k * p2[1],
+  ];
 
   const $ = (id) => document.getElementById(id);
 
-  function show(el, opacity, dx = 0, dy = 0, scale = 1) {
+  function show(el, opacity, transform = "") {
     el.style.opacity = opacity.toFixed(4);
     el.style.visibility = opacity <= 0.001 ? "hidden" : "visible";
-    el.style.transform = `translate(${dx}px, ${dy}px) scale(${scale})`;
+    el.style.transform = transform;
   }
 
-  // ---------- One-time layout measurements ----------
+  const tr = (x, y, s = 1) => `translate(${x.toFixed(2)}px, ${y.toFixed(2)}px) scale(${s.toFixed(4)})`;
 
-  const layout = {};
+  // Dictation loudness for this frame, 0–1 (render.mjs measures it from the voice takes).
+  const level = (t) => P.level[Math.max(0, Math.min(P.level.length - 1, Math.round(t * P.fps)))] || 0;
+
+  // ---------- One-time layout (camera at identity) ----------
+
+  const L = {};
+
+  function rectIn(el) {
+    const r = el.getBoundingClientRect();
+    return { x: r.left, y: r.top, w: r.width, h: r.height, cx: r.left + r.width / 2, cy: r.top + r.height / 2 };
+  }
 
   function init() {
-    // Waveform bars: fixed count, each gets its own deterministic phase and speed.
     const wave = $("wave");
-    for (let i = 0; i < 70; i++) wave.appendChild(document.createElement("i"));
+    for (let i = 0; i < 64; i++) wave.appendChild(document.createElement("i"));
 
-    // Selection target geometry inside the editor window (world coordinates; the world
-    // transform is identity while measuring).
-    const editor = $("editor").getBoundingClientRect();
-    const target = $("selTarget").getBoundingClientRect();
-    layout.sel = {
-      left: target.left - editor.left,
-      top: target.top - editor.top + 2,
-      width: target.width,
-      height: target.height - 2,
-      pageX: target.left,
-      pageY: target.top + target.height / 2,
-    };
-    const wash = $("selWash");
-    wash.style.left = `${layout.sel.left - 3}px`;
-    wash.style.top = `${layout.sel.top}px`;
-    wash.style.height = `${layout.sel.height}px`;
-
-    // Screenshot region: the empty-state artwork inside the design window.
-    const preview = $("preview").getBoundingClientRect();
-    layout.shot = {
-      x0: preview.left + 150,
-      y0: preview.top + 92,
-      x1: preview.right - 150,
-      y1: preview.bottom - 44,
-    };
-
-    // Thumbnail: a scaled clone of exactly the captured region.
-    const thumb = $("thumb");
-    const clone = $("preview").cloneNode(true);
-    clone.removeAttribute("id");
-    clone.classList.add("clone");
-    clone.style.left = "0";
-    clone.style.top = "0";
-    // The size came from the #preview id rule, which the clone no longer matches.
-    clone.style.width = `${preview.width}px`;
-    clone.style.height = `${preview.height}px`;
-    const regionW = layout.shot.x1 - layout.shot.x0;
-    const scale = 242 / regionW;
-    const wrap = document.createElement("div");
-    wrap.className = "clone";
-    wrap.style.transform = `scale(${scale}) translate(${-(layout.shot.x0 - preview.left)}px, ${-(layout.shot.y0 - preview.top)}px)`;
-    clone.style.position = "absolute";
-    wrap.appendChild(clone);
-    thumb.appendChild(wrap);
-
-    // Recorder growth: measure the live-text height after each reveal so the HUD can
-    // ease between heights instead of snapping line by line.
-    const parts = [...document.querySelectorAll("#hudText [data-at]")];
-    layout.parts = parts.map((el) => ({ el, at: parseFloat(el.dataset.at) }));
-    const box = $("hudText");
-    layout.heights = [];
-    parts.forEach((el) => (el.style.display = "none"));
-    const emptyHeight = box.offsetHeight;
-    layout.baseHeight = emptyHeight;
-    let previous = emptyHeight;
-    layout.parts.forEach((part) => {
-      part.el.style.display = "inline";
-      const h = box.offsetHeight;
-      layout.heights.push({ at: part.at, delta: h - previous });
-      previous = h;
+    // Recorder parts: live words from the dictation takes, and the two references, in the
+    // order they happen. Captions and this text come from the same narration.json lines.
+    const parts = [];
+    const addWords = (id) => P.words[id].forEach((w) => parts.push({ text: `${w.text} `, at: w.at }));
+    addWords("dictate1");
+    parts.push({ cue: "select", text: "Selected Text: TextEdit — “func loadRows(from cache: Cache)”", at: M.selLand });
+    addWords("dictate2");
+    parts.push({ cue: "shot", text: "Screenshot: Screenshot 2026-09-24 at 10.41.12.png", at: M.shotLand });
+    parts.sort((a, b) => a.at - b.at);
+    const hudText = $("hudText");
+    L.parts = parts.map((part) => {
+      const el = document.createElement("span");
+      el.className = part.cue ? `part cue cue-${part.cue}` : "part";
+      el.textContent = part.text;
+      hudText.appendChild(el);
+      return { ...part, el };
     });
-    parts.forEach((el) => (el.style.display = "none"));
+    $("pasteWords1").textContent = SEG.dictate1.text;
+    $("pasteWords2").textContent = SEG.dictate2.text;
 
-    layout.facts = [...document.querySelectorAll(".fact")].map((el) => ({ el, at: parseFloat(el.dataset.at) }));
+    // Measure the recorder after each reveal, so it can ease between heights, and find where
+    // each reference lands for its flight.
+    const box = $("hudTextBox");
+    L.baseHeight = hudText.offsetHeight;
+    let previous = L.baseHeight;
+    L.parts.forEach((part) => {
+      part.el.style.display = "inline";
+      const h = hudText.offsetHeight;
+      part.delta = h - previous;
+      previous = h;
+      if (part.cue) {
+        box.style.height = `${h}px`;
+        part.target = rectIn(part.el);
+        box.style.height = "";
+      }
+    });
+    L.parts.forEach((part) => (part.el.style.display = "none"));
+    L.cueSel = L.parts.find((p) => p.cue === "select");
+    L.cueShot = L.parts.find((p) => p.cue === "shot");
+
+    // Selection geometry inside TextEdit.
+    const editor = rectIn($("editor"));
+    const target = rectIn($("selTarget"));
+    L.sel = target;
+    const wash = $("selWash");
+    wash.style.left = `${target.x - editor.x - 3}px`;
+    wash.style.top = `${target.y - editor.y + 3}px`;
+    wash.style.height = `${target.h - 4}px`;
+    $("flySel").style.width = `${target.w + 8}px`;
+    L.flySel = rectIn($("flySel"));
+
+    // Screenshot region: the empty state inside the design window.
+    const design = rectIn($("design"));
+    L.shot = { x0: design.x + 170, y0: design.y + 78, x1: design.x + design.w - 170, y1: design.y + design.h - 34 };
+    const flash = $("shotFlash");
+    flash.style.left = `${L.shot.x0}px`;
+    flash.style.top = `${L.shot.y0}px`;
+    flash.style.width = `${L.shot.x1 - L.shot.x0}px`;
+    flash.style.height = `${L.shot.y1 - L.shot.y0}px`;
+
+    // Thumbnail and its flying copy: scaled clones of exactly the captured region.
+    for (const holder of [$("thumb"), $("flyShot")]) {
+      const clone = $("design").cloneNode(true);
+      clone.removeAttribute("id");
+      clone.style.left = "0";
+      clone.style.top = "0";
+      clone.style.width = `${design.w}px`;
+      clone.style.height = `${design.h}px`;
+      const scale = 242 / (L.shot.x1 - L.shot.x0);
+      const wrap = document.createElement("div");
+      wrap.className = "clone";
+      wrap.style.transform = `scale(${scale}) translate(${-(L.shot.x0 - design.x)}px, ${-(L.shot.y0 - design.y)}px)`;
+      wrap.appendChild(clone);
+      holder.appendChild(wrap);
+    }
+    L.thumb = rectIn($("thumb"));
+
+    // Composer heights before and after the paste.
+    const body = $("composerBody");
+    const composer = $("composer");
+    L.composerFull = composer.offsetHeight;
+    body.style.display = "none";
+    L.composerEmpty = 132;
+    body.style.display = "";
+    L.composer = rectIn(composer);
+
+    // Dock: centre it, then find the Codex icon for the click and the window's zoom origin.
+    const dock = $("dock");
+    dock.style.left = `${(1920 - dock.offsetWidth) / 2}px`;
+    L.dockIcon = rectIn($("dockCodex"));
+    const tip = $("dockTip");
+    tip.style.left = `${L.dockIcon.cx - tip.offsetWidth / 2}px`;
+    tip.style.top = `${L.dockIcon.y - tip.offsetHeight - 22}px`;
+    const codex = rectIn($("codex"));
+    $("codex").style.transformOrigin = `${L.dockIcon.cx - codex.x}px ${L.dockIcon.cy - codex.y}px`;
   }
 
   // ---------- Frame renderer ----------
 
   window.renderAt = function renderAt(t) {
-    // Scene 1 — title (0 – 3.9 s).
-    const titleIn = prog(t, 0.15, 1.1, easeOut);
-    const titleOut = prog(t, 3.3, 3.95);
-    show($("title"), titleIn * (1 - titleOut), 0, lerp(24, 0, titleIn) - titleOut * 60, lerp(0.985, 1, titleIn));
-    $("tagSelect").style.backgroundSize = `${prog(t, 1.25, 1.85) * 100}% 84%`;
-    const shotK = prog(t, 1.95, 2.35, easeOut);
-    show($("tagShot"), shotK, 0, 0, lerp(1.12, 1, shotK));
+    const S = (id) => SEG[id].start;
 
-    // Scene 2 — desk (3.6 – 15.9 s).
-    const deskIn = prog(t, 3.6, 4.5, easeOut);
-    const deskOut = prog(t, 15.1, 15.85);
-    show($("desk"), deskIn * (1 - deskOut), -deskOut * 140, lerp(40, 0, deskIn));
-    // Slow push-in keeps the long desk shot alive without cropping the windows.
-    const zoom = keys(t, [[4, 1], [15.5, 1.035]]);
-    $("world").style.transform = `scale(${zoom})`;
+    // Camera: world point (cx, cy) at the frame centre, scale s. Clamped so the frame never
+    // leaves the desktop.
+    let [cx, cy, s] = track(t, ordered([
+      [0, 960, 540, 1.06],
+      [M.deskIn + 0.8, 960, 540, 1],
+      [S("dictate1") - 0.2, 960, 540, 1],
+      [S("dictate1") + 1.2, 940, 600, 1.08],
+      [M.dragStart - 0.15, 560, 360, 1.3],
+      [M.dragEnd + 0.1, 580, 370, 1.3],
+      [M.selLand + 0.3, 930, 560, 1.1],
+      [S("dictate2") + 2.2, 980, 600, 1.12],
+      [M.crossOn - 0.05, 1400, 360, 1.3],
+      [M.shutter + 0.1, 1400, 370, 1.3],
+      [M.shotLand + 0.1, 1120, 620, 1.05],
+      [M.dockClick + 0.5, 960, 540, 1],
+      [M.pasteLand - 0.25, 960, 540, 1],
+      [M.pasteLand + 0.9, 960, 660, 1.25],
+      [M.glowShot + 1.3, 960, 665, 1.27],
+      [M.endIn + 0.8, 960, 540, 1.04],
+      [P.duration, 960, 540, 1],
+    ]));
+    cx = Math.min(Math.max(cx, 960 / s), 1920 - 960 / s);
+    cy = Math.min(Math.max(cy, 540 / s), 1080 - 540 / s);
+    $("world").style.transform = `translate(${(960 - cx * s).toFixed(2)}px, ${(540 - cy * s).toFixed(2)}px) scale(${s.toFixed(4)})`;
 
-    // Captions: one short sentence per beat, cross-faded.
-    show($("cap1"), win(t, 4.7, 7.05), 0, 0);
-    show($("cap2"), win(t, 7.05, 10.65), 0, 0);
-    show($("cap3"), win(t, 10.65, 13.45), 0, 0);
-    show($("cap4"), win(t, 13.45, 15.6), 0, 0);
+    // Title card over a softened wallpaper, then the desktop assembles. Each card clears
+    // before the next layer arrives, so text never double-exposes over windows.
+    const titleIn = prog(t, 0.15, 1.0, easeOut);
+    const titleOut = prog(t, M.titleOut, M.titleOut + 0.4);
+    show($("title"), titleIn * (1 - titleOut), tr(0, lerp(24, 0, titleIn) - titleOut * 50, lerp(0.985, 1, titleIn)));
+    $("tagSelect").style.backgroundSize = `${prog(t, 1.5, 2.1) * 100}% 84%`;
+    const shotK = prog(t, 2.2, 2.6, easeOut);
+    show($("tagShot"), shotK, `scale(${lerp(1.12, 1, shotK).toFixed(4)})`);
 
-    // Recorder appears on the first press, grows with the live words, then leaves after
-    // the stop press once the words have been handed off for pasting.
-    const hudIn = prog(t, 5.05, 5.45, easeOut);
-    const hudOut = prog(t, 14.75, 15.15);
-    show($("hud"), hudIn * (1 - hudOut), 0, lerp(26, 0, hudIn) + hudOut * 20, lerp(0.97, 1, hudIn));
-    let height = layout.baseHeight;
-    layout.heights.forEach((h) => (height += h.delta * prog(t, h.at, h.at + 0.28, easeOut)));
-    $("hudTextBox").style.height = `${height}px`;
-    layout.parts.forEach(({ el, at }) => {
-      const k = prog(t, at, at + 0.2, easeOut);
-      el.style.display = t >= at ? "inline" : "none";
-      el.style.opacity = k.toFixed(3);
-      if (el.classList.contains("cue")) {
-        // Brief glow when a reference lands in the recorder.
-        const glow = win(t, at, at + 1.1, 0.12, 0.8);
-        const rgb = el.classList.contains("cue-select") ? "108, 207, 246" : "191, 90, 242";
-        el.style.background = `rgba(${rgb}, ${(0.22 * glow).toFixed(3)})`;
+    const endK = prog(t, M.endIn + 0.5, M.endIn + 1.1, easeOut);
+    const veil = Math.max(1 - prog(t, M.titleOut, M.titleOut + 0.8), prog(t, M.endIn, M.endIn + 0.7));
+    show($("veil"), veil);
+    show($("end"), endK, tr(0, lerp(28, 0, endK), lerp(0.985, 1, endK)));
+    const detailsK = prog(t, M.endDetails, M.endDetails + 0.5, easeOut);
+    show($("endDetails"), detailsK, tr(0, lerp(18, 0, detailsK)));
+
+    const deskK = prog(t, M.deskIn, M.deskIn + 0.8, easeOut);
+    const deskOut = prog(t, M.endIn, M.endIn + 0.55);
+    show($("desk"), deskK * (1 - deskOut));
+    show($("menubar"), 1, tr(0, lerp(-44, 0, prog(t, M.deskIn, M.deskIn + 0.5, easeOut))));
+    for (const [id, delay] of [["editor", 0.05], ["design", 0.15]]) {
+      const k = prog(t, M.deskIn + delay, M.deskIn + delay + 0.6, easeOut);
+      show($(id), k, tr(0, lerp(26, 0, k), lerp(0.97, 1, k)));
+    }
+    const dockK = prog(t, M.deskIn + 0.2, M.deskIn + 0.7, easeOut);
+    show($("dock"), 1, tr(0, lerp(110, 0, dockK)));
+
+    // Menu bar: TextEdit until Codex comes forward; the orange mic dot while recording.
+    const codexFront = t >= M.dockClick + 0.1;
+    $("mbApp").textContent = codexFront ? "Codex" : "TextEdit";
+    $("mbTextEdit").style.display = codexFront ? "none" : "flex";
+    $("mbCodex").style.display = codexFront ? "flex" : "none";
+    show($("micDot"), win(t, M.hudIn - 0.15, M.stop + 0.5, 0.15, 0.2));
+
+    // Pointer: idle → drag-select the function → crosshair screenshot → Codex in the Dock.
+    const sel = L.sel;
+    const shot = L.shot;
+    const dock = L.dockIcon;
+    const selY = sel.cy + 2;
+    const [px, py] = track(t, ordered([
+      [M.deskIn + 0.6, 1240, 660],
+      [S("dictate1") + 0.8, 1180, 620],
+      [M.dragStart - 0.7, 1180, 620],
+      [M.dragStart - 0.05, sel.x, selY],
+      [M.dragStart, sel.x, selY],
+      [M.dragEnd, sel.x + sel.w, selY, linear],
+      // Rest on the blank page below the code, clear of every line.
+      [M.dragEnd + 0.6, sel.x + sel.w + 40, sel.y + 190],
+      [S("dictate2") + 0.4, sel.x + sel.w + 40, sel.y + 190],
+      [S("dictate2") + 2.2, 1250, 560],
+      [M.shotStart - 0.05, shot.x0, shot.y0],
+      [M.shotStart, shot.x0, shot.y0],
+      [M.shotEnd, shot.x1, shot.y1],
+      [M.shutter, shot.x1, shot.y1],
+      [M.shotLand, shot.x1 - 20, shot.y1 + 90],
+      [M.dockClick - 0.08, dock.cx, dock.cy],
+      [M.dockClick + 0.3, dock.cx, dock.cy],
+      // Out of the way, onto the wallpaper right of the Dock, before the paste lands.
+      [M.pasteLand, dock.cx + 430, dock.cy - 50],
+    ]));
+    const click = win(t, M.dockClick - 0.05, M.dockClick + 0.16, 0.05, 0.11);
+    show($("pointer"), win(t, M.deskIn + 0.6, M.pasteLand + 0.6, 0.3, 0.5), `translate(${px.toFixed(2)}px, ${py.toFixed(2)}px) scale(${(1 - 0.12 * click).toFixed(3)})`);
+    const beam = t >= M.dragStart - 0.3 && t < M.dragEnd + 0.35;
+    const cross = t >= M.crossOn && t < M.shutter + 0.02;
+    $("pArrow").style.display = !beam && !cross ? "block" : "none";
+    $("pBeam").style.display = beam ? "block" : "none";
+    $("pCross").style.display = cross ? "block" : "none";
+
+    // Selection wash grows exactly under the dragged I-beam; grey once TextEdit is behind.
+    const washK = prog(t, M.dragStart, M.dragEnd, linear);
+    const wash = $("selWash");
+    wash.style.width = `${(sel.w * washK + (t >= M.dragStart ? 6 : 0)).toFixed(2)}px`;
+    wash.style.opacity = t >= M.dragStart ? "1" : "0";
+    wash.style.background = codexFront ? "#dcdfde" : "var(--cyan-wash)";
+
+    // The highlight lifts off and flies into the recorder, where the reference appears.
+    const lift = prog(t, M.dragEnd + 0.08, M.dragEnd + 0.3, easeOut);
+    const fly = prog(t, M.dragEnd + 0.3, M.selLand, easeInOut);
+    const selFrom = [sel.cx + 2, sel.cy + 2];
+    const selTo = [L.cueSel.target.cx, L.cueSel.target.cy];
+    const [fx, fy] = bez(selFrom, [(selFrom[0] + selTo[0]) / 2 + 140, selFrom[1] - 40], selTo, fly);
+    const selScale = lerp(1 + 0.06 * lift, 0.5, fly);
+    const selAlpha = lift * (1 - prog(t, M.selLand - 0.12, M.selLand + 0.04));
+    show($("flySel"), selAlpha, tr(fx - L.flySel.w / 2, fy - L.flySel.h / 2, selScale));
+    $("flySel").style.boxShadow = `0 ${(14 * lift).toFixed(1)}px ${(30 * lift).toFixed(1)}px -10px rgba(0, 111, 142, 0.55), 0 0 0 ${(2 * lift).toFixed(2)}px rgba(108, 207, 246, 0.9)`;
+
+    // Recorder: rises on the first press, grows with the live words, leaves after the stop.
+    const hudIn = prog(t, M.hudIn - 0.2, M.hudIn + 0.25, easeOut);
+    const hudOut = prog(t, M.stop + 0.6, M.stop + 1.0);
+    show($("hud"), hudIn * (1 - hudOut), tr(0, lerp(30, 0, hudIn) + hudOut * 24, lerp(0.97, 1, hudIn)));
+    let height = L.baseHeight;
+    L.parts.forEach((part) => (height += part.delta * prog(t, part.at, part.at + 0.28, easeOut)));
+    $("hudTextBox").style.height = `${height.toFixed(2)}px`;
+    L.parts.forEach((part) => {
+      part.el.style.display = t >= part.at ? "inline" : "none";
+      part.el.style.opacity = prog(t, part.at, part.at + 0.18, easeOut).toFixed(3);
+      if (part.cue) {
+        const glow = win(t, part.at, part.at + 1.2, 0.1, 0.9);
+        const rgb = part.cue === "select" ? "108, 207, 246" : "191, 90, 242";
+        part.el.style.background = `rgba(${rgb}, ${(0.26 * glow).toFixed(3)})`;
       }
     });
 
-    // Waveform: louder while words are arriving, a low idle shimmer otherwise, and a
-    // settle to flat dots after the stop press.
-    const talking = Math.max(win(t, 5.7, 6.8, 0.2, 0.3), win(t, 8.9, 10.7, 0.2, 0.3));
-    const settle = 1 - prog(t, 14.2, 14.6);
+    // Waveform: driven by the dictation takes, a quiet shimmer otherwise, flat after stop.
+    const recording = t >= M.hudIn - 0.2 && t < M.stop;
+    const settle = 1 - prog(t, M.stop, M.stop + 0.35);
+    const lvl = level(t);
     [...$("wave").children].forEach((bar, i) => {
-      // A slow travelling envelope across the bar row plus a faster per-bar flicker reads
-      // as speech; a single sine per bar looked like a uniform comb.
-      const speed = 6.1 + (i % 5) * 1.3;
-      const envelope = 0.5 + 0.5 * Math.sin(i * 0.19 - t * 2.6);
-      const flicker = Math.abs(Math.sin(t * speed + i * 0.83) * Math.cos(t * speed * 0.47 + i * 1.7));
-      const amp = 0.22 + 0.72 * talking;
-      const s = (0.14 + amp * (0.35 + 0.65 * envelope) * flicker) * settle + 0.1 * (1 - settle);
-      bar.style.transform = `scaleY(${Math.max(0.1, s).toFixed(3)})`;
+      const travel = 0.5 + 0.5 * Math.sin(i * 0.23 - t * 3.1);
+      const flicker = Math.abs(Math.sin(t * (7.3 + (i % 7) * 1.1) + i * 0.9) * Math.cos(t * 3.7 + i * 1.7));
+      const idle = recording ? 0.08 + 0.08 * flicker : 0;
+      const v = 0.1 + (idle + lvl * (0.3 + 0.7 * travel) * (0.3 + 0.7 * flicker)) * settle;
+      bar.style.transform = `scaleY(${Math.min(1, Math.max(0.1, v)).toFixed(3)})`;
     });
+    const press = win(t, M.stop - 0.05, M.stop + 0.25, 0.05, 0.2);
+    $("stopBtn").style.transform = `scale(${(1 - 0.1 * press).toFixed(3)})`;
+    show($("stopRing"), win(t, M.stop, M.stop + 0.8, 0.08, 0.6), `scale(${(1 + 0.25 * prog(t, M.stop, M.stop + 0.8, easeOut)).toFixed(4)})`);
 
-    // Stop press at 14.2 s: button dips and the neon ring pulses once.
-    const press = win(t, 14.15, 14.45, 0.08, 0.2);
-    $("stopBtn").style.transform = `scale(${1 - 0.1 * press})`;
-    const ring = win(t, 14.2, 15.0, 0.1, 0.6);
-    show($("stopRing"), ring, 0, 0, 1 + 0.25 * prog(t, 14.2, 15.0, easeOut));
-
-    // Pointer path: idle → drag-select the function signature → crosshair screenshot.
-    const sel = layout.sel;
-    const shot = layout.shot;
-    const px = keys(t, [
-      [4.4, 1500], [7.2, sel.pageX], [7.5, sel.pageX], [8.4, sel.pageX + sel.width],
-      [8.8, sel.pageX + sel.width + 10], [10.9, shot.x0], [11.3, shot.x0], [12.15, shot.x1],
-      [12.6, shot.x1], [13.6, 1560],
-    ]);
-    const py = keys(t, [
-      [4.4, 640], [7.2, sel.pageY], [8.4, sel.pageY], [8.8, sel.pageY + 6],
-      [10.9, shot.y0], [11.3, shot.y0], [12.15, shot.y1], [12.6, shot.y1], [13.6, 820],
-    ]);
-    $("pointer").style.transform = `translate(${px}px, ${py}px)`;
-    const inEditor = t >= 6.95 && t < 8.85;
-    const crosshair = t >= 10.75 && t < 12.3;
-    $("pArrow").style.display = !inEditor && !crosshair ? "block" : "none";
-    $("pBeam").style.display = inEditor ? "block" : "none";
-    $("pCross").style.display = crosshair ? "block" : "none";
-    $("pointer").style.opacity = (win(t, 4.3, 14.0, 0.3, 0.5)).toFixed(3);
-
-    // Selection wash grows exactly under the dragged I-beam.
-    $("selWash").style.width = `${sel.width * prog(t, 7.5, 8.4, (k) => k) + (t >= 7.5 ? 6 : 0)}px`;
-    $("selWash").style.opacity = t >= 7.5 ? "1" : "0";
-
-    // Screenshot region drag, flash, and floating thumbnail.
-    const drag = prog(t, 11.3, 12.15, (k) => k);
+    // Screenshot: region drag, a soft flash, the floating thumbnail.
+    const drag = prog(t, M.shotStart, M.shotEnd, linear);
     const region = $("shotRegion");
-    const regionOn = t >= 11.3 && t < 12.25;
-    region.style.display = regionOn ? "block" : "none";
+    region.style.display = t >= M.shotStart && t < M.shutter + 0.05 ? "block" : "none";
     region.style.left = `${shot.x0}px`;
     region.style.top = `${shot.y0}px`;
-    region.style.width = `${(shot.x1 - shot.x0) * drag}px`;
-    region.style.height = `${(shot.y1 - shot.y0) * drag}px`;
-    show($("flash"), 0.85 * win(t, 12.2, 12.55, 0.04, 0.3));
-    const thumbK = prog(t, 12.35, 12.8, easeOut);
-    show($("thumb"), thumbK * (1 - prog(t, 14.4, 14.9)), lerp(120, 0, thumbK), 0);
+    region.style.width = `${((shot.x1 - shot.x0) * drag).toFixed(2)}px`;
+    region.style.height = `${((shot.y1 - shot.y0) * drag).toFixed(2)}px`;
+    show($("shotFlash"), 0.75 * win(t, M.shutter, M.shutter + 0.3, 0.03, 0.25));
+    const thumbIn = prog(t, M.shutter + 0.05, M.shutter + 0.4, easeOut);
+    const thumbOut = prog(t, M.shotLand + 0.15, M.shotLand + 0.55);
+    show($("thumb"), thumbIn * (1 - thumbOut), tr(lerp(300, 0, thumbIn) + thumbOut * 320, 0));
 
-    // Scene 3 — paste (15.4 – 23.2 s).
-    const pasteIn = prog(t, 15.45, 16.25, easeOut);
-    const pasteOut = prog(t, 22.6, 23.25);
-    show($("paste"), pasteIn * (1 - pasteOut), lerp(140, 0, pasteIn), -pasteOut * 30);
-    // The composer content lands at once: Agent Flow pastes one time on stop.
-    const land = prog(t, 16.3, 16.65, easeOut);
-    show($("composer"), 0.35 + 0.65 * land, 0, lerp(16, 0, land));
-    [...$("composer").children].forEach((child) => (child.style.opacity = land.toFixed(3)));
-    // Draw attention to each reference in turn.
-    const selPulse = win(t, 17.1, 18.6, 0.3, 0.6);
-    const shotPulse = win(t, 18.6, 20.1, 0.3, 0.6);
-    $("xmlSelect").style.boxShadow = `0 0 0 ${(6 * selPulse).toFixed(2)}px rgba(0, 111, 142, ${(0.22 * selPulse).toFixed(3)})`;
-    $("xmlShot").style.boxShadow = `0 0 0 ${(6 * shotPulse).toFixed(2)}px rgba(126, 43, 174, ${(0.22 * shotPulse).toFixed(3)})`;
-    $("caret").style.opacity = t >= 16.6 && Math.floor((t - 16.6) / 0.55) % 2 === 0 ? "1" : "0";
-    show($("cap5"), win(t, 16.8, 19.8), 0, 0);
-    show($("cap6"), win(t, 19.8, 23.2), 0, 0);
+    // A copy of the thumbnail flies into the recorder as the Screenshot reference appears.
+    const shotFly = prog(t, M.shotLand - 0.5, M.shotLand, easeInOut);
+    const shotFrom = [L.thumb.cx, L.thumb.cy];
+    const shotTo = [L.cueShot.target.cx, L.cueShot.target.cy];
+    const [sx, sy] = bez(shotFrom, [(shotFrom[0] + shotTo[0]) / 2 + 60, Math.min(shotFrom[1], shotTo[1]) - 160], shotTo, shotFly);
+    const shotAlpha = prog(t, M.shotLand - 0.5, M.shotLand - 0.4) * (1 - prog(t, M.shotLand - 0.1, M.shotLand + 0.05));
+    show($("flyShot"), shotAlpha, tr(sx - L.thumb.w / 2, sy - L.thumb.h / 2, lerp(0.92, 0.24, shotFly)));
 
-    // Scene 4 — facts (23.3 – 29.9 s).
-    const factsOut = prog(t, 29.3, 29.9);
-    show($("facts"), 1 - factsOut, 0, -factsOut * 30);
-    layout.facts.forEach(({ el, at }) => {
-      const k = prog(t, at, at + 0.5, easeOut);
-      show(el, k, lerp(-40, 0, k), 0);
-    });
+    // Codex comes forward from the Dock with its composer focused.
+    show($("dockTip"), win(t, M.dockClick - 0.4, M.dockClick + 0.3, 0.12, 0.15));
+    const open = prog(t, M.dockClick + 0.05, M.dockClick + 0.5, easeOut);
+    show($("codex"), prog(t, M.dockClick + 0.05, M.dockClick + 0.25), `scale(${lerp(0.12, 1, open).toFixed(4)})`);
 
-    // Scene 5 — end card (29.8 s → end).
-    const endIn = prog(t, 29.8, 30.7, easeOut);
-    show($("end"), endIn, 0, lerp(28, 0, endIn), lerp(0.985, 1, endIn));
+    // One paste: the words with both references, then the composer holds (auto-send is off).
+    const land = prog(t, M.pasteLand, M.pasteLand + 0.32, easeOut);
+    $("composer").style.height = `${lerp(L.composerEmpty, L.composerFull, land).toFixed(2)}px`;
+    show($("composerBody"), prog(t, M.pasteLand + 0.05, M.pasteLand + 0.3, easeOut));
+    const blink = (from) => (t >= from && Math.floor((t - from) / 0.53) % 2 === 0 ? "1" : "0");
+    $("emptyCaret").style.opacity = t < M.pasteLand ? blink(M.dockClick + 0.45) : "0";
+    $("pasteCaret").style.opacity = blink(M.pasteLand + 0.3);
+    const selGlow = win(t, M.glowSel, M.glowSel + 1.3, 0.25, 0.5);
+    const shotGlow = win(t, M.glowShot, M.glowShot + 1.3, 0.25, 0.5);
+    $("xmlSelect").style.boxShadow = `0 0 0 ${(6 * selGlow).toFixed(2)}px rgba(0, 111, 142, ${(0.24 * selGlow).toFixed(3)})`;
+    $("xmlShot").style.boxShadow = `0 0 0 ${(6 * shotGlow).toFixed(2)}px rgba(126, 43, 174, ${(0.24 * shotGlow).toFixed(3)})`;
   };
 
   init();
