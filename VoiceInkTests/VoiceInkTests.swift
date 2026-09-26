@@ -2100,13 +2100,17 @@ struct VoiceInkTests {
             encoding: .utf8
         )
         let snapshot = try #require(source.range(
-            of: "active.recoverablePartialTranscript = active.partialTranscript"
+            of: "active.recoverablePartialTranscript = LiveSelectionReference.interleaving("
         ))
         let enqueue = try #require(source.range(
             of: "enqueueTranscription(for: active, transcription: transcription)",
             range: snapshot.upperBound..<source.endIndex
         ))
         let stopBody = source[snapshot.lowerBound..<enqueue.upperBound]
+
+        // Keyboard prose and source context are part of the recovery draft too;
+        // a speech-only snapshot would silently lose them on failure or exit.
+        #expect(stopBody.contains("active.liveSelectionReferences, with: active.partialTranscript"))
 
         #expect(stopBody.contains(
             "realtimeDraftText: active.recoverablePartialTranscript"
@@ -2118,13 +2122,16 @@ struct VoiceInkTests {
         #expect(stopBody.contains("try modelContext.save()"))
 
         let cancelSnapshot = try #require(source.range(
-            of: "session.recoverablePartialTranscript = session.partialTranscript"
+            of: "session.recoverablePartialTranscript = LiveSelectionReference.interleaving("
         ))
         let canceledPersistence = try #require(source.range(
             of: "await finishCanceledRecording(session)",
             range: cancelSnapshot.upperBound..<source.endIndex
         ))
         #expect(cancelSnapshot.lowerBound < canceledPersistence.lowerBound)
+        #expect(source[cancelSnapshot.lowerBound..<canceledPersistence.lowerBound].contains(
+            "session.liveSelectionReferences, with: session.partialTranscript"
+        ))
     }
 
     @Test func clipboardOnlyCompletionReturnsBeforeAnyPasteTargetResolution() throws {
