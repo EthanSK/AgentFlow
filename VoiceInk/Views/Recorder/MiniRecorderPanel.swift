@@ -15,6 +15,7 @@ enum MiniRecorderLayoutMetrics {
     static let bottomPadding: CGFloat = 24
     static let controlBarHeight: CGFloat = 40
     static let liveTranscriptHeight: CGFloat = 56
+    static let typedInputHeight: CGFloat = 60
     static let separatorHeight: CGFloat = 1
     static let assistantPanelHeight: CGFloat = 320
     static let stackedCardSpacing: CGFloat = 46
@@ -125,6 +126,7 @@ class MiniRecorderPanel: NSPanel {
     
     private func configurePanel() {
         isFloatingPanel = true
+        becomesKeyOnlyIfNeeded = true
         level = .floating
         hidesOnDeactivate = false
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]

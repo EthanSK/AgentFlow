@@ -40,6 +40,7 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     private var hasLiveTranscript: Bool {
         stateProvider.recordingState.isRecordingOrPaused
             && (stateProvider.showsRealtimeTranscriptHUD
+                || stateProvider.canTypeInHUD
                 || !stateProvider.liveSelectionReferences.isEmpty)
     }
 
@@ -166,8 +167,13 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
             if hasLiveTranscript {
                 LiveTranscriptView(
                     text: stateProvider.partialTranscript,
-                    selectionReferences: stateProvider.liveSelectionReferences,
-                    height: liveTranscriptHeight
+                    selectionReferences: stateProvider.liveContextPreviewReferences,
+                    height: liveTranscriptHeight,
+                    typedInput: stateProvider.canTypeInHUD ? Binding(
+                        get: { stateProvider.typedInput },
+                        set: { stateProvider.updateTypedInput($0) }
+                    ) : nil,
+                    onEndTyping: { stateProvider.endTypingRun() }
                 )
                 Divider().background(Color.white.opacity(0.15))
             }

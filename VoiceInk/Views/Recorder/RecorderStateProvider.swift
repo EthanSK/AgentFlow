@@ -7,6 +7,11 @@ protocol RecorderStateProvider: AnyObject {
     var partialTranscript: String { get }
     var completionDisposition: RecordingCompletionDisposition { get }
     var liveSelectionReferences: [LiveSelectionReference] { get }
+    var liveContextPreviewReferences: [LiveSelectionReference] { get }
+    var canTypeInHUD: Bool { get }
+    var typedInput: String { get }
+    func updateTypedInput(_ value: String)
+    func endTypingRun()
     // A realtime provider owns a live-text HUD from recording start, even before
     // its first partial arrives. This is presentation state only: the placeholder
     // never enters the transcript or either Primary/Next delivery route.
@@ -35,6 +40,11 @@ extension RecorderStateProvider {
     var showsRealtimeTranscriptHUD: Bool { false }
     var completionDisposition: RecordingCompletionDisposition { .normalDelivery }
     var liveSelectionReferences: [LiveSelectionReference] { [] }
+    var liveContextPreviewReferences: [LiveSelectionReference] { liveSelectionReferences }
+    var canTypeInHUD: Bool { false }
+    var typedInput: String { "" }
+    func updateTypedInput(_ value: String) {}
+    func endTypingRun() {}
 
     var currentFocusIconActionPulseID: UUID? {
         guard let pulse = iconActionPulse, pulse.icon == .currentFocus else { return nil }

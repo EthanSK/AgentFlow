@@ -796,7 +796,9 @@ final class TranscriptionDelivery {
             // every later recording can lose Return. Post exactly one global HID
             // down/up after the bounded settle—no retry, app classifier, or target.
             method: .cgEvent,
-            canPost: { true }
+            // This app's editor is never a destination for its own finished
+            // message. Inspect only our local responder, not a saved input/app.
+            canPost: { !RecorderTypingTextView.ownsKeyboard }
         )
         switch sendResult {
         case .commandPosted:

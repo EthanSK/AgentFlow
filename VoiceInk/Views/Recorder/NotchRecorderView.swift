@@ -33,6 +33,7 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
             // Keep the realtime panel visible before the provider's first partial so
             // a slow Wi-Fi/WebSocket handshake cannot make streaming mode look off.
             let shouldShowLive = stateProvider.showsRealtimeTranscriptHUD
+                || stateProvider.canTypeInHUD
                 || !stateProvider.liveSelectionReferences.isEmpty
             return shouldShowLive ? .liveText : .active
         case .transcribing, .enhancing:
@@ -270,8 +271,13 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                 Divider().background(Color.white.opacity(0.15))
                 LiveTranscriptView(
                     text: stateProvider.partialTranscript,
-                    selectionReferences: stateProvider.liveSelectionReferences,
-                    height: liveTranscriptHeight
+                    selectionReferences: stateProvider.liveContextPreviewReferences,
+                    height: liveTranscriptHeight,
+                    typedInput: stateProvider.canTypeInHUD ? Binding(
+                        get: { stateProvider.typedInput },
+                        set: { stateProvider.updateTypedInput($0) }
+                    ) : nil,
+                    onEndTyping: { stateProvider.endTypingRun() }
                 )
                     .padding(.horizontal, 8)
             }

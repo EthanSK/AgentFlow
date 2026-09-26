@@ -145,7 +145,13 @@ class CursorPaster {
         canPost: @escaping @MainActor () -> Bool = { true }
     ) -> Task<PasteResult, Never> {
         Task { @MainActor in
-            await performPasteSession(text, canPost: canPost)
+            // A previous Primary result may finish during a newer recording.
+            // Never feed it into our own authored-input HUD. This is only a local
+            // responder guard, not saved-app capture, AX routing or focus repair;
+            // refusal keeps the text on the clipboard and uses normal error handling.
+            await performPasteSession(text, canPost: {
+                !RecorderTypingTextView.ownsKeyboard && canPost()
+            })
         }
     }
 

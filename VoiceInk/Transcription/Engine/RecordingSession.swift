@@ -229,6 +229,48 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     // to a later transcription job.
     @Published private(set) var liveSelectionReferences: [LiveSelectionReference] = []
     private var liveSelectionCapture: LiveSelectionCapture?
+    @Published private(set) var typedInput = ""
+    private var typedReferenceIndex: Int?
+    private var typedSpeechAnchor: String?
+
+    var canTypeInHUD: Bool {
+        phase == .recording && liveRecordingState.isRecordingOrPaused && useCase == .newSession
+    }
+
+    // The active run is shown in the editable field, not duplicated in the
+    // read-only timeline. All mirrored panels share the same session value.
+    var liveContextPreviewReferences: [LiveSelectionReference] {
+        liveSelectionReferences.enumerated().compactMap { index, reference in
+            index == typedReferenceIndex ? nil : reference
+        }
+    }
+
+    func updateTypedInput(_ value: String) {
+        guard canTypeInHUD else { return }
+        typedInput = value
+        if typedSpeechAnchor == nil { typedSpeechAnchor = partialTranscript }
+        let reference = LiveSelectionReference(typedText: value)?
+            .anchored(after: typedSpeechAnchor ?? partialTranscript)
+        if let index = typedReferenceIndex {
+            if let reference {
+                liveSelectionReferences[index] = reference
+            } else {
+                liveSelectionReferences.remove(at: index)
+                typedReferenceIndex = nil
+            }
+        } else if let reference {
+            typedReferenceIndex = liveSelectionReferences.count
+            liveSelectionReferences.append(reference)
+        }
+    }
+
+    /// Blur seals a prose run, never a recording or delivery. A subsequent
+    /// highlight/screenshot and the next typed run keep their capture order.
+    func endTypingRun() {
+        typedReferenceIndex = nil
+        typedSpeechAnchor = nil
+        typedInput = ""
+    }
 
     // Make the realtime HUD visible as soon as the frozen Mode selects a streaming
     // provider. A network/Wi-Fi handshake may delay the first Soniox partial, but the
@@ -467,6 +509,8 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     func recordLiveSelection(_ reference: LiveSelectionReference) {
         guard phase == .recording,
               liveRecordingState.isRecordingOrPaused else { return }
+        RecorderTypingTextView.commitFocusedDraft()
+        endTypingRun()
         // Freeze the live speech visible at selection mouse-up or screenshot
         // save. Final transcription may revise words, so this is an approximate
         // insertion anchor, not an AX range or a live destination write.
@@ -478,8 +522,14 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     }
 
     func endLiveSelectionCapture() {
+        endTypingRun()
         liveSelectionCapture?.stop()
         liveSelectionCapture = nil
+    }
+
+    func restoreLiveContextForRetry(_ references: [LiveSelectionReference]) {
+        guard phase == .transcribing else { return }
+        liveSelectionReferences = references
     }
 
     // Whether this capture is a brand-new dictation or an assistant follow-up turn. Mirrors

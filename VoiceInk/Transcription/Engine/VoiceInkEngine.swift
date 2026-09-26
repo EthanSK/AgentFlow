@@ -31,6 +31,7 @@ final class FailedTranscriptionRetry {
     let duration: TimeInterval
     let inputDevice: RecordingInputDeviceSnapshot?
     let realtimeDraft: String
+    let liveContextReferences: [LiveSelectionReference]
     let pasteTarget: RecordingPasteTarget
     let context: RecordingContextSnapshot?
     let skipPostProcessing: Bool
@@ -58,6 +59,7 @@ final class FailedTranscriptionRetry {
         inputDevice = session.recordingInputDevice
         realtimeDraft = transcription.recoverableRealtimeDraftText
             ?? session.recoverablePartialTranscript
+        liveContextReferences = session.liveSelectionReferences
         pasteTarget = session.pasteTarget
         context = session.retryContextSnapshot ?? session.contextStore?.snapshot
         skipPostProcessing = session.skipPostProcessing
@@ -89,6 +91,7 @@ final class FailedTranscriptionRetry {
         session.transcriptionConfiguration = configuration
         session.recordingInputDevice = inputDevice
         session.recoverablePartialTranscript = realtimeDraft
+        session.restoreLiveContextForRetry(liveContextReferences)
         session.pasteTarget = pasteTarget
         session.retryContextSnapshot = context
         session.skipPostProcessing = skipPostProcessing
@@ -795,6 +798,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
 
             vippLog.info("toggleRecord: STOP session \(active.id.uuidString, privacy: .public) → .transcribing destination=\(String(describing: stopPasteDestination), privacy: .public) targetCaptured=\(active.pasteTarget.focusedInput != nil, privacy: .public) deliveryPolicy=\(stopPasteDestination.usesBaseCurrentInputDelivery ? "baseCurrentInput" : "exactNextLatch", privacy: .public) autoSendDisposition=\(String(describing: autoSendDisposition), privacy: .public) shouldCancel=\(active.shouldCancel, privacy: .public)")
 
+            RecorderTypingTextView.releaseKeyboardBeforeFinish()
             active.phase = .transcribing
             active.liveRecordingState = .transcribing
             active.endLiveSelectionCapture()
@@ -804,7 +808,9 @@ class VoiceInkEngine: NSObject, ObservableObject {
             // state only: it never creates or mutates a destination-app draft. A
             // genuine Primary double-click therefore leaves a reopenable draft even
             // if the provider or app exits before the final clipboard result arrives.
-            active.recoverablePartialTranscript = active.partialTranscript
+            active.recoverablePartialTranscript = LiveSelectionReference.interleaving(
+                active.liveSelectionReferences, with: active.partialTranscript
+            )
             active.partialTranscript = ""
             active.startID = UUID() // invalidate the start handshake token (it has fully started)
             recomputeDerivedState()
@@ -1979,7 +1985,10 @@ class VoiceInkEngine: NSObject, ObservableObject {
             // the user can replay/retranscribe there and only History's explicit
             // delete action removes the file.
             session.startID = UUID() // invalidate start handshake
-            session.recoverablePartialTranscript = session.partialTranscript
+            RecorderTypingTextView.releaseKeyboardBeforeFinish()
+            session.recoverablePartialTranscript = LiveSelectionReference.interleaving(
+                session.liveSelectionReferences, with: session.partialTranscript
+            )
             session.partialTranscript = ""
             session.endLiveSelectionCapture()
             session.clearContext()

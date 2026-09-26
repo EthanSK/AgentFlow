@@ -32,6 +32,7 @@ struct LiveSelectionReference: Equatable {
     let truncated: Bool
     private let selectedText: String
     private let screenshotPath: String?
+    private var typedText: String?
     private var spokenPrefix = ""
     private var codexThreadID: String?
     private var codexThreadTitle: String?
@@ -93,7 +94,21 @@ struct LiveSelectionReference: Equatable {
         return copy
     }
 
-    var isSelection: Bool { screenshotPath == nil }
+    /// Keyboard input is authored prose, not selected source material. Keep it
+    /// outside recognition so a later partial/final can never rewrite it.
+    init?(typedText: String) {
+        guard !typedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        self.preview = typedText
+        self.characterCount = typedText.count
+        self.omittedMiddle = false
+        self.truncated = false
+        self.selectedText = ""
+        self.screenshotPath = nil
+        self.typedText = typedText
+    }
+
+    var isTypedText: Bool { typedText != nil }
+    var isSelection: Bool { screenshotPath == nil && !isTypedText }
 
     var spokenWordCount: Int {
         spokenPrefix.split(whereSeparator: \.isWhitespace).count
@@ -159,7 +174,9 @@ struct LiveSelectionReference: Equatable {
             let speech = String(partialTranscript[previousEnd..<insertion])
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if !speech.isEmpty { parts.append(.speech(speech)) }
-            if reference.screenshotPath != nil {
+            if let typedText = reference.typedText {
+                parts.append(.speech(typedText))
+            } else if reference.screenshotPath != nil {
                 parts.append(.screenshot(reference.preview))
             } else {
                 parts.append(.selection(reference.hudPreview))
@@ -196,7 +213,7 @@ struct LiveSelectionReference: Equatable {
             if !speech.isEmpty {
                 parts.append(speech)
             }
-            if reference.screenshotPath == nil { selectionIndex += 1 }
+            if reference.isSelection { selectionIndex += 1 }
             parts.append(reference.xml(index: selectionIndex))
             previousEnd = insertion
             lastWordCount = wordCount
@@ -210,6 +227,7 @@ struct LiveSelectionReference: Equatable {
     }
 
     private func xml(index: Int) -> String {
+        if let typedText { return typedText }
         if let screenshotPath {
             return "<local_screenshot path=\"\(Self.xmlEscaped(screenshotPath))\"/>"
         }

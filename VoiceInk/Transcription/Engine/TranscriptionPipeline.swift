@@ -158,6 +158,7 @@ class TranscriptionPipeline {
     ) async {
         let model = transcriptionConfiguration.model
         var finalText: String?
+        var finalContextAttached = false
         var didInsertSessionMetric = false
         var responseError: String?
         func reportTranscriptionFailure(_ title: String) {
@@ -186,21 +187,26 @@ class TranscriptionPipeline {
         var autoSendDispositionNow = RecordingAutoSendDisposition.configured
         let recoverablePartialTranscriptNow = recoverablePartialTranscript()
 
-        func attachLiveSelectionsToFinalText() {
+        func attachLiveSelectionsToFinalText(includeSourceContext: Bool = true) {
             // Insert complete XML-escaped selections and saved screenshot paths
             // alongside the speech that preceded them in the live HUD. The
             // provider only saw a compact HUD preview, not these full texts.
             // Screenshot pixels are not sent by this path. This remains
             // one final destination write, never a streaming composer edit.
-            // Keep raw/skip verbatim and do not append references to commands
-            // or recorder-assistant responses.
-            guard !skipPostProcessingNow,
-                  !assistant.isFollowUp,
+            // Keep raw/skip authored prose verbatim. Source references still do
+            // not enter commands or recorder-assistant responses.
+            guard !assistant.isFollowUp,
                   let current = finalText else { return }
+            // Typed words are authored input, not optional source context. Raw
+            // mode excludes highlights/screenshots but must retain keyboard prose.
+            let references = liveSelectionReferences().filter {
+                (includeSourceContext && !skipPostProcessingNow) || $0.isTypedText
+            }
             let annotated = LiveSelectionReference.interleaving(
-                liveSelectionReferences(),
+                references,
                 with: current
             )
+            finalContextAttached = true
             guard annotated != current else { return }
             finalText = annotated
             if transcription.enhancedText != nil && responseError == nil {
@@ -242,15 +248,22 @@ class TranscriptionPipeline {
                 TranscriptionStatus.failed.rawValue
                 ? nil
                 : transcription.text
-            let recovery = TranscriptionCancellationRecovery.resolve([
-                recoveredText,
-                finalText,
-                transcription.enhancedText,
+            // Fresh provider text must not outrank and erase authored keyboard
+            // prose during cancellation. The persisted HUD snapshot already
+            // contains context, so never annotate that fallback a second time.
+            let completedCandidates = [
+                recoveredText, finalText, transcription.enhancedText,
                 storedTextCandidate == Transcription.canceledTranscriptionText
-                    ? nil
-                    : storedTextCandidate,
-                recoverablePartialTranscriptNow
-            ])
+                    ? nil : storedTextCandidate
+            ].map { candidate -> String? in
+                guard let candidate else { return nil }
+                return finalContextAttached ? candidate : LiveSelectionReference.interleaving(
+                    liveSelectionReferences(), with: candidate
+                )
+            }
+            let recovery = TranscriptionCancellationRecovery.resolve(
+                completedCandidates + [recoverablePartialTranscriptNow]
+            )
             let retainedText: String?
             switch recovery {
             case .noResult:
@@ -679,9 +692,9 @@ class TranscriptionPipeline {
         }
 
         let outputForPasteTarget = routeResolvedOutput
-        if outputForPasteTarget.outputMode == .paste {
-            attachLiveSelectionsToFinalText()
-        }
+        attachLiveSelectionsToFinalText(
+            includeSourceContext: outputForPasteTarget.outputMode == .paste
+        )
         let deliveryLeasePolicy: TranscriptionDeliveryLeasePolicy =
             pasteTargetForDelivery.destination == .primaryCurrentInput
                 && outputForPasteTarget.outputMode == .paste

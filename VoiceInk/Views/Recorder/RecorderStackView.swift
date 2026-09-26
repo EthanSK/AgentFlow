@@ -73,14 +73,15 @@ struct MiniRecorderStackView: View {
     private var liveTranscriptHeight: CGFloat {
         guard let baseSession else { return MiniRecorderLayoutMetrics.liveTranscriptHeight }
         let parts = LiveSelectionReference.previewParts(
-            baseSession.liveSelectionReferences,
+            baseSession.liveContextPreviewReferences,
             with: baseSession.partialTranscript
         )
         return MiniRecorderLayoutMetrics.transcriptHeight(
             parts: parts,
             width: MiniRecorderLayoutMetrics.liveTranscriptWidth,
             maxHeight: screenHeight / CGFloat(hudScale.scale) - 150
-        )
+                - (baseSession.canTypeInHUD ? MiniRecorderLayoutMetrics.typedInputHeight : 0)
+        ) + (baseSession.canTypeInHUD ? MiniRecorderLayoutMetrics.typedInputHeight : 0)
     }
 
     private var baseCardHeight: CGFloat {
@@ -89,7 +90,7 @@ struct MiniRecorderStackView: View {
         }
         if let baseSession,
            baseSession.liveRecordingState.isRecordingOrPaused,
-           baseSession.showsRealtimeTranscriptHUD || !baseSession.liveSelectionReferences.isEmpty {
+           baseSession.showsRealtimeTranscriptHUD || baseSession.canTypeInHUD || !baseSession.liveSelectionReferences.isEmpty {
             return liveTranscriptHeight + 41
         }
         return MiniRecorderLayoutMetrics.controlBarHeight
@@ -244,12 +245,13 @@ struct NotchRecorderStackView: View {
         guard let pillSession else { return MiniRecorderLayoutMetrics.liveTranscriptHeight }
         return MiniRecorderLayoutMetrics.transcriptHeight(
             parts: LiveSelectionReference.previewParts(
-                pillSession.liveSelectionReferences,
+                pillSession.liveContextPreviewReferences,
                 with: pillSession.partialTranscript
             ),
             width: notchWidth + MiniRecorderLayoutMetrics.notchTranscriptSideExpansion * 2 - 16,
             maxHeight: screenHeight / CGFloat(hudScale.scale) - notchHeight - 150
-        )
+                - (pillSession.canTypeInHUD ? MiniRecorderLayoutMetrics.typedInputHeight : 0)
+        ) + (pillSession.canTypeInHUD ? MiniRecorderLayoutMetrics.typedInputHeight : 0)
     }
 
     private var desiredPanelHeight: CGFloat {
@@ -258,7 +260,7 @@ struct NotchRecorderStackView: View {
             pill = notchHeight + 6 + 320
         } else if let session = pillSession,
                   session.liveRecordingState.isRecordingOrPaused,
-                  session.showsRealtimeTranscriptHUD || !session.liveSelectionReferences.isEmpty {
+                  session.showsRealtimeTranscriptHUD || session.canTypeInHUD || !session.liveSelectionReferences.isEmpty {
             pill = notchHeight + 6 + liveTranscriptHeight + 1
         } else {
             pill = notchHeight + 6

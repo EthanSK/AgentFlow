@@ -24,6 +24,8 @@ Updates are manual for now. The app's upstream VoiceInk check only reports relea
 
 Highlight text with your mouse in an app that exposes its selection to macOS, or save a macOS screenshot while recording. The black recorder shows each reference in line with your words: selections in cyan, screenshots in purple. The final paste keeps that approximate order:
 
+You can also click **Click to type** in the black recorder and write part or all of your message. Click back into the recorder after selecting text or taking a screenshot to keep typing. Leaving the editor only ends that text segment; finish dictation normally to paste the combined message. Enter adds a line break. Typed words stay local and are not sent to the speech-recognition model. The microphone and normal recording lifecycle remain unchanged.
+
 ```text
 Rename this function
 

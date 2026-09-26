@@ -512,6 +512,9 @@ struct LiveTranscriptView: View {
     let text: String
     let selectionReferences: [LiveSelectionReference]
     let height: CGFloat
+    var typedInput: Binding<String>? = nil
+    var onEndTyping: () -> Void = {}
+    @State private var typingFocusRequest = UUID()
 
     private var previewParts: [LiveSelectionReference.PreviewPart] {
         LiveSelectionReference.previewParts(selectionReferences, with: text)
@@ -536,6 +539,7 @@ struct LiveTranscriptView: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 // One chronological stream keeps each highlight between the
@@ -549,7 +553,11 @@ struct LiveTranscriptView: View {
                     .padding(.vertical, 6)
                     .id("bottom")
             }
-            .frame(height: height)
+            .frame(height: max(0, height - (typedInput == nil ? 0 : MiniRecorderLayoutMetrics.typedInputHeight)))
+            .contentShape(Rectangle())
+            .onTapGesture {
+                if typedInput != nil { typingFocusRequest = UUID() }
+            }
             .mask(
                 LinearGradient(
                     stops: [
@@ -565,6 +573,22 @@ struct LiveTranscriptView: View {
             .onChange(of: previewParts) {
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
+        }
+        if let typedInput {
+            ZStack(alignment: .topLeading) {
+                if typedInput.wrappedValue.isEmpty {
+                    Text("Click to type")
+                        .font(.system(size: MiniRecorderLayoutMetrics.liveTranscriptFontSize))
+                        .foregroundColor(.white.opacity(0.35))
+                        .padding(.horizontal, 17)
+                        .padding(.vertical, 6)
+                        .allowsHitTesting(false)
+                }
+                RecorderTypedInput(text: typedInput, focusRequest: typingFocusRequest,
+                                   onEndEditing: onEndTyping)
+            }
+            .frame(height: MiniRecorderLayoutMetrics.typedInputHeight)
+        }
         }
         .transaction { $0.disablesAnimations = true }
     }

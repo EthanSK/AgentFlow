@@ -19,6 +19,7 @@ class NotchRecorderPanel: KeyablePanel {
         )
 
         self.isFloatingPanel = true
+        self.becomesKeyOnlyIfNeeded = true
         self.level = .statusBar + 3
         self.backgroundColor = .clear
         self.isOpaque = false
