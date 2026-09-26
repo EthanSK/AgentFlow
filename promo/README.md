@@ -25,7 +25,7 @@ Source for the narrated video on the [Agent Flow website](https://ethansk.github
 | `segments[].id` | File name stem: the voice for a segment is `<voice folder>/<id>.wav`. |
 | `segments[].kind` | `narration` for the narrator explaining; `dictation` for the narrator dictating the demo. Dictation words appear live in the recorder as she says them, drive its waveform, get a small room sound and are quoted in the captions. |
 | `segments[].start` | Seconds from the start of the video where the file's first audible sound begins. Leading and trailing silence in the file is trimmed. |
-| `segments[].text` | Exactly what is spoken. Captions and the website transcript use it word for word, and the recorder's live words are the dictation segments' text. |
+| `segments[].text` | Exactly what is spoken. Captions use it word for word, and the recorder's live words are the dictation segments' text. |
 | `segments[].picture` | What's on screen at that moment, for the voice director. `render.mjs` doesn't read it. |
 
 Each segment's speech must end at least `minGap` before the next segment starts;

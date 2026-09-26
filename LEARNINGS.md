@@ -1,5 +1,15 @@
 # Learnings
 
+## 2026-09-27 — Removing the visible promo transcript does not remove captions
+
+The promo's narration and WebVTT captions come from `promo/narration.json`; the HTML
+transcript was a second presentation, not their source. Removing that visible block
+also required removing the renderer's obsolete HTML-transcript warning and correcting
+its README. The MP4, poster and VTT stayed byte-identical. The section retains its
+`#video` target and an explicit accessible name after the visible heading is removed.
+Rotate the stylesheet query when changing the surrounding layout so an already-open
+browser cannot combine the new markup with the previous cached styling.
+
 ## 2026-09-27 — Public source, Pages and the download have separate sync gates
 
 A website-only publication can leave newer native commits on local main while Pages is

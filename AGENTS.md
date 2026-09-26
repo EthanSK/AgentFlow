@@ -15,6 +15,14 @@ These repository-specific rules are mandatory for every future agent working on 
 - Update those comments whenever behavior changes. Do not remove a constraint as "redundant," merge routes, or replace a bounded app-specific path with a generic shortcut unless the adjacent comment and accepted contract prove that simplification safe.
 - Comment intent and invariants, not obvious syntax. `TERMINOLOGY.md`, `RECORDING_DESTINATIONS.md`, `BACKGROUND_DELIVERY_TEST_MATRIX.md`, and `FAILED_APPROACHES.md` are the long-form source of truth; code comments must make the relevant intent visible without requiring a future agent to guess which rule applies.
 
+## Website authorship
+
+Ethan, 2026-09-27: “From now on, only Opus should be in charge of making changes to the website.”
+
+- The website is everything under `docs/`, plus the `promo/` sources that produce its video, captions and poster. Only a Claude Opus agent may author changes there: copy, design, layout, markup, CSS, scripts and media content.
+- Any other agent, including Codex/GPT, may inspect those files, run validation and browser checks, apply an Opus-authored patch verbatim, and commit and publish it. It must not write, rewrite, extend or tidy a website change itself. If an Opus patch doesn't apply cleanly or fails validation, return the evidence to Opus for a revised patch instead of fixing it by hand.
+- This rule is repository-scoped and covers the website only. Native app, release and delivery work keep their existing rules; updating the website's download link for a release is still a website change and needs Opus.
+
 ## Canonical mouse terminology
 
 Read `TERMINOLOGY.md` before interpreting button names. The **primary button** is also Ethan's normal button, thumb button, toggle button, recording button, “same button,” and historical G5 button. While fully idle with no eligible pending transcription, one press starts immediately after reservation, with no click-decision timer or startup debounce. A pending transcription retains its short decision window so double-click can select that existing result's **Won't paste** action. While recording, one press performs a normal stop through base VoiceInk's current-input route (`primaryCurrentInput`) after the shorter of the macOS double-click interval and 0.45 seconds. Two presses select the existing clipboard-only/no-paste finish after the full third-press window expires; three presses inside that bounded sequence pause capture. While paused, the first press waits through that same short second-press window: one press resumes the existing session, while two presses immediately finish it through the same clipboard-only/no-paste route. The system keyboard focus and current Mode at delivery decide a normal stop's paste and optional Return. A primary normal stop never owns, restores, verifies, or falls back to `recordingStart` or any other saved input.

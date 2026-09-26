@@ -21,7 +21,7 @@
   <link rel="icon" href="assets/agentflow-icon.png">
   <link rel="apple-touch-icon" href="assets/agentflow-icon-512.png">
   <link rel="manifest" href="site.webmanifest">
-  <link rel="stylesheet" href="styles.css?v=345-desktop-centered">
+  <link rel="stylesheet" href="styles.css?v=353-video-compact">
   <script>
     // Pre-hide the demo before first paint so autoplay never flashes the finished
     // example. If script.js hasn't taken over within 2.5 s, show everything.
@@ -186,13 +186,13 @@
       It reuses the hero demo's invented example and only states claims this page already
       makes, so re-render it whenever the demo example or those claims change. Speech,
       music and captions share the same timeline; audio starts only after a visitor plays it.
+      Ethan asked for no visible title, subtitle or transcript here (2026-09-27): the video
+      sits in the page like a normal embedded promo. The section keeps id="video" for the
+      top navigation and takes its accessible name from aria-label. The captions track
+      carries every spoken line; the one-line credit is the AI-voice disclosure, keep it.
     -->
-    <section class="band" id="video" aria-labelledby="video-title">
+    <section class="band" id="video" aria-label="Video">
       <div class="wrap">
-        <div class="band-head">
-          <h2 id="video-title">Video</h2>
-          <p>33 seconds. Voice, highlights and screenshots in one message.</p>
-        </div>
         <figure class="promo-video">
           <video controls playsinline preload="metadata" width="1920" height="1080"
             poster="assets/agentflow-promo-poster.jpg?v=e3126f64"
@@ -201,19 +201,8 @@
             <track kind="captions" src="assets/agentflow-promo.vtt?v=b80ec054" srclang="en" label="English">
             <a href="assets/agentflow-promo.mp4?v=3eaac33f">Agent Flow video (MP4)</a>
           </video>
-          <figcaption class="note">An illustrated demo with an AI-generated voice and original music.</figcaption>
+          <figcaption>The narrator's voice is AI-generated.</figcaption>
         </figure>
-        <details class="optional">
-          <summary>Video transcript</summary>
-          <p>Wow. This is the future of speech to text.</p>
-          <p>Press your shortcut and just talk.</p>
-          <p>“Rename this function”</p>
-          <p>Highlight the code you mean, no copying needed.</p>
-          <p>“and make the empty state look like this.”</p>
-          <p>Take a screenshot to show what you want.</p>
-          <p>Press again, and Agent Flow pastes it all in one go, so your agent can see what you were looking at.</p>
-          <p>Agent Flow. Open source, for Mac.</p>
-        </details>
       </div>
     </section>
 

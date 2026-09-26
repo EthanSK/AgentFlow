@@ -480,12 +480,6 @@ function printPlan() {
   if (timeline.shifts.length) console.log(`shifted: ${timeline.shifts.map((s) => `${s.id} +${s.by} s`).join(", ")}`);
 }
 
-function checkTranscript() {
-  const page = readFileSync(join(docs, "index.html"), "utf8").replace(/\s+/g, " ");
-  const missing = narration.segments.filter((s) => !page.includes(s.text));
-  if (missing.length) console.warn(`warning: docs/index.html transcript lacks: ${missing.map((s) => s.id).join(", ")}`);
-}
-
 function run(cmd, list) {
   const r = spawnSync(cmd, list, { encoding: "utf8", maxBuffer: 1 << 26 });
   if (r.status !== 0) fail(`${cmd} failed: ${r.stderr}`);
@@ -621,7 +615,6 @@ async function main() {
     console.log(captionsFile);
     console.log(posterFile);
     console.log(`loudness ${measured.integrated} LUFS, true peak ${measured.truePeak} dBFS, ${timeline.duration.toFixed(2)} s`);
-    if (mode === "final") checkTranscript();
   } finally {
     await browser.close();
   }

@@ -998,10 +998,11 @@ main:focus {
   min-width: 0;
 }
 
-/* Promo video: full content width below its heading, 16:9 reserved up front so the
-   poster never shifts the page while the video's metadata loads. */
+/* Promo video: full content width with no heading of its own (Ethan asked for no visible
+   title, subtitle or transcript). 16:9 is reserved up front so the poster never shifts the
+   page while the video's metadata loads. */
 .promo-video {
-  margin: clamp(1.5rem, 3vw, 2.25rem) 0 0;
+  margin: 0;
 }
 
 .promo-video video {
@@ -1013,6 +1014,13 @@ main:focus {
   border-radius: 18px;
   background: var(--desk);
   box-shadow: 0 26px 60px -34px rgba(8, 22, 18, 0.45);
+}
+
+/* The AI-voice disclosure: one quiet credit line, smaller than body text. */
+.promo-video figcaption {
+  margin-top: 0.75rem;
+  color: var(--graphite);
+  font-size: 0.8125rem;
 }
 
 .setup-steps {
