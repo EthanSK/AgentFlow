@@ -10,6 +10,9 @@ Build 353 emits one notice-level, text-free final outcome per attempted gesture:
 source changed before/during/after the read, cancellation, unavailable text, a browser
 gesture outside its source window, or emission to the recording session. Emission
 does not itself prove HUD rendering or final paste acceptance.
+Live notices after installation recorded both emission and cancellation. The combined
+cancellation label does not distinguish another mouse-down from recording stop; do not
+infer a specific user's missed highlight from that aggregate reason alone.
 Codex/ChatGPT's shared bundle gets one additional 350ms retry only after both ordinary
 AX attempts returned empty. Other apps, immediate success, source checks, cancellation,
 secure-field refusal, clipboard isolation and the idle watcher's cost are unchanged.
