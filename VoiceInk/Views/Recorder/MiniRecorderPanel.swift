@@ -15,7 +15,21 @@ enum MiniRecorderLayoutMetrics {
     static let bottomPadding: CGFloat = 24
     static let controlBarHeight: CGFloat = 40
     static let liveTranscriptHeight: CGFloat = 56
-    static let typedInputHeight: CGFloat = 60
+    /// One line of recorder text plus the 16pt vertical padding every measured
+    /// section adds (the editor's 6pt top/bottom insets plus rounding slack).
+    /// Build 347 gave the empty "Click to type" editor a fixed 60pt box and kept
+    /// the preview row above it at the 56pt two-line minimum, so both showed tall
+    /// empty bands (Ethan, 2026-09-26). While typing is available, both sections
+    /// now start at exactly one line and grow only with real content.
+    static let singleLineHeight: CGFloat = {
+        let bounds = ("\u{200B}" as NSString).boundingRect(
+            with: NSSize(width: 1_000, height: CGFloat.greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: NSFont.systemFont(ofSize: liveTranscriptFontSize)]
+        )
+        return ceil(bounds.height) + 16
+    }()
+    static var typedInputHeight: CGFloat { singleLineHeight }
     static let typedInputControlWidth: CGFloat = 90
     static let separatorHeight: CGFloat = 1
     static let assistantPanelHeight: CGFloat = 320
@@ -37,16 +51,25 @@ enum MiniRecorderLayoutMetrics {
         parts: [LiveSelectionReference.PreviewPart], typedText: String?,
         width: CGFloat, maxHeight: CGFloat
     ) -> CGFloat {
+        // With the editor present, the preview row above it only needs one line
+        // at minimum. Reserve exactly that line when capping a long editor, and
+        // keep LiveTranscriptView's editor cap on the same reserve so the rendered
+        // split matches this envelope. Without typing (after stop, transcribing),
+        // the long-standing 56pt preview minimum is unchanged.
+        let previewMinimum = typedText == nil ? liveTranscriptHeight : singleLineHeight
         let editor = typedText.map {
-            typingHeight(text: $0, width: width, maxHeight: maxHeight - liveTranscriptHeight)
+            typingHeight(text: $0, width: width, maxHeight: maxHeight - previewMinimum)
         } ?? 0
-        return editor + transcriptHeight(parts: parts, width: width, maxHeight: maxHeight - editor)
+        return editor + transcriptHeight(
+            parts: parts, width: width, maxHeight: maxHeight - editor, minimumHeight: previewMinimum
+        )
     }
 
     static func transcriptHeight(
         parts: [LiveSelectionReference.PreviewPart],
         width: CGFloat,
-        maxHeight: CGFloat
+        maxHeight: CGFloat,
+        minimumHeight: CGFloat = liveTranscriptHeight
     ) -> CGFloat {
         let plain = parts.map { part -> String in
             switch part {
@@ -58,14 +81,14 @@ enum MiniRecorderLayoutMetrics {
         let content = plain.isEmpty ? "…" : plain
         // After enough dictated context to fill any normal display, measuring
         // the whole transcript on every provider partial would add HUD latency.
-        if content.count > 3_000 { return max(liveTranscriptHeight, maxHeight) }
+        if content.count > 3_000 { return max(minimumHeight, maxHeight) }
         let bounds = (content as NSString).boundingRect(
             with: NSSize(width: max(1, width - 32), height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
             attributes: [.font: NSFont.systemFont(ofSize: liveTranscriptFontSize)]
         )
-        return min(max(liveTranscriptHeight, maxHeight),
-                   max(liveTranscriptHeight, ceil(bounds.height) + 16))
+        return min(max(minimumHeight, maxHeight),
+                   max(minimumHeight, ceil(bounds.height) + 16))
     }
 
     static func notificationBottomReservedHeight(

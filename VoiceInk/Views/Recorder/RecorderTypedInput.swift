@@ -31,7 +31,9 @@ struct RecorderTypedInput: NSViewRepresentable {
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
-        let editor = RecorderTypingTextView(frame: NSRect(x: 0, y: 0, width: 640, height: 60))
+        let editor = RecorderTypingTextView(frame: NSRect(
+            x: 0, y: 0, width: 640, height: MiniRecorderLayoutMetrics.typedInputHeight
+        ))
         editor.isRichText = false
         editor.drawsBackground = false
         editor.textColor = .white
@@ -40,7 +42,9 @@ struct RecorderTypedInput: NSViewRepresentable {
         editor.textContainerInset = NSSize(width: 12, height: 6)
         editor.isVerticallyResizable = true
         editor.isHorizontallyResizable = false
-        editor.minSize = NSSize(width: 0, height: 60)
+        // Must not exceed the one-line frame: a taller minimum document would
+        // scroll inside the box and reintroduce the empty band under the text.
+        editor.minSize = NSSize(width: 0, height: MiniRecorderLayoutMetrics.typedInputHeight)
         editor.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         editor.autoresizingMask = [.width]
         editor.textContainer?.widthTracksTextView = true

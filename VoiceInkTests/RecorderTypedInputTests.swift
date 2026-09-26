@@ -29,13 +29,28 @@ struct RecorderTypedInputTests {
     @Test @MainActor func liveTypingHeightGrowsBeforeBlurAndCapsAtScreenBudget() {
         let short = MiniRecorderLayoutMetrics.typingHeight(text: "hello", width: 640, maxHeight: 500)
         let long = MiniRecorderLayoutMetrics.typingHeight(text: String(repeating: "long typed line\n", count: 15), width: 640, maxHeight: 500)
-        #expect(short == 60)
+        #expect(short == MiniRecorderLayoutMetrics.typedInputHeight)
         #expect(long > short)
         #expect(MiniRecorderLayoutMetrics.typingHeight(text: String(repeating: "word ", count: 900), width: 640, maxHeight: 500) == 500)
         let empty = MiniRecorderLayoutMetrics.contextHeight(parts: [], typedText: "", width: 640, maxHeight: 500)
         let active = MiniRecorderLayoutMetrics.contextHeight(parts: [], typedText: String(repeating: "line\n", count: 12), width: 640, maxHeight: 500)
         #expect(active > empty)
         #expect(active <= 500)
+    }
+
+    @Test @MainActor func emptyTypingPanelHugsOneLineInEachSection() {
+        // Regression for build 347: the empty editor sat in a fixed 60pt box and
+        // the preview above kept a 56pt minimum, leaving tall empty bands.
+        let line = MiniRecorderLayoutMetrics.singleLineHeight
+        #expect(line < MiniRecorderLayoutMetrics.liveTranscriptHeight)
+        #expect(MiniRecorderLayoutMetrics.typingHeight(text: "", width: 688, maxHeight: 500) == line)
+        #expect(MiniRecorderLayoutMetrics.contextHeight(
+            parts: [], typedText: "", width: 688, maxHeight: 500
+        ) == line * 2)
+        // Without an editor (after stop) the long-standing preview minimum stays.
+        #expect(MiniRecorderLayoutMetrics.contextHeight(
+            parts: [.speech("Hello")], typedText: nil, width: 688, maxHeight: 500
+        ) == MiniRecorderLayoutMetrics.liveTranscriptHeight)
     }
 
     @Test @MainActor func trailingNewlineAndNarrowerEditorIncreaseHeight() {

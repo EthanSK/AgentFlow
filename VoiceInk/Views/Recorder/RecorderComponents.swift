@@ -520,9 +520,12 @@ struct LiveTranscriptView: View {
 
     private var editorHeight: CGFloat {
         guard let typedInput else { return 0 }
+        // Reserve one preview line, matching contextHeight's typing envelope;
+        // reserving the older 56pt minimum here would cap a long editor short of
+        // the height the panel was sized for.
         return MiniRecorderLayoutMetrics.typingHeight(
             text: typedInput.wrappedValue, width: width,
-            maxHeight: height - MiniRecorderLayoutMetrics.liveTranscriptHeight
+            maxHeight: height - MiniRecorderLayoutMetrics.singleLineHeight
         )
     }
 

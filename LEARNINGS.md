@@ -1,5 +1,38 @@
 # Learnings
 
+## 2026-09-26 — Size both typing-panel sections to one line when empty
+
+Build 347 gave the empty “Click to type” editor a fixed 60pt minimum (and a 60pt
+NSTextView `minSize`) while the preview row above kept the 56pt two-line minimum, so
+Ethan saw tall empty bands above and below the placeholder. While typing is available,
+`MiniRecorderLayoutMetrics.singleLineHeight` is now the minimum for both sections; the
+editor's document `minSize` must match its frame or it scrolls and recreates the band.
+`LiveTranscriptView` must reserve the same one-line preview height as `contextHeight`
+when capping a long editor, otherwise the rendered split no longer matches the panel
+envelope. The non-typing 56pt preview minimum remains pinned.
+
+## 2026-09-26 — Publish website-only changes without shipping unreleased app commits
+
+The promo video (`4d9c645`) went public while local `main` held ten unpublished
+native commits. Committing it in a worktree based on `origin/main`, pushing that
+branch to `main`, then merging `origin/main` back into local `main` published only
+the site change and kept the cited local SHAs unchanged; a rebase would have
+rewritten them. GitHub Pages served the committed MP4 as `video/mp4` with
+byte-range (206) responses, so `docs/assets` hosting works for Safari playback.
+Re-render the video from `promo/` whenever the hero demo example or the claims it
+repeats change; see `promo/README.md`.
+
+## 2026-09-26 — Accept the observed VS Code surface, not generic app coverage
+
+Ethan confirmed that VS Code code selection works and delivered two real
+`app_selection` references labeled `com.microsoft.VSCode` while running build 347.
+This accepts everyday code-editor capture through the Better Git bridge introduced
+by `d13797f`, beyond the earlier isolated code/diff fixture evidence. It does not
+accept terminals, chat panels, remote extension hosts or a new diff gesture.
+In the same message he again reported Telegram selection failing; that remains an
+unfinished capture surface, not a regression disproved by the VS Code acceptance.
+The current native fallback chain has no Telegram-specific selection bridge.
+
 ## 2026-09-26 — Measure live typing and bind focus return to explicit opt-in
 
 The editable recorder had a fixed 60-point height while sealed text used measured
