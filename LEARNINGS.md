@@ -1,5 +1,24 @@
 # Learnings
 
+## 2026-09-26 — Measure live typing and bind focus return to explicit opt-in
+
+The editable recorder had a fixed 60-point height while sealed text used measured
+preview height, so long typing became correctly sized only after blur. Use the same
+bounded live-editor measurement in the mini/notch card and notification envelope;
+include the trailing insertion line and register session changes in the stack body.
+Reserve the Unfocus control's width in both measurement and rendered editor layout.
+
+Ethan explicitly superseded manual refocus after every context capture: after the
+first click to type, one accepted highlight/screenshot may return to that session's
+chosen mirrored editor. Unfocus and finalization disarm it; ordinary speech updates
+and app switches do not. This is app-owned HUD keyboard focus, not saved-destination
+activation or a new paste route. Key the Command-extended Primary start intent to
+the exact start reservation, and forward Command-up even when all three base
+modifiers remain held. A delayed callback must not focus another/newer recording.
+The dedicated typing regressions cover height, opt-in state, finished-session
+rejection, chord ordering/releases, and reservation binding; physical acceptance
+remains separate from those tests.
+
 ## 2026-09-26 — Keep direct-test coverage output out of the release checkout
 
 The build-346 full Swift Testing fallback produced `default.profraw` in its working
@@ -23,7 +42,8 @@ draft, and a saved-file retry must carry the context references as well as the W
 **Guard:** A nonactivating panel can lose key status while retaining its first responder.
 Handle both responder resignation and the exact window's key-loss notification, committing
 IME text and clearing the local editor before publishing the seal so repeated callbacks
-cannot duplicate a segment. Never make a panel key because a partial/reference arrived.
+cannot duplicate a segment. A provider partial never makes a panel key; the later
+explicit opt-in focus-return contract above is the sole context-capture exception.
 Before normal finish, relinquish the recorder's own keyboard ownership. An older Primary
 result can finish during a newer capture: its generic paste/Return must refuse our own
 editor using local responder state, without adding saved-input capture, AX routing or

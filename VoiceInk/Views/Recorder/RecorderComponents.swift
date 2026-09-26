@@ -597,8 +597,11 @@ struct LiveTranscriptView: View {
                 RecorderTypedInput(text: typedInput, focusRequest: typingFocusRequest,
                                    onEndEditing: onEndTyping, typingFocus: typingFocus)
             }
+            // Reserve a stable control gutter so Unfocus never covers typed text
+            // or changes wrapping when the user enables/disables focus return.
+            .padding(.trailing, MiniRecorderLayoutMetrics.typedInputControlWidth)
             .frame(height: editorHeight)
-            .overlay(alignment: .bottomTrailing) {
+            .overlay(alignment: .topTrailing) {
                 if let typingFocus { RecorderTypingFocusControl(focus: typingFocus) }
             }
         }

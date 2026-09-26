@@ -16,6 +16,7 @@ enum MiniRecorderLayoutMetrics {
     static let controlBarHeight: CGFloat = 40
     static let liveTranscriptHeight: CGFloat = 56
     static let typedInputHeight: CGFloat = 60
+    static let typedInputControlWidth: CGFloat = 90
     static let separatorHeight: CGFloat = 1
     static let assistantPanelHeight: CGFloat = 320
     static let stackedCardSpacing: CGFloat = 46
@@ -25,7 +26,7 @@ enum MiniRecorderLayoutMetrics {
         // Include the trailing insertion line: NSString otherwise omits it after Return.
         if text.count > 3_000 { return limit }
         let bounds = ((text + "\u{200B}") as NSString).boundingRect(
-            with: NSSize(width: max(1, width - 34), height: .greatestFiniteMagnitude),
+            with: NSSize(width: max(1, width - 34 - typedInputControlWidth), height: .greatestFiniteMagnitude),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
             attributes: [.font: NSFont.systemFont(ofSize: liveTranscriptFontSize)]
         )
