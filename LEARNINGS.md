@@ -29,6 +29,8 @@ That reference is still not an uploaded image, and the current host may render i
 The 4,800 UTF-16 presentation budget drops colour, never canonical context or authored prose.
 Production KaTeX fixtures exposed a 2pt overflow in entity-heavy text despite the first unit
 gate passing: width accounting must count wide `&/#/%/@` punctuation twice, not only M/W.
+The corrected production fixture rendered 120 formulas without parsing errors or overflow;
+it is not evidence of a live Codex paste, attachment upload or exact side-pane identity.
 The earlier preview implementation below is historical, not the current desired presentation.
 
 ## 2026-09-26 — The fork must not advertise upstream binary installation
