@@ -14,6 +14,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     
     func applicationDidFinishLaunching(_ notification: Notification) {
         menuBarManager?.applyActivationPolicy()
+        // Remember selection gestures from launch, not from recording start, so a
+        // highlight made just before or during recorder start-up is not missed.
+        // It records only pointer edges; text is read only during a recording.
+        SelectionGestureWatcher.shared.start()
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

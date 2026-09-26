@@ -1,5 +1,19 @@
 # Learnings
 
+## 2026-09-26 — Watch selection gestures from launch; read text only while recording
+
+Ethan reported quick highlights right after starting were usually missed, and asked for a
+highlight made just before starting to be included. Each recording's `LiveSelectionCapture`
+installed its own mouse monitor only after microphone start-up, so a drag begun earlier had
+no recorded mouse-down and failed the gesture check, and no earlier highlight was considered.
+Build 349 adds the app-lifetime `SelectionGestureWatcher`: one global mouse-button monitor
+that remembers only the in-progress mouse-down and the latest selection gesture (points,
+times, frontmost PID), never text. An attaching capture adopts a recent in-progress drag and,
+when none is in progress, reads the latest gesture once if it finished before attach within
+120 seconds in the same frontmost app, anchoring it before all speech. Text reading keeps the
+existing gesture-bounded, stable-source, clipboard-free reader, so a highlight in an app that
+is no longer frontmost is still skipped rather than read in the background.
+
 ## 2026-09-26 — Size both typing-panel sections to one line when empty
 
 Build 347 gave the empty “Click to type” editor a fixed 60pt minimum (and a 60pt

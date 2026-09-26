@@ -439,26 +439,25 @@ enum CodexSelectionThreadTitleReader {
     }
 }
 
-/// Watches genuine selection gestures only while a VoiceInk recording owns the
-/// microphone. No copy command or pasteboard restoration is allowed here: an older
+/// Reads genuine selection gestures only while a VoiceInk recording owns the
+/// microphone. Mouse edges come from the app-lifetime `SelectionGestureWatcher`,
+/// which never reads text; this per-recording object is the only place that turns
+/// a gesture into selected text. No copy command or pasteboard restoration is allowed here: an older
 /// transcription may be writing the clipboard concurrently for Primary delivery.
 /// Text comes from the ordered read-only fallback chain documented in
 /// LiveSelectionTextReader.swift; an app with no readable selection fails
 /// closed rather than borrowing the clipboard.
 @MainActor
 final class LiveSelectionCapture {
-    /// The pointer is sampled synchronously in the monitor callback. Bounds
-    /// evidence compares it with the selection's on-screen rect, so a later
-    /// MainActor hop must not substitute wherever the pointer moved next.
-    private struct MouseEdge {
-        let type: NSEvent.EventType
-        let clickCount: Int
-        let location: NSPoint
-        let occurredAt: Date
-    }
+    typealias MouseEdge = SelectionGestureWatcher.MouseEdge
 
-    private let onCapture: (LiveSelectionReference) -> Void
-    private var monitor: Any?
+    /// `precedesSpeech` is true only for a highlight made before this capture
+    /// attached; the session anchors it before all dictated words.
+    private let onCapture: (_ reference: LiveSelectionReference, _ precedesSpeech: Bool) -> Void
+    /// True between start() and stop(). Replaces this object's former private
+    /// NSEvent monitor: edges now arrive from the shared watcher only while attached.
+    private var isAttached = false
+    private var attachedAt = Date.distantFuture
     private var mouseDownPoint: NSPoint?
     private var mouseDownDate: Date?
     private var captureTask: Task<Void, Never>?
@@ -468,33 +467,42 @@ final class LiveSelectionCapture {
     private var screenshotStart = Date.distantFuture
     private var screenshotScanTask: Task<Void, Never>?
 
-    init(onCapture: @escaping (LiveSelectionReference) -> Void) {
+    init(onCapture: @escaping (_ reference: LiveSelectionReference, _ precedesSpeech: Bool) -> Void) {
         self.onCapture = onCapture
     }
 
     func start() {
-        guard monitor == nil else { return }
-        monitor = NSEvent.addGlobalMonitorForEvents(
-            matching: [.leftMouseDown, .leftMouseUp]
-        ) { [weak self] event in
-            let edge = MouseEdge(
-                type: event.type,
-                clickCount: event.clickCount,
-                location: NSEvent.mouseLocation,
-                occurredAt: Date(timeIntervalSinceNow: event.timestamp - ProcessInfo.processInfo.systemUptime)
-            )
-            Task { @MainActor [weak self] in
-                self?.handle(edge)
-            }
+        guard !isAttached else { return }
+        isAttached = true
+        attachedAt = Date()
+        let watcher = SelectionGestureWatcher.shared
+        watcher.start()
+        // A drag that began before capture attached (during microphone start-up,
+        // or just before the start press) finishes normally during recording.
+        // Before build 349 its mouse-down was never seen, so the gesture failed.
+        let dragInProgress = SelectionGestureWatcher.adoptablePendingDown(
+            watcher.pendingMouseDown, now: attachedAt
+        )
+        if let down = dragInProgress {
+            mouseDownPoint = down.location
+            mouseDownDate = down.occurredAt
         }
+        watcher.listener = self
         startScreenshotWatch()
+        // A drag in progress normally replaces the earlier highlight, and its own
+        // mouse-up will be read live. Reading the earlier gesture now could catch
+        // that newer selection and record it twice, so skip it.
+        if dragInProgress == nil {
+            capturePriorSelection(watcher.lastSelectionGesture)
+        }
     }
 
     func stop() {
-        if let monitor {
-            NSEvent.removeMonitor(monitor)
-            self.monitor = nil
+        if SelectionGestureWatcher.shared.listener === self {
+            SelectionGestureWatcher.shared.listener = nil
         }
+        isAttached = false
+        attachedAt = .distantFuture
         captureTask?.cancel()
         captureTask = nil
         mouseDownPoint = nil
@@ -574,7 +582,7 @@ final class LiveSelectionCapture {
             guard Self.isNativeScreenshot(url, since: screenshotStart),
                   let reference = LiveSelectionReference(screenshotURL: url) else { continue }
             screenshotBaseline.insert(name)
-            onCapture(reference)
+            onCapture(reference, false)
         }
     }
 
@@ -621,8 +629,9 @@ final class LiveSelectionCapture {
         return (value as? NSNumber)?.boolValue == true
     }
 
-    private func handle(_ edge: MouseEdge) {
-        guard monitor != nil else { return }
+    /// Called by `SelectionGestureWatcher` for every mouse edge while attached.
+    func handle(_ edge: MouseEdge) {
+        guard isAttached else { return }
         switch edge.type {
         case .leftMouseDown:
             // A second gesture must not let an older in-flight read borrow its
@@ -645,101 +654,135 @@ final class LiveSelectionCapture {
                   let app = NSWorkspace.shared.frontmostApplication else {
                 return
             }
-
-            // A drag can activate an app that was backgrounded at mouse-down.
-            // Bind to the app at mouse-up, then require it to stay frontmost
-            // throughout the asynchronous selected-text read.
-            let sourcePID = app.processIdentifier
-            let bundleID = app.bundleIdentifier
-            let gesture = LiveSelectionGesture.fromCocoa(
-                mouseDown: startPoint,
-                mouseUp: endPoint,
-                screenFrames: NSScreen.screens.map(\.frame)
+            beginSelectionRead(
+                from: startPoint, to: endPoint, gestureStartedAt: gestureStartedAt,
+                app: app, precedesSpeech: false
             )
-            let isCodex = CodexConversationContextReader.isSupportedCodexApplication(
-                app, fileManager: .default
-            )
-            captureTask?.cancel()
-            captureTask = Task { @MainActor [weak self] in
-                // The target app finishes its own mouse-up selection update before
-                // this read. A newer gesture or stop cancels the pending read.
-                try? await Task.sleep(nanoseconds: 40_000_000)
-                guard !Task.isCancelled,
-                      Self.hasStableSource(expectedPID: sourcePID,
-                                           currentPID: NSWorkspace.shared.frontmostApplication?.processIdentifier) else {
-                    return
-                }
-                let threadBefore = isCodex
-                    ? CodexConversationContextReader.activeThreadIDIfFrontmost(
-                        frontmostApplication: app
-                    ) : nil
-                let startedAt = DispatchTime.now().uptimeNanoseconds
-                // Chrome's DOM override has no selection geometry of its own.
-                // If the gesture was visibly outside Chrome's windows, do not
-                // borrow an older selection from its active tab.
-                if bundleID == "com.google.Chrome",
-                   !LiveSelectionBrowserScriptReader.mayReadForGesture(
-                       gesture, processIdentifier: sourcePID,
-                       windows: LiveSelectionWindow.onScreen()
-                   ) {
-                    return
-                }
-                let chromeContext = bundleID == "com.google.Chrome"
-                    ? await ChromeSelectionContextReader.capture() : nil
-                let selectedText: String?
-                if let chromeContext {
-                    selectedText = chromeContext.selectedText
-                    LiveSelectionDiagnostics.captured(
-                        tier: .chromeDOM, source: nil, evidence: nil, attempt: 1,
-                        bundleID: bundleID, startedAt: startedAt
-                    )
-                } else {
-                    selectedText = await Self.readSelectedText(
-                        sourcePID: sourcePID,
-                        bundleID: bundleID,
-                        gesture: gesture,
-                        gestureStartedAt: gestureStartedAt,
-                        startedAt: startedAt
-                    )
-                }
-                guard !Task.isCancelled,
-                      let text = selectedText,
-                      Self.hasStableSource(expectedPID: sourcePID,
-                                           currentPID: NSWorkspace.shared.frontmostApplication?.processIdentifier),
-                      let reference = LiveSelectionReference(text) else {
-                    return
-                }
-                let labeled: LiveSelectionReference
-                if isCodex {
-                    // Only the verified Codex app may add a task label. A task
-                    // switch during selection leaves the existing plain tag.
-                    let threadAfter = CodexConversationContextReader.activeThreadIDIfFrontmost(
-                        frontmostApplication: app
-                    )
-                    labeled = threadBefore.flatMap { threadID -> LiveSelectionReference? in
-                        guard threadID == threadAfter else { return nil }
-                        return reference.scopedToCodexThread(
-                            id: threadID,
-                            title: CodexSelectionThreadTitleReader.title(for: threadID)
-                        )
-                    } ?? reference
-                } else {
-                    // Generic apps expose an app identity, not a proven document,
-                    // tab, or chat. Never infer more from selected text alone.
-                    labeled = reference.scopedToApplication(
-                        name: app.localizedName,
-                        bundleID: app.bundleIdentifier
-                    ).scopedToChrome(chromeContext)
-                }
-                guard !Task.isCancelled,
-                      Self.hasStableSource(expectedPID: sourcePID,
-                                           currentPID: NSWorkspace.shared.frontmostApplication?.processIdentifier) else {
-                    return
-                }
-                self?.onCapture(labeled)
-            }
         default:
             break
+        }
+    }
+
+    /// Reads, once, a highlight finished shortly before this recording's capture
+    /// attached: made while reading before pressing start, or during microphone
+    /// start-up. It becomes the first reference because the live transcript is
+    /// still empty. Only the same frontmost app may be read, through the same
+    /// gesture-bounded reader as a live highlight, so a stale or elsewhere
+    /// selection fails closed rather than borrowing unrelated text.
+    private func capturePriorSelection(_ gesture: SelectionGestureWatcher.CompletedGesture?) {
+        guard let gesture,
+              let app = NSWorkspace.shared.frontmostApplication,
+              SelectionGestureWatcher.isEligiblePriorGesture(
+                  gesture, now: Date(), captureStartedAt: attachedAt,
+                  frontmostPID: app.processIdentifier
+              ) else { return }
+        beginSelectionRead(
+            from: gesture.start, to: gesture.end, gestureStartedAt: gesture.startedAt,
+            app: app, precedesSpeech: true
+        )
+    }
+
+    /// Shared by live mouse-ups and the one prior-highlight read. A newer
+    /// mouse-down or stop cancels an in-flight read so it cannot borrow a newer
+    /// selection.
+    private func beginSelectionRead(
+        from startPoint: NSPoint,
+        to endPoint: NSPoint,
+        gestureStartedAt: Date,
+        app: NSRunningApplication,
+        precedesSpeech: Bool
+    ) {
+        // A drag can activate an app that was backgrounded at mouse-down.
+        // Bind to the app at mouse-up, then require it to stay frontmost
+        // throughout the asynchronous selected-text read.
+        let sourcePID = app.processIdentifier
+        let bundleID = app.bundleIdentifier
+        let gesture = LiveSelectionGesture.fromCocoa(
+            mouseDown: startPoint,
+            mouseUp: endPoint,
+            screenFrames: NSScreen.screens.map(\.frame)
+        )
+        let isCodex = CodexConversationContextReader.isSupportedCodexApplication(
+            app, fileManager: .default
+        )
+        captureTask?.cancel()
+        captureTask = Task { @MainActor [weak self] in
+            // The target app finishes its own mouse-up selection update before
+            // this read. A newer gesture or stop cancels the pending read.
+            try? await Task.sleep(nanoseconds: 40_000_000)
+            guard !Task.isCancelled,
+                  Self.hasStableSource(expectedPID: sourcePID,
+                                       currentPID: NSWorkspace.shared.frontmostApplication?.processIdentifier) else {
+                return
+            }
+            let threadBefore = isCodex
+                ? CodexConversationContextReader.activeThreadIDIfFrontmost(
+                    frontmostApplication: app
+                ) : nil
+            let startedAt = DispatchTime.now().uptimeNanoseconds
+            // Chrome's DOM override has no selection geometry of its own.
+            // If the gesture was visibly outside Chrome's windows, do not
+            // borrow an older selection from its active tab.
+            if bundleID == "com.google.Chrome",
+               !LiveSelectionBrowserScriptReader.mayReadForGesture(
+                   gesture, processIdentifier: sourcePID,
+                   windows: LiveSelectionWindow.onScreen()
+               ) {
+                return
+            }
+            let chromeContext = bundleID == "com.google.Chrome"
+                ? await ChromeSelectionContextReader.capture() : nil
+            let selectedText: String?
+            if let chromeContext {
+                selectedText = chromeContext.selectedText
+                LiveSelectionDiagnostics.captured(
+                    tier: .chromeDOM, source: nil, evidence: nil, attempt: 1,
+                    bundleID: bundleID, startedAt: startedAt
+                )
+            } else {
+                selectedText = await Self.readSelectedText(
+                    sourcePID: sourcePID,
+                    bundleID: bundleID,
+                    gesture: gesture,
+                    gestureStartedAt: gestureStartedAt,
+                    startedAt: startedAt
+                )
+            }
+            guard !Task.isCancelled,
+                  let text = selectedText,
+                  Self.hasStableSource(expectedPID: sourcePID,
+                                       currentPID: NSWorkspace.shared.frontmostApplication?.processIdentifier),
+                  let reference = LiveSelectionReference(text) else {
+                return
+            }
+            let labeled: LiveSelectionReference
+            if isCodex {
+                // Only the verified Codex app may add a task label. A task
+                // switch during selection leaves the existing plain tag.
+                let threadAfter = CodexConversationContextReader.activeThreadIDIfFrontmost(
+                    frontmostApplication: app
+                )
+                labeled = threadBefore.flatMap { threadID -> LiveSelectionReference? in
+                    guard threadID == threadAfter else { return nil }
+                    return reference.scopedToCodexThread(
+                        id: threadID,
+                        title: CodexSelectionThreadTitleReader.title(for: threadID)
+                    )
+                } ?? reference
+            } else {
+                // Generic apps expose an app identity, not a proven document,
+                // tab, or chat. Never infer more from selected text alone.
+                labeled = reference.scopedToApplication(
+                    name: app.localizedName,
+                    bundleID: app.bundleIdentifier
+                ).scopedToChrome(chromeContext)
+            }
+            guard !Task.isCancelled,
+                  Self.hasStableSource(expectedPID: sourcePID,
+                                       currentPID: NSWorkspace.shared.frontmostApplication?.processIdentifier) else {
+                return
+            }
+            self?.onCapture(labeled, precedesSpeech)
         }
     }
 
