@@ -838,8 +838,9 @@ struct VoiceInkTests {
             realtimeTranscriptHeight: long
         ) == 24 + long + 1 + 40)
         let stacks = try repositorySource("VoiceInk/Views/Recorder/RecorderStackView.swift")
-        #expect(stacks.contains(".onReceive(baseSession?.objectWillChange"))
-        #expect(stacks.contains(".onReceive(pillSession?.objectWillChange"))
+        #expect(stacks.contains(".onReceive((baseSession?.objectWillChange ?? ObservableObjectPublisher()).receive(on: RunLoop.main))"))
+        #expect(stacks.contains(".onReceive((pillSession?.objectWillChange ?? ObservableObjectPublisher()).receive(on: RunLoop.main))"))
+        #expect(stacks.components(separatedBy: "let _ = layoutTick").count == 3)
         #expect(stacks.contains("RecorderPanelHeightSync("))
         let components = try repositorySource("VoiceInk/Views/Recorder/RecorderComponents.swift")
         #expect(components.contains(".foregroundColor(.purple.opacity(0.95))"))
