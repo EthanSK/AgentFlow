@@ -10,6 +10,11 @@ editor's document `minSize` must match its frame or it scrolls and recreates the
 `LiveTranscriptView` must reserve the same one-line preview height as `contextHeight`
 when capping a long editor, otherwise the rendered split no longer matches the panel
 envelope. The non-typing 56pt preview minimum remains pinned.
+Guard: `emptyTypingPanelHugsOneLineInEachSection`. Exact source `e25ed3c` passed 381 named
+Mini tests in 14 suites via the direct fallback after two focused and one full canonical
+TestManager stall at zero tests. Build 348 installed with CDHash
+`d1dbaab1b4b58610dac0bc1a3842e2670ad7cf13`; build 347 kept as rollback. Visual acceptance in a
+real recording is still Ethan's check.
 
 ## 2026-09-26 — Publish website-only changes without shipping unreleased app commits
 
