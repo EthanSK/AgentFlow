@@ -1,5 +1,19 @@
 # Learnings
 
+## 2026-09-27 — Public source, Pages and the download have separate sync gates
+
+A website-only publication can leave newer native commits on local main while Pages is
+current and the downloadable app is older. Check all three explicitly: remote main's
+commit, Pages' deployed commit and asset bytes, and the latest release's source-bound
+manifest and ZIP checksum. Build 353 was published from its already-tested Mini archive,
+not rebuilt; preserve that native commit and test evidence when later commits only change
+documentation/media. Developer ID re-signing creates a different distribution checksum
+from the installed local-signing app. Keep both receipts distinct, require Apple's
+acceptance, stapling and Gatekeeper verification, and download the public ZIP back to
+compare bytes. Public distribution does not require restarting an unchanged local app.
+Update the README, setup guide and website only to a verified downloadable release; do
+not imply that a manual release also established an automatic updater or signing runner.
+
 ## 2026-09-27 — Selection-read success is not capture delivery
 
 The selection reader can return text and then be canceled by another mouse-down,
