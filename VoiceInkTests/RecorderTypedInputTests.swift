@@ -5,6 +5,27 @@ import Testing
 @testable import VoiceInkPlusPlus
 
 struct RecorderTypedInputTests {
+    @Test @MainActor func typingStartIntentBindsOnlyTheNewPrimaryReservation() async {
+        let requestID = UUID()
+        var state: RecordingState = .idle
+        var bound: [UUID] = []
+        var started: [UUID] = []
+        let handler = RecordingShortcutModeHandler(
+            canHandleShortcutAction: { true }, isRecorderVisible: { state != .idle },
+            recordingState: { state }, toggleRecorderPanel: { _, _ in },
+            cancelRecording: {}, reserveRecordingStart: { requestID },
+            startReservedRecording: { id, _ in started.append(id); state = .recording }
+        )
+        await handler.handleKeyDown(action: .primaryRecording, eventTime: 100, mode: .toggle,
+                                    didReserveStart: { bound.append($0) })
+        #expect(bound == [requestID] && started == [requestID])
+        await handler.handleKeyUp(action: .primaryRecording, eventTime: 100.01, mode: .toggle)
+        await handler.handleKeyDown(action: .primaryRecording, eventTime: 102, mode: .toggle,
+                                    didReserveStart: { bound.append($0) })
+        #expect(bound == [requestID])
+        handler.reset()
+    }
+
     @Test @MainActor func liveTypingHeightGrowsBeforeBlurAndCapsAtScreenBudget() {
         let short = MiniRecorderLayoutMetrics.typingHeight(text: "hello", width: 640, maxHeight: 500)
         let long = MiniRecorderLayoutMetrics.typingHeight(text: String(repeating: "long typed line\n", count: 15), width: 640, maxHeight: 500)
