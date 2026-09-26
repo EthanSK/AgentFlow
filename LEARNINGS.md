@@ -1,5 +1,25 @@
 # Learnings
 
+## 2026-09-26 — Keyboard prose belongs to the recording timeline, not the provider
+
+**Trigger:** Ethan requested typing directly in the black recorder, refocusing it after
+highlights/screenshots, and retaining the ordinary finish-and-paste action.
+**Contract:** An explicitly clicked native text editor owns only its current prose segment.
+Blur seals that segment; it never stops recording, changes a destination or pastes. Enter
+adds a newline. Typed text is stored separately from provider partials and interleaved as
+authored prose, not escaped source XML; source selection indices must ignore typed segments.
+The existing microphone lifecycle is unchanged. Failed transcription retains this mixed
+draft, and a saved-file retry must carry the context references as well as the WAV.
+**Guard:** A nonactivating panel can lose key status while retaining its first responder.
+Handle both responder resignation and the exact window's key-loss notification, committing
+IME text and clearing the local editor before publishing the seal so repeated callbacks
+cannot duplicate a segment. Never make a panel key because a partial/reference arrived.
+Before normal finish, relinquish the recorder's own keyboard ownership. An older Primary
+result can finish during a newer capture: its generic paste/Return must refuse our own
+editor using local responder state, without adding saved-input capture, AX routing or
+app-specific focus repair to Primary. `RecorderTypedInputTests` covers the data and native
+editor boundaries; installed physical focus/paste acceptance remains a separate check.
+
 ## 2026-09-25 — Display branding is not a technical identity migration
 
 **Trigger:** Ethan requested “two words” for the public brand after choosing AgentFlow.

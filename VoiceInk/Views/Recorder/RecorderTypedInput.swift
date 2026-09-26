@@ -128,11 +128,11 @@ final class RecorderTypingTextView: NSTextView {
     }
 
     static var ownsKeyboard: Bool {
-        NSApp.keyWindow?.firstResponder is RecorderTypingTextView
+        NSApp?.keyWindow?.firstResponder is RecorderTypingTextView
     }
 
     static func sealFocusedRun() {
-        guard let editor = NSApp.keyWindow?.firstResponder as? RecorderTypingTextView else { return }
+        guard let editor = NSApp?.keyWindow?.firstResponder as? RecorderTypingTextView else { return }
         editor.sealEditingRun()
     }
 
@@ -140,7 +140,7 @@ final class RecorderTypingTextView: NSTextView {
     /// our nonactivating panel is not activation/restoration of a saved app or
     /// exact input: Primary still follows whatever keyboard input macOS owns.
     static func releaseKeyboardBeforeFinish() {
-        guard let window = NSApp.keyWindow,
+        guard let window = NSApp?.keyWindow,
               let editor = window.firstResponder as? RecorderTypingTextView else { return }
         editor.unmarkText()
         editor.didChangeText()
