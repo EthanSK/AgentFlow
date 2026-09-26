@@ -13,6 +13,11 @@ when none is in progress, reads the latest gesture once if it finished before at
 120 seconds in the same frontmost app, anchoring it before all speech. Text reading keeps the
 existing gesture-bounded, stable-source, clipboard-free reader, so a highlight in an app that
 is no longer frontmost is still skipped rather than read in the background.
+Guard: `SelectionGestureWatcherTests` (five tests) plus the read-only/clipboard-free and
+selection-ownership guards. Exact source `a8bb5fa` passed 386 named Mini tests in 15 suites via
+the direct fallback after the canonical runner stalled at zero tests. Build 349 installed with
+CDHash `4b1a2440113c9170d36bcdf3d6ba262048f945b2`; build 348 kept as rollback. Physical
+acceptance of a pre-start and a start-up-window highlight is still Ethan's check.
 
 ## 2026-09-26 — Size both typing-panel sections to one line when empty
 
