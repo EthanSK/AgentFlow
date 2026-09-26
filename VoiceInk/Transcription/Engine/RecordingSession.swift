@@ -509,7 +509,7 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     func recordLiveSelection(_ reference: LiveSelectionReference) {
         guard phase == .recording,
               liveRecordingState.isRecordingOrPaused else { return }
-        RecorderTypingTextView.commitFocusedDraft()
+        RecorderTypingTextView.sealFocusedRun()
         endTypingRun()
         // Freeze the live speech visible at selection mouse-up or screenshot
         // save. Final transcription may revise words, so this is an approximate

@@ -706,7 +706,10 @@ struct VoiceInkTests {
         #expect(components.contains(".onChange(of: previewParts)"))
         #expect(!components.contains("if let selectionPreview"))
         for source in [mini, notch] {
-            #expect(source.contains("selectionReferences: stateProvider.liveSelectionReferences"))
+            // The active typed run has its own editable field; sealed prose and
+            // source references remain in the same chronological preview.
+            #expect(source.contains("selectionReferences: stateProvider.liveContextPreviewReferences"))
+            #expect(source.contains("get: { stateProvider.typedInput }"))
             #expect(!source.contains("speech + \"\\n\" + selection"))
         }
     }

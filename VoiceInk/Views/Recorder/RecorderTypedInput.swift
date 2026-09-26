@@ -39,10 +39,10 @@ struct RecorderTypedInput: NSViewRepresentable {
         editor.isVerticallyResizable = true
         editor.isHorizontallyResizable = false
         editor.minSize = NSSize(width: 0, height: 60)
-        editor.maxSize = NSSize(width: .greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
+        editor.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         editor.autoresizingMask = [.width]
         editor.textContainer?.widthTracksTextView = true
-        editor.textContainer?.containerSize = NSSize(width: 640, height: .greatestFiniteMagnitude)
+        editor.textContainer?.containerSize = NSSize(width: 640, height: CGFloat.greatestFiniteMagnitude)
         editor.allowsUndo = true
         editor.isAutomaticQuoteSubstitutionEnabled = false
         editor.isAutomaticDashSubstitutionEnabled = false
@@ -131,10 +131,9 @@ final class RecorderTypingTextView: NSTextView {
         NSApp.keyWindow?.firstResponder is RecorderTypingTextView
     }
 
-    static func commitFocusedDraft() {
+    static func sealFocusedRun() {
         guard let editor = NSApp.keyWindow?.firstResponder as? RecorderTypingTextView else { return }
-        editor.unmarkText()
-        editor.didChangeText()
+        editor.sealEditingRun()
     }
 
     /// End only this app-owned input before the existing finish path. Resigning

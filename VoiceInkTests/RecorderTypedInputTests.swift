@@ -1,9 +1,34 @@
 import AppKit
 import Foundation
+import SwiftUI
 import Testing
 @testable import VoiceInkPlusPlus
 
 struct RecorderTypedInputTests {
+    @Test @MainActor func nativeEditorReturnAddsNewlineAndBlurSealsOnlyOnce() {
+        let session = RecordingSession()
+        let input = RecorderTypedInput(
+            text: Binding(get: { session.typedInput }, set: { session.updateTypedInput($0) }),
+            focusRequest: UUID(), onEndEditing: { session.endTypingRun() }
+        )
+        let coordinator = input.makeCoordinator()
+        let editor = RecorderTypingTextView(frame: NSRect(x: 0, y: 0, width: 640, height: 60))
+        editor.isRichText = false
+        editor.delegate = coordinator
+        editor.onEndEditing = input.onEndEditing
+        editor.insertText("line one", replacementRange: NSRange(location: 0, length: 0))
+        editor.insertNewline(nil)
+        editor.insertText("line two", replacementRange: editor.selectedRange())
+        #expect(session.typedInput == "line one\nline two")
+        #expect(session.phase == .recording)
+        _ = editor.resignFirstResponder()
+        _ = editor.resignFirstResponder()
+        #expect(session.typedInput.isEmpty)
+        #expect(session.liveSelectionReferences.count == 1)
+        #expect(LiveSelectionReference.interleaving(session.liveSelectionReferences, with: "") == "line one\nline two")
+        #expect(session.phase == .recording)
+    }
+
     @Test func typedProseIsVerbatimAndDoesNotConsumeSelectionNumbers() throws {
         let typed = try #require(LiveSelectionReference(typedText: "Use <T> & keep\nthese words."))
         let selection = try #require(LiveSelectionReference("a source"))
