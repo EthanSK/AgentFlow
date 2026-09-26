@@ -14,9 +14,9 @@
 
 ## Download
 
-[Download Agent Flow v2.0.345 for Mac](https://github.com/EthanSK/AgentFlow/releases/download/v2.0.345/AgentFlow-v2.0.345-mac-universal.zip). Requires macOS 14.4 or later; supports Apple silicon and Intel. The public app is Developer ID signed, Apple notarized and stapled. Unzip it and move Agent Flow to Applications, then follow [Setup](SETUP.md).
+[Download Agent Flow v2.0.353 for Mac](https://github.com/EthanSK/AgentFlow/releases/download/v2.0.353/AgentFlow-v2.0.353-mac-universal.zip). Requires macOS 14.4 or later; supports Apple silicon and Intel. The public app is Developer ID signed, Apple notarized and stapled. Unzip it and move Agent Flow to Applications, then follow [Setup](SETUP.md).
 
-[Release notes and checksums](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.345) · [Build from source](#build-from-source)
+[Release notes and checksums](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.353) · [Build from source](#build-from-source)
 
 Updates are manual for now. The app's upstream VoiceInk check only reports releases; it does not install them over Agent Flow.
 
@@ -38,7 +38,7 @@ and make the empty state look like this.
 <local_screenshot path="/Users/you/Desktop/Screenshot 2026-09-24 at 10.41.12.png"/>
 ```
 
-- From build 352, final `<text>` keeps up to 8,000 selected characters with indentation and newlines intact, without a line-count limit; `truncated="true"` marks a longer highlight, and `characters` counts the captured source selection. The current public build 345 retains the earlier five-line/500-character cap. The live recorder keeps only a compact preview. Selected text is added after speech recognition, not sent to the real-time speech model. Every separate highlight stays in capture order, even without speech between highlights. A silent run can show the agent what you were reading.
+- Final `<text>` keeps up to 8,000 selected characters with indentation and newlines intact, without a line-count limit; `truncated="true"` marks a longer highlight, and `characters` counts the captured source selection. The live recorder keeps only a compact preview. Selected text is added after speech recognition, not sent to the real-time speech model. Every separate highlight stays in capture order, even without speech between highlights. A silent run can show the agent what you were reading.
 - Automatic paste includes captured selections and screenshot paths only for the native Codex, ChatGPT and Claude apps. Chrome, other browsers, editors and terminals get spoken/typed prose only—even if a browser is showing a chat website. This checks the recipient, not where you highlighted the text. An explicit clipboard-only finish still retains the complete context for you to use manually.
 - A highlight from another app uses `<app_selection source="TextEdit" bundle_id="com.apple.TextEdit">` instead of `<codex_selection>`. Chrome can also include a page title, a query-stripped URL (retaining only a validated YouTube video ID), and the selected range's DOM tag/role/label when its on-demand browser script works. Those optional fields are omitted if Chrome blocks scripting; the app name alone does not identify a tab or element. Other apps get only their app identity. Agent Flow never issues Copy to capture a highlight.
 - When Codex's active task is provable, a selection also carries its stable `task_id` and current `task_title`. An uncertain task keeps the plain tag; a title alone never identifies a chat.

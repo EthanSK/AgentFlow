@@ -1,5 +1,12 @@
 # Public Agent Flow releases
 
+[v2.0.353](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.353) publishes the current
+typing and live-context improvements. Source: `909af4ff328ff9865c6f27ceacf4064973fb54b7`;
+exact-build gate: 409 named tests across 16 suites. The existing Mini-built universal
+Release archive was Developer ID re-signed and notarized without rebuilding native code
+or replacing the separately installed local-signing app. Release checksums bind the public
+artifact; later `main` commits contain documentation and media, not different native code.
+
 [v2.0.345](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.345) is the first public
 Developer ID-signed, Apple-notarized release. Its universal ZIP was downloaded back from GitHub
 and matched the published SHA-256. Source: `0df26e3d801800b5d9e1025454fd169690710aaf`;

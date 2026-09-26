@@ -6,7 +6,7 @@ No private API keys, mouse profiles or personal settings are bundled.
 
 | Piece | Needed for | How to get it |
 | --- | --- | --- |
-| Agent Flow app | Recording, live recorder, transcription and final paste | [Notarized Mac download](https://github.com/EthanSK/AgentFlow/releases/download/v2.0.345/AgentFlow-v2.0.345-mac-universal.zip); macOS 14.4+. Xcode is only needed to build from source. |
+| Agent Flow app | Recording, live recorder, transcription and final paste | [Notarized Mac download](https://github.com/EthanSK/AgentFlow/releases/download/v2.0.353/AgentFlow-v2.0.353-mac-universal.zip); macOS 14.4+. Xcode is only needed to build from source. |
 | Your OpenAI API key and macOS grants | Recommended GPT Live transcription and input delivery | Create an [OpenAI API key](https://platform.openai.com/api-keys), enable API billing, then grant Microphone and Accessibility in macOS. A local Parakeet model remains available. |
 | [Context interpretation skill](.agents/skills/interpret-voiceink-context/SKILL.md) | Helping Codex read the XML-style selection and screenshot references across tasks | Optional installer flag, or ask Codex to install this skill as a personal skill |
 | [Agent Flow YouTube Bridge](companions/youtube-bridge/README.md) | Pausing the YouTube tab playing when dictation starts, plus optional Agentic Mouse Chrome controls | Optional installer flag; helper, native host and login LaunchAgent install locally, but Chrome needs one manual extension step |
@@ -24,7 +24,7 @@ and companion apps; it is an example, not a requirement for your Mac.
 
 ## First installation
 
-Download [Agent Flow v2.0.345](https://github.com/EthanSK/AgentFlow/releases/download/v2.0.345/AgentFlow-v2.0.345-mac-universal.zip), unzip it and move `AgentFlow.app` to Applications. The universal app is Developer ID signed, Apple notarized and stapled. Open it and finish the permissions and model setup below. [Release checksums](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.345) are public.
+Download [Agent Flow v2.0.353](https://github.com/EthanSK/AgentFlow/releases/download/v2.0.353/AgentFlow-v2.0.353-mac-universal.zip), unzip it and move `AgentFlow.app` to Applications. The universal app is Developer ID signed, Apple notarized and stapled. Open it and finish the permissions and model setup below. [Release checksums](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.353) are public.
 
 For an update, finish any recording/transcription, quit the app, and keep the previous app bundle as rollback before replacing it. Do not delete Agent Flow's settings, Keychain entries or recordings. Updates are not automatic yet; the upstream VoiceInk check is notification-only.
 
@@ -94,7 +94,7 @@ when no recording or transcription is active. The companion has its own
   and save a macOS screenshot to a file, not just the clipboard. Confirm both cyan selections and the purple screenshot path appear
   in capture order in the recorder and final message. The Codex highlight uses
   `<codex_selection>`; TextEdit uses `<app_selection source="TextEdit">`. Selection text is bounded
-  to five lines or 500 characters in the final message, while the recorder shows a short preview.
+  to 8,000 characters with whitespace intact in the final message, while the recorder shows a short preview.
   Each separate highlight remains in order even if you speak nothing between them. Chrome can
   add page and DOM cues when browser scripting is available. Other apps work on a best-effort basis
   when they expose selected text through read-only macOS APIs. The receiving
@@ -116,8 +116,12 @@ isolated Mac tests, but everyday-use acceptance is still pending. Telegram selec
 working reliably and are not claimed as supported. Other apps depend on their read-only
 Accessibility selection exposure; keyboard-only selection changes are not captured.
 
-Highlights and screenshot paths are added to Paste output and clipboard-only finishes, not raw/skip
-or assistant follow-up output. Live recognition can revise earlier words, so XML position is an
+Automatic paste includes highlights and screenshot paths only in the native Codex, ChatGPT and
+Claude apps. Browsers, editors and terminals receive spoken/typed prose without those tags.
+Clipboard-only finishes keep the full context; raw/skip and assistant follow-up output omit it.
+Click **Click to type** in the recorder to add typed words alongside speech and references; Enter
+adds a line break, and the normal finish action pastes the message. The microphone remains active.
+Live recognition can revise earlier words, so XML position is an
 approximate reading/speaking trail, not a precise timestamp.
 
 For a guided agent-assisted setup, use the [companion setup prompt](companions/youtube-bridge/AGENT_SETUP.md)
