@@ -26,6 +26,35 @@ struct LiveSelectionReference: Equatable {
         case screenshot(String)
     }
 
+    /// How source references are written into the one final destination message.
+    /// `.plain` is the canonical XML grammar that every recipient and the
+    /// interpretation skill already understand, and remains the default.
+    /// `.styledMath` keeps that exact XML but places a display-only KaTeX preview
+    /// immediately above each highlight/screenshot tag, for Markdown renderers with
+    /// `\(...\)` inline math such as the Codex desktop user bubble. The tag then says
+    /// `display_copy="above"`, so neither Ethan's agent nor a reader without the skill
+    /// can mistake the preview for a second selection, instruction, or context event.
+    /// The choice comes from the Mode that the existing route already resolved, never
+    /// from an app classifier, and it adds no paste, attachment, or delivery route.
+    enum Presentation: Equatable {
+        case plain
+        case styledMath
+    }
+
+    private enum InterleavedPart {
+        case text(String)
+        case reference(LiveSelectionReference, index: Int)
+
+        var canonical: String {
+            switch self {
+            case .text(let text):
+                return text
+            case let .reference(reference, index):
+                return reference.xml(index: index, hasDisplayCopy: false)
+            }
+        }
+    }
+
     let preview: String
     let characterCount: Int
     let omittedMiddle: Bool
@@ -190,7 +219,11 @@ struct LiveSelectionReference: Equatable {
         return parts
     }
 
-    static func interleaving(_ references: [Self], with transcript: String) -> String {
+    static func interleaving(
+        _ references: [Self],
+        with transcript: String,
+        presentation: Presentation = .plain
+    ) -> String {
         guard !references.isEmpty else {
             return transcript
         }
@@ -203,7 +236,7 @@ struct LiveSelectionReference: Equatable {
         var lastWordCount = 0
         var selectionIndex = 0
         var previousEnd = transcript.startIndex
-        var parts: [String] = []
+        var parts: [InterleavedPart] = []
         for reference in references {
             let spokenWordCount = reference.spokenWordCount
             let wordCount = min(max(lastWordCount, spokenWordCount), wordEnds.count)
@@ -211,25 +244,87 @@ struct LiveSelectionReference: Equatable {
             let speech = String(transcript[previousEnd..<insertion])
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if !speech.isEmpty {
-                parts.append(speech)
+                parts.append(.text(speech))
             }
             if reference.isSelection { selectionIndex += 1 }
-            parts.append(reference.xml(index: selectionIndex))
+            parts.append(.reference(reference, index: selectionIndex))
             previousEnd = insertion
             lastWordCount = wordCount
         }
         let remainingSpeech = String(transcript[previousEnd...])
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if !remainingSpeech.isEmpty {
-            parts.append(remainingSpeech)
+            parts.append(.text(remainingSpeech))
         }
-        return parts.joined(separator: "\n\n")
+        // Plain output must stay byte-identical to the accepted grammar: older
+        // messages, the interpretation skill, and History all depend on it.
+        let canonical = parts.map(\.canonical)
+        guard presentation == .styledMath else {
+            return canonical.joined(separator: "\n\n")
+        }
+        return styled(parts, canonical: canonical)
     }
 
-    private func xml(index: Int) -> String {
+    /// Adds previews in capture order only while the whole message stays inside
+    /// the renderer's paste budget. A preview that does not fit is omitted and its
+    /// tag stays exactly canonical, so `display_copy="above"` never appears without
+    /// the preview it describes. The canonical message itself is never shortened.
+    private static func styled(_ parts: [InterleavedPart], canonical: [String]) -> String {
+        var remaining = LiveSelectionStyledMath.messageUTF16Budget
+            - canonical.joined(separator: "\n\n").utf16.count
+        var output: [String] = []
+        for (offset, part) in parts.enumerated() {
+            guard case let .reference(reference, index) = part,
+                  let preview = reference.styledDisplayCopy(index: index) else {
+                output.append(canonical[offset])
+                continue
+            }
+            let marked = reference.xml(index: index, hasDisplayCopy: true)
+            let cost = preview.utf16.count + 2
+                + marked.utf16.count - canonical[offset].utf16.count
+            guard cost <= remaining else {
+                output.append(canonical[offset])
+                continue
+            }
+            remaining -= cost
+            // A separate paragraph before the tag: Codex renders an XML block as
+            // literal text, so a preview inside it would never become math.
+            output.append(preview)
+            output.append(marked)
+        }
+        return output.joined(separator: "\n\n")
+    }
+
+    /// Display-only preview for `.styledMath`. Typed prose is authored text that is
+    /// already plain in the message, so it never gets a preview.
+    private func styledDisplayCopy(index: Int) -> String? {
+        guard typedText == nil else { return nil }
+        if screenshotPath != nil {
+            return LiveSelectionStyledMath.screenshotPreview(fileName: preview)
+        }
+        // The caption names where the text was highlighted. It is never the app
+        // that will receive this message; Primary does not even know that app.
+        let sourceName: String
+        switch source {
+        case .codex:
+            sourceName = "Codex"
+        case let .application(name, _):
+            sourceName = name
+        }
+        return LiveSelectionStyledMath.selectionPreview(
+            text: selectedText,
+            index: index,
+            sourceName: sourceName,
+            truncated: truncated
+        )
+    }
+
+    private func xml(index: Int, hasDisplayCopy: Bool) -> String {
         if let typedText { return typedText }
+        // Emitted only when the preview paragraph directly above was included.
+        let displayCopy = hasDisplayCopy ? " display_copy=\"above\"" : ""
         if let screenshotPath {
-            return "<local_screenshot path=\"\(Self.xmlEscaped(screenshotPath))\"/>"
+            return "<local_screenshot path=\"\(Self.xmlEscaped(screenshotPath))\"\(displayCopy)/>"
         }
         let tag: String
         var attributes: String
@@ -265,6 +360,7 @@ struct LiveSelectionReference: Equatable {
                 attributes += " task_title=\"\(Self.xmlEscaped(codexThreadTitle))\""
             }
         }
+        attributes += displayCopy
         return "<\(tag) \(attributes)>\n"
             + "  <text>\(Self.xmlEscaped(selectedText))</text>\n"
             + "</\(tag)>"
@@ -304,6 +400,225 @@ struct LiveSelectionReference: Equatable {
             .replacingOccurrences(of: ">", with: "&gt;")
             .replacingOccurrences(of: "\"", with: "&quot;")
             .replacingOccurrences(of: "'", with: "&apos;")
+    }
+}
+
+/// Display-only KaTeX preview for `LiveSelectionReference.Presentation.styledMath`.
+///
+/// Offline, read-only inspection of the running Codex host, ChatGPT.app
+/// 26.924.22138 (build 11645, Contents/Resources/app.asar), established these limits:
+/// - User bubbles render Markdown. The supported `\(...\)` form ends at the first
+///   `\)`; keep each generated formula on one line. Raw XML is literal text, and
+///   the user-message image extension turns Markdown images into ordinary links.
+/// - KaTeX 0.16.45 runs with `strict: "ignore"`, `throwOnError: false` and no
+///   `trust`. A parse error shows the raw source in red, and trust-gated commands
+///   such as `\includegraphics`/`\href` cannot load anything, so no images here.
+/// - KaTeX formula bases do not wrap internally. Split source text into short
+///   formulas, leaving ordinary spaces or zero-width breaks between them.
+/// - The composer turns a paste of 5,000+ UTF-16 units into a pasted-text
+///   attachment when that feature is enabled. Rich-text paste processing also
+///   exists, so preview text must not create Markdown emphasis or link syntax.
+/// Ethan verified that short `\(\textsf{\color{#rrggbb}…}\)` spans render in a
+/// sent Codex bubble. Everything here is lossy presentation: the adjacent XML tag
+/// always carries the exact bounded text and source metadata.
+enum LiveSelectionStyledMath {
+    /// Ethan's verified bubble cyan; selections stay cyan as in the recorder HUD.
+    static let selectionColor = "#67e8f9"
+    /// Screenshot names stay purple, mirroring the HUD's screenshot references.
+    static let screenshotColor = "#d8b4fe"
+    /// Quiet captions let the coloured source text carry the emphasis.
+    static let captionColor = "#94a3b8"
+    /// Conservative width (wide CJK/emoji and ASCII M/W count twice) per formula,
+    /// sized to fit even a narrow Codex pane.
+    static let maxChunkWidth = 24
+    static let maxIndentColumns = 8
+    static let maxSourceNameCharacters = 40
+    /// Stays below Codex's 5,000-unit pasted-text threshold, with room for the
+    /// optional trailing space. Only previews are dropped to fit.
+    static let messageUTF16Budget = 4_800
+    /// Joins pieces of one over-long token: no visible space, but still a
+    /// line-break opportunity between formulas.
+    static let zeroWidthSpace = "\u{200B}"
+
+    static func selectionPreview(
+        text: String,
+        index: Int,
+        sourceName: String,
+        truncated: Bool
+    ) -> String? {
+        // One preview line per non-blank source line. Every line starts with a
+        // formula, so no source indentation, `#`, `>`, list marker or fence can
+        // reach Markdown block parsing outside math.
+        var lines = text
+            .split(omittingEmptySubsequences: true, whereSeparator: \.isNewline)
+            .map { formulas(for: String($0), color: selectionColor) }
+            .filter { !$0.isEmpty }
+        guard !lines.isEmpty else { return nil }
+        if truncated {
+            lines[lines.count - 1] += " " + formulas(for: "…", color: captionColor)
+        }
+        let name = String(
+            sanitizedVisibleText(sourceName)
+                .split(whereSeparator: \.isWhitespace)
+                .joined(separator: " ")
+                .prefix(maxSourceNameCharacters)
+        )
+        let caption = name.isEmpty ? "Selection \(index)" : "Selection \(index) from \(name)"
+        return ([formulas(for: caption, color: captionColor)] + lines)
+            .joined(separator: "\n")
+    }
+
+    static func screenshotPreview(fileName: String) -> String? {
+        let name = formulas(for: fileName, color: screenshotColor)
+        guard !name.isEmpty else { return nil }
+        return formulas(for: "Screenshot", color: captionColor) + " " + name
+    }
+
+    /// One visual line as short `\(\textsf{\color{…}…}\)` formulas. Words are
+    /// grouped up to `maxChunkWidth`; a longer token is split into pieces joined by
+    /// a zero-width space so it never becomes a single clipped box.
+    static func formulas(for line: String, color: String) -> String {
+        let visible = sanitizedVisibleText(line)
+        let indent = min(visible.prefix(while: { $0 == " " }).count, maxIndentColumns)
+        let words = visible.split(whereSeparator: \.isWhitespace).map(String.init)
+        guard !words.isEmpty else { return "" }
+
+        var output = ""
+        var separator = ""
+        // Leading indentation lives inside the first formula as control spaces.
+        // Outside math it could turn the line into a Markdown code block.
+        var body = String(repeating: "\\ ", count: indent)
+        var width = indent
+        var hasText = false
+
+        func close(then next: String) {
+            guard hasText else { return }
+            output += separator + "\\(\\textsf{\\color{\(color)}" + body + "}\\)"
+            separator = next
+            body = ""
+            width = 0
+            hasText = false
+        }
+
+        for word in words {
+            // Indentation counts against the first box too. Otherwise a long
+            // indented code token could exceed the limit by eight columns.
+            let firstLimit = hasText ? maxChunkWidth : maxChunkWidth - width
+            for (offset, piece) in pieces(of: word, firstChunkWidth: firstLimit).enumerated() {
+                let pieceWidth = displayWidth(of: piece)
+                if offset > 0 {
+                    close(then: zeroWidthSpace)
+                } else if hasText {
+                    if width + 1 + pieceWidth <= maxChunkWidth {
+                        body += " "
+                        width += 1
+                    } else {
+                        close(then: " ")
+                    }
+                }
+                body += escapedTeX(piece)
+                width += pieceWidth
+                hasText = true
+            }
+        }
+        close(then: "")
+        return output
+    }
+
+    static func pieces(of word: String, firstChunkWidth: Int = maxChunkWidth) -> [String] {
+        var pieces: [String] = []
+        var current = ""
+        var width = 0
+        var limit = max(2, min(firstChunkWidth, maxChunkWidth))
+        for character in word {
+            let characterWidth = displayWidth(of: character)
+            if width + characterWidth > limit, !current.isEmpty {
+                pieces.append(current)
+                current = ""
+                width = 0
+                limit = maxChunkWidth
+            }
+            current.append(character)
+            width += characterWidth
+        }
+        if !current.isEmpty { pieces.append(current) }
+        return pieces
+    }
+
+    static func displayWidth(of text: String) -> Int {
+        text.reduce(0) { $0 + displayWidth(of: $1) }
+    }
+
+    static func displayWidth(of character: Character) -> Int {
+        guard let scalar = character.unicodeScalars.first else { return 0 }
+        switch scalar.value {
+        case 0x004D, 0x0057, 0x1100...0x115F, 0x2E80...0x303E, 0x3041...0x33FF, 0x3400...0x4DBF,
+             0x4E00...0x9FFF, 0xA000...0xA4CF, 0xAC00...0xD7A3, 0xF900...0xFAFF,
+             0xFE30...0xFE4F, 0xFF00...0xFF60, 0xFFE0...0xFFE6,
+             0x1F300...0x1FAFF, 0x20000...0x3FFFD:
+            return 2
+        default:
+            return 1
+        }
+    }
+
+    /// Makes untrusted text inert inside KaTeX text mode. Every TeX special is
+    /// escaped and a source backslash becomes `\textbackslash{}`, so selected text
+    /// can never close the formula with `\)`, open a group, or run a command.
+    /// `*` becomes the lookalike U+2217, and brackets are braced, so Codex's
+    /// composer cannot turn preview text into emphasis or a link. Doubled
+    /// hyphens/quotes are split so KaTeX does not merge them into dashes or curly
+    /// quotes. The exact characters remain in the XML tag.
+    static func escapedTeX(_ text: String) -> String {
+        let characters = Array(text)
+        var escaped = ""
+        for (offset, character) in characters.enumerated() {
+            let next = offset + 1 < characters.count ? characters[offset + 1] : nil
+            switch character {
+            case "\\": escaped += "\\textbackslash{}"
+            case "{": escaped += "\\{"
+            case "}": escaped += "\\}"
+            case "$": escaped += "\\$"
+            case "&": escaped += "\\&"
+            case "#": escaped += "\\#"
+            case "%": escaped += "\\%"
+            case "_": escaped += "\\_"
+            case "^": escaped += "\\textasciicircum{}"
+            case "~": escaped += "\\textasciitilde{}"
+            case "*": escaped += "\u{2217}"
+            case "[": escaped += "{[}"
+            case "]": escaped += "{]}"
+            case "-", "`", "'":
+                escaped.append(character)
+                if next == character { escaped += "{}" }
+            default:
+                escaped.append(character)
+            }
+        }
+        return escaped
+    }
+
+    /// Drops characters that would break or disguise a formula: C0/C1 controls,
+    /// line/paragraph separators, bidi overrides (which could visually reorder the
+    /// preview), invisible separators, and combining accents. KaTeX rejects
+    /// accents missing from its accent table, and would show that word as red raw
+    /// source. Text is NFC-normalized first so common accented letters survive.
+    /// Tabs become four spaces.
+    static func sanitizedVisibleText(_ text: String) -> String {
+        var scalars = String.UnicodeScalarView()
+        for scalar in text.precomposedStringWithCanonicalMapping.unicodeScalars {
+            switch scalar.value {
+            case 0x09:
+                scalars.append(contentsOf: "    ".unicodeScalars)
+            case 0x00...0x1F, 0x7F...0x9F, 0x0300...0x036F,
+                 0x061C, 0x200B, 0x200E, 0x200F, 0x2028...0x202E,
+                 0x2066...0x2069, 0xFEFF:
+                continue
+            default:
+                scalars.append(scalar)
+            }
+        }
+        return String(scalars)
     }
 }
 

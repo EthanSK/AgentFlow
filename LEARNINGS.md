@@ -1,5 +1,29 @@
 # Learnings
 
+## 2026-09-26 — Styled highlight previews are per-Mode, display-only, and above exact XML
+
+Ethan confirmed that short `\(\textsf{\color{#rrggbb}…}\)` spans render in a sent Codex
+bubble and asked for selected text and screenshots to look styled there. Offline, read-only
+inspection of the running host, `/Applications/ChatGPT.app` 26.924.22138 (build 11645,
+`app.asar`), found these limits. Its `\(...\)` math tokenizer ends at the first `\)`.
+Raw XML renders literally, while the user-message Markdown image extension turns images
+into ordinary links. KaTeX 0.16.45 runs with `strict: "ignore"`, configurable `throwOnError`
+and no `trust`. Formula bases do not wrap internally. The composer converts a paste of
+5,000+ UTF-16 units into a pasted-text attachment when that feature flag is on, and has
+rich-text paste processing. The older `/Applications/Codex.app` is not this running host;
+matching bundle IDs are insufficient evidence when inspecting desktop renderer behaviour.
+The serializer therefore keeps the plain canonical XML byte-identical and, only for a
+Mode with **Styled highlights** enabled, adds a short-formula
+cyan/purple preview paragraph above each tag. That tag then gains `display_copy="above"`.
+Selected text is TeX-escaped, normalized and sanitized. Previews are dropped in capture order
+to stay within 4,800 UTF-16 units. Width accounting includes indentation and wide M/W letters,
+not just CJK/emoji; indented long tokens must share the first formula's width allowance.
+The choice comes from the route's already-resolved Mode,
+so no classifier or delivery change is added.
+Guard: `StyledContextPresentationTests` plus the existing live-selection, HUD-only, Primary
+and Next route guards. Unit tests cannot prove bubble pixels, narrow-pane wrapping, light-mode
+contrast, or the composer's submit serialization; those need an attended Codex check.
+
 ## 2026-09-26 — Watch selection gestures from launch; read text only while recording
 
 Ethan reported quick highlights right after starting were usually missed, and asked for a

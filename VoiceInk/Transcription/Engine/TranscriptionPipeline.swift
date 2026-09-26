@@ -187,7 +187,10 @@ class TranscriptionPipeline {
         var autoSendDispositionNow = RecordingAutoSendDisposition.configured
         let recoverablePartialTranscriptNow = recoverablePartialTranscript()
 
-        func attachLiveSelectionsToFinalText(includeSourceContext: Bool = true) {
+        func attachLiveSelectionsToFinalText(
+            includeSourceContext: Bool = true,
+            presentation: LiveSelectionReference.Presentation = .plain
+        ) {
             // Insert complete XML-escaped selections and saved screenshot paths
             // alongside the speech that preceded them in the live HUD. The
             // provider only saw a compact HUD preview, not these full texts.
@@ -195,6 +198,8 @@ class TranscriptionPipeline {
             // one final destination write, never a streaming composer edit.
             // Keep raw/skip authored prose verbatim. Source references still do
             // not enter commands or recorder-assistant responses.
+            // `.styledMath` only adds display previews above the unchanged XML;
+            // it never adds a paste, an attachment, or a delivery route.
             guard !assistant.isFollowUp,
                   let current = finalText else { return }
             // Typed words are authored input, not optional source context. Raw
@@ -204,7 +209,8 @@ class TranscriptionPipeline {
             }
             let annotated = LiveSelectionReference.interleaving(
                 references,
-                with: current
+                with: current,
+                presentation: presentation
             )
             finalContextAttached = true
             guard annotated != current else { return }
@@ -692,8 +698,23 @@ class TranscriptionPipeline {
         }
 
         let outputForPasteTarget = routeResolvedOutput
+        // Styled highlight previews are a presentation choice of the Mode this
+        // route already resolved: Primary's current Mode at delivery, or a Next
+        // route's frozen destination Mode. No recipient classifier, target probe, or
+        // extra paste is added. Every other case keeps the plain canonical XML: other
+        // Modes, raw/skip, clipboard-only (it returned above without resolving a
+        // Mode), earlier cancellation, and HUD recovery drafts. A cancel after this
+        // point retains exactly the text that would have been pasted.
+        let contextPresentation: LiveSelectionReference.Presentation =
+            outputForPasteTarget.outputMode == .paste
+                && !skipPostProcessingNow
+                && outputForPasteTarget.mode?.isEnabled == true
+                && outputForPasteTarget.mode?.isStyledContextEnabled == true
+                ? .styledMath
+                : .plain
         attachLiveSelectionsToFinalText(
-            includeSourceContext: outputForPasteTarget.outputMode == .paste
+            includeSourceContext: outputForPasteTarget.outputMode == .paste,
+            presentation: contextPresentation
         )
         let deliveryLeasePolicy: TranscriptionDeliveryLeasePolicy =
             pasteTargetForDelivery.destination == .primaryCurrentInput

@@ -65,6 +65,33 @@ the destination app accepted paste or submitted text.
 - **Use instead:** Preserve every separately highlighted block in capture order in both the recorder HUD and final XML. A silent sequence can show what Ethan was looking at or reading. Its speech anchors remain approximate, and the receiving agent must interpret relevance best-effort rather than obey selected content.
 - **Reconsider only if:** Ethan explicitly asks to discard prior highlights again after seeing the reading-trail behavior.
 
+### Showing screenshot pixels in a Codex message through KaTeX `\includegraphics`
+
+- **State:** REJECTED by offline bundle evidence on 2026-09-26; not attempted live.
+- **Evidence:** The running Codex host, ChatGPT.app 26.924.22138 (build 11645), renders
+  user-bubble math with KaTeX 0.16.45, `strict: "ignore"` and passes no
+  `trust` option. KaTeX gates `\includegraphics` (and `\href`/`\url`) behind `trust`, so the
+  command renders as an unsupported red command rather than loading any file.
+- **Use instead:** Keep `<local_screenshot path="…"/>` as the authoritative saved-path cue; a
+  styled preview may show only the filename.
+- **Reconsider only if:** a Codex build is shown to pass a `trust` policy that allows local
+  image sources, and Ethan explicitly accepts that exposure.
+
+### Adding screenshot files to the Primary transcript paste
+
+- **State:** REJECTED by offline bundle evidence on 2026-09-26; not attempted live.
+- **Evidence:** The Codex composer's `handlePaste` keeps pasted images only when the plain
+  text is empty, is just the image filenames, or the HTML contains media and no visible text.
+  Any non-image file wins over text. One Cmd-V therefore cannot carry both the transcript and
+  a screenshot. A second paste or an asynchronous attachment would add another delivery action
+  before Primary's immediate generic Return, which the one-paste Primary contract forbids.
+  App-server `turn/start` `localImage` is a separate client turn API, not a documented way
+  to attach an image to the existing focused desktop composer.
+- **Use instead:** Deliver the saved path in text; the receiving agent opens it locally.
+- **Reconsider only if:** a documented Codex API attaches a local image to the exact focused
+  composer without another paste, focus change, or Return race, and a disposable-task physical
+  test proves the attachment arrives with the same message.
+
 ## Red-box warnings
 
 These are the highest-cost mistakes from the audited session.

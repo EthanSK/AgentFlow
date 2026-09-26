@@ -538,6 +538,15 @@ struct ModeConfigFormView: View {
                         InfoTip("Automatically presses a key combination after pasting text. Useful for chat applications or forms that use different send shortcuts.")
                     }
                 }
+
+                // Presentation only: the exact highlight/screenshot tag is always
+                // pasted too, and delivery still uses this Mode's normal route.
+                Toggle(isOn: $draft.isStyledContextEnabled) {
+                    HStack(spacing: 6) {
+                        Text("Styled highlights")
+                        InfoTip("Adds colored previews above highlight and screenshot tags. The tags keep the exact text and paths. For apps that render LaTeX, such as Codex.")
+                    }
+                }
             }
 
             if draft.outputMode == .customCommand {

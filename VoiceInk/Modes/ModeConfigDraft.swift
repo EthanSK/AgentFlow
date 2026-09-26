@@ -22,6 +22,7 @@ struct ModeConfigDraft {
     var outputMode: ModeOutputMode
     var autoSendKey: AutoSendKey
     var customCommand: String
+    var isStyledContextEnabled: Bool
     var isDefault: Bool
     var isTranscriptionFormattingExpanded: Bool
 
@@ -53,6 +54,8 @@ struct ModeConfigDraft {
             outputMode = .paste
             autoSendKey = .none
             customCommand = inheritedConfig?.customCommand?.command ?? ""
+            // Never inherited: a new Mode may target an app without math rendering.
+            isStyledContextEnabled = false
             isDefault = false
             isTranscriptionFormattingExpanded = false
             sourceConfig = nil
@@ -80,6 +83,7 @@ struct ModeConfigDraft {
             outputMode = latestConfig.outputMode
             autoSendKey = latestConfig.autoSendKey
             customCommand = latestConfig.customCommand?.command ?? ""
+            isStyledContextEnabled = latestConfig.isStyledContextEnabled
             isDefault = latestConfig.isDefault
             isTranscriptionFormattingExpanded = false
             sourceConfig = latestConfig
@@ -156,6 +160,8 @@ struct ModeConfigDraft {
     func makeConfig(mode: ConfigurationMode) -> ModeConfig {
         let savedAutoSendKey: AutoSendKey = outputMode.usesPasteOptions ? autoSendKey : .none
         let savedIsDefault = outputMode.usesPasteOptions ? isDefault : false
+        // Styling applies only to pasted text, like the other paste options.
+        let savedIsStyledContextEnabled = outputMode.usesPasteOptions && isStyledContextEnabled
         let savedCustomCommand = makeCustomCommand()
 
         switch mode {
@@ -182,6 +188,7 @@ struct ModeConfigDraft {
                 outputMode: outputMode,
                 autoSendKey: savedAutoSendKey,
                 customCommand: savedCustomCommand,
+                isStyledContextEnabled: savedIsStyledContextEnabled,
                 isDefault: savedIsDefault
             )
 
@@ -207,6 +214,7 @@ struct ModeConfigDraft {
             updatedConfig.outputMode = outputMode
             updatedConfig.autoSendKey = savedAutoSendKey
             updatedConfig.customCommand = savedCustomCommand
+            updatedConfig.isStyledContextEnabled = savedIsStyledContextEnabled
             updatedConfig.isDefault = savedIsDefault
             return updatedConfig
         }

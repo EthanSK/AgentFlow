@@ -85,11 +85,18 @@ struct ModeConfig: Codable, Identifiable, Equatable {
     var outputMode: ModeOutputMode = .paste
     var autoSendKey: AutoSendKey = .none
     var customCommand: ModeCustomCommand?
+    /// Adds a coloured KaTeX preview above each live highlight/screenshot tag in
+    /// pasted text (`LiveSelectionReference.Presentation.styledMath`). This is a
+    /// per-Mode presentation choice, not an app classifier: it follows whichever
+    /// Mode the existing route resolves (Primary's current Mode, a Next route's
+    /// frozen destination Mode). Off by default and for decoded older Modes, because
+    /// apps without `\(...\)` math rendering would show the raw preview source.
+    var isStyledContextEnabled: Bool = false
     var isEnabled: Bool = true
     var isDefault: Bool = false
 
     enum CodingKeys: String, CodingKey {
-        case id, name, icon, appConfigs, urlConfigs, triggerGroups, triggerWords, isAIEnhancementEnabled, selectedPrompt, isRealtimeTranscriptionEnabled, selectedLanguage, isTextFormattingEnabled, useClipboardContext, useSelectedTextContext, useScreenCapture, selectedAIProvider, selectedAIModel, outputMode, isAutoSendEnabled, autoSendKey, customCommand, isEnabled, isDefault
+        case id, name, icon, appConfigs, urlConfigs, triggerGroups, triggerWords, isAIEnhancementEnabled, selectedPrompt, isRealtimeTranscriptionEnabled, selectedLanguage, isTextFormattingEnabled, useClipboardContext, useSelectedTextContext, useScreenCapture, selectedAIProvider, selectedAIModel, outputMode, isAutoSendEnabled, autoSendKey, customCommand, isStyledContextEnabled, isEnabled, isDefault
         case legacyEmoji = "emoji"
         case selectedWhisperModel
         case selectedTranscriptionModelName
@@ -99,7 +106,7 @@ struct ModeConfig: Codable, Identifiable, Equatable {
          urlConfigs: [URLConfig]? = nil, triggerGroups: [ModeTriggerGroup]? = nil, triggerWords: [String] = [],
          isAIEnhancementEnabled: Bool, selectedPrompt: String? = nil,
          selectedTranscriptionModelName: String? = nil, isRealtimeTranscriptionEnabled: Bool = true, selectedLanguage: String? = nil, useClipboardContext: Bool = false, useSelectedTextContext: Bool = true, useScreenCapture: Bool = false,
-         isTextFormattingEnabled: Bool = false, selectedAIProvider: String? = nil, selectedAIModel: String? = nil, outputMode: ModeOutputMode = .paste, autoSendKey: AutoSendKey = .none, customCommand: ModeCustomCommand? = nil, isEnabled: Bool = true, isDefault: Bool = false) {
+         isTextFormattingEnabled: Bool = false, selectedAIProvider: String? = nil, selectedAIModel: String? = nil, outputMode: ModeOutputMode = .paste, autoSendKey: AutoSendKey = .none, customCommand: ModeCustomCommand? = nil, isStyledContextEnabled: Bool = false, isEnabled: Bool = true, isDefault: Bool = false) {
         self.id = id
         self.name = name
         self.icon = icon
@@ -115,6 +122,7 @@ struct ModeConfig: Codable, Identifiable, Equatable {
         self.autoSendKey = autoSendKey
         self.outputMode = outputMode
         self.customCommand = customCommand
+        self.isStyledContextEnabled = isStyledContextEnabled
         self.selectedAIProvider = selectedAIProvider
         self.selectedAIModel = selectedAIModel
         self.selectedTranscriptionModelName = selectedTranscriptionModelName
@@ -170,6 +178,7 @@ struct ModeConfig: Codable, Identifiable, Equatable {
         selectedAIModel = try container.decodeIfPresent(String.self, forKey: .selectedAIModel)
         outputMode = try container.decodeIfPresent(ModeOutputMode.self, forKey: .outputMode) ?? .paste
         customCommand = try container.decodeIfPresent(ModeCustomCommand.self, forKey: .customCommand)
+        isStyledContextEnabled = try container.decodeIfPresent(Bool.self, forKey: .isStyledContextEnabled) ?? false
         // Migrate from old isAutoSendEnabled bool to new autoSendKey enum
         if let rawValue = try container.decodeIfPresent(String.self, forKey: .autoSendKey),
            let newKey = AutoSendKey(rawValue: rawValue) {
@@ -213,6 +222,7 @@ struct ModeConfig: Codable, Identifiable, Equatable {
         try container.encode(outputMode, forKey: .outputMode)
         try container.encode(autoSendKey, forKey: .autoSendKey)
         try container.encodeIfPresent(customCommand, forKey: .customCommand)
+        try container.encode(isStyledContextEnabled, forKey: .isStyledContextEnabled)
         try container.encodeIfPresent(selectedTranscriptionModelName, forKey: .selectedTranscriptionModelName)
         try container.encode(isEnabled, forKey: .isEnabled)
         try container.encode(isDefault, forKey: .isDefault)
