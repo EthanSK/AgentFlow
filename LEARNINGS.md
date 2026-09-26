@@ -1,5 +1,23 @@
 # Learnings
 
+## 2026-09-26 — Long highlights preserve source text, not a five-line excerpt
+
+Ethan superseded the five-line/500-character cap after coloured context became easier
+to distinguish. Build 352 retains the first 8,000 Swift characters with leading/trailing
+whitespace, indentation and hard line breaks intact; the compact HUD preview is unchanged.
+`truncated` marks only the actual retained-source cutoff, and `characters` measures the
+captured source before XML escaping. VS Code still has its earlier 8,192 UTF-16 transport
+boundary, so that field cannot prove the length of an uncaptured larger editor selection.
+Browser AppleScript results need JSON framing: trimming stdout must not trim selected text.
+The colour expansion budget is now 64,000 UTF-16 units, superseding the 4,800 budget below.
+Colour can yield to plain XML, but never remove retained context to fit Codex's own
+large-paste threshold; Codex may convert a large message into a text attachment.
+The speech-model prompt and destination routes are untouched. Exact-source build-352 tests
+executed 408 named cases across 16 suites, including whitespace, many-line, grapheme-boundary,
+browser framing, coloured-XML round-trip, colour-budget fallback and Primary/Next guards.
+Canonical focused attempts and the full Xcode action stalled without named execution;
+only the documented full-suite direct runner provided the release gate, not a focused pass.
+
 ## 2026-09-26 — Show the recorder as a desktop panel, not a web widget
 
 The homepage now places its one semantic HUD over a decorative Mac/TextEdit scene.
