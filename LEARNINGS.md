@@ -1,5 +1,17 @@
 # Learnings
 
+## 2026-09-26 — A timed-out compilation is not a ready test bundle
+
+Shortening a canonical test timeout while Swift is still compiling can leave an older runnable
+test bundle in reused DerivedData. During the uninstalled build-350 candidate, the old 400-test
+binary read changed source guards and failed; the new source contained 402 tests. Matching the
+app's build number did not prove test freshness because that candidate number had not changed.
+The repair was a completed `xcodebuild build-for-testing`, then canonical `test-without-building`
+and only the documented full-suite fallback. Require completed build evidence for the exact
+source and newly added test names in the binary/output, not just an existing `.xctest` directory
+or CFBundleVersion. Bound a stalled TestManager separately from active compilation; preserve
+both logs, and do not repeatedly interrupt a busy compiler to make a retry look faster.
+
 ## 2026-09-26 — Filter captured context by the paste recipient, not the selection source
 
 Ethan explicitly restricted automatically pasted selection/screenshot XML to native Codex,
