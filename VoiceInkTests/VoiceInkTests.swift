@@ -482,13 +482,13 @@ struct VoiceInkTests {
     }
 
     @Test func boundedSelectionPreservesInternalWhitespaceAndEscapesXML() throws {
-        let selected = "First line & <tag>\n\n  indented second line"
-        let reference = try #require(LiveSelectionReference("  \n" + selected + "\n  "))
+        let selected = "  \nFirst line & <tag>\n\n  indented second line\n  "
+        let reference = try #require(LiveSelectionReference(selected))
         let message = LiveSelectionReference.interleaving([reference], with: "Read this")
         #expect(reference.characterCount == selected.count)
         #expect(!reference.truncated)
         #expect(message.contains(
-            "<text>First line &amp; &lt;tag&gt;\n\n  indented second line</text>"
+            "<text>  \nFirst line &amp; &lt;tag&gt;\n\n  indented second line\n  </text>"
         ))
         #expect(XMLParser(data: Data("<root>\(message)</root>".utf8)).parse())
     }

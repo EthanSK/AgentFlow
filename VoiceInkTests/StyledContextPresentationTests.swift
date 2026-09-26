@@ -221,7 +221,7 @@ struct StyledContextPresentationTests {
             .map { line in String(repeating: "word\(line) ", count: 24) }
             .joined(separator: "\n")
         let selection = try #require(LiveSelectionReference(long))
-        let references = Array(repeating: selection.anchored(after: "Look"), count: 4)
+        let references = Array(repeating: selection.anchored(after: "Look"), count: 8)
         let plain = LiveSelectionReference.interleaving(references, with: "Look")
         let styled = LiveSelectionReference.interleaving(
             references, with: "Look", presentation: .styledMath
@@ -229,7 +229,7 @@ struct StyledContextPresentationTests {
         #expect(plain.utf16.count < LiveSelectionStyledMath.messageUTF16Budget)
         #expect(styled.utf16.count <= LiveSelectionStyledMath.messageUTF16Budget)
         #expect(styled.contains("\\textsf{"))
-        #expect(styled.contains("<codex_selection index=\"4\""))
+        #expect(styled.contains("<codex_selection index=\"8\""))
         #expect(!styled.contains("display_copy"))
         // Capture order wins the budget; a tag without a preview stays canonical.
         // Unwrapping colour (formerly removing previews) recovers the exact plain message.
