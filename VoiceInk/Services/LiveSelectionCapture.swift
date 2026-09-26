@@ -463,7 +463,7 @@ enum LiveSelectionStyledMath {
     static let screenshotColor = "#e879f9"
     /// Quiet captions let the coloured source text carry the emphasis.
     static let captionColor = "#94a3b8"
-    /// Conservative width (wide CJK/emoji and ASCII M/W count twice) per formula,
+    /// Conservative width (wide CJK/emoji, M/W and wide punctuation count twice) per formula,
     /// sized to fit even a narrow Codex pane.
     static let maxChunkWidth = 24
     static let maxIndentColumns = 8
@@ -625,7 +625,10 @@ enum LiveSelectionStyledMath {
     static func displayWidth(of character: Character) -> Int {
         guard let scalar = character.unicodeScalars.first else { return 0 }
         switch scalar.value {
-        case 0x004D, 0x0057, 0x1100...0x115F, 0x2E80...0x303E, 0x3041...0x33FF, 0x3400...0x4DBF,
+        // Numeric XML entities contain repeated &/# glyphs. Treating those as
+        // narrow letters overflowed a 231pt KaTeX column in the production fixture.
+        case 0x0023, 0x0025, 0x0026, 0x0040, 0x004D, 0x0057,
+             0x1100...0x115F, 0x2E80...0x303E, 0x3041...0x33FF, 0x3400...0x4DBF,
              0x4E00...0x9FFF, 0xA000...0xA4CF, 0xAC00...0xD7A3, 0xF900...0xFAFF,
              0xFE30...0xFE4F, 0xFF00...0xFF60, 0xFFE0...0xFFE6,
              0x1F300...0x1FAFF, 0x20000...0x3FFFD:

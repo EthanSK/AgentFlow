@@ -27,6 +27,8 @@ numeric entities for renderer-sensitive scalars; ordinary speech stays literal. 
 XML is magenta and followed by one normal, percent-encoded local Markdown image reference.
 That reference is still not an uploaded image, and the current host may render it as a link.
 The 4,800 UTF-16 presentation budget drops colour, never canonical context or authored prose.
+Production KaTeX fixtures exposed a 2pt overflow in entity-heavy text despite the first unit
+gate passing: width accounting must count wide `&/#/%/@` punctuation twice, not only M/W.
 The earlier preview implementation below is historical, not the current desired presentation.
 
 ## 2026-09-26 — The fork must not advertise upstream binary installation

@@ -421,6 +421,7 @@ struct StyledContextPresentationTests {
     }
 
     @Test func coloredXMLPreservesUnicodeWhitespaceAndHostileText() throws {
+        #expect(LiveSelectionStyledMath.displayWidth(of: "&#x2a;") == 8)
         let text = "  cafe\u{0301}\t*bold* a\u{0331} 😀\u{200D}😀\u{202E} <tag> & \\) {x} [link](x) 50% a_b\nnext  line"
         let reference = try #require(LiveSelectionReference(text))
         let plain = LiveSelectionReference.interleaving([reference], with: "")
