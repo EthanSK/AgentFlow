@@ -6,6 +6,10 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 output=${1:?Pass a fresh, task-scoped output directory}
 mkdir -p "$output"
+# The direct Swift Testing runner inherits its working directory. Keep LLVM's
+# generated coverage file with the release evidence, not as default.profraw in
+# the source checkout (which would block the next clean-checkout release).
+export LLVM_PROFILE_FILE="$output/profile-%p.profraw"
 test "$(git -C "$root" status --porcelain | wc -l | tr -d ' ')" = 0
 
 project="$root/VoiceInk.xcodeproj/project.pbxproj"

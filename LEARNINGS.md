@@ -1,5 +1,15 @@
 # Learnings
 
+## 2026-09-26 — Keep direct-test coverage output out of the release checkout
+
+The build-346 full Swift Testing fallback produced `default.profraw` in its working
+directory after executing 374 named tests. That generated, untracked file correctly
+blocked the next clean-checkout release guard. Preserve the profile with the release
+logs and set `LLVM_PROFILE_FILE` to an output-directory path containing `%p` before
+running tests. Do not hide the artifact with a repository ignore or relax the clean
+source gate. The release-script regression exercises the production export with an
+output path containing spaces; native compilation/tests still run only on the Mini.
+
 ## 2026-09-26 — Keyboard prose belongs to the recording timeline, not the provider
 
 **Trigger:** Ethan requested typing directly in the black recorder, refocusing it after

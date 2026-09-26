@@ -15,6 +15,19 @@ BLOCK = PACKAGE[START:END]
 
 
 class SparkleSigningTests(unittest.TestCase):
+    def test_coverage_output_stays_outside_source_checkout(self):
+        source = (ROOT / "scripts/test-public-release.sh").read_text()
+        lines = [line for line in source.splitlines()
+                 if line.startswith("export LLVM_PROFILE_FILE=")]
+        self.assertEqual(len(lines), 1)
+        with tempfile.TemporaryDirectory(prefix="agentflow release coverage ") as output:
+            result = subprocess.run(
+                ["bash", "-c", 'set -eu; output="$1"; ' + lines[0]
+                 + '; printf "%s" "$LLVM_PROFILE_FILE"', "fixture", output],
+                capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout, str(Path(output) / "profile-%p.profraw"))
+
     def run_fixture(self, version, helper=True):
         with tempfile.TemporaryDirectory(prefix="agentflow-signing-test-") as directory:
             base = Path(directory)
