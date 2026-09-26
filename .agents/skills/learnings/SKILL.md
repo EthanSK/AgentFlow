@@ -113,6 +113,19 @@ replacement for the spoken request or proof of precise timing. Require
 `silentHighlightsProduceReferenceOnlyXMLInCaptureOrder` alongside the HUD and final-XML
 guards. Ethan explicitly reversed the earlier latest-only rule on 2026-09-25.
 
+For keyboard prose, preserve the normal finish-and-paste lifecycle: Enter inserts a
+newline and blur only seals a text segment. Measure the active editor as it changes,
+including its trailing insertion line and control gutter; do not wait for blur to
+resize the mini/notch host. Only after the user first clicks to type may an accepted
+highlight or screenshot return focus to that session's chosen mirrored editor.
+Unfocus and finalization disarm this; ordinary speech updates and app switches must
+not chase focus. Adding Command to the standard Shift-Control-Option start requests
+initial editor focus for that exact start reservation, never another/newer session.
+Forward modifier releases and preserve Primary/Next delivery ownership. Require
+`RecorderTypedInputTests` plus the existing shortcut and route guards; distinguish
+microphone-free editor/controller fixtures from physical shortcut/context acceptance.
+User-requested keyboard focus behaviour — 2026-09-26.
+
 For a requested Soniox-versus-AssemblyAI comparison using saved recordings, read
 [references/provider-realtime-ab-test.md](references/provider-realtime-ab-test.md)
 and use `scripts/compare-realtime-stt.mjs`. Dry-run the corpus first, require one
