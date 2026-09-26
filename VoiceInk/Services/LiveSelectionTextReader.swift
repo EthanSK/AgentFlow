@@ -596,7 +596,17 @@ enum LiveSelectionBrowserScriptReader {
     /// Reads the DOM selection, or the selected range of a focused text
     /// control. Password inputs are excluded explicitly: their selection API
     /// would otherwise expose the secret behind the dots.
-    static let selectionJavaScript = #"(()=>{const s=window.getSelection();let t=s?s.toString():'';if(!t){const a=document.activeElement;if(a&&a.type!=='password'&&typeof a.selectionStart==='number'&&typeof a.selectionEnd==='number'&&typeof a.value==='string'){t=a.value.slice(a.selectionStart,a.selectionEnd)}}return t})()"#
+    static let selectionJavaScript = #"(()=>{const s=window.getSelection();let t=s?s.toString():'';if(!t){const a=document.activeElement;if(a&&a.type!=='password'&&typeof a.selectionStart==='number'&&typeof a.selectionEnd==='number'&&typeof a.value==='string'){t=a.value.slice(a.selectionStart,a.selectionEnd)}}return JSON.stringify({text:t})})()"#
+
+    static func parseSelectionResult(_ output: String) -> String? {
+        // Frame source text as JSON so osascript's own trailing newline can be
+        // discarded by the parser without trimming selected indentation or
+        // leading/trailing blank lines. Empty whitespace is still not context.
+        guard let data = output.data(using: .utf8),
+              let fields = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+              let text = fields["text"], text.contains(where: { !$0.isWhitespace }) else { return nil }
+        return text
+    }
 
     /// Browser scripting cannot prove a selection's screen bounds. A known
     /// gesture outside this browser's windows must not repeat an older tab
@@ -637,8 +647,7 @@ enum LiveSelectionBrowserScriptReader {
               ) else {
             return nil
         }
-        let text = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-        return text.isEmpty ? nil : text
+        return parseSelectionResult(result.stdout)
     }
 }
 

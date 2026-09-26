@@ -217,8 +217,8 @@ struct StyledContextPresentationTests {
     }
 
     @Test func coloredXMLFitsBudgetOrFallsBackWithoutLosingContext() throws {
-        let long = (0..<5)
-            .map { line in String(repeating: "word\(line) ", count: 16) }
+        let long = (0..<40)
+            .map { line in String(repeating: "word\(line) ", count: 24) }
             .joined(separator: "\n")
         let selection = try #require(LiveSelectionReference(long))
         let references = Array(repeating: selection.anchored(after: "Look"), count: 4)
@@ -235,12 +235,28 @@ struct StyledContextPresentationTests {
         // Unwrapping colour (formerly removing previews) recovers the exact plain message.
         #expect(try unwrappedXML(styled) == plain)
 
-        let crowded = Array(repeating: selection.anchored(after: "Look"), count: 9)
+        let crowded = Array(repeating: selection.anchored(after: "Look"), count: 14)
         let crowdedPlain = LiveSelectionReference.interleaving(crowded, with: "Look")
         #expect(crowdedPlain.utf16.count > LiveSelectionStyledMath.messageUTF16Budget)
         #expect(LiveSelectionReference.interleaving(
             crowded, with: "Look", presentation: .styledMath
         ) == crowdedPlain)
+    }
+
+    @Test func longColoredSelectionPreservesAllLinesAndWhitespace() throws {
+        let selected = "\n  " + String(repeating: "    selected code & <value>\n", count: 200) + "\t  "
+        let reference = try #require(LiveSelectionReference(selected))
+        #expect(!reference.truncated)
+        let plain = LiveSelectionReference.interleaving([reference], with: "")
+        let styled = LiveSelectionReference.interleaving([reference], with: "", presentation: .styledMath)
+        #expect(styled.contains("\\textsf{"))
+        #expect(!styled.contains("<codex_selection"))
+        // Presentation may escape tabs as numeric entities; compare XML text,
+        // not the optional representation of the same preserved source data.
+        #expect(try xmlText(in: unwrappedXML(styled)) == selected)
+        #expect(try xmlText(in: plain) == selected)
+        #expect(styled.utf16.count > 5_000)
+        #expect(styled.utf16.count <= LiveSelectionStyledMath.messageUTF16Budget)
     }
 
     @Test func screenshotXMLIsMagentaWithSafeLocalImageReference() throws {
@@ -293,7 +309,7 @@ struct StyledContextPresentationTests {
     }
 
     @Test func truncatedSelectionKeepsExplicitXMLMetadata() throws {
-        let reference = try #require(LiveSelectionReference(String(repeating: "abc ", count: 200)))
+        let reference = try #require(LiveSelectionReference(String(repeating: "abc ", count: 2_100)))
         #expect(reference.truncated)
         let message = LiveSelectionReference.interleaving(
             [reference], with: "", presentation: .styledMath
@@ -461,6 +477,16 @@ struct StyledContextPresentationTests {
     private final class XMLTextCollector: NSObject, XMLParserDelegate {
         var text = ""
         func parser(_ parser: XMLParser, foundCharacters string: String) { text += string }
+    }
+
+    private func xmlText(in xml: String) throws -> String {
+        let start = try #require(xml.range(of: "<text>"))
+        let end = try #require(xml.range(of: "</text>"))
+        let parser = XMLParser(data: Data(xml[start.lowerBound..<end.upperBound].utf8))
+        let collector = XMLTextCollector()
+        parser.delegate = collector
+        #expect(parser.parse())
+        return collector.text
     }
 
     /// Independent decoder for the exact small styling vocabulary. This proves

@@ -8,12 +8,11 @@ import SQLite3
 /// shows only a compact preview; a bounded excerpt is added to the final
 /// destination message after transcription, never to live provider context.
 struct LiveSelectionReference: Equatable {
-    // Five hard lines or roughly five wrapped prose lines, whichever is shorter.
-    // Bound at capture so a whole document is neither retained for the recording
-    // nor slipped into the final agent message. `characterCount` still describes
-    // the original selection, and XML explicitly marks a truncated excerpt.
-    static let maxSelectionLines = 5
-    static let maxSelectionCharacters = 500
+    // Ethan wants substantial selected passages, not a five-line summary. Keep
+    // all source whitespace and hard lines until this per-highlight safety cap;
+    // the independently compact HUD must not determine final context length.
+    // `characterCount` describes the input and XML explicitly marks truncation.
+    static let maxSelectionCharacters = 8_000
 
     private enum Source: Equatable {
         case codex
@@ -80,23 +79,17 @@ struct LiveSelectionReference: Equatable {
     }
 
     init?(_ selectedText: String) {
-        let trimmed = selectedText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.split(whereSeparator: \.isWhitespace).isEmpty else { return nil }
-        let lineLimited = trimmed
-            .split(separator: "\n", maxSplits: Self.maxSelectionLines,
-                   omittingEmptySubsequences: false)
-            .prefix(Self.maxSelectionLines)
-            .joined(separator: "\n")
-        let excerpt = String(lineLimited.prefix(Self.maxSelectionCharacters))
+        guard selectedText.contains(where: { !$0.isWhitespace }) else { return nil }
+        let excerpt = String(selectedText.prefix(Self.maxSelectionCharacters))
         let normalized = excerpt
             .split(whereSeparator: \.isWhitespace)
             .joined(separator: " ")
 
-        characterCount = trimmed.count
+        characterCount = selectedText.count
         screenshotPath = nil
         self.selectedText = excerpt
         omittedMiddle = false
-        truncated = excerpt != trimmed
+        truncated = excerpt != selectedText
         if normalized.count <= 96 {
             preview = "“\(normalized)”"
         } else {
@@ -468,9 +461,12 @@ enum LiveSelectionStyledMath {
     static let maxChunkWidth = 24
     static let maxIndentColumns = 8
     static let maxSourceNameCharacters = 40
-    /// Stays below Codex's 5,000-unit pasted-text threshold, with room for the
-    /// optional trailing space. Only previews are dropped to fit.
-    static let messageUTF16Budget = 4_800
+    /// Colour is useful for longer highlights too. This bounds presentation
+    /// expansion, not source content: fall back to canonical XML if needed,
+    /// never shorten authored text to dodge a recipient's attachment threshold.
+    /// Codex may turn a 5,000+-unit paste into a text attachment; that is a host
+    /// behaviour, not permission to silently clip the selected passage.
+    static let messageUTF16Budget = 64_000
     /// Joins pieces of one over-long token: no visible space, but still a
     /// line-break opportunity between formulas.
     static let zeroWidthSpace = "\u{200B}"
@@ -735,8 +731,8 @@ enum ChromeSelectionContextReader {
     static func parse(_ output: String) -> Context? {
         guard let data = output.data(using: .utf8),
               let fields = try? JSONSerialization.jsonObject(with: data) as? [String: String],
-              let selected = fields["selectedText"]?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !selected.isEmpty,
+              let selected = fields["selectedText"],
+              selected.contains(where: { !$0.isWhitespace }),
               let rawURL = fields["url"],
               var url = URLComponents(string: rawURL),
               ["https", "http"].contains(url.scheme?.lowercased() ?? ""),

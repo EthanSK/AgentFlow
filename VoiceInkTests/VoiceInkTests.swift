@@ -413,7 +413,7 @@ struct VoiceInkTests {
     @Test func liveSelectionReferenceBoundsFinalTextAndKeepsPreviewCompact() throws {
         let source = String(repeating: "a", count: 250)
             + "MIDDLE_WITHIN_LIMIT_MUST_SURVIVE"
-            + String(repeating: "z", count: 300)
+            + String(repeating: "z", count: 8_000)
         let reference = try #require(LiveSelectionReference(source))
         let message = LiveSelectionReference.interleaving(
             [reference.anchored(after: "Please check")],
@@ -427,7 +427,7 @@ struct VoiceInkTests {
         #expect(message.hasSuffix("</codex_selection>\n\nthis section."))
         #expect(message.contains("middle_omitted=\"false\""))
         #expect(message.contains("truncated=\"true\""))
-        #expect(message.contains("<text>\(String(source.prefix(500)))</text>"))
+        #expect(message.contains("<text>\(String(source.prefix(8_000)))</text>"))
         #expect(message.contains("MIDDLE_WITHIN_LIMIT_MUST_SURVIVE"))
         #expect(!message.contains("<text>\(source)</text>"))
         #expect(!message.contains("<start>"))
@@ -438,21 +438,26 @@ struct VoiceInkTests {
                 .contains("<codex_selection index=\"1\""))
     }
 
-    @Test func liveSelectionReferenceKeepsAtMostFiveHardLinesAcrossApps() throws {
-        let source = "first\n\nthird\nfourth\nfifth\nSIXTH_MUST_NOT_LEAVE_THE_APP"
+    @Test func liveSelectionReferencePreservesLongMultilineTextAcrossApps() throws {
+        let source = "  first\n\n\tthird\nfourth\nfifth\nSIXTH_MUST_SURVIVE\n"
+            + String(repeating: "    selected code line\n", count: 200) + "  "
         let reference = try #require(LiveSelectionReference(source))
         let message = LiveSelectionReference.interleaving(
             [reference.scopedToApplication(name: "TextEdit", bundleID: "com.apple.TextEdit")],
             with: "Read this"
         )
         #expect(reference.characterCount == source.count)
-        #expect(reference.truncated)
-        #expect(message.contains("truncated=\"true\""))
-        #expect(message.contains("<text>first\n\nthird\nfourth\nfifth</text>"))
-        #expect(!message.contains("SIXTH_MUST_NOT_LEAVE_THE_APP"))
+        #expect(!reference.truncated)
+        #expect(message.contains("truncated=\"false\""))
+        #expect(message.contains("<text>\(source)</text>"))
+        #expect(message.contains("SIXTH_MUST_SURVIVE"))
+        #expect(reference.preview.count < 110)
         #expect(XMLParser(data: Data("<root>\(message)</root>".utf8)).parse())
-        let exactlyFive = try #require(LiveSelectionReference("first\nsecond\nthird\nfourth\nfifth"))
-        #expect(!exactlyFive.truncated)
+        let exactlyAtCap = try #require(LiveSelectionReference(String(repeating: "😀", count: 8_000)))
+        #expect(!exactlyAtCap.truncated)
+        let overCap = try #require(LiveSelectionReference(String(repeating: "😀", count: 8_001)))
+        #expect(overCap.truncated)
+        #expect(overCap.characterCount == 8_001)
     }
 
     @Test func liveSelectionXMLQuotesSelectedTextAndKeepsOrder() throws {

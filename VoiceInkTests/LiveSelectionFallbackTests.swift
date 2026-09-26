@@ -370,6 +370,18 @@ struct LiveSelectionFallbackTests {
         #expect(chrome.contains(#"return (execute javascript "a\"b\\c")"#))
     }
 
+    @Test func browserSelectionFramingPreservesSourceWhitespace() throws {
+        let source = "\n  selected code\n\tlast line  \n"
+        let data = try JSONSerialization.data(withJSONObject: ["text": source])
+        let framed = try #require(String(data: data, encoding: .utf8)) + "\n"
+        #expect(LiveSelectionBrowserScriptReader.parseSelectionResult(framed) == source)
+        #expect(LiveSelectionBrowserScriptReader.parseSelectionResult(#"{"text":"  \n"}"#) == nil)
+        #expect(LiveSelectionBrowserScriptReader.parseSelectionResult("unframed") == nil)
+        #expect(ChromeSelectionContextReader.parse(
+            #"{"selectedText":"  code\n","url":"https://example.com"}"#
+        )?.selectedText == "  code\n")
+    }
+
     @Test func liveSelectionPathStaysReadOnlyAndClipboardFree() throws {
         let reader = try repositorySource("VoiceInk/Services/LiveSelectionTextReader.swift")
         let capture = try repositorySource("VoiceInk/Services/LiveSelectionCapture.swift")

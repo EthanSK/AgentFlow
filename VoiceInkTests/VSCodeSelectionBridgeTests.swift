@@ -30,6 +30,6 @@ struct VSCodeSelectionBridgeTests {
         #expect(!VSCodeSelectionBridge.supports(nil))
         let reference = try #require(LiveSelectionReference("let selected = true"))
         #expect(reference.scopedToApplication(name: "Code", bundleID: "com.microsoft.VSCode").preview == reference.preview)
-        #expect(LiveSelectionReference.maxSelectionCharacters == 500)
+        #expect(LiveSelectionReference.maxSelectionCharacters == 8_000)
     }
 }
