@@ -30,6 +30,13 @@ candidate, the Mini's canonical focused runs named and passed the two sizing
 tests and 45 HUD/typing/Primary/Next guards. A live long-dictation visual check
 on Ethan's display remains distinct from these automated results.
 
+The build-366 full Mini run reported 460 passing tests in 18 suites. The
+release script's former anchored pass-line count missed four Swift Testing
+parameterized summaries because those lines carry an invisible prefix and the
+cases are reported through one named function. Count ordinary named passes plus
+those named parameterized summaries, and still require agreement with the
+canonical run total; zero-test or compilation-only success remains invalid.
+
 ## 2026-09-27 — Compact metadata needs a boundary between section types
 
 Keep adjacent XML metadata compact only within consecutive sections of the same

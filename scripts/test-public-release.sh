@@ -74,7 +74,12 @@ summary=$(grep -E '^✔ Test run with [1-9][0-9]* tests in [1-9][0-9]* suites pa
   exit 1
 }
 count=${BASH_REMATCH[1]}
-named=$(grep -E '^✔ Test .* passed after' "$passed_log" | grep -v '^✔ Test run' | wc -l | tr -d ' ')
+ordinary=$(grep -E '^✔ Test .* passed after' "$passed_log" | grep -v '^✔ Test run' | wc -l | tr -d ' ')
+# Swift Testing prefixes parameterized summaries with an invisible separator and
+# reports their individual cases as starts, not separate passed-test lines.
+# Count each passing named parameterized function once, matching the run summary.
+parameterized=$(awk '/✔ Test .+ with [0-9]+ test cases passed after/ { n++ } END { print n+0 }' "$passed_log")
+named=$((ordinary + parameterized))
 test "$count" -ge 365
 test "$named" = "$count" || {
   echo "Test summary names $count tests but output contains $named named passes." >&2
