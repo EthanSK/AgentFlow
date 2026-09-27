@@ -53,7 +53,11 @@ enum MiniRecorderLayoutMetrics {
         container.lineBreakMode = .byWordWrapping
         layout.addTextContainer(container)
         storage.addLayoutManager(layout)
-        _ = layout.glyphRange(for: container)
+        let visibleGlyphs = layout.glyphRange(for: container)
+        let visibleCharacters = layout.characterRange(
+            forGlyphRange: visibleGlyphs, actualGlyphRange: nil
+        )
+        if NSMaxRange(visibleCharacters) < storage.length { return limit }
         return min(limit, ceil(layout.usedRect(for: container).height) + 16)
     }
 
