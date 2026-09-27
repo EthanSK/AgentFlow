@@ -1,5 +1,109 @@
 # Learnings
 
+## 2026-09-27 — Selection edges and committed text must survive delayed metadata
+
+The old watcher sampled `NSEvent.mouseLocation` when queued callbacks ran, not the
+location stored in each event. If the main thread was busy until after mouse-up,
+both samples could be identical and a real drag became an ordinary click. Use
+the event's location, timestamp and recipient PID; the current foreground PID is
+only a fallback when the event has no recipient. AppKit documents monitor handlers
+as main-thread callbacks, so an extra MainActor task hop is unnecessary.
+Official reference: https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/EventOverview/MonitoringEvents/MonitoringEvents.html
+
+Attach per-session capture at committed start, before awaiting microphone startup
+or explicitly focusing the typing editor. Accept references during `.starting`,
+freeze the speech anchor at the gesture, and insert an initial pre-speech highlight
+before timing/typing markers even if its read finishes later. With no mouse history,
+a one-shot focused-selection read must not invent gesture geometry from the current
+pointer location. The lifetime watcher remains text-free and event-driven.
+
+Selection reads are not paste destinations. A background AX read can remain valid
+when its original visible window ID, process and bounds still match and the actual
+selected range overlaps the gesture. Without that evidence, fail closed; browser
+scripting and editor-bridge paths retain their separately verified focus checks.
+Do not activate the source or poll several apps to work around missing proof.
+
+Optional Codex task-label scans formerly performed bounded file reads/parsing on
+the main actor, and a new click could cancel already-read text while those labels
+were pending. Run scans on one serial worker and commit the proven text first.
+Later metadata may update only that capture's source labels, not its text, timing
+or position. Cancellation after capture can omit labels but must not erase the
+highlight. These source-confirmed mechanisms explain possible misses; they do not
+prove which mechanism caused an uncorrelated user-reported miss.
+
+The Mini's build-358 release gate executed 433 named tests in 16 suites, including
+delayed event geometry, startup attachment, background window/range policy and
+metadata retention. Canonical test actions stalled before named execution; the
+documented full-suite direct fallback passed. Mocked AX geometry is not physical
+background-app acceptance, and no recorder was opened on Ethan's working Mac.
+
+## 2026-09-27 — Restore HUD dragging without undoing scaled control hit-testing
+
+The control hosting view deliberately returns false from `mouseDownCanMoveWindow`
+so Stop/Mic/editor clicks are not swallowed as window drags. Restoring that flag
+globally would revive the control regression. Instead, blank control-bar space and
+the waveform use a dedicated nonactivating drag view, and later height changes keep
+a user-dragged panel's origin. The Mini's real AppKit event fixture verified movement
+at 0.5, 0.85 and 1.0 scale, no Stop action, and unchanged key window; existing scaled
+button fixtures passed too. Physical dragging on the installed user's Mac is a
+separate acceptance check, not implied by this fixture.
+
+## 2026-09-27 — Readable queue previews are a marked duplicate, not new instructions
+
+AI-context output can start with the authored speech/typing alone so chat queues
+show readable text. Follow it with `<agent_flow_context preview="authored_text_above">`
+around the full interleaved timeline. Do not include selected quotes or screenshot
+paths in that opening preview. The interpretation skill treats the opening as a
+duplicate display copy and the marked timeline as authoritative, while unmarked
+leading prose remains part of the user's request. Plain-app paste keeps its old
+format; this presentation must not change Primary/Next destination ownership.
+
+## 2026-09-27 — Final transcript growth can escape the speech timing wrapper
+
+`LiveSelectionReference.interleaving` wraps speech only when a stored timing
+boundary's cumulative word count reaches the emitted slice's word count. Those
+boundaries are created from live partials, while the pipeline interleaves the
+finished, potentially revised or enhanced text. If the final word count grows
+beyond the last boundary, `timedSpeech` returns the trailing slice as bare prose.
+The words are retained, but their XML grouping is inconsistent. The existing
+`timingGroupsSpeechTypingAndSelectionWithoutChangingPlainPaste` test renders the
+same partial transcript it captured; it does not cover a longer final result.
+This was a source-confirmed edge case, not proof that every bare word in a user
+message came from it. Build 358 source groups the final revised tail with the last
+observed range; without callback timing it uses `timing="unavailable"`, never
+manufactured dates. Speech and typing use `start_at`/`end_at`; speech explicitly
+declares `timing="approximate"`, and the skill accepts legacy attribute names.
+
+## 2026-09-27 — Verify Telegram's installed selection classes, not only old source
+
+The public TelegramSwift master used below (`579cebb`) is dated July 2025 and
+does not match the installed 12.10/282987 release. Treat it as architectural
+evidence, not an exact-build receipt. An independent Opus 5.5 investigation
+confirmed that source `TextView` inherits the non-accessible `View` implementation;
+its whole-text `accessibilityLabel` method does not prove the label is reachable.
+
+Read-only inspection of the installed arm64 executable verified that TGUIKit
+`View.accessibilityParent` returns nil and `isAccessibilityElement` returns false.
+Its `TextView` method table includes `accessibilityLabel` and Copy, but no
+selected-text accessor or override of that accessibility opt-out. `SelectManager`
+exposes Copy and responder lifecycle methods, not an Accessibility selection API.
+The app declares no scripting definition, AppleScript enablement, or NSServices;
+the absence of NSServices alone does not rule out consuming Services. The source's
+Services hooks belong to the composer, not these message-selection classes.
+
+Computer Use can inspect the Edit menu, including Copy, while a message-word
+double-click returns `AXError.notImplemented`; no real highlight was established
+by that action. An enabled Copy menu is not a read-only text accessor. Do not
+bypass a failed Computer Use action with injected events or claim that this
+diagnostic exhausts every possible future Telegram implementation.
+
+Exact alternatives remain separate choices: an attended Telegram Web/Chrome
+selection test using the existing DOM path; an explicitly approved user-Copy
+capture boundary; or a Telegram-side change exposing the range. None was
+implemented or accepted here. OCR remains excluded by Ethan's choice, and no
+clipboard read/write, client replacement, recorder opening, or permission change
+was performed in this recheck.
+
 ## 2026-09-27 — Telegram message selection is distinct from composer delivery
 
 The native Telegram 12.10/282987 app exposed its window and menus but no readable

@@ -106,6 +106,16 @@ stacked cards, and notification clearance synchronized. Require
 `onlyFreshNativeScreenshotsEnterLiveContext`,
 `recorderContextGrowsBeforeItsScreenBound`, and the existing chronological-preview and
 HUD-only guards before release. A test of final XML alone does not prove the live HUD.
+For intermittent first-highlight misses, test delayed mouse-edge dispatch using each
+event's original coordinates and recipient, capture attachment before the audio
+handshake, and the gesture-time speech anchor. A background source needs a stable
+visible window and range geometry; do not replace that proof with multi-app polling.
+Commit successfully read text before optional off-main chat labels, and verify label
+updates cannot replace text/timing or reorder references. Require
+`SelectionGestureWatcherTests` and `LiveSelectionFallbackTests`; keep installed
+physical acceptance separate from reducer/source/fixture evidence. Self-improved —
+2026-09-27: source review found collapsed delayed drags and canceled captured text;
+see LEARNINGS.md, “Selection edges and committed text must survive delayed metadata”.
 Keep every separately highlighted block in capture order, including equal speech anchors
 and a run with no recognized speech. Those cues form a best-effort reading trail, not a
 replacement for the spoken request or proof of precise timing. Require
@@ -146,6 +156,10 @@ was explicitly enabled. Test the actual pipeline with an audio-session spy and a
 delivery sink: authored text completes and is delivered once, empty input delivers
 nothing, and neither calls transcription. Group speech/typed timing in XML only
 where context is allowed; recognition-activity times are approximate, not VAD.
+Test a final transcript longer than its last partial: every authored word must stay
+in a speech group without invented timestamps. For readable queue previews, exclude
+selected quotes from the raw opening and keep the duplicate-marker interpretation
+in both installed and public skills; plain-app output is unchanged.
 User-requested microphone-off typing and timing — 2026-09-27.
 
 Keep the exact `RecorderStateProvider.updateTypedInput(_:)` witness when adding
@@ -160,6 +174,9 @@ physical size and scale the content within SwiftUI; an ancestor NSView bounds
 transform drew the buttons correctly but misrouted clicks. Preserve nonactivation
 and explicit editor-only keyboard ownership. Self-improved — 2026-09-27: the native
 fixture failed at 0.5/0.85 and passed after this correction; see the scaled-HUD lesson.
+Keep a separate nonactivating background drag surface instead of restoring host-wide
+mouse-down movement, which can steal control clicks. Cover drag events and controls
+at minimum, default and full scale, and preserve user-positioned panels on resize.
 
 For a requested Soniox-versus-AssemblyAI comparison using saved recordings, read
 [references/provider-realtime-ab-test.md](references/provider-realtime-ab-test.md)

@@ -1,5 +1,25 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-09-27 — Current pointer location as queued mouse-event geometry — REJECTED
+
+**Mechanism:** Sample `NSEvent.mouseLocation` in both global mouse-edge handlers.
+**Failure condition:** If dispatch is delayed until the pointer stops, a real drag
+can have identical sampled endpoints and be rejected as a click.
+**Correction:** Use each event's stored geometry and recipient; preserve timestamps
+and a bounded, text-free lifetime watcher. Do not add idle AX polling.
+**Reconsider only if:** A replacement proves original event geometry under delayed
+dispatch; sampling the live pointer cannot recover an earlier down location.
+
+## 2026-09-27 — Holding captured text until optional chat labels finish — REJECTED
+
+**Mechanism:** Await source-label log scans before appending an already-read highlight.
+**Failure condition:** A new mouse-down cancels the task during that await and loses
+valid text; synchronous label scans also block the main actor's mouse/HUD work.
+**Correction:** Commit text and chronology first, then enrich only its source labels
+by capture identity from a serial background worker. Omit uncertain labels.
+**Reconsider only if:** An alternative proves cancellation cannot discard captured
+text or reorder it behind newer speech, and log work never blocks main-thread input.
+
 ## 2026-09-27 — Treating Telegram message text as an exposed AX selection — INCONCLUSIVE
 
 **Mechanism:** Read native Telegram highlighted messages through the standard
@@ -10,8 +30,17 @@ as its label. A Computer Use selection drag returned `AXError.notImplemented`, n
 a successful live highlight. Older composer-delivery evidence is unrelated.
 **Boundary:** Keep exact-text-only capture; Ethan explicitly chose screenshots and
 declined approximate OCR. Do not use clipboard Copy as an unnoticed fallback.
-**Reconsider only if:** A new Telegram version exposes a verifiable read-only exact
-selected-text API or bridge, with a real message-highlight test on that version.
+**Follow-up evidence:** The cited public source predates the installed release.
+Read-only arm64 method-table/disassembly inspection of installed 12.10/282987
+confirmed the base view's nil accessibility parent and false accessibility-element
+flag; TextView and SelectManager expose no selected-text accessor. A separate
+Computer Use double-click also returned `AXError.notImplemented`. Menus can be
+inspected, but neither action established a real highlighted-message test.
+**Reconsider only if:** A Telegram version exposes a verifiable read-only exact
+selected-text API or bridge with a real message-highlight test, or Ethan explicitly
+chooses a separate exact route such as Telegram Web in Chrome or user-initiated
+Copy capture. Neither alternate route is implemented or verified by this audit;
+do not silently replace his client or add clipboard capture.
 
 ## 2026-09-27 — Recognizing reserved chords in every shared listener — REJECTED
 
