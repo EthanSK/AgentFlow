@@ -162,6 +162,15 @@ selected quotes from the raw opening and keep the duplicate-marker interpretatio
 in both installed and public skills; plain-app output is unchanged.
 User-requested microphone-off typing and timing — 2026-09-27.
 
+For authored rainbow/silver presentation, test the exact shared palette, nonblocking
+counter protocol, inert escaping, and one expansion budget across the opening and
+timeline. Generate colours only at final styled AI output, never through a provider
+request or on live partials. Preserve all words on a plain fallback and validate
+production serializer output with the host renderer; rendered bubbles do not prove
+that queued rows render math. Keep installed/public interpretation guides aligned.
+Self-improved — 2026-09-27: build-359 native and renderer fixtures verified these
+boundaries; see LEARNINGS.md, “Authored rainbow and silver XML share the presentation budget”.
+
 Keep the exact `RecorderStateProvider.updateTypedInput(_:)` witness when adding
 timestamp overloads; test edits through the protocol used by the real HUD, not only
 the concrete session. A defaulted extra argument is not the same Swift witness.
