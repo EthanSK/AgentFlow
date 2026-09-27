@@ -37,12 +37,19 @@ final class RecorderHUDScaleStore: ObservableObject {
 /// `scaleEffect` shrinks only the pixels, leaving the transparent panel's old
 /// click footprint. Map a full-size SwiftUI coordinate space into a genuinely
 /// smaller AppKit host instead, as the Agentic Mouse HUD does.
+/// Keep the actual AppKit host at that smaller size, but perform the content
+/// transform inside SwiftUI: scaling an ancestor NSView's bounds rendered the
+/// controls correctly while SwiftUI interpreted their clicks in unscaled space.
 final class ScaledRecorderHostingView: NSView {
-    private let hostingView: NSHostingView<AnyView>
+    private let hostingView: RecorderControlsHostingView
+    private let content: AnyView
+    private var renderedSize: NSSize?
+    private var renderedScale: CGFloat?
     private(set) var scale: CGFloat
 
     init(rootView: AnyView, scale: CGFloat) {
-        hostingView = NSHostingView(rootView: rootView)
+        hostingView = RecorderControlsHostingView(rootView: rootView)
+        content = rootView
         self.scale = scale
         super.init(frame: .zero)
         wantsLayer = true
@@ -64,13 +71,30 @@ final class ScaledRecorderHostingView: NSView {
     override func layout() {
         super.layout()
         let sourceSize = Self.sourceSize(for: frame.size, scale: scale)
-        let sourceBounds = NSRect(origin: .zero, size: sourceSize)
-        if bounds != sourceBounds { bounds = sourceBounds }
-        hostingView.frame = sourceBounds
+        hostingView.frame = bounds
+        guard renderedSize != bounds.size || renderedScale != scale else { return }
+        renderedSize = bounds.size
+        renderedScale = scale
+        hostingView.rootView = AnyView(
+            content
+                .frame(width: sourceSize.width, height: sourceSize.height)
+                .scaleEffect(scale, anchor: .topLeading)
+                .frame(width: bounds.width, height: bounds.height, alignment: .topLeading)
+        )
     }
 
     static func sourceSize(for panelSize: NSSize, scale: CGFloat) -> NSSize {
         NSSize(width: panelSize.width / max(scale, 0.01),
                height: panelSize.height / max(scale, 0.01))
     }
+}
+
+/// This HUD deliberately stays nonactivating while another app owns keyboard
+/// focus. NSHostingView's default first-mouse decision rejected plain SwiftUI
+/// buttons under the scaled AppKit bounds (reproduced at 0.5 and 0.85). Accept
+/// the owned click without activating the app; NSTextView still owns explicit
+/// keyboard focus. A control click is never a background-window drag.
+final class RecorderControlsHostingView: NSHostingView<AnyView> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override var mouseDownCanMoveWindow: Bool { false }
 }

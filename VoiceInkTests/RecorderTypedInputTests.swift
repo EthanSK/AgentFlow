@@ -6,6 +6,67 @@ import Testing
 @testable import VoiceInkPlusPlus
 
 struct RecorderTypedInputTests {
+    @Test @MainActor func scaledHUDControlsReceiveClicksAtEverySupportedSize() throws {
+        // Use the real controls and actual AppKit event dispatch, not AXPress or
+        // action closures called by the test. The old ancestor-bounds transform
+        // painted the buttons at these points but clicks missed at 0.5 and 0.85.
+        for scale: CGFloat in [0.5, 0.85, 1] {
+            var stopped = 0
+            var cancelled = 0
+            var skipped = false
+            var micStates: [Bool] = []
+            let session = RecordingSession()
+            session.microphoneOff = true
+            session.onMicrophoneToggle = {
+                session.microphoneOff.toggle()
+                micStates.append(session.microphoneOff)
+            }
+            let editor = RecorderTypingTextView()
+            session.typingFocus.enable(editor)
+            let panel = MiniRecorderPanel(contentRect: NSRect(x: 100, y: 100,
+                width: 400 * scale, height: 100 * scale))
+            let originalKeyWindow = NSApp.keyWindow
+            defer { panel.close(); session.onMicrophoneToggle = nil }
+            let host = ScaledRecorderHostingView(rootView: AnyView(
+                HStack(spacing: 0) {
+                    RecorderRecordButton(recordingState: .recording, action: { stopped += 1 })
+                        .frame(width: 80, height: 40)
+                    RecorderCancelButton(action: { cancelled += 1 }).frame(width: 80, height: 40)
+                    RecorderSkipProcessingButton(isEngaged: Binding(get: { skipped }, set: { skipped = $0 }))
+                        .frame(width: 80, height: 40)
+                    RecorderMicrophoneButton(stateProvider: session).frame(width: 80, height: 40)
+                    RecorderTypingFocusControl(focus: session.typingFocus).frame(width: 80, height: 40)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            ), scale: scale)
+            panel.contentView = host
+            panel.orderFrontRegardless()
+            host.layoutSubtreeIfNeeded()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.15))
+            host.layoutSubtreeIfNeeded()
+            func click(_ x: CGFloat) throws {
+                let point = NSPoint(x: x * scale, y: 20 * scale)
+                let down = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: point,
+                    modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: panel.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+                let up = try #require(NSEvent.mouseEvent(with: .leftMouseUp, location: point,
+                    modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime + 0.05,
+                    windowNumber: panel.windowNumber, context: nil, eventNumber: 2, clickCount: 1, pressure: 0))
+                #expect(host.hitTest(point)?.acceptsFirstMouse(for: down) == true)
+                NSApp.postEvent(up, atStart: false)
+                NSApp.sendEvent(down)
+                RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+                NSApp.sendEvent(up)
+                RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+            }
+            try click(40); try click(120); try click(200); try click(280); try click(280); try click(360)
+            #expect(stopped == 1 && cancelled == 1 && skipped)
+            #expect(micStates == [false, true])
+            #expect(!session.typingFocus.isEnabled)
+            #expect(NSApp.keyWindow === originalKeyWindow)
+            #expect(host.bounds.size == host.frame.size)
+        }
+    }
+
     @Test @MainActor func protocolTypedInputWitnessRetainsTextAndTiming() {
         let session = RecordingSession()
         let provider: any RecorderStateProvider = session
@@ -65,6 +126,38 @@ struct RecorderTypedInputTests {
             #expect(record.text == text)
         }
     }
+    @Test @MainActor func bothCommandToggleStartsTypingThenFinishesRecordingAndPausedSessions() async {
+        let requestID = UUID()
+        var state: RecordingState = .idle
+        var starts: [UUID] = []
+        var focuses: [UUID] = []
+        var finishes: [RecordingPasteDestination] = []
+        var pauses = 0
+        var cancels = 0
+        let handler = RecordingShortcutModeHandler(
+            canHandleShortcutAction: { true }, isRecorderVisible: { state != .idle },
+            recordingState: { state },
+            toggleRecorderPanel: { _, destination in finishes.append(destination); state = .transcribing },
+            toggleRecordingPause: { pauses += 1; return true },
+            cancelRecording: { cancels += 1 }, reserveRecordingStart: { requestID },
+            startReservedRecording: { id, _ in starts.append(id); state = .recording }
+        )
+        await handler.handleTypingToggle { focuses.append($0) }
+        #expect(starts == [requestID] && focuses == [requestID])
+        await handler.handleTypingToggle { focuses.append($0) }
+        #expect(finishes == [.primaryCurrentInput])
+        state = .paused
+        await handler.handleTypingToggle { focuses.append($0) }
+        #expect(finishes == [.primaryCurrentInput, .primaryCurrentInput])
+        for pending: RecordingState in [.starting, .transcribing, .enhancing, .busy] {
+            state = pending
+            await handler.handleTypingToggle { focuses.append($0) }
+        }
+        #expect(finishes.count == 2 && starts.count == 1 && focuses.count == 1)
+        #expect(pauses == 0 && cancels == 0)
+        handler.reset()
+    }
+
     @Test func bothCommandShortcutUsesBothPhysicalSidesAndOneStart() {
         let command = NSEvent.ModifierFlags.command.rawValue
         var down = false

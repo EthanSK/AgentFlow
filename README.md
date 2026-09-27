@@ -54,7 +54,7 @@ For Codex to interpret this XML-style context across tasks, install the [Agent F
 
 Press your recording shortcut to start, then again to stop and paste. You can map a mouse button to it, but no specific mouse or companion app is required.
 
-From build 354, press **both Command keys** to start typing with the microphone off. You can also hold Command with the standard Shift-Control-Option start shortcut. Type in the floating panel, highlight text or take screenshots, then use the normal finish action to paste once. Enter inserts a newline. The microphone button enables voice when you want it; a microphone-off session sends no audio request. Speech and typed runs can carry grouped XML timestamps in supported AI apps. Speech times are approximate transcript-activity times, with a five-second inactivity boundary; selection times come from mouse-up.
+Press **both Command keys** to start typing with the microphone off; press both again to finish and paste. You can also hold Command with the standard Shift-Control-Option start shortcut. Type in the floating panel, highlight text or take screenshots, then use the normal finish action to paste once. Enter inserts a newline. The microphone button enables voice when you want it; a microphone-off session sends no audio request. Speech and typed runs can carry grouped XML timestamps in supported AI apps. Speech times are approximate transcript-activity times, with a five-second inactivity boundary; selection times come from mouse-up.
 
 While recording, press twice to finish without pasting, keeping the result on your clipboard and in History. Press three times to pause, then once to resume. Bare Escape stays with the foreground app. Another recording can start while the previous one is still transcribing.
 

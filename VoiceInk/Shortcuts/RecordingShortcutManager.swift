@@ -606,14 +606,10 @@ class RecordingShortcutManager: ObservableObject {
             },
             onTypingStart: { [weak self] in
                 Task { @MainActor [weak self] in
-                    guard let self, self.engine.recordingState == .idle,
-                          !self.engine.hasPendingRecordingStart,
-                          let requestID = await self.recorderUIManager.reserveRecordingStartAfterLaunchReset()
-                    else { return }
-                    // Both Command keys start only. They do not synthesize
-                    // Primary stop/pause clicks or change an existing session.
-                    self.engine.requestTypingFocus(forStart: requestID)
-                    await self.recorderUIManager.toggleRecorderPanel(reservedStartRequestID: requestID)
+                    guard let self else { return }
+                    await self.shortcutModeHandler.handleTypingToggle { [weak self] requestID in
+                        self?.engine.requestTypingFocus(forStart: requestID)
+                    }
                 }
             }
         )
@@ -1235,6 +1231,7 @@ final class RecordingShortcutModeHandler {
     private var primaryGestureDecisionTask: Task<Void, Never>?
     private var primaryPauseTransitionTask: Task<Bool, Never>?
     private var suppressPrimaryIdlePressUntil: TimeInterval?
+    private var isHandlingTypingToggle = false
 
     // Feature A (focus lock) — NEW START→STOP DECISION MODEL (2026-06-21).
     //
@@ -2113,6 +2110,30 @@ final class RecordingShortcutModeHandler {
         }
         let didFinish = await finishRecordingWithoutAutoSend(modeId)
         vippLog.info("shortcut: Primary quadruple-click finish success=\(didFinish, privacy: .public) destination=primaryCurrentInput paste=true autoSend=false playback=restoredIfOwned")
+    }
+
+    /// Both Command keys are a complete Start/Finish control, not a Primary
+    /// multi-click gesture. Build 354 treated them as start-only; Ethan explicitly
+    /// corrected that. Finish recording OR paused composition through the normal
+    /// current-input route, never resume the mic or select a saved destination.
+    func handleTypingToggle(requestTypingFocus: @MainActor (UUID) -> Void) async {
+        guard !isHandlingTypingToggle else { return }
+        isHandlingTypingToggle = true
+        defer { isHandlingTypingToggle = false }
+        switch recordingState() {
+        case .recording, .paused:
+            cancelPendingPrimaryDecisions()
+            await toggleRecorderPanel(nil, .primaryCurrentInput)
+        case .idle:
+            guard let startReservedRecording,
+                  let requestID = await reserveRecordingStart() else { return }
+            requestTypingFocus(requestID)
+            await startReservedRecording(requestID, nil)
+        case .starting, .transcribing, .enhancing, .busy:
+            // A repeated press must not cancel an incomplete start or mutate a
+            // result already finalizing. Releasing modifiers remains a no-op.
+            return
+        }
     }
 
     func cancelPendingPrimaryMouseDecisions() {
