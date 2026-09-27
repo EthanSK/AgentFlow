@@ -95,7 +95,7 @@ struct SelectionGestureWatcherTests {
         let output = LiveSelectionReference.interleaving(session.liveSelectionReferences,
             with: "spoken before and after", includeTiming: true)
         #expect(output.contains("first highlight") && !output.contains("must not overwrite text"))
-        #expect(output.contains("task_id=\"11111111-2222-3333-4444-555555555555\"") && output.contains("captured_at=\"1970-01-01T00:16:40.000Z\""))
+        #expect(output.contains("task_id=\"11111111-2222-3333-4444-555555555555\"") && output.contains("captured_at=\"1000.000\""))
         #expect(session.liveSelectionReferences[1] == second.anchored(after: "spoken before and after"))
     }
     private func edge(_ type: NSEvent.EventType, _ x: CGFloat, clicks: Int = 1, at time: Date)

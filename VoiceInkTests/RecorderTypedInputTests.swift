@@ -303,8 +303,8 @@ struct RecorderTypedInputTests {
         session.endLiveSelectionCapture()
         let xml = LiveSelectionReference.interleaving(session.liveSelectionReferences,
             with: session.partialTranscript, includeTiming: true)
-        #expect(xml.components(separatedBy: "<speech_segment ").count == 3)
-        #expect(xml.contains("timing=\"approximate\">\n\nSpeech first\n\n</speech_segment>"))
+        #expect(xml.components(separatedBy: "<speech ").count == 3)
+        #expect(xml.contains("timing=\"approximate\">\n\nSpeech first\n\n</speech>"))
         #expect(xml.contains("captured_at=\""))
         #expect(xml.contains("<typed_text start_at=\"") && xml.contains("typed &amp; exact\n\n</typed_text>"))
         #expect(!LiveSelectionReference.previewParts(session.liveSelectionReferences,
@@ -326,6 +326,27 @@ struct RecorderTypedInputTests {
         #expect(session.liveSelectionReferences.count == 1)
     }
 
+    @Test func compactUnixTimestampsPreserveMillisecondsForEveryContextType() throws {
+        let start = Date(timeIntervalSince1970: 1_800_000_000.123)
+        let end = Date(timeIntervalSince1970: 1_800_000_002.987)
+        let speech = LiveSelectionReference.speechTiming(after: "spoken", startedAt: start, endedAt: end)
+        let typed = try #require(LiveSelectionReference(typedText: "typed"))
+            .timed(at: end, startedAt: start).anchored(after: "spoken")
+        let selection = try #require(LiveSelectionReference("selected"))
+            .timed(at: start).anchored(after: "spoken")
+        let screenshot = try #require(LiveSelectionReference(screenshotURL: URL(fileURLWithPath: "/Users/test/shot.png")))
+            .timed(at: end).anchored(after: "spoken")
+        let xml = LiveSelectionReference.interleaving([speech, typed, selection, screenshot],
+            with: "spoken", includeTiming: true)
+        #expect(xml.contains("<speech start_at=\"1800000000.123\" end_at=\"1800000002.987\" timing=\"approximate\">"))
+        #expect(xml.contains("<typed_text start_at=\"1800000000.123\" end_at=\"1800000002.987\">"))
+        #expect(xml.contains("captured_at=\"1800000000.123\""))
+        #expect(xml.contains("captured_at=\"1800000002.987\""))
+        #expect(!xml.contains("speech_segment"))
+        #expect(!xml.contains("2027-"))
+        #expect(xml.contains("spoken") && xml.contains("typed") && xml.contains("selected"))
+    }
+
     @Test func finalSpeechGrowthStaysGroupedWithObservedTiming() throws {
         let start = Date(timeIntervalSince1970: 1_800_000_000)
         let end = start.addingTimeInterval(2)
@@ -333,12 +354,12 @@ struct RecorderTypedInputTests {
         let selection = try #require(LiveSelectionReference("source")).anchored(after: "first words")
         let xml = LiveSelectionReference.interleaving([marker, selection],
             with: "first words and the final tail", includeTiming: true)
-        #expect(xml.hasSuffix("\n\nand the final tail\n\n</speech_segment>"))
+        #expect(xml.hasSuffix("\n\nand the final tail\n\n</speech>"))
         #expect(xml.components(separatedBy: "start_at=\"").count == 3)
         #expect(xml.components(separatedBy: "timing=\"approximate\"").count == 3)
         #expect(!xml.contains("observed_start_at") && !xml.contains("started_at"))
         let shortened = LiveSelectionReference.interleaving([marker], with: "revised", includeTiming: true)
-        #expect(shortened.hasSuffix("\n\nrevised\n\n</speech_segment>"))
+        #expect(shortened.hasSuffix("\n\nrevised\n\n</speech>"))
         #expect(!shortened.contains("unavailable"))
         #expect(LiveSelectionReference.interleaving([marker], with: "first words and the final tail")
             == "first words\n\nand the final tail")
@@ -348,7 +369,7 @@ struct RecorderTypedInputTests {
         for references in [[], [try #require(LiveSelectionReference("source"))]] {
             let xml = LiveSelectionReference.interleaving(references,
                 with: "batch <speech> & text", includeTiming: true)
-            #expect(xml.hasSuffix("<speech_segment timing=\"unavailable\">\n\nbatch &lt;speech&gt; &amp; text\n\n</speech_segment>"))
+            #expect(xml.hasSuffix("<speech timing=\"unavailable\">\n\nbatch &lt;speech&gt; &amp; text\n\n</speech>"))
             #expect(!xml.contains("start_at=") && !xml.contains("end_at="))
         }
         #expect(LiveSelectionReference.interleaving([], with: "plain <speech>") == "plain <speech>")

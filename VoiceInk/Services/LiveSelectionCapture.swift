@@ -162,7 +162,10 @@ struct LiveSelectionReference: Equatable {
     }
 
     private static func timestamp(_ date: Date) -> String {
-        date.formatted(.iso8601.year().month().day().time(includingFractionalSeconds: true).timeZone(separator: .colon))
+        // Unix seconds retain the existing millisecond precision with ten fewer
+        // characters per current-date value. POSIX formatting makes the unit and
+        // decimal separator independent of the user's locale and time zone.
+        String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), date.timeIntervalSince1970)
     }
 
     /// Keyboard input is authored prose, not selected source material. Keep it
@@ -310,13 +313,13 @@ struct LiveSelectionReference: Equatable {
                 ?? speechTimings.last
             guard let started = timing?.runStartedAt, let ended = timing?.capturedAt,
                   started <= ended else {
-                return "<speech_segment timing=\"unavailable\">\n\n"
-                    + xmlEscaped(speech) + "\n\n</speech_segment>"
+                return "<speech timing=\"unavailable\">\n\n"
+                    + xmlEscaped(speech) + "\n\n</speech>"
             }
             // Recognition callbacks are delayed and may revise words. These are
             // observed transcript-activity ranges, never precise audio alignment.
-            return "<speech_segment start_at=\"\(timestamp(started))\" end_at=\"\(timestamp(ended))\" timing=\"approximate\">\n\n"
-                + xmlEscaped(speech) + "\n\n</speech_segment>"
+            return "<speech start_at=\"\(timestamp(started))\" end_at=\"\(timestamp(ended))\" timing=\"approximate\">\n\n"
+                + xmlEscaped(speech) + "\n\n</speech>"
         }
         for reference in references {
             let spokenWordCount = reference.spokenWordCount

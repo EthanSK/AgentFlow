@@ -509,7 +509,7 @@ struct StyledContextPresentationTests {
         }
         let decodedTimeline = try unwrappedXML(timeline)
         #expect(timeline.contains("<agent_flow_context preview=\"authored_text_above\">\n\n"))
-        #expect(decodedTimeline.contains("<speech_segment timing=\"unavailable\">\n\nspoken first\n\n</speech_segment>"))
+        #expect(decodedTimeline.contains("<speech timing=\"unavailable\">\n\nspoken first\n\n</speech>"))
         #expect(decodedTimeline.contains(">\n\ntyped &amp; exact\n\n</typed_text>"))
         #expect(decodedTimeline.contains(">\n\n  <text>not authored</text>\n\n</codex_selection>"))
         #expect(decodedTimeline.contains("<local_screenshot path=\"/Users/test/shot.png\"/>"))
