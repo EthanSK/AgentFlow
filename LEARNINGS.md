@@ -82,8 +82,8 @@ that does not render math may expose the LaTeX even though the sent bubble rende
 Historical diagnosis, partially superseded by the CGEvent-recipient lesson above:
 the old watcher sampled `NSEvent.mouseLocation` when queued callbacks ran, not the
 location stored in each event. If the main thread was busy until after mouse-up,
-both samples could be identical and a real drag became an ordinary click. Use
-the event's location, timestamp and recipient PID was the attempted correction;
+both samples could be identical and a real drag became an ordinary click. The
+attempted correction used the event's location, timestamp and recipient PID;
 its PID preference is now rejected and geometry reverted. AppKit documents monitor handlers
 as main-thread callbacks, so an extra MainActor task hop is unnecessary.
 Official reference: https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/EventOverview/MonitoringEvents/MonitoringEvents.html

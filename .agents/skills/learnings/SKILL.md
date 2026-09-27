@@ -169,13 +169,22 @@ User-requested microphone-off typing and timing — 2026-09-27.
 
 For authored rainbow presentation, test the exact shared palette, nonblocking
 counter protocol, inert escaping, and the content-first expansion budget. Only the
-opening may use colour; the entire XML timeline stays plain, as Ethan corrected on
-2026-09-27. Generate colours only at final styled AI output, never through a provider
+opening uses a rainbow; XML uses fixed silver speech/typing, cyan selection and
+magenta screenshot sections, as Ethan clarified on 2026-09-27. Generate colours only at final styled AI output, never through a provider
 request or on live partials. Preserve all words on a plain fallback and validate the
 complete production message with its outer context envelope, not isolated formulas:
-raw XML blocks can suppress inline math. Rendered bubbles do not prove queued rows
+raw XML blocks can suppress inline math. Keep a blank line after the opening
+context envelope; the installed host's lexer reproduced the missing-boundary bug.
+Rendered bubbles do not prove queued rows
 render math. Keep installed/public interpretation guides aligned, including historical
 colour decoding. See LEARNINGS.md, “Whole-message XML envelopes can suppress math rendering”.
+
+Never infer selection source from a global monitor's reconstructed CGEvent target
+PID: it can name the recorder itself. Sample the frontmost PID and pointer inside
+the monitor callback, structurally exclude self, and keep capture text-free while
+idle. Retry only after a real gesture and retain source-window/cancellation guards.
+Self-improved — 2026-09-27: live build-358–360 logs proved self-targeted reads; see
+LEARNINGS.md, “Global monitor CGEvent recipients are not selection sources”.
 
 Keep the exact `RecorderStateProvider.updateTypedInput(_:)` witness when adding
 timestamp overloads; test edits through the protocol used by the real HUD, not only
