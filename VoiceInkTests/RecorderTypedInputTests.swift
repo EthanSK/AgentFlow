@@ -94,7 +94,10 @@ struct RecorderTypedInputTests {
                 micStates.append(session.microphoneOff)
             }
             let editor = RecorderTypingTextView()
-            session.typingFocus.enable(editor)
+            // Keep the optional control's click regression covered without
+            // enabling automatic focus return in ordinary production sessions.
+            let typingFocus = RecorderTypingFocus(automaticReturnEnabled: { true })
+            typingFocus.enable(editor)
             let panel = MiniRecorderPanel(contentRect: NSRect(x: 100, y: 100,
                 width: 400 * scale, height: 100 * scale))
             let originalKeyWindow = NSApp.keyWindow
@@ -107,7 +110,7 @@ struct RecorderTypedInputTests {
                     RecorderSkipProcessingButton(isEngaged: Binding(get: { skipped }, set: { skipped = $0 }))
                         .frame(width: 80, height: 40)
                     RecorderMicrophoneButton(stateProvider: session).frame(width: 80, height: 40)
-                    RecorderTypingFocusControl(focus: session.typingFocus).frame(width: 80, height: 40)
+                    RecorderTypingFocusControl(focus: typingFocus).frame(width: 80, height: 40)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             ), scale: scale)
             panel.contentView = host
@@ -133,7 +136,7 @@ struct RecorderTypedInputTests {
             try click(40); try click(120); try click(200); try click(280); try click(280); try click(360)
             #expect(stopped == 1 && cancelled == 1 && skipped)
             #expect(micStates == [false, true])
-            #expect(!session.typingFocus.isEnabled)
+            #expect(!typingFocus.isEnabled)
             #expect(NSApp.keyWindow === originalKeyWindow)
             #expect(host.bounds.size == host.frame.size)
         }
@@ -436,6 +439,56 @@ struct RecorderTypedInputTests {
         #expect(!active.typingFocus.isEnabled)
     }
 
+    @Test @MainActor func automaticTypingFocusReturnDefaultsOffWithoutDisablingExplicitFocus() async throws {
+        let defaults = try #require(UserDefaults(suiteName: "AgentFlow.Focus.\(UUID())"))
+        #expect(!defaults.bool(forKey: RecorderTypingFocus.automaticReturnDefaultsKey))
+        let focus = RecorderTypingFocus(automaticReturnEnabled: {
+            defaults.bool(forKey: RecorderTypingFocus.automaticReturnDefaultsKey)
+        })
+        let window = TypingFocusProbeWindow()
+        let editor = RecorderTypingTextView()
+        window.contentView = editor
+        focus.register(editor)
+        focus.enable(editor)
+        #expect(focus.isEnabled && !focus.showsUnfocusControl)
+        focus.returnAfterContext()
+        try await Task.sleep(nanoseconds: 20_000_000)
+        #expect(window.focusRequests == 0)
+
+        // The keyboard typing shortcut is an explicit request, not the disabled
+        // automatic return after selecting text or taking a screenshot.
+        focus.requestInitialFocus()
+        try await Task.sleep(nanoseconds: 20_000_000)
+        #expect(window.focusRequests == 1 && !focus.initialFocusPending)
+        #expect(!focus.showsUnfocusControl)
+        focus.returnAfterContext()
+        try await Task.sleep(nanoseconds: 20_000_000)
+        #expect(window.focusRequests == 1)
+        focus.disable(releaseKeyboard: false)
+    }
+
+    @Test @MainActor func automaticTypingFocusReturnRechecksFlagAndFinishAtFocusBoundary() async throws {
+        var enabled = true
+        let focus = RecorderTypingFocus(automaticReturnEnabled: { enabled })
+        let window = TypingFocusProbeWindow()
+        let editor = RecorderTypingTextView()
+        window.contentView = editor
+        focus.enable(editor)
+        #expect(focus.showsUnfocusControl)
+        focus.returnAfterContext()
+        enabled = false
+        try await Task.sleep(nanoseconds: 20_000_000)
+        #expect(window.focusRequests == 0 && !focus.showsUnfocusControl)
+        enabled = true
+        focus.returnAfterContext()
+        try await Task.sleep(nanoseconds: 20_000_000)
+        #expect(window.focusRequests == 1)
+        focus.returnAfterContext()
+        focus.disable(releaseKeyboard: false)
+        try await Task.sleep(nanoseconds: 20_000_000)
+        #expect(window.focusRequests == 1 && !focus.showsUnfocusControl)
+    }
+
     @Test func commandExtendedPrimaryChordKeepsOnePressAndForwardsReleases() {
         let shortcut = Shortcut.modifierOnly(keyCode: nil, modifierFlags: [.shift, .control, .option])
         #expect(ShortcutMonitor.supportsTypingVariant(shortcut))
@@ -605,6 +658,15 @@ struct RecorderTypedInputTests {
         #expect(engine.contains("RecorderTypingTextView.releaseKeyboardBeforeFinish()\n            active.phase = .transcribing"))
         #expect(engine.contains("session.restoreLiveContextForRetry(liveContextReferences)"))
     }
+}
+
+// Observe focus requests without displaying a panel or changing system focus.
+// The separate scaled-control fixture covers real window event dispatch.
+@MainActor private final class TypingFocusProbeWindow: NSWindow {
+    var focusRequests = 0
+    override var isVisible: Bool { true }
+    override func makeKey() { focusRequests += 1 }
+    override func makeFirstResponder(_ responder: NSResponder?) -> Bool { true }
 }
 
 @MainActor private final class TypingTestModelProvider: WhisperModelProvider {

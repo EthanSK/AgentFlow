@@ -5,6 +5,7 @@ import SwiftUI
 /// keyboard monitor. Clicking another app returns keyboard ownership to that app.
 /// Only explicit typing opt-in permits a one-shot return after accepted context;
 /// ordinary speech updates and arbitrary app switches must never chase focus.
+/// That optional return is disabled by default; explicit editor focus is separate.
 struct RecorderTypedInput: NSViewRepresentable {
     @Binding var text: String
     let focusRequest: UUID
@@ -169,14 +170,25 @@ final class RecorderTypingTextView: NSTextView {
 /// regain focus. Never activate another app, poll focus, or re-arm after finish.
 @MainActor
 final class RecorderTypingFocus: ObservableObject {
+    static let automaticReturnDefaultsKey = "VIPPAutomaticTypingFocusReturnEnabled"
     @Published private(set) var isEnabled = false
     private(set) var initialFocusPending = false
     private var generation = 0
     private weak var preferredEditor: RecorderTypingTextView?
     private let editors = NSHashTable<RecorderTypingTextView>.weakObjects()
+    private let automaticReturnEnabled: () -> Bool
     private let canFocus: () -> Bool
 
-    init(canFocus: @escaping () -> Bool = { true }) { self.canFocus = canFocus }
+    init(automaticReturnEnabled: @escaping () -> Bool = {
+        UserDefaults.standard.bool(forKey: RecorderTypingFocus.automaticReturnDefaultsKey)
+    }, canFocus: @escaping () -> Bool = { true }) {
+        self.automaticReturnEnabled = automaticReturnEnabled
+        self.canFocus = canFocus
+    }
+
+    // Typing opt-in is still tracked for explicit shortcut/click focus and finish
+    // cleanup. It must not silently opt users into focus theft after context.
+    var showsUnfocusControl: Bool { isEnabled && automaticReturnEnabled() }
 
     func register(_ editor: RecorderTypingTextView) {
         editors.add(editor)
@@ -199,7 +211,7 @@ final class RecorderTypingFocus: ObservableObject {
     }
 
     func returnAfterContext() {
-        guard isEnabled else { return }
+        guard isEnabled, automaticReturnEnabled() else { return }
         scheduleReturn(initial: false)
     }
 
@@ -219,6 +231,9 @@ final class RecorderTypingFocus: ObservableObject {
             guard let self, self.isEnabled, self.canFocus(),
                   self.generation == expectedGeneration,
                   NSEvent.pressedMouseButtons == 0 else { return }
+            // Recheck at the actual focus boundary: disabling the experiment
+            // invalidates an already queued return, but never an explicit start.
+            guard initial || self.automaticReturnEnabled() else { return }
             let editor: RecorderTypingTextView?
             if initial {
                 guard self.initialFocusPending else { return }
@@ -241,7 +256,7 @@ final class RecorderTypingFocus: ObservableObject {
 struct RecorderTypingFocusControl: View {
     @ObservedObject var focus: RecorderTypingFocus
     var body: some View {
-        if focus.isEnabled {
+        if focus.showsUnfocusControl {
             Button("Unfocus", systemImage: "lock.open") { focus.disable() }
                 .buttonStyle(.plain)
                 .font(.system(size: 11))

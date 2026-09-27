@@ -1,5 +1,16 @@
 # Learnings
 
+## 2026-09-27 — Explicit typing focus is separate from automatic context refocus
+
+Ethan asked to disable the automatic return to the recorder editor after a
+selection or screenshot, while preserving click-to-type and typing-shortcut
+focus. `VIPPAutomaticTypingFocusReturnEnabled` defaults to false when unset.
+Keep the per-session typing opt-in and finish cleanup independent of that flag;
+both the context callback and its queued focus boundary must check the flag.
+An explicit initial-focus request is not an automatic return and remains allowed.
+Hide Unfocus while automatic return is disabled, but retain the opt-in control's
+scaled-click regression coverage with an explicitly enabled test fixture.
+
 ## 2026-09-27 — Shared shortcut monitors must not consume unowned chords
 
 Ethan subsequently chose **both Command and both Option keys together** because

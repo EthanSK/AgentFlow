@@ -257,7 +257,7 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     private var lastSpeechActivityAt: Date?
     private var pendingSpeechAnchor = ""
     private var speechTimingTask: Task<Void, Never>?
-    lazy var typingFocus = RecorderTypingFocus { [weak self] in self?.canTypeInHUD == true }
+    lazy var typingFocus = RecorderTypingFocus(canFocus: { [weak self] in self?.canTypeInHUD == true })
     var typingFocusController: RecorderTypingFocus? { typingFocus }
 
     var canTypeInHUD: Bool {
