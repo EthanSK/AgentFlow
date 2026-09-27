@@ -384,9 +384,15 @@ struct RecorderTypedInputTests {
                 presentation: presentation, includeTiming: true, includeReadablePreview: true)
             let opening = presentation == .plain ? "spoken first typed words then last"
                 : try #require(AuthoredTextRainbow.render("spoken first typed words then last", startIndex: 0))
-            #expect(result.hasPrefix(opening + "\n\n<agent_flow_context preview=\"authored_text_above\">"))
-            #expect(result.hasSuffix("</agent_flow_context>"))
-            #expect(result.components(separatedBy: "<agent_flow_context ").count == 2)
+            let start = "<agent_flow_context preview=\"authored_text_above\">"
+            let end = "</agent_flow_context>"
+            let renderedStart = presentation == .plain ? start
+                : LiveSelectionStyledMath.coloredXML(start, color: LiveSelectionStyledMath.captionColor)
+            let renderedEnd = presentation == .plain ? end
+                : LiveSelectionStyledMath.coloredXML(end, color: LiveSelectionStyledMath.captionColor)
+            #expect(result.hasPrefix(opening + "\n\n" + renderedStart))
+            #expect(result.hasSuffix(renderedEnd))
+            #expect(result.components(separatedBy: renderedStart).count == 2)
         }
         let ordinary = LiveSelectionReference.interleaving([typed], with: "spoken first then last",
             includeReadablePreview: true)
