@@ -3,7 +3,7 @@
 ## 2026-09-27 — Italic metadata must preserve payload and whole-message rendering
 
 The compact styled timeline renders every actual XML tag and attribute in
-`\\textit` inside its existing fixed section colour; payload text stays upright.
+`\textit` inside its existing fixed section colour; payload text stays upright.
 Only adjacent metadata boundaries are compacted. Preserve exact source whitespace
 inside selection text, separate screenshot Markdown references from math, and keep
 the rainbow duplicate opening in its own paragraph. The styled outer context

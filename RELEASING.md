@@ -1,8 +1,9 @@
 # Public Agent Flow releases
 
-[v2.0.362](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.362) publishes brighter
-context colours and compact timestamps/tags. Source: `7abfd3f7c86410b7320a27e076adbe2282b1f295`;
-exact-build gate: 444 named tests across 17 suites. The existing Mini-built universal
+[v2.0.363](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.363) publishes italic
+context metadata, compact adjacent tags and History-first opening.
+Source: `dd86d918751c7ed60f8b7d1984d4c92639f4dc2e`;
+exact-build gate: 446 named tests across 17 suites. The existing Mini-built universal
 Release archive was Developer ID re-signed and notarized without rebuilding native code
 or replacing the separately installed local-signing app. Release checksums bind the public
 artifact; later `main` commits contain documentation and media, not different native code.
