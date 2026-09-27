@@ -69,8 +69,9 @@ changed, so remixing a new voice take is quick.
 
 ## Keep it truthful
 
-- The voice is synthetic, and the website says so beside the video. The first line is the
-  narrator's opinion, not a quote from a user.
+- The voice is synthetic; `narration.json` says so for whoever generates it. The website shows
+  no credit line for it: Ethan rejected one on 2026-09-27. The first line is the narrator's
+  opinion, not a quote from a user.
 - The narration makes only claims the website already makes. The dictation, selection and
   screenshot path are the website demo's invented example; never put real selections, paths or
   messages in the scene.

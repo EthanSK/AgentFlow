@@ -21,7 +21,7 @@
   <link rel="icon" href="assets/agentflow-icon.png">
   <link rel="apple-touch-icon" href="assets/agentflow-icon-512.png">
   <link rel="manifest" href="site.webmanifest">
-  <link rel="stylesheet" href="styles.css?v=353-video-compact">
+  <link rel="stylesheet" href="styles.css?v=353-no-video-credit">
   <script>
     // Pre-hide the demo before first paint so autoplay never flashes the finished
     // example. If script.js hasn't taken over within 2.5 s, show everything.
@@ -75,7 +75,6 @@
 
         <figure class="demo" data-demo>
           <div class="pane">
-            <p class="pane-label">Recorder</p>
             <!--
               Abstract Mac screen, so the recorder reads as a floating macOS panel rather
               than a web chat box. Everything except the HUD is decorative and hidden from
@@ -189,7 +188,8 @@
       Ethan asked for no visible title, subtitle or transcript here (2026-09-27): the video
       sits in the page like a normal embedded promo. The section keeps id="video" for the
       top navigation and takes its accessible name from aria-label. The captions track
-      carries every spoken line; the one-line credit is the AI-voice disclosure, keep it.
+      carries every spoken line. He then rejected the AI-voice credit line as well, so the
+      video has no visible text of its own; don't add a caption, credit or label back.
     -->
     <section class="band" id="video" aria-label="Video">
       <div class="wrap">
@@ -201,7 +201,6 @@
             <track kind="captions" src="assets/agentflow-promo.vtt?v=b80ec054" srclang="en" label="English">
             <a href="assets/agentflow-promo.mp4?v=3eaac33f">Agent Flow video (MP4)</a>
           </video>
-          <figcaption>The narrator's voice is AI-generated.</figcaption>
         </figure>
       </div>
     </section>
@@ -234,7 +233,7 @@
               <div><dt>YouTube Bridge</dt><dd>Pauses the playing YouTube video in Chrome when recording starts, then resumes only that video. Its helper and login LaunchAgent need a source checkout; you load the Chrome extension once.</dd></div>
               <div><dt>Chrome details</dt><dd>For page titles and addresses with highlights, enable Chrome's View → Developer → Allow JavaScript from Apple Events, then grant Agent Flow Automation access if asked.</dd></div>
               <div><dt>Mouse controls</dt><dd>Map a mouse button to your recording shortcut if you want. <a href="https://ethansk.github.io/agentic-mouse/">Agentic Mouse</a> is separate and isn't required.</dd></div>
-              <div><dt>VS Code</dt><dd>The <a href="https://marketplace.visualstudio.com/items?itemName=EthanSK.better-git-vscode">Better Git</a> bridge supports local code and diff editors in isolated tests. Everyday-use verification is still pending; terminals and chat panels aren't covered.</dd></div>
+              <div><dt>VS Code</dt><dd>The <a href="https://marketplace.visualstudio.com/items?itemName=EthanSK.better-git-vscode">Better Git</a> bridge reads highlights in local code editors. Terminals and chat panels aren't covered.</dd></div>
             </dl>
           </details>
           <p class="note"><a href="https://github.com/EthanSK/AgentFlow/blob/main/SETUP.md">Setup guide and app support</a></p>

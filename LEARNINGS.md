@@ -51,14 +51,16 @@ The Opus-authored promo uses `promo/narration.json` for speech, picture, caption
 the original synthesized music. Real speech takes can exceed estimated slots: render
 from measured, trimmed take lengths and shift dependent cues together, rather than
 timing captions or live words independently. Split captions at measured pauses without
-overlap; the published 33-second cut has nine non-overlapping cues and a matching HTML
-transcript. The final H.264/AAC file measured -16 LUFS and -1.9dBFS true peak; independent
+overlap; the published 33-second cut has nine non-overlapping cues. The final H.264/AAC
+file measured -16 LUFS and -1.9dBFS true peak; independent
 ASR recovered the spoken script, which is not a subjective listening-quality judgment.
 Visible Chrome playback/captions and the public Pages asset hashes were verified.
 Version MP4, poster and caption URLs when replacing assets: a tab opened during rendering
 kept the old 35-second video until its source query changed to the new content hash.
-Keep the synthetic-voice disclosure, native controls, no audible autoplay, and invented
-demo content; never turn a screenshot path into a claim that an image was uploaded.
+Keep native controls, the captions track, no audible autoplay, and invented demo content;
+never turn a screenshot path into a claim that an image was uploaded. Ethan rejected the
+page's video heading, subtitle, transcript and AI-voice credit line (2026-09-27): the video
+has no visible text of its own on the site.
 
 ## 2026-09-26 — Long highlights preserve source text, not a five-line excerpt
 

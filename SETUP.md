@@ -11,7 +11,7 @@ No private API keys, mouse profiles or personal settings are bundled.
 | [Context interpretation skill](.agents/skills/interpret-voiceink-context/SKILL.md) | Helping Codex read the XML-style selection and screenshot references across tasks | Optional installer flag, or ask Codex to install this skill as a personal skill |
 | [Agent Flow YouTube Bridge](companions/youtube-bridge/README.md) | Pausing the YouTube tab playing when dictation starts, plus optional Agentic Mouse Chrome controls | Optional installer flag; helper, native host and login LaunchAgent install locally, but Chrome needs one manual extension step |
 | [Agentic Mouse](https://ethansk.github.io/agentic-mouse/) | Optional hardware control layer and extra mouse actions | Separate app and setup; not bundled with Agent Flow |
-| [Better Git VS Code](https://marketplace.visualstudio.com/items?itemName=EthanSK.better-git-vscode) 1.2.99+ | Early bridge for mouse highlights in local code and diff editors; isolated tests passed, everyday-use acceptance pending | Install from the VS Code Marketplace and activate the updated extension; no extra LaunchAgent or permission grant |
+| [Better Git VS Code](https://marketplace.visualstudio.com/items?itemName=EthanSK.better-git-vscode) 1.2.99+ | Mouse highlights in local code editors; code-editor use is confirmed, while diff editors have isolated-test coverage only | Install from the VS Code Marketplace and activate the updated extension; no extra LaunchAgent or permission grant |
 | Programmable mouse | Optional hands-free Primary and Next buttons | Map in your own mouse software; Agent Flow also works from its keyboard shortcut |
 
 The YouTube helper is the only login LaunchAgent installed by this repository's setup. Agent Flow
@@ -111,8 +111,8 @@ when no recording or transcription is active. The companion has its own
 
 ### App support is best effort
 
-Codex and Chrome highlights have user-confirmed examples. The VS Code code/diff bridge passed
-isolated Mac tests, but everyday-use acceptance is still pending. Telegram selections are not
+Codex, Chrome and VS Code code-editor highlights have user-confirmed examples. The VS Code
+diff bridge has isolated Mac test coverage, not everyday-use acceptance. Telegram selections are not
 working reliably and are not claimed as supported. Other apps depend on their read-only
 Accessibility selection exposure; keyboard-only selection changes are not captured.
 
