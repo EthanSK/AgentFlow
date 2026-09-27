@@ -1,9 +1,12 @@
 # Public Agent Flow releases
 
-[v2.0.363](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.363) publishes italic
-context metadata, compact adjacent tags and History-first opening.
-Source: `dd86d918751c7ed60f8b7d1984d4c92639f4dc2e`;
-exact-build gate: 446 named tests across 17 suites. The existing Mini-built universal
+[v2.0.364](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.364) publishes plain
+History previews, natively rendered context, and an explicitly labelled session
+timing window for short speech without live callbacks. Stored/copied content and
+the separate recovery draft remain unchanged.
+Source: `ebc465a5c0d358e3c4592e9bab5aadcecb3d8f44`;
+exact-build gate: 457 named tests across 18 suites through Xcode's canonical action.
+The existing Mini-built universal
 Release archive was Developer ID re-signed and notarized without rebuilding native code
 or replacing the separately installed local-signing app. Release checksums bind the public
 artifact; later `main` commits contain documentation and media, not different native code.
