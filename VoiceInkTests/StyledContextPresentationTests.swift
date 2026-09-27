@@ -517,7 +517,7 @@ struct StyledContextPresentationTests {
             guard let start = body.range(of: "\\color{"), let end = body[start.upperBound...].firstIndex(of: "}") else { return nil }
             return String(body[start.upperBound..<end])
         })
-        #expect(colors == Set(["#cbd5e1", "#d4d4d8", "#67e8f9", "#e879f9"]))
+        #expect(colors == Set(["#f1f5f9", "#f4f4f5", "#67e8f9", "#e879f9"]))
         let plain = LiveSelectionReference.interleaving(references, with: "spoken first then last",
             includeTiming: true, includeReadablePreview: true)
         #expect(try unwrappedXML(styled).replacingOccurrences(of: "\n\n![Screenshot](</Users/test/shot.png>)", with: "") == plain)

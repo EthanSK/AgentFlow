@@ -580,9 +580,10 @@ enum LiveSelectionStyledMath {
     static let selectionColor = "#67e8f9"
     /// Screenshot XML is magenta, distinct from selected-text context.
     static let screenshotColor = "#e879f9"
-    /// Authored XML uses cool silver speech and warmer silver typing.
-    static let speechColor = "#cbd5e1"
-    static let typedColor = "#d4d4d8"
+    /// Authored XML uses bright cool silver speech and warmer silver typing.
+    /// Keep these near-white for dark chat bubbles without changing type colours.
+    static let speechColor = "#f1f5f9"
+    static let typedColor = "#f4f4f5"
     /// Quiet captions let the coloured source text carry the emphasis.
     static let captionColor = "#94a3b8"
     /// Conservative width (wide CJK/emoji, M/W and wide punctuation count twice) per formula,
