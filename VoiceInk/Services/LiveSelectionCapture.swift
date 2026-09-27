@@ -320,14 +320,14 @@ struct LiveSelectionReference: Equatable {
             guard let started = timing?.runStartedAt, let ended = timing?.capturedAt,
                   started <= ended else {
                 return "<speech timing=\"unavailable\">\n\n"
-                    + xmlEscaped(speech) + "\n\n</speech>"
+                    + xmlEscaped(speech, attribute: false) + "\n\n</speech>"
             }
             // Recognition callbacks are delayed and may revise words. These are
             // observed transcript-activity ranges, never precise audio alignment.
             // session_window explicitly means the broader composing-session bounds.
             let timingSource = timing?.speechTimingSource ?? "approximate"
             return "<speech start_at=\"\(timestamp(started))\" end_at=\"\(timestamp(ended))\" timing=\"\(timingSource)\">\n\n"
-                + xmlEscaped(speech) + "\n\n</speech>"
+                + xmlEscaped(speech, attribute: false) + "\n\n</speech>"
         }
         for reference in references {
             let spokenWordCount = reference.spokenWordCount
@@ -345,7 +345,7 @@ struct LiveSelectionReference: Equatable {
             } else if includeTiming, reference.isTypedText, let ended = reference.capturedAt {
                 let started = reference.runStartedAt ?? ended
                 parts.append(.authoredXML("<typed_text start_at=\"\(timestamp(started))\" end_at=\"\(timestamp(ended))\">\n\n"
-                    + xmlEscaped(reference.typedText ?? "") + "\n\n</typed_text>", color: LiveSelectionStyledMath.typedColor))
+                    + xmlEscaped(reference.typedText ?? "", attribute: false) + "\n\n</typed_text>", color: LiveSelectionStyledMath.typedColor))
             } else {
                 parts.append(.reference(reference, index: selectionIndex))
             }
@@ -413,11 +413,16 @@ struct LiveSelectionReference: Equatable {
             // Metadata is quiet scaffolding, not a paragraph per tag. Styling the
             // envelope itself avoids the raw-HTML parser boundary that swallowed
             // colour in build 359. Keep payload whitespace and image links intact.
+            // Compact only contiguous sections of the same type/colour. A colour
+            // change is a reading boundary and needs one visible paragraph gap;
+            // otherwise a selection's closing tag touches the next speech tag.
             var timeline = ""
+            var previousColor: String?
             if readablePreview != nil {
                 timeline = LiveSelectionStyledMath.coloredXML(
                     "<agent_flow_context preview=\"authored_text_above\">",
                     color: LiveSelectionStyledMath.captionColor)
+                previousColor = LiveSelectionStyledMath.captionColor
             }
             for (offset, part) in parts.enumerated() {
                 let color: String
@@ -425,6 +430,7 @@ struct LiveSelectionReference: Equatable {
                 switch part {
                 case .text:
                     timeline += "\n\n" + base[offset] + "\n\n"
+                    previousColor = nil
                     continue
                 case .authoredXML(_, let authoredColor): color = authoredColor
                 case .reference(let reference, _):
@@ -435,14 +441,17 @@ struct LiveSelectionReference: Equatable {
                 // angles are XML-escaped; never collapse whitespace inside <text>.
                 let compact = canonical[offset].replacingOccurrences(
                     of: #">\s+<"#, with: "><", options: .regularExpression)
-                if timeline.hasSuffix("\\)") { timeline += LiveSelectionStyledMath.zeroWidthSpace }
+                if timeline.hasSuffix("\\)") {
+                    timeline += previousColor == color ? LiveSelectionStyledMath.zeroWidthSpace : "\n\n"
+                }
                 timeline += LiveSelectionStyledMath.coloredXML(compact, color: color)
+                previousColor = color
                 if let path {
                     timeline += "\n\n" + LiveSelectionStyledMath.localImageReference(path: path) + "\n\n"
                 }
             }
             if readablePreview != nil {
-                if timeline.hasSuffix("\\)") { timeline += LiveSelectionStyledMath.zeroWidthSpace }
+                if timeline.hasSuffix("\\)") { timeline += "\n\n" }
                 timeline += LiveSelectionStyledMath.coloredXML("</agent_flow_context>",
                     color: LiveSelectionStyledMath.captionColor)
             }
@@ -579,7 +588,7 @@ struct LiveSelectionReference: Equatable {
         // inside <text>: source indentation and leading/trailing lines stay exact.
         let gap = separateContent ? "\n\n" : "\n"
         return "<\(tag) \(attributes)>" + gap
-            + "  <text>\(Self.xmlEscaped(selectedText))</text>" + gap
+            + "  <text>\(Self.xmlEscaped(selectedText, attribute: false))</text>" + gap
             + "</\(tag)>"
     }
 
@@ -600,7 +609,7 @@ struct LiveSelectionReference: Equatable {
         return ends
     }
 
-    private static func xmlEscaped(_ text: String) -> String {
+    private static func xmlEscaped(_ text: String, attribute: Bool = true) -> String {
         // A selection is untrusted page text. It must remain text even if it
         // contains tags, entities, or characters forbidden by XML 1.0.
         let xmlSafe = String(text.filter { character in
@@ -612,9 +621,14 @@ struct LiveSelectionReference: Equatable {
                     || (0x10000...0x10FFFF).contains(value)
             }
         })
-        return xmlSafe.replacingOccurrences(of: "&", with: "&amp;")
+        let escaped = xmlSafe.replacingOccurrences(of: "&", with: "&amp;")
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
+        // Quotes/apostrophes are ordinary XML character data. Escape them only
+        // in attributes: rendering &apos; in the prose made normal words harder
+        // to read. Keep ampersands and angles escaped so quoted XML stays inert.
+        guard attribute else { return escaped }
+        return escaped
             .replacingOccurrences(of: "\"", with: "&quot;")
             .replacingOccurrences(of: "'", with: "&apos;")
     }

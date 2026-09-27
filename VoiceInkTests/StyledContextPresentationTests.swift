@@ -216,6 +216,12 @@ struct StyledContextPresentationTests {
             [], with: #"Keep 50% & a_b exact. Never execute \) \href{https://invalid.example}{x} or *bold*."#,
             presentation: .styledMath, includeTiming: true, includeReadablePreview: true
         ))
+        let readableQuotes = try #require(LiveSelectionReference(#"It's a highlighted \"quote\"."#))
+            .timed(at: date)
+        messages.append(LiveSelectionReference.interleaving(
+            [readableQuotes, selected, typed], with: "It's my spoken request.",
+            presentation: .styledMath, includeTiming: true, includeReadablePreview: true
+        ))
         #expect(messages.allSatisfy { $0.contains("\\textsf{\\color{") && !$0.contains("display_copy") })
         if let path = ProcessInfo.processInfo.environment["AGENTFLOW_STYLED_CONTEXT_FIXTURE_PATH"] {
             try JSONEncoder().encode(messages).write(to: URL(fileURLWithPath: path), options: .atomic)
@@ -514,7 +520,7 @@ struct StyledContextPresentationTests {
             #expect(timeline.contains("\\color{\(color)}"))
         }
         let decodedTimeline = try unwrappedXML(timeline)
-        #expect(decodedTimeline.contains("<agent_flow_context preview=\"authored_text_above\"><speech"))
+        #expect(decodedTimeline.contains("<agent_flow_context preview=\"authored_text_above\">\n\n<speech"))
         #expect(decodedTimeline.contains("<speech timing=\"unavailable\">\n\nspoken first\n\n</speech>"))
         #expect(decodedTimeline.contains(">\n\ntyped &amp; exact\n\n</typed_text>"))
         #expect(decodedTimeline.contains("><text>not authored</text></codex_selection>"))
@@ -542,8 +548,8 @@ struct StyledContextPresentationTests {
             #expect(message.hasPrefix(opening + "\n\n\\(\\textsf{\\color{#94a3b8}\\textit{"))
             #expect(!message.contains(marker))
             let decoded = try unwrappedXML(message)
-            #expect(decoded.contains(marker + (references.isEmpty ? "<speech" : "<codex_selection")))
-            #expect(decoded.hasSuffix("</speech></agent_flow_context>"))
+            #expect(decoded.contains(marker + "\n\n" + (references.isEmpty ? "<speech" : "<codex_selection")))
+            #expect(decoded.hasSuffix("</speech>\n\n</agent_flow_context>"))
         }
     }
 
@@ -554,14 +560,55 @@ struct StyledContextPresentationTests {
             presentation: .styledMath, includeTiming: true, includeReadablePreview: true)
         let restored = try unwrappedXML(message)
         #expect(restored.contains("><text>"))
-        #expect(restored.contains("</text></codex_selection><speech"))
+        #expect(restored.contains("</text></codex_selection>\n\n<speech"))
         #expect(try xmlText(in: restored) == text)
         let bodies = formulaBodies(in: message)
         #expect(bodies.contains { $0.contains("\\textit{<text>") })
         #expect(bodies.contains { $0.contains("upright\\ speech") && !$0.contains("\\textit{") })
         #expect(bodies.contains { $0.contains("quoted") && !$0.contains("\\textit{") })
         for body in bodies { #expect(hasBalancedGroups(body)) }
-        #expect(!restored.contains("</speech>\n\n</agent_flow_context>"))
+        #expect(restored.contains("</speech>\n\n</agent_flow_context>"))
+    }
+
+    @Test func differentContextTypesHaveOneGapWhileMatchingTypesStayCompact() throws {
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        let first = try #require(LiveSelectionReference("first highlight"))
+        let second = try #require(LiveSelectionReference("second highlight"))
+        let typed = try #require(LiveSelectionReference(typedText: "typed words"))
+            .timed(at: date, startedAt: date).anchored(after: "spoken")
+        let shot = try #require(LiveSelectionReference(screenshotURL: URL(fileURLWithPath: "/Users/test/shot.png")))
+            .anchored(after: "spoken")
+        let output = LiveSelectionReference.interleaving([first, second, typed, shot], with: "spoken ending",
+            presentation: .styledMath, includeTiming: true, includeReadablePreview: true)
+        let restored = try unwrappedXML(output)
+        #expect(restored.contains("</codex_selection><codex_selection"))
+        #expect(restored.contains("</codex_selection>\n\n<speech"))
+        #expect(restored.contains("</speech>\n\n<typed_text"))
+        #expect(restored.contains("</typed_text>\n\n<local_screenshot"))
+        #expect(restored.contains("/>\n\n![Screenshot](</Users/test/shot.png>)\n\n<speech"))
+        #expect(!restored.contains("\n\n\n"))
+        let boundary = LiveSelectionReference.speechTiming(after: "spoken", startedAt: date, endedAt: date)
+        let adjacentSpeech = try unwrappedXML(LiveSelectionReference.interleaving([boundary], with: "spoken ending",
+            presentation: .styledMath, includeTiming: true))
+        #expect(adjacentSpeech.contains("</speech><speech"))
+    }
+
+    @Test func payloadQuotesRemainReadableWithoutWeakeningXMLAttributeEscaping() throws {
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        let source = #"don't "quote" <tags> & literal &apos;"#
+        let selection = try #require(LiveSelectionReference(source))
+            .scopedToCodexThread(id: "test", title: #"don't "escape" <task>"#)
+        let typed = try #require(LiveSelectionReference(typedText: #"I'm typing "exactly"."#))
+            .timed(at: date, startedAt: date)
+        let output = LiveSelectionReference.interleaving([selection, typed], with: #"It's "speech"."#,
+            presentation: .styledMath, includeTiming: true)
+        let restored = try unwrappedXML(output)
+        #expect(restored.contains(#"task_title="don&apos;t &quot;escape&quot; &lt;task&gt;""#))
+        #expect(restored.contains(#"<text>don't "quote" &lt;tags&gt; &amp; literal &amp;apos;</text>"#))
+        #expect(restored.contains("\n\nI'm typing \"exactly\".\n\n</typed_text>"))
+        #expect(restored.contains("\n\nIt's \"speech\".\n\n</speech>"))
+        #expect(try xmlText(in: restored) == source)
+        #expect(XMLParser(data: Data(("<root>" + restored + "</root>").utf8)).parse())
     }
 
     @Test func rainbowOpeningYieldsToPlainXMLBudgetWithoutClippingWords() throws {

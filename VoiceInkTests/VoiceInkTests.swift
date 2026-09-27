@@ -472,7 +472,7 @@ struct VoiceInkTests {
         #expect(parts.count == 5)
         #expect(parts[0] == "Compare")
         #expect(parts[1].contains("<codex_selection index=\"1\""))
-        #expect(parts[1].contains("<text>alpha &amp; &lt;selection&gt; &quot;quoted&quot; &apos;text&apos;</text>"))
+        #expect(parts[1].contains("<text>alpha &amp; &lt;selection&gt; \"quoted\" 'text'</text>"))
         #expect(parts[2] == "these")
         #expect(parts[3].contains("<codex_selection index=\"2\""))
         #expect(parts[3].contains("<text>second passage</text>"))
