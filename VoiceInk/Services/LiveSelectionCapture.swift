@@ -73,6 +73,25 @@ struct LiveSelectionReference: Equatable {
     private var visibleCodexThreadIDs: [String] = []
     private var chromeContext: ChromeSelectionContextReader.Context?
     private var source: Source = .codex
+    private(set) var captureID: UUID?
+
+    func identifiedForCapture(_ id: UUID) -> Self {
+        var copy = self
+        copy.captureID = id
+        return copy
+    }
+
+    /// Optional labels may arrive later, but never replace authored text,
+    /// timing, or the gesture's already-frozen position in the timeline.
+    func updatingSourceLabels(from labeled: Self) -> Self {
+        var copy = self
+        copy.source = labeled.source
+        copy.codexThreadID = labeled.codexThreadID
+        copy.codexThreadTitle = labeled.codexThreadTitle
+        copy.visibleCodexThreadIDs = labeled.visibleCodexThreadIDs
+        copy.chromeContext = labeled.chromeContext
+        return copy
+    }
 
     private var hudPreview: String {
         if case let .application(name, _) = source {
@@ -929,6 +948,7 @@ final class LiveSelectionCapture {
     /// `precedesSpeech` is true only for a highlight made before this capture
     /// attached; the session anchors it before all dictated words.
     private let onCapture: (_ reference: LiveSelectionReference, _ precedesSpeech: Bool, _ spokenAnchor: String) -> Void
+    private let onLabels: (_ captureID: UUID, _ reference: LiveSelectionReference) -> Void
     private let speechSnapshot: () -> String
     /// True between start() and stop(). Replaces this object's former private
     /// NSEvent monitor: edges now arrive from the shared watcher only while attached.
@@ -944,9 +964,11 @@ final class LiveSelectionCapture {
     private var screenshotScanTask: Task<Void, Never>?
 
     init(speechSnapshot: @escaping () -> String,
-         onCapture: @escaping (_ reference: LiveSelectionReference, _ precedesSpeech: Bool, _ spokenAnchor: String) -> Void) {
+         onCapture: @escaping (_ reference: LiveSelectionReference, _ precedesSpeech: Bool, _ spokenAnchor: String) -> Void,
+         onLabels: @escaping (_ captureID: UUID, _ reference: LiveSelectionReference) -> Void) {
         self.speechSnapshot = speechSnapshot
         self.onCapture = onCapture
+        self.onLabels = onLabels
     }
 
     func start() {
@@ -1258,6 +1280,18 @@ final class LiveSelectionCapture {
                 outcome = "selection-unavailable"
                 return
             }
+            guard let self, self.isAttached else { return }
+            let captureID = UUID()
+            let captured = isCodex ? reference : reference.scopedToApplication(
+                name: app.localizedName, bundleID: app.bundleIdentifier
+            ).scopedToChrome(chromeContext)
+            // Commit proven text before optional labels. A new click can cancel
+            // metadata work, but must not erase an already-read highlight or
+            // move it after newer speech/context while a log scan finishes.
+            self.onCapture(captured.timed(at: selectedAt).identifiedForCapture(captureID),
+                           precedesSpeech, spokenAnchor)
+            outcome = "emitted-to-session"
+            guard isCodex else { return }
             let labeled: LiveSelectionReference
             if isCodex {
                 // Only the verified Codex app may add a task label. A task
@@ -1284,12 +1318,11 @@ final class LiveSelectionCapture {
             }
             guard !Task.isCancelled else { return }
             guard Self.canRead(identity) else {
-                outcome = "source-changed-before-emit"
+                outcome = "emitted-without-labels-source-changed"
                 return
             }
-            guard let self else { return }
-            self.onCapture(labeled.timed(at: selectedAt), precedesSpeech, spokenAnchor)
-            outcome = "emitted-to-session"
+            guard self.isAttached else { return }
+            self.onLabels(captureID, labeled)
         }
     }
 

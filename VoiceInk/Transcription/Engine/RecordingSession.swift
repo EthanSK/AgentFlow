@@ -564,6 +564,9 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
             speechSnapshot: { [weak self] in self?.partialTranscript ?? "" },
             onCapture: { [weak self] reference, precedesSpeech, spokenAnchor in
                 self?.recordLiveSelection(reference, precedesSpeech: precedesSpeech, spokenAnchor: spokenAnchor)
+            },
+            onLabels: { [weak self] captureID, reference in
+                self?.updateLiveSelectionLabels(captureID: captureID, reference: reference)
             }
         )
         liveSelectionCapture = capture
@@ -594,6 +597,12 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
             liveSelectionReferences.append(anchored)
         }
         typingFocus.returnAfterContext()
+    }
+
+    func updateLiveSelectionLabels(captureID: UUID, reference: LiveSelectionReference) {
+        guard phase == .recording, !shouldCancel,
+              let index = liveSelectionReferences.firstIndex(where: { $0.captureID == captureID }) else { return }
+        liveSelectionReferences[index] = liveSelectionReferences[index].updatingSourceLabels(from: reference)
     }
 
     func endLiveSelectionCapture() {
