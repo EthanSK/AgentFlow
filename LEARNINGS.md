@@ -1,5 +1,24 @@
 # Learnings
 
+## 2026-09-27 — Compact timing changes the representation, not the clock
+
+Context timestamps use locale-independent Unix seconds with three decimal places
+from build 362. This retains millisecond precision while shortening each current
+date by ten characters compared with the previous ISO 8601 value. Speech groups
+are now `<speech>`; typing remains `<typed_text>`. The interpretation skill accepts
+both the new representation and historical ISO dates, tag names and attributes.
+Never interpret decimal Unix seconds as an integer millisecond count or promote
+transcript callback timing into exact audio alignment. Keep the five-second run
+boundary and all selection/screenshot event times unchanged.
+
+Ethan's build-361 messages confirmed chat-switch selection and fixed section
+colours worked in his normal session. That is physical acceptance of the reported
+case, not proof that every Accessibility surface is reliable. Keep the bounded
+selection mechanism unchanged while adjusting presentation. Brighter speech and
+typing silver does not change the rainbow opening, cyan selections or magenta
+screenshots. Formatting still adds bytes; shortening metadata must not silently
+truncate words or context to satisfy a receiving app's paste-attachment threshold.
+
 ## 2026-09-27 — Global monitor CGEvent recipients are not selection sources
 
 Builds 358–360 preferred `NSEvent.cgEvent`'s target PID. Live failure logs named
