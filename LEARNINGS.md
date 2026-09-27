@@ -1,5 +1,41 @@
 # Learnings
 
+## 2026-09-27 — History presentation must not rewrite stored context
+
+History list rows need a plain authored preview, while expanded messages can render
+Agent Flow's emitted colour and italic wrappers natively. Keep this a read-only
+presentation layer: Copy retains the exact stored payload, no history migration
+runs, and the separate plain `Live draft at exit` recovery text remains intact.
+Recognize only the producer's exact formula grammar and escape set; malformed or
+unknown TeX stays literal. Do not evaluate arbitrary TeX, create a web renderer,
+or read screenshot paths merely because a history record contains them. Remove
+only producer-inserted zero-width boundaries between valid formula chunks.
+
+Seven regression tests cover current/legacy wrappers, exact escapes, malformed
+input, copy preservation and native colour/italic attributes. A disposable native
+fixture using the actual production History view visually confirmed plain list
+text and coloured, italic-metadata expanded content without opening the recorder.
+
+## 2026-09-27 — Short speech needs a real fallback window, not invented alignment
+
+A short recording can finish before any live transcript callback arrives. Its
+final words then have no live timing marker even though the session has real
+creation and capture-finish dates. Freeze capture finish once, and only for a new
+audio-bearing session without live markers supply those original bounds as
+`timing="session_window"`. This is a broad composing-session window, potentially
+including silence, typing or muted time, not word timestamps or exact audio bounds.
+Existing live markers keep `timing="approximate"` and their original dates; typing
+alone never creates a speech marker. Preserve the frozen window in retry state,
+never replace it with network-completion or retry dates. Imported or historical
+text with no known window still uses `timing="unavailable"` without invented dates.
+
+Four timing regressions plus the mandatory Primary/Next/HUD guards passed in a
+serial canonical focused run. The exact build-364 source then passed all 457 tests
+across 18 suites through Xcode's normal full test action. In mixed stdout, app logs
+or zero-width prefixes can precede a complete Swift Testing result: count complete
+named success records, including parameterized test names, not only lines beginning
+with the success glyph. Keep the raw log and require the successful action summary.
+
 ## 2026-09-27 — Italic metadata must preserve payload and whole-message rendering
 
 The compact styled timeline renders every actual XML tag and attribute in
