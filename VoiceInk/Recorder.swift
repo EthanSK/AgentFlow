@@ -49,6 +49,8 @@ class Recorder: NSObject, ObservableObject {
     private var audioRestorationTask: Task<Void, Never>?
     private var recordingMediaPauseLease: RecordingMediaPauseLease?
     private var chatGPTVoiceMuteLease: ChatGPTVoiceCaptureMuteLease?
+    private var recordingActivityStarted = false
+    private var keyboardStartAwaitingCapture = false
     private let smoothedValuesLock = NSLock()
     private var smoothedAverage: Float = 0
     private var smoothedPeak: Float = 0
@@ -197,13 +199,33 @@ class Recorder: NSObject, ObservableObject {
         }
     }
 
-    func startRecording(toOutputFile url: URL) async throws -> RecordingInputDeviceSnapshot? {
+    func startRecording(toOutputFile url: URL, initiallyPaused: Bool = false) async throws -> RecordingInputDeviceSnapshot? {
         // The idle refresh delay coalesces hardware notifications, never a user's Start press.
         // Invalidation already reached CoreAudioRecorder, so prepare() below rebuilds immediately
         // if Start beats the warm-refresh timer.
         captureRefreshTask?.cancel()
         captureRefreshTask = nil
         deviceManager.isRecordingActive = true
+
+        if initiallyPaused {
+            let core = recorder ?? makeCoreAudioRecorder()
+            recorder = core
+            let deviceID = deviceManager.getCurrentDevice()
+            let callback = onAudioChunk
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                audioSetupQueue.async {
+                    do {
+                        core.onAudioChunk = callback
+                        try core.startRecording(toOutputFile: url, deviceID: deviceID, initiallyPaused: true)
+                        continuation.resume()
+                    } catch { continuation.resume(throwing: error) }
+                }
+            }
+            keyboardStartAwaitingCapture = true
+            // No chime, output mute, media lease or YouTube notification before
+            // explicit microphone enable. A typed finish must not resume media.
+            return nil
+        }
 
         let currentDeviceID = deviceManager.getCurrentDevice()
         // Bind History metadata to the same numeric device ID passed to AUHAL. Never read the
@@ -289,6 +311,7 @@ class Recorder: NSObject, ObservableObject {
             // Posted in the success branch only, so a failed start (which falls into catch →
             // stopRecording) won't emit a started without a matching real recording.
             RecordingActivityNotifier.postRecordingStarted()
+            recordingActivityStarted = true
             if let inputDeviceSnapshot {
                 logger.notice("Recording input captured name=\(inputDeviceSnapshot.name, privacy: .public) uid=\(inputDeviceSnapshot.uid, privacy: .public) file=\(url.lastPathComponent, privacy: .public)")
             } else {
@@ -300,6 +323,27 @@ class Recorder: NSObject, ObservableObject {
             await stopRecording()
             throw error
         }
+    }
+
+    /// Explicit first microphone enable for a keyboard-started session. Only this
+    /// first capture owns a new media episode; ordinary resume remains untouched.
+    func enableMicrophoneCapture() async throws {
+        guard keyboardStartAwaitingCapture else { try await resumeRecording(); return }
+        let lease = playbackController.beginRecordingPause()
+        recordingMediaPauseLease = lease
+        if lease.requestsPause { pauseMedia(for: lease) }
+        await mediaPauseTask?.value
+        do {
+            try await resumeRecording()
+        } catch {
+            recordingMediaPauseLease = nil
+            playbackController.finishRecordingPause(lease, playbackDisposition: .restoreOwnedPlayback)
+            throw error
+        }
+        keyboardStartAwaitingCapture = false
+        recordingActivityStarted = true
+        SoundManager.shared.playStartSound()
+        RecordingActivityNotifier.postRecordingStarted()
     }
 
     /// Temporarily releases the microphone while preserving this recording's open
@@ -417,6 +461,9 @@ class Recorder: NSObject, ObservableObject {
         chatGPTVoiceMuteLease = nil
         let mediaPauseLease = recordingMediaPauseLease
         recordingMediaPauseLease = nil
+        let shouldFinishActivity = recordingActivityStarted
+        recordingActivityStarted = false
+        keyboardStartAwaitingCapture = false
 
         // Capture current recorder to stop it on the serial hardware queue.
         let currentRecorder = self.recorder
@@ -479,9 +526,11 @@ class Recorder: NSObject, ObservableObject {
         )
 
         audioRestorationTask?.cancel()
-        audioRestorationTask = Task {
-            guard !Task.isCancelled else { return }
-            await mediaController.unmuteSystemAudio()
+        if shouldFinishActivity || mediaPauseLease != nil || muteLease != nil {
+            audioRestorationTask = Task {
+                guard !Task.isCancelled else { return }
+                await mediaController.unmuteSystemAudio()
+            }
         }
 
         // Complementary to finishing the recording media-pause lease: broadcast "recording stopped" so the external YouTube
@@ -489,11 +538,13 @@ class Recorder: NSObject, ObservableObject {
         // delayed audioRestorationTask) so the resume isn't subject to the audio-resumption delay.
         // The helper only resumes a tab it actually paused, so a spurious stop (e.g. reset on
         // launch) or a cancel is a safe no-op on the YouTube side. Cancel == stop at this layer.
-        switch playbackDisposition {
-        case .restoreOwnedPlayback:
-            RecordingActivityNotifier.postRecordingStopped()
-        case .preserveCurrentPlayback:
-            RecordingActivityNotifier.postRecordingStoppedPreservingPlayback()
+        if shouldFinishActivity {
+            switch playbackDisposition {
+            case .restoreOwnedPlayback:
+                RecordingActivityNotifier.postRecordingStopped()
+            case .preserveCurrentPlayback:
+                RecordingActivityNotifier.postRecordingStoppedPreservingPlayback()
+            }
         }
 
         deviceManager.isRecordingActive = false

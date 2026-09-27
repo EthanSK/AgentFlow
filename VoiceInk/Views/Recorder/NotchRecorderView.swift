@@ -212,6 +212,9 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                     // the mini panel exactly so behaviour is identical across recorder styles.
                     RecorderSkipProcessingButton(isEngaged: skipPostProcessingBinding)
                         .transition(.opacity)
+                    if stateProvider.canTypeInHUD {
+                        RecorderMicrophoneButton(stateProvider: stateProvider)
+                    }
                 }
 
                 RecorderModeButton(buttonSize: 20, padding: EdgeInsets())

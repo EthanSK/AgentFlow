@@ -613,6 +613,23 @@ struct LiveTranscriptView: View {
     }
 }
 
+/// Capture control, not a finish action or a global system microphone mute.
+struct RecorderMicrophoneButton<S: RecorderStateProvider & ObservableObject>: View {
+    @ObservedObject var stateProvider: S
+    var body: some View {
+        Button(action: stateProvider.toggleMicrophone) {
+            Image(systemName: stateProvider.microphoneOff ? "mic.slash.fill" : "mic.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(stateProvider.microphoneOff ? .orange : .white.opacity(0.75))
+                .frame(width: 24, height: 24)
+        }
+        .buttonStyle(.plain)
+        .disabled(stateProvider.microphoneTransitionPending)
+        .help(stateProvider.microphoneOff ? String(localized: "Turn microphone on") : String(localized: "Turn microphone off"))
+        .accessibilityLabel(stateProvider.microphoneOff ? String(localized: "Turn microphone on") : String(localized: "Turn microphone off"))
+    }
+}
+
 // MARK: - Current App + Paste Destination
 
 /// A short, deliberate confirmation effect for destination actions. The app icon

@@ -217,6 +217,26 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     // reads it to show the right spinner/waveform. Conforms to RecorderStateProvider so the
     // existing MiniRecorderView / NotchRecorderView can render a single session unchanged.
     @Published var liveRecordingState: RecordingState
+    // Keyboard mode remains an active composing session, not gesture-Pause:
+    // one Primary press must finish, never unexpectedly turn the microphone on.
+    @Published var microphoneOff = false
+    @Published var microphoneTransitionPending = false
+    private var microphoneTransitionWaiters: [CheckedContinuation<Void, Never>] = []
+    func finishMicrophoneTransition() {
+        microphoneTransitionPending = false
+        let waiters = microphoneTransitionWaiters
+        microphoneTransitionWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
+    }
+    func waitForMicrophoneTransition() async {
+        guard microphoneTransitionPending else { return }
+        await withCheckedContinuation { microphoneTransitionWaiters.append($0) }
+    }
+    var hasCapturedAudio = true
+    var onMicrophoneToggle: (() -> Void)?
+    var startupAudioRouter: RecordingStartupAudioRouter?
+    var prepareMicrophoneTranscription: (() async throws -> Void)?
+    func toggleMicrophone() { onMicrophoneToggle?() }
 
     // Live streaming partial (only meaningful while phase == .recording — only this
     // session streams partials). While liveRecordingState == .paused, the last partial
@@ -232,6 +252,11 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     @Published private(set) var typedInput = ""
     private var typedReferenceIndex: Int?
     private var typedSpeechAnchor: String?
+    private var typedRunStartedAt: Date?
+    private var speechRunStartedAt: Date?
+    private var lastSpeechActivityAt: Date?
+    private var pendingSpeechAnchor = ""
+    private var speechTimingTask: Task<Void, Never>?
     lazy var typingFocus = RecorderTypingFocus { [weak self] in self?.canTypeInHUD == true }
     var typingFocusController: RecorderTypingFocus? { typingFocus }
 
@@ -247,12 +272,14 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         }
     }
 
-    func updateTypedInput(_ value: String) {
+    func updateTypedInput(_ value: String, at date: Date = Date()) {
         guard canTypeInHUD else { return }
         typedInput = value
         if typedSpeechAnchor == nil { typedSpeechAnchor = partialTranscript }
+        if typedRunStartedAt == nil { typedRunStartedAt = date }
         let reference = LiveSelectionReference(typedText: value)?
             .anchored(after: typedSpeechAnchor ?? partialTranscript)
+            .timed(at: date, startedAt: typedRunStartedAt)
         if let index = typedReferenceIndex {
             if let reference {
                 liveSelectionReferences[index] = reference
@@ -271,7 +298,33 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     func endTypingRun() {
         typedReferenceIndex = nil
         typedSpeechAnchor = nil
+        typedRunStartedAt = nil
         typedInput = ""
+    }
+
+    func recordSpeechActivity(_ transcript: String, at date: Date = Date()) {
+        guard canTypeInHUD, !microphoneOff, transcript != partialTranscript,
+              !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        if speechRunStartedAt == nil { speechRunStartedAt = date }
+        lastSpeechActivityAt = date
+        pendingSpeechAnchor = transcript
+        speechTimingTask?.cancel()
+        speechTimingTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(for: .seconds(5)) } catch { return }
+            self?.flushSpeechTiming()
+        }
+    }
+
+    func flushSpeechTiming() {
+        speechTimingTask?.cancel()
+        speechTimingTask = nil
+        guard let started = speechRunStartedAt, let ended = lastSpeechActivityAt else { return }
+        liveSelectionReferences.append(.speechTiming(
+            after: pendingSpeechAnchor, startedAt: started, endedAt: ended
+        ))
+        speechRunStartedAt = nil
+        lastSpeechActivityAt = nil
+        pendingSpeechAnchor = ""
     }
 
     // Make the realtime HUD visible as soon as the frozen Mode selects a streaming
@@ -528,6 +581,7 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     }
 
     func endLiveSelectionCapture() {
+        flushSpeechTiming()
         typingFocus.disable(releaseKeyboard: false)
         endTypingRun()
         liveSelectionCapture?.stop()

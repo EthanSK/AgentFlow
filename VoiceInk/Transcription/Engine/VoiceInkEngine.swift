@@ -244,17 +244,59 @@ class VoiceInkEngine: NSObject, ObservableObject {
     private var preparedRecordingStart: PreparedRecordingStart?
     private var typingFocusStartID: UUID?
 
-    /// HUD-only presentation intent, keyed to an already-owned start. It cannot
-    /// create a recording, retarget delivery, or focus any other/newer session.
+    /// Typing intent is keyed to an already-owned start; it cannot retarget or
+    /// focus a newer session. A late Command in the same chord closes capture
+    /// if the immediate Primary start has already passed the hardware boundary.
     func requestTypingFocus(forStart requestID: UUID) {
         if let session = activeRecordingSession, session.startID == requestID {
             if session.canTypeInHUD {
                 session.typingFocus.requestInitialFocus()
+                if !session.microphoneOff {
+                    Task { @MainActor [weak self, weak session] in
+                        guard let self, let session, self.activeRecordingSession === session,
+                              session.startID == requestID, !session.microphoneOff else { return }
+                        await self.toggleSessionMicrophone(session)
+                    }
+                }
             } else if session.liveRecordingState == .starting {
                 typingFocusStartID = requestID
+                session.microphoneOff = true
+                session.hasCapturedAudio = false
             }
         } else if recordingStartReservation.pendingID == requestID {
             typingFocusStartID = requestID
+        }
+    }
+
+    /// A microphone button is independent of the Primary multi-click classifier.
+    /// Keyboard-only composing still uses normal Primary finish while its mic is off.
+    func toggleSessionMicrophone(_ session: RecordingSession) async {
+        guard activeRecordingSession === session, session.canTypeInHUD,
+              !session.microphoneTransitionPending else { return }
+        session.microphoneTransitionPending = true
+        defer { session.finishMicrophoneTransition() }
+        do {
+            if session.microphoneOff || session.liveRecordingState == .paused {
+                try await recorder.enableMicrophoneCapture()
+                guard activeRecordingSession === session else { return }
+                session.hasCapturedAudio = true
+                guard session.phase == .recording else { return }
+                session.microphoneOff = false
+                session.liveRecordingState = .recording
+                let prepare = session.prepareMicrophoneTranscription
+                session.prepareMicrophoneTranscription = nil
+                try await prepare?()
+            } else {
+                try await recorder.pauseRecording()
+                guard activeRecordingSession === session, session.phase == .recording else { return }
+                session.microphoneOff = true
+                session.flushSpeechTiming()
+            }
+            recomputeDerivedState()
+        } catch {
+            NotificationManager.shared.showNotification(
+                title: String(localized: "Microphone could not change state"), type: .error
+            )
         }
     }
 
@@ -555,11 +597,14 @@ class VoiceInkEngine: NSObject, ObservableObject {
             return false
         }
 
+        guard !session.microphoneTransitionPending else { return false }
+        session.microphoneTransitionPending = true
+        defer { session.finishMicrophoneTransition() }
         let previousState = session.liveRecordingState
         do {
             switch previousState {
             case .recording:
-                try await recorder.pauseRecording()
+                if !session.microphoneOff { try await recorder.pauseRecording() }
                 guard activeRecordingSession === session,
                       session.phase == .recording,
                       session.liveRecordingState == previousState,
@@ -567,10 +612,12 @@ class VoiceInkEngine: NSObject, ObservableObject {
                     return false
                 }
                 session.liveRecordingState = .paused
+                session.microphoneOff = true
+                session.flushSpeechTiming()
                 vippLog.info("recording pause toggle: session \(session.id.uuidString, privacy: .public) capture=paused playback=unchanged")
 
             case .paused:
-                try await recorder.resumeRecording()
+                try await recorder.enableMicrophoneCapture()
                 guard activeRecordingSession === session,
                       session.phase == .recording,
                       session.liveRecordingState == previousState,
@@ -578,6 +625,11 @@ class VoiceInkEngine: NSObject, ObservableObject {
                     return false
                 }
                 session.liveRecordingState = .recording
+                session.microphoneOff = false
+                session.hasCapturedAudio = true
+                let prepare = session.prepareMicrophoneTranscription
+                session.prepareMicrophoneTranscription = nil
+                try await prepare?()
                 vippLog.info("recording pause toggle: session \(session.id.uuidString, privacy: .public) capture=resumed playback=unchanged")
 
             default:
@@ -818,6 +870,9 @@ class VoiceInkEngine: NSObject, ObservableObject {
             active.phase = .transcribing
             active.liveRecordingState = .transcribing
             active.endLiveSelectionCapture()
+            // Finish is still owned by this session. Let an in-flight mic enable
+            // settle before closing its WAV or releasing the shared recorder.
+            await active.waitForMicrophoneTransition()
             // Realtime remains HUD-only while capture is live. At the irreversible
             // stop boundary, however, persist the last HUD text beside the original
             // WAV before starting asynchronous finalization. This is local recovery
@@ -1058,6 +1113,12 @@ class VoiceInkEngine: NSObject, ObservableObject {
         }
         // Born .recording but we drive it through .starting → .recording during the handshake.
         session.liveRecordingState = .starting
+        session.microphoneOff = typingFocusStartID == startID
+        session.hasCapturedAudio = !session.microphoneOff
+        session.onMicrophoneToggle = { [weak self, weak session] in
+            guard let self, let session else { return }
+            Task { @MainActor in await self.toggleSessionMicrophone(session) }
+        }
 
         // Append to the collection so the card appears immediately (shows the .starting state).
         sessions.append(session)
@@ -1117,14 +1178,21 @@ class VoiceInkEngine: NSObject, ObservableObject {
             // The bounded router serializes that transition and forces complete-WAV
             // fallback instead of silently dropping startup audio if setup wedges.
             let startupAudioRouter = RecordingStartupAudioRouter()
+            session.startupAudioRouter = startupAudioRouter
             self.recorder.onAudioChunk = startupAudioRouter.receive
 
             session.liveRecordingState = .starting
             recomputeDerivedState()
 
+            let startedWithMicrophoneOff = session.microphoneOff
             session.recordingInputDevice = try await self.recorder.startRecording(
-                toOutputFile: permanentURL
+                toOutputFile: permanentURL, initiallyPaused: startedWithMicrophoneOff
             )
+            if session.microphoneOff && !startedWithMicrophoneOff {
+                // Command can arrive after the base chord began immediate startup.
+                // Close that same capture before publishing a typing-ready HUD.
+                try await self.recorder.pauseRecording()
+            }
             persistRecoveryJournal(for: session, realtimeDraftText: nil)
 
             // Re-press / cancel / panel-gone guard: if this is no longer the live start, abort.
@@ -1238,6 +1306,9 @@ class VoiceInkEngine: NSObject, ObservableObject {
                     for: transcriptionConfiguration
                 )
 
+            session.prepareMicrophoneTranscription = { [weak self, weak session] in
+                guard let self, let session, self.activeRecordingSession === session,
+                      session.startID == startID, !session.shouldCancel else { return }
             if self.serviceRegistry.shouldUseRealtimeTranscription(for: transcriptionConfiguration) {
                 let streamingSession = self.serviceRegistry.createSession(
                     for: transcriptionConfiguration,
@@ -1245,12 +1316,14 @@ class VoiceInkEngine: NSObject, ObservableObject {
                         Task { @MainActor in
                             guard let self, let session,
                                   session.startID == startID,
-                                  session.liveRecordingState == .recording else {
+                                  session.liveRecordingState == .recording,
+                                  !session.microphoneOff else {
                                 return
                             }
                             // Streaming callbacks only repaint the black recorder HUD. Writing
                             // partials into a destination creates a second mutable draft, races
                             // Ethan's edits/focus, and duplicates the single final delivery below.
+                            session.recordSpeechActivity(partial)
                             session.partialTranscript = partial
                             self.persistRecoveryJournal(
                                 for: session,
@@ -1320,6 +1393,14 @@ class VoiceInkEngine: NSObject, ObservableObject {
                 startupAudioRouter.close()
                 self.recorder.onAudioChunk = nil
             }
+            }
+            // A keyboard-only session has no provider socket, fallback request or
+            // speculative model load. Explicit microphone enable consumes this
+            // one session-bound preparation closure exactly once.
+            if session.microphoneOff { return }
+            let prepare = session.prepareMicrophoneTranscription
+            session.prepareMicrophoneTranscription = nil
+            try await prepare?()
 
             // Best-effort model preload so the eventual transcribe is fast. Use this
             // recording's frozen model; rereading the global Mode here lets a newer
@@ -1728,6 +1809,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
                 )
             },
             session: job.transcriptionSession,
+            hasCapturedAudio: session.hasCapturedAudio,
             triggerWordModeSelection: { [weak self, weak session] text in
                 guard let selection = self?.selectTriggerWordModeIfNeeded(for: text) else {
                     return nil
@@ -2012,6 +2094,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
             session.partialTranscript = ""
             session.endLiveSelectionCapture()
             session.clearContext()
+            await session.waitForMicrophoneTransition()
             await recorder.stopRecording()
             await finishCanceledRecording(session)
             removeSession(session)
@@ -2066,6 +2149,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
             session.transcriptionSession?.cancel()
             session.endLiveSelectionCapture()
             session.clearContext()
+            await session.waitForMicrophoneTransition()
         }
         sessions.removeAll()
         canceledPipelineTranscriptionIDs.removeAll()

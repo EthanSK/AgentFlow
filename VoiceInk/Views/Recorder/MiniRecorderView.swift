@@ -119,6 +119,9 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                     // observed session's skipPostProcessing flag (no closure threading needed).
                     RecorderSkipProcessingButton(isEngaged: skipPostProcessingBinding)
                         .transition(.opacity)
+                    if stateProvider.canTypeInHUD {
+                        RecorderMicrophoneButton(stateProvider: stateProvider)
+                    }
                 }
             }
             .padding(.leading, 10)

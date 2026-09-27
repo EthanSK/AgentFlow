@@ -70,7 +70,7 @@ class TranscriptionPipeline {
     private let modelContext: ModelContext
     private let serviceRegistry: TranscriptionServiceRegistry
     private let enhancementService: AIEnhancementService?
-    private let delivery = TranscriptionDelivery()
+    private let delivery: any TranscriptionDelivering
     private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "TranscriptionPipeline")
     // VIPPDebug: see RecorderUIManager for the filter predicate. Used to log the exact
     // transcription request/result + every cancel-discard decision on this path.
@@ -79,11 +79,13 @@ class TranscriptionPipeline {
     init(
         modelContext: ModelContext,
         serviceRegistry: TranscriptionServiceRegistry,
-        enhancementService: AIEnhancementService?
+        enhancementService: AIEnhancementService?,
+        delivery: (any TranscriptionDelivering)? = nil
     ) {
         self.modelContext = modelContext
         self.serviceRegistry = serviceRegistry
         self.enhancementService = enhancementService
+        self.delivery = delivery ?? TranscriptionDelivery()
     }
 
     /// Run the full pipeline for a given transcription record.
@@ -103,6 +105,7 @@ class TranscriptionPipeline {
         jobIdentity: TranscriptionJobIdentity,
         formattingConfiguration resolveFormattingConfiguration: @escaping () -> TranscriptionFormattingConfiguration,
         session: TranscriptionSession?,
+        hasCapturedAudio: Bool = true,
         triggerWordModeSelection: @escaping (String) -> String? = { _ in nil },
         enhancementConfiguration: @escaping () -> EnhancementRuntimeConfiguration?,
         recordingContextSnapshot: @escaping () async -> RecordingContextSnapshot? = { nil },
@@ -211,7 +214,8 @@ class TranscriptionPipeline {
             let annotated = LiveSelectionReference.interleaving(
                 references,
                 with: current,
-                presentation: presentation
+                presentation: presentation,
+                includeTiming: includeSourceContext && !skipPostProcessingNow
             )
             finalContextAttached = true
             guard annotated != current else { return }
@@ -325,7 +329,13 @@ class TranscriptionPipeline {
             let transcriptionStart = Date()
             var text: String
             vippLog.info("pipeline: transcribe START model=\(model.displayName, privacy: .public) session=\(session != nil ? "streaming" : "file", privacy: .public) \(jobIdentity.logDescription, privacy: .public)")
-            if let session {
+            if !hasCapturedAudio {
+                // Keyboard-only is a successful authored message, not a failed
+                // zero-length audio request. References are attached exactly once
+                // at the existing destination-policy boundary below.
+                text = ""
+                vippLog.info("pipeline: keyboard-only completion network=false")
+            } else if let session {
                 text = try await session.transcribe(audioURL: audioURL)
             } else {
                 text = try await serviceRegistry.transcribe(
@@ -472,7 +482,7 @@ class TranscriptionPipeline {
                 // regardless of what the enhancementConfiguration closure returned. (The closure
                 // already returns nil on skip, but gating here too makes the bypass independent
                 // of that and keeps both bypass points readable in one place.)
-                if !skipPostProcessingNow,
+                if hasCapturedAudio, !skipPostProcessingNow,
                    !suppressesModeResponse,
                    let enhancementService,
                    let resolvedEnhancementConfiguration,
@@ -766,6 +776,13 @@ class TranscriptionPipeline {
             includeSourceContext: includesSourceContext,
             presentation: contextPresentation
         )
+        guard let completedText = finalText,
+              !completedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            // Opening and finishing an empty typing session is a no-op, not an
+            // empty paste followed by an accidental Return in the current app.
+            saveTranscriptionAndPostCompletion()
+            return
+        }
         vippLog.info("pipeline: captured context paste included=\(includesSourceContext, privacy: .public) destination=\(String(describing: pasteTargetForDelivery.destination), privacy: .public)")
         vippLog.info("pipeline: about to DELIVER finalChars=\(finalText?.count ?? -1, privacy: .public) finalDigest=\(TranscriptionLineageDigest.make(finalText ?? ""), privacy: .public) outputMode=\(String(describing: outputForPasteTarget.outputMode), privacy: .public) targetAutoSend=\(outputForPasteTarget.autoSendKey.rawValue, privacy: .public) autoSendDisposition=\(String(describing: autoSendDispositionNow), privacy: .public) queuedPrimaryDecision=deferredUntilReturnBoundary leasePolicy=\(String(describing: deliveryLeasePolicy), privacy: .public) destination=\(String(describing: pasteTargetForDelivery.destination), privacy: .public) skip=\(skipPostProcessingNow, privacy: .public) \(jobIdentity.logDescription, privacy: .public)")
         await delivery.deliver(

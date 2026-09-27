@@ -72,6 +72,8 @@ final class ShortcutMonitor {
     private var onModifierOnlySequenceProgress: ((ShortcutAction, TimeInterval) -> Void)?
     private var onNextTrackKeyDown: (() -> Bool)?
     private var onPrimaryTypingFocus: ((TimeInterval) -> Void)?
+    private var onTypingStart: (() -> Void)?
+    private var bothCommandKeysDown = false
     private var isConsumingNextTrackPress = false
     private var eventTap: CFMachPort?
     private var eventTapRunLoopSource: CFRunLoopSource?
@@ -92,7 +94,8 @@ final class ShortcutMonitor {
         onShortcutInterrupted: ((ShortcutAction, TimeInterval) -> Void)? = nil,
         onModifierOnlySequenceProgress: ((ShortcutAction, TimeInterval) -> Void)? = nil,
         onNextTrackKeyDown: (() -> Bool)? = nil,
-        onPrimaryTypingFocus: ((TimeInterval) -> Void)? = nil
+        onPrimaryTypingFocus: ((TimeInterval) -> Void)? = nil,
+        onTypingStart: (() -> Void)? = nil
     ) -> Bool {
         stop()
 
@@ -111,6 +114,7 @@ final class ShortcutMonitor {
         self.onModifierOnlySequenceProgress = onModifierOnlySequenceProgress
         self.onNextTrackKeyDown = onNextTrackKeyDown
         self.onPrimaryTypingFocus = onPrimaryTypingFocus
+        self.onTypingStart = onTypingStart
 
         return installEventTap()
     }
@@ -184,6 +188,8 @@ final class ShortcutMonitor {
         onModifierOnlySequenceProgress = nil
         onNextTrackKeyDown = nil
         onPrimaryTypingFocus = nil
+        onTypingStart = nil
+        bothCommandKeysDown = false
         isConsumingNextTrackPress = false
     }
 
@@ -244,6 +250,19 @@ final class ShortcutMonitor {
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         let modifierFlags = NSEvent.ModifierFlags(rawValue: UInt(event.flags.rawValue))
         let receivedAt = ProcessInfo.processInfo.systemUptime
+        if eventKind == .flagsChanged {
+            let transition = Self.bothCommandTransition(
+                wasDown: bothCommandKeysDown, keyCode: keyCode,
+                rawFlags: modifierFlags.rawValue
+            )
+            bothCommandKeysDown = transition.isDown
+            if transition.dispatchKeyDown {
+                DispatchQueue.main.async { [onTypingStart] in onTypingStart?() }
+            }
+            // The completing press is ours; every release still reaches the
+            // foreground app. Never leave a logically held Command modifier.
+            if transition.suppressDownstream { return true }
+        }
         let primaryWasDown = shortcuts[.primaryRecording]?.isDown == true
         let shouldSuppress = handleEvent(
             kind: eventKind,
@@ -293,6 +312,7 @@ final class ShortcutMonitor {
     }
 
     private func resetPressedShortcutsAfterTapInterruption() {
+        bothCommandKeysDown = false
         let eventTime = ProcessInfo.processInfo.systemUptime
         let pressedActions = shortcuts.compactMap { action, state in
             state.isDown ? action : nil
@@ -429,7 +449,8 @@ final class ShortcutMonitor {
         // Command extends only the configured Shift-Control-Option Primary chord.
         // Strip it for that chord's existing down/up reducer so Command-first and
         // Command-last are one press, and releasing Command cannot start a second
-        // recording. The extra callback is presentation intent, never a stop route.
+        // recording. The extra callback requests microphone-off typing for that
+        // same start reservation; it never creates a delivery/stop route.
         let typingVariant = action == .primaryRecording && Self.supportsTypingVariant(state.shortcut)
         let hasTypingModifiers = typingVariant && Self.isTypingModifierChord(modifierFlags)
         let effectiveFlags = typingVariant ? modifierFlags.subtracting(.command) : modifierFlags
@@ -473,8 +494,9 @@ final class ShortcutMonitor {
             state.isDown = true
             state.pressedAt = eventTime
             state.isInterrupted = false
+            state.typingFocusRequested = hasTypingModifiers
             shortcuts[action] = state
-            dispatchKeyDown(for: action, eventTime: eventTime)
+            dispatchKeyDown(for: action, eventTime: eventTime, typingFocus: hasTypingModifiers)
         } else {
             shortcuts[action] = state
         }
@@ -511,6 +533,20 @@ final class ShortcutMonitor {
         shortcut.isModifierOnly && shortcut.modifierFlags == [.shift, .control, .option]
     }
 
+    static func bothCommandTransition(
+        wasDown: Bool, keyCode: UInt16, rawFlags: UInt
+    ) -> ModifierOnlySequenceTransition {
+        // NX_DEVICELCMDKEYMASK and NX_DEVICERCMDKEYMASK identify physical sides;
+        // aggregate .command cannot distinguish one Command key from both.
+        let both = rawFlags & 0x18 == 0x18
+        let onlyCommand = Shortcut.normalizedModifierFlags(
+            NSEvent.ModifierFlags(rawValue: rawFlags), forKeyCode: nil
+        ) == .command
+        let press = (keyCode == 54 || keyCode == 55) && both && onlyCommand && !wasDown
+        return .init(isDown: both, suppressDownstream: press,
+                     dispatchKeyDown: press, dispatchKeyUp: wasDown && !both)
+    }
+
     static func isTypingModifierChord(_ flags: NSEvent.ModifierFlags) -> Bool {
         Shortcut.normalizedModifierFlags(flags, forKeyCode: nil) == [.shift, .control, .option, .command]
     }
@@ -537,9 +573,12 @@ final class ShortcutMonitor {
         }
     }
 
-    private func dispatchKeyDown(for action: ShortcutAction, eventTime: TimeInterval) {
-        DispatchQueue.main.async { [onKeyDown] in
+    private func dispatchKeyDown(for action: ShortcutAction, eventTime: TimeInterval, typingFocus: Bool = false) {
+        DispatchQueue.main.async { [onKeyDown, onPrimaryTypingFocus] in
             onKeyDown?(action, eventTime)
+            // Set the owned intent in the same main-queue block, before the
+            // key-down handler's async start can reach hardware/provider setup.
+            if typingFocus { onPrimaryTypingFocus?(eventTime) }
         }
     }
 

@@ -173,7 +173,9 @@ class MiniRecorderPanel: NSPanel {
     private func configurePanel() {
         isFloatingPanel = true
         becomesKeyOnlyIfNeeded = true
-        level = .floating
+        // Codex Model Bar is also floating and reorders itself. A distinct level
+        // keeps this editor readable without activating it or fighting focus.
+        level = .floating + 1
         hidesOnDeactivate = false
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         isMovable = true

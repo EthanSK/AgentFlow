@@ -126,6 +126,16 @@ Forward modifier releases and preserve Primary/Next delivery ownership. Require
 microphone-free editor/controller fixtures from physical shortcut/context acceptance.
 User-requested keyboard focus behaviour — 2026-09-26.
 
+Keyboard-only start must remain an active composing session, not gesture-Pause:
+Primary still finishes it rather than unexpectedly enabling the microphone. Both
+Command keys are an additional start-only shortcut; forward all modifier releases.
+Do not prepare a streaming provider or submit the empty recovery WAV until capture
+was explicitly enabled. Test the actual pipeline with an audio-session spy and a
+delivery sink: authored text completes and is delivered once, empty input delivers
+nothing, and neither calls transcription. Group speech/typed timing in XML only
+where context is allowed; recognition-activity times are approximate, not VAD.
+User-requested microphone-off typing and timing — 2026-09-27.
+
 For a requested Soniox-versus-AssemblyAI comparison using saved recordings, read
 [references/provider-realtime-ab-test.md](references/provider-realtime-ab-test.md)
 and use `scripts/compare-realtime-stt.mjs`. Dry-run the corpus first, require one

@@ -1,10 +1,143 @@
 import AppKit
 import Foundation
 import SwiftUI
+import SwiftData
 import Testing
 @testable import VoiceInkPlusPlus
 
 struct RecorderTypedInputTests {
+    @Test @MainActor func typedOnlyProductionPipelineCompletesWithoutCallingAudioAndDeliversOnce() async throws {
+        for text in ["Typed words\nand another line", ""] {
+            let schema = Schema([Transcription.self, WordReplacement.self, SessionMetric.self])
+            let container = try ModelContainer(for: schema,
+                configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true))
+            let context = ModelContext(container)
+            let modelProvider = TypingTestModelProvider()
+            let registry = TranscriptionServiceRegistry(modelProvider: modelProvider,
+                modelsDirectory: URL(fileURLWithPath: "/tmp"), modelContext: context)
+            let output = TypingTestDelivery()
+            let audio = TypingTestAudioSession()
+            let pipeline = TranscriptionPipeline(modelContext: context, serviceRegistry: registry,
+                enhancementService: nil, delivery: output)
+            let recording = RecordingSession()
+            recording.updateTypedInput(text)
+            recording.endLiveSelectionCapture()
+            let record = Transcription(text: "", duration: 0)
+            context.insert(record)
+            let url = URL(fileURLWithPath: "/tmp/agentflow-typed-only-\(UUID()).wav")
+            let model = NativeAppleModel(name: "unused", displayName: "Unused audio provider",
+                description: "Test only", isMultilingualModel: false, supportedLanguages: [:])
+            var failures: [String] = []
+            await pipeline.run(transcription: record, audioURL: url,
+                transcriptionConfiguration: .init(mode: nil, model: model, language: "en",
+                    isRealtimeEnabled: false, requestContext: .init(language: "en", prompt: nil)),
+                jobIdentity: .init(generation: 1, enqueueSequence: 1, recordingSessionID: recording.id,
+                    transcriptionID: record.id, audioURL: url),
+                formattingConfiguration: { .init(mode: nil, isTextFormattingEnabled: false) },
+                session: audio, hasCapturedAudio: false,
+                enhancementConfiguration: { nil },
+                liveSelectionReferences: { recording.liveSelectionReferences },
+                pasteTarget: { .init(destination: .primaryCurrentInput, focusedInput: nil) },
+                outputConfiguration: { .init(mode: nil, outputMode: .paste, autoSendKey: .none, customCommand: nil) },
+                // Raw output makes this deterministic regardless of the test host's frontmost app.
+                skipPostProcessing: { true },
+                onStateChange: { _ in }, shouldCancel: { false }, isDeliveryAuthorized: { true },
+                onCancel: {}, onDismiss: {}, onTranscriptionFailure: { failures.append($0) })
+            #expect(audio.transcriptionCalls == 0)
+            #expect(failures.isEmpty)
+            #expect(record.transcriptionStatus == TranscriptionStatus.completed.rawValue)
+            #expect(output.messages == (text.isEmpty ? [] : [text]))
+            #expect(output.routes.allSatisfy { $0 == .primaryCurrentInput })
+            #expect(record.text == text)
+        }
+    }
+    @Test func bothCommandShortcutUsesBothPhysicalSidesAndOneStart() {
+        let command = NSEvent.ModifierFlags.command.rawValue
+        var down = false
+        var starts = 0
+        for (key, flags) in [(55, command | 0x08), (54, command | 0x18),
+                             (54, command | 0x18), (55, command | 0x10), (54, 0)] {
+            let result = ShortcutMonitor.bothCommandTransition(wasDown: down, keyCode: UInt16(key), rawFlags: flags)
+            if result.dispatchKeyDown { starts += 1 }
+            if flags & 0x18 != 0x18 { #expect(!result.suppressDownstream) }
+            down = result.isDown
+        }
+        #expect(starts == 1 && !down)
+        #expect(!ShortcutMonitor.bothCommandTransition(wasDown: false, keyCode: 55,
+            rawFlags: command).dispatchKeyDown)
+        #expect(!ShortcutMonitor.bothCommandTransition(wasDown: false, keyCode: 54,
+            rawFlags: command | 0x18 | NSEvent.ModifierFlags.shift.rawValue).dispatchKeyDown)
+    }
+
+    @Test @MainActor func typingOffRemainsFinishableAndKeepsAuthoredText() {
+        let session = RecordingSession()
+        session.microphoneOff = true
+        session.hasCapturedAudio = false
+        #expect(session.liveRecordingState == .recording && session.canTypeInHUD)
+        session.updateTypedInput("Only typed <text> & a newline\nkept")
+        session.endLiveSelectionCapture()
+        #expect(LiveSelectionReference.interleaving(session.liveSelectionReferences, with: "")
+            == "Only typed <text> & a newline\nkept")
+        #expect(!session.hasCapturedAudio)
+    }
+
+    @Test @MainActor func timingGroupsSpeechTypingAndSelectionWithoutChangingPlainPaste() throws {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let session = RecordingSession()
+        session.recordSpeechActivity("Speech first", at: start)
+        session.partialTranscript = "Speech first"
+        session.flushSpeechTiming()
+        session.recordLiveSelection(try #require(LiveSelectionReference("a <source>")).timed(at: start.addingTimeInterval(2)))
+        session.updateTypedInput("typed & exact", at: start.addingTimeInterval(3))
+        session.endTypingRun()
+        session.recordSpeechActivity("Speech first and later", at: start.addingTimeInterval(9))
+        session.partialTranscript = "Speech first and later"
+        session.endLiveSelectionCapture()
+        let xml = LiveSelectionReference.interleaving(session.liveSelectionReferences,
+            with: session.partialTranscript, includeTiming: true)
+        #expect(xml.components(separatedBy: "<speech_segment ").count == 3)
+        #expect(xml.contains("timing=\"approximate_transcript_activity\">\nSpeech first\n</speech_segment>"))
+        #expect(xml.contains("captured_at=\""))
+        #expect(xml.contains("<typed_text started_at=\"") && xml.contains("typed &amp; exact\n</typed_text>"))
+        #expect(!LiveSelectionReference.previewParts(session.liveSelectionReferences,
+            with: session.partialTranscript).contains(.selection("timing")))
+        let plain = LiveSelectionReference.interleaving(session.liveSelectionReferences.filter(\.isTypedText), with: "")
+        #expect(plain == "typed & exact")
+    }
+
+    @Test @MainActor func timingFlushUsesLastActivityNotDebounceExpiryAndDoesNotDuplicate() {
+        let session = RecordingSession()
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        session.recordSpeechActivity("hello", at: date)
+        session.partialTranscript = "hello"
+        session.recordSpeechActivity("hello", at: date.addingTimeInterval(30))
+        session.flushSpeechTiming()
+        session.flushSpeechTiming()
+        #expect(session.liveSelectionReferences.count == 1)
+        session.endLiveSelectionCapture()
+        #expect(session.liveSelectionReferences.count == 1)
+    }
+
+    @Test @MainActor func miniRecorderSitsAboveOtherFloatingUtilitiesWithoutActivation() {
+        let panel = MiniRecorderPanel(contentRect: .zero)
+        #expect(panel.level > .floating)
+        #expect(panel.styleMask.contains(.nonactivatingPanel))
+    }
+
+    @Test func typingOnlySkipsAudioNetworkAndEmptyReturnAtProductionBoundaries() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let pipeline = try String(contentsOf: root.appendingPathComponent("VoiceInk/Transcription/Engine/TranscriptionPipeline.swift"), encoding: .utf8)
+        #expect(pipeline.contains("if !hasCapturedAudio {"))
+        #expect(pipeline.contains("} else if let session {"))
+        #expect(pipeline.contains("if hasCapturedAudio, !skipPostProcessingNow,"))
+        let emptyGuard = try #require(pipeline.range(of: "guard let completedText = finalText"))
+        let deliver = try #require(pipeline.range(of: "await delivery.deliver("))
+        #expect(emptyGuard.lowerBound < deliver.lowerBound)
+        let engine = try String(contentsOf: root.appendingPathComponent("VoiceInk/Transcription/Engine/VoiceInkEngine.swift"), encoding: .utf8)
+        #expect(engine.contains("initiallyPaused: startedWithMicrophoneOff"))
+        #expect(engine.contains("if session.microphoneOff { return }"))
+        #expect(engine.contains("hasCapturedAudio: session.hasCapturedAudio"))
+    }
     @Test @MainActor func typingStartIntentBindsOnlyTheNewPrimaryReservation() async {
         let requestID = UUID()
         var state: RecordingState = .idle
@@ -259,5 +392,31 @@ struct RecorderTypedInputTests {
         let engine = try source("VoiceInk/Transcription/Engine/VoiceInkEngine.swift")
         #expect(engine.contains("RecorderTypingTextView.releaseKeyboardBeforeFinish()\n            active.phase = .transcribing"))
         #expect(engine.contains("session.restoreLiveContextForRetry(liveContextReferences)"))
+    }
+}
+
+@MainActor private final class TypingTestModelProvider: WhisperModelProvider {
+    var isModelLoaded: Bool { false }
+    var whisperContext: WhisperContext? { nil }
+    var loadedWhisperModel: WhisperModelFile? { nil }
+    var availableModels: [WhisperModelFile] { [] }
+}
+
+@MainActor private final class TypingTestAudioSession: TranscriptionSession {
+    var transcriptionCalls = 0
+    func prepare(configuration: TranscriptionRuntimeConfiguration) async throws -> ((Data) -> Void)? { nil }
+    func transcribe(audioURL: URL) async throws -> String {
+        transcriptionCalls += 1
+        throw VoiceInkEngineError.transcriptionFailed
+    }
+    func cancel() {}
+}
+
+@MainActor private final class TypingTestDelivery: TranscriptionDelivering {
+    var messages: [String] = []
+    var routes: [RecordingPasteDestination] = []
+    func deliver(_ request: TranscriptionDelivery.Request, actions: TranscriptionDelivery.Actions) async {
+        if let text = request.text { messages.append(text) }
+        routes.append(request.pasteTarget.destination)
     }
 }

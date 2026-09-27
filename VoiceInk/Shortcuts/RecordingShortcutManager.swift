@@ -603,6 +603,18 @@ class RecordingShortcutManager: ObservableObject {
                         self.engine.requestTypingFocus(forStart: requestID)
                     }
                 }
+            },
+            onTypingStart: { [weak self] in
+                Task { @MainActor [weak self] in
+                    guard let self, self.engine.recordingState == .idle,
+                          !self.engine.hasPendingRecordingStart,
+                          let requestID = await self.recorderUIManager.reserveRecordingStartAfterLaunchReset()
+                    else { return }
+                    // Both Command keys start only. They do not synthesize
+                    // Primary stop/pause clicks or change an existing session.
+                    self.engine.requestTypingFocus(forStart: requestID)
+                    await self.recorderUIManager.toggleRecorderPanel(reservedStartRequestID: requestID)
+                }
             }
         )
     }

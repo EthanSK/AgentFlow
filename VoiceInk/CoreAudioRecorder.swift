@@ -163,6 +163,7 @@ final class CoreAudioRecorder: @unchecked Sendable {
     // The callback gate is deliberately independent as a final boundary: even a
     // callback already queued when pause begins cannot enter the WAV or stream.
     private var isPaused = false
+    private var needsFirstCaptureConfirmation = false
     private let acceptsInputBuffers = ManagedAtomic(false)
     private var isAudioUnitInitialized = false
     private var currentDeviceID: AudioDeviceID = 0
@@ -284,7 +285,7 @@ final class CoreAudioRecorder: @unchecked Sendable {
     }
 
     /// Starts recording from the specified device to the given URL (WAV format)
-    func startRecording(toOutputFile url: URL, deviceID: AudioDeviceID) throws {
+    func startRecording(toOutputFile url: URL, deviceID: AudioDeviceID, initiallyPaused: Bool = false) throws {
         // Stop any existing recording
         stopRecording()
 
@@ -295,6 +296,16 @@ final class CoreAudioRecorder: @unchecked Sendable {
 
             // The output file is per recording; the AUHAL setup above is reused.
             try createOutputFile(at: url)
+
+            // Keyboard-start owns a valid, empty recovery WAV but never starts
+            // AUHAL or opens its PCM gate. Resume is the first capture boundary.
+            if initiallyPaused {
+                needsFirstCaptureConfirmation = true
+                isRecording = true
+                isPaused = true
+                acceptsInputBuffers.store(false, ordering: .releasing)
+                return
+            }
 
             captureStartConfirmation.reset()
             try startAudioUnit()
@@ -344,11 +355,19 @@ final class CoreAudioRecorder: @unchecked Sendable {
         // retained. Restore the paused state if the hardware refuses to restart.
         isPaused = false
         acceptsInputBuffers.store(true, ordering: .releasing)
+        if needsFirstCaptureConfirmation { captureStartConfirmation.reset() }
         let status = AudioOutputUnitStart(unit)
         guard status == noErr else {
             isPaused = true
             acceptsInputBuffers.store(false, ordering: .releasing)
             throw CoreAudioRecorderError.failedToStart(status: status)
+        }
+        if needsFirstCaptureConfirmation {
+            guard captureStartConfirmation.waitForAudio() else {
+                try pauseRecording()
+                throw CoreAudioRecorderError.noAudioReceived
+            }
+            needsFirstCaptureConfirmation = false
         }
     }
 
@@ -360,6 +379,7 @@ final class CoreAudioRecorder: @unchecked Sendable {
 
         let wasRecording = isRecording
         let wasPaused = isPaused
+        needsFirstCaptureConfirmation = false
         isRecording = false
         isPaused = false
         acceptsInputBuffers.store(false, ordering: .releasing)

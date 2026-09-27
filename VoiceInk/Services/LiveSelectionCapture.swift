@@ -64,6 +64,9 @@ struct LiveSelectionReference: Equatable {
     private let selectedText: String
     private let screenshotPath: String?
     private var typedText: String?
+    private var capturedAt: Date?
+    private var runStartedAt: Date?
+    private var speechBoundary = false
     private var spokenPrefix = ""
     private var codexThreadID: String?
     private var codexThreadTitle: String?
@@ -120,6 +123,25 @@ struct LiveSelectionReference: Equatable {
         return copy
     }
 
+    func timed(at date: Date, startedAt: Date? = nil) -> Self {
+        var copy = self
+        copy.capturedAt = date
+        copy.runStartedAt = startedAt
+        return copy
+    }
+
+    static func speechTiming(after transcript: String, startedAt: Date, endedAt: Date) -> Self {
+        // An internal timing marker, never a selected passage or HUD row.
+        var marker = Self(typedText: "timing")!
+        marker.typedText = nil
+        marker.speechBoundary = true
+        return marker.anchored(after: transcript).timed(at: endedAt, startedAt: startedAt)
+    }
+
+    private static func timestamp(_ date: Date) -> String {
+        date.formatted(.iso8601.year().month().day().time(includingFractionalSeconds: true).timeZone(separator: .colon))
+    }
+
     /// Keyboard input is authored prose, not selected source material. Keep it
     /// outside recognition so a later partial/final can never rewrite it.
     init?(typedText: String) {
@@ -134,7 +156,7 @@ struct LiveSelectionReference: Equatable {
     }
 
     var isTypedText: Bool { typedText != nil }
-    var isSelection: Bool { screenshotPath == nil && !isTypedText }
+    var isSelection: Bool { screenshotPath == nil && !isTypedText && !speechBoundary }
 
     var spokenWordCount: Int {
         spokenPrefix.split(whereSeparator: \.isWhitespace).count
@@ -210,6 +232,7 @@ struct LiveSelectionReference: Equatable {
         var previousEnd = partialTranscript.startIndex
         var parts: [PreviewPart] = []
         for reference in references {
+            if reference.speechBoundary { continue }
             let spokenWordCount = reference.spokenWordCount
             let wordCount = min(max(lastWordCount, spokenWordCount), wordEnds.count)
             let insertion = wordCount == 0 ? partialTranscript.startIndex : wordEnds[wordCount - 1]
@@ -235,7 +258,8 @@ struct LiveSelectionReference: Equatable {
     static func interleaving(
         _ references: [Self],
         with transcript: String,
-        presentation: Presentation = .plain
+        presentation: Presentation = .plain,
+        includeTiming: Bool = false
     ) -> String {
         guard !references.isEmpty else {
             return transcript
@@ -250,6 +274,15 @@ struct LiveSelectionReference: Equatable {
         var selectionIndex = 0
         var previousEnd = transcript.startIndex
         var parts: [InterleavedPart] = []
+        func timedSpeech(_ speech: String, through wordCount: Int) -> String {
+            guard includeTiming,
+                  let timing = references.first(where: { $0.speechBoundary && $0.spokenWordCount >= wordCount }),
+                  let started = timing.runStartedAt, let ended = timing.capturedAt else { return speech }
+            // Recognition callbacks are delayed and may revise words. These are
+            // observed transcript-activity ranges, never precise audio alignment.
+            return "<speech_segment observed_start_at=\"\(timestamp(started))\" observed_end_at=\"\(timestamp(ended))\" timing=\"approximate_transcript_activity\">\n"
+                + xmlEscaped(speech) + "\n</speech_segment>"
+        }
         for reference in references {
             let spokenWordCount = reference.spokenWordCount
             let wordCount = min(max(lastWordCount, spokenWordCount), wordEnds.count)
@@ -257,17 +290,25 @@ struct LiveSelectionReference: Equatable {
             let speech = String(transcript[previousEnd..<insertion])
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if !speech.isEmpty {
-                parts.append(.text(speech))
+                parts.append(.text(timedSpeech(speech, through: wordCount)))
             }
             if reference.isSelection { selectionIndex += 1 }
-            parts.append(.reference(reference, index: selectionIndex))
+            if reference.speechBoundary {
+                // The timestamp belongs to the grouped speech, not a free-floating tag.
+            } else if includeTiming, reference.isTypedText, let ended = reference.capturedAt {
+                let started = reference.runStartedAt ?? ended
+                parts.append(.text("<typed_text started_at=\"\(timestamp(started))\" ended_at=\"\(timestamp(ended))\">\n"
+                    + xmlEscaped(reference.typedText ?? "") + "\n</typed_text>"))
+            } else {
+                parts.append(.reference(reference, index: selectionIndex))
+            }
             previousEnd = insertion
             lastWordCount = wordCount
         }
         let remainingSpeech = String(transcript[previousEnd...])
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if !remainingSpeech.isEmpty {
-            parts.append(.text(remainingSpeech))
+            parts.append(.text(timedSpeech(remainingSpeech, through: wordEnds.count)))
         }
         // Plain output must stay byte-identical to the accepted grammar: older
         // messages, the interpretation skill, and History all depend on it.
@@ -346,8 +387,9 @@ struct LiveSelectionReference: Equatable {
         if let typedText { return typedText }
         // Emitted only when the preview paragraph directly above was included.
         let displayCopy = hasDisplayCopy ? " display_copy=\"above\"" : ""
+        let timing = capturedAt.map { " captured_at=\"\(Self.timestamp($0))\"" } ?? ""
         if let screenshotPath {
-            return "<local_screenshot path=\"\(Self.xmlEscaped(screenshotPath))\"\(displayCopy)/>"
+            return "<local_screenshot path=\"\(Self.xmlEscaped(screenshotPath))\"\(timing)\(displayCopy)/>"
         }
         let tag: String
         var attributes: String
@@ -387,7 +429,7 @@ struct LiveSelectionReference: Equatable {
             attributes += " task_scope=\"multiple_visible_chats\""
             attributes += " visible_task_ids=\"\(visibleCodexThreadIDs.joined(separator: ","))\""
         }
-        attributes += displayCopy
+        attributes += timing + displayCopy
         return "<\(tag) \(attributes)>\n"
             + "  <text>\(Self.xmlEscaped(selectedText))</text>\n"
             + "</\(tag)>"
@@ -991,7 +1033,8 @@ final class LiveSelectionCapture {
             guard Self.isNativeScreenshot(url, since: screenshotStart),
                   let reference = LiveSelectionReference(screenshotURL: url) else { continue }
             screenshotBaseline.insert(name)
-            onCapture(reference, false)
+            let created = (try? url.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? Date()
+            onCapture(reference.timed(at: created), false)
         }
     }
 
@@ -1064,7 +1107,7 @@ final class LiveSelectionCapture {
                 return
             }
             beginSelectionRead(
-                from: startPoint, to: endPoint, gestureStartedAt: gestureStartedAt,
+                from: startPoint, to: endPoint, gestureStartedAt: gestureStartedAt, selectedAt: edge.occurredAt,
                 app: app, precedesSpeech: false
             )
         default:
@@ -1086,7 +1129,7 @@ final class LiveSelectionCapture {
                   frontmostPID: app.processIdentifier
               ) else { return }
         beginSelectionRead(
-            from: gesture.start, to: gesture.end, gestureStartedAt: gesture.startedAt,
+            from: gesture.start, to: gesture.end, gestureStartedAt: gesture.startedAt, selectedAt: gesture.endedAt,
             app: app, precedesSpeech: true
         )
     }
@@ -1098,6 +1141,7 @@ final class LiveSelectionCapture {
         from startPoint: NSPoint,
         to endPoint: NSPoint,
         gestureStartedAt: Date,
+        selectedAt: Date,
         app: NSRunningApplication,
         precedesSpeech: Bool
     ) {
@@ -1207,7 +1251,7 @@ final class LiveSelectionCapture {
                 return
             }
             guard let self else { return }
-            self.onCapture(labeled, precedesSpeech)
+            self.onCapture(labeled.timed(at: selectedAt), precedesSpeech)
             outcome = "emitted-to-session"
         }
     }

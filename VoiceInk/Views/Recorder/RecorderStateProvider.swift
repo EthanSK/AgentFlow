@@ -11,6 +11,9 @@ protocol RecorderStateProvider: AnyObject {
     var canTypeInHUD: Bool { get }
     var typedInput: String { get }
     var typingFocusController: RecorderTypingFocus? { get }
+    var microphoneOff: Bool { get }
+    var microphoneTransitionPending: Bool { get }
+    func toggleMicrophone()
     func updateTypedInput(_ value: String)
     func endTypingRun()
     // A realtime provider owns a live-text HUD from recording start, even before
@@ -45,6 +48,9 @@ extension RecorderStateProvider {
     var canTypeInHUD: Bool { false }
     var typedInput: String { "" }
     var typingFocusController: RecorderTypingFocus? { nil }
+    var microphoneOff: Bool { recordingState == .paused }
+    var microphoneTransitionPending: Bool { false }
+    func toggleMicrophone() {}
     func updateTypedInput(_ value: String) {}
     func endTypingRun() {}
 

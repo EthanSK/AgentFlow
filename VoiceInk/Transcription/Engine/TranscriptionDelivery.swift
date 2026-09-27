@@ -3,7 +3,12 @@ import AppKit   // NSWorkspace (frontmost-app pid for VIPPDebug paste logging)
 import os
 
 @MainActor
-final class TranscriptionDelivery {
+protocol TranscriptionDelivering {
+    func deliver(_ request: TranscriptionDelivery.Request, actions: TranscriptionDelivery.Actions) async
+}
+
+@MainActor
+final class TranscriptionDelivery: TranscriptionDelivering {
     // Upstream VoiceInk waits 500 ms after Cmd-V before generic auto-send. Primary
     // keeps the same base current-input architecture, but 220 ms matches the proven
     // effective timing of the former System Events path while staying well below

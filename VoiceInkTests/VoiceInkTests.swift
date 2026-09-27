@@ -4617,8 +4617,10 @@ struct VoiceInkTests {
 
     @Test func recorderSeparatesPlaybackRestorationFromSystemUnmuteTask() throws {
         let source = try repositorySource("VoiceInk/Recorder.swift")
+        let stop = try #require(source.range(of: "    func stopRecording(\n"))
         let finishCall = try #require(source.range(
-            of: "playbackController.finishRecordingPause("
+            of: "playbackController.finishRecordingPause(",
+            range: stop.upperBound..<source.endIndex
         ))
         let restorationTask = try #require(source.range(
             of: "audioRestorationTask = Task {",

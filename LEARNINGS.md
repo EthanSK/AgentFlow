@@ -1,5 +1,31 @@
 # Learnings
 
+## 2026-09-27 — Keyboard-only completion is not an empty audio request
+
+The previous pipeline obtained provider text before attaching keyboard runs, so
+typing with no speech could still end as a transcription failure. Microphone-off
+starts now keep the composing state separate from gesture-Pause: Primary still
+finishes, while an explicit mic enable begins capture. Keep the empty recovery WAV
+for queue identity, but do not send it to a provider or open a realtime session.
+The production pipeline accepts authored text locally and refuses empty delivery
+before paste/Return. The typing suite exercises that boundary with a throwing audio
+spy and an injected delivery sink rather than touching a user's current input.
+
+Both Command keys need device-specific left/right flag bits; the aggregate Command
+flag cannot identify this chord. Consume only its completing press and preserve
+releases. It is start-only, independent of the Primary multi-click classifier.
+
+The model-switcher and MiniRecorderPanel previously shared the floating window
+level. Reordering the model strip could obscure the editor. A distinct recorder
+level is preferable to repeatedly bringing it forward or activating it.
+
+Speech timing comes from changed live transcript callbacks, not audio/VAD alignment.
+After five seconds of inactivity (or finish/pause), group the bounded speech in XML
+with approximate observed times. Selection tags use gesture-end timestamps, not
+completion of their asynchronous AX/bridge read. Typed-run timestamps belong to
+their XML group. Keep all timing out of speech-provider prompts and out of ordinary
+non-AI paste, while preserving the authored words.
+
 ## 2026-09-27 — Inline deleted diff text is not an editor selection
 
 Ethan's failed VS Code references contained U+FFFC plus the private-use codicon

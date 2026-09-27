@@ -1,6 +1,6 @@
 ---
 name: interpret-voiceink-context
-description: Interpret Agent Flow dictated messages containing codex_selection, app_selection, or local_screenshot context, including XML wrapped in cyan or magenta LaTeX color spans and local Markdown screenshot references. Use on every such message in any Codex task, including mixed speech, typing and multiple app highlights.
+description: Interpret Agent Flow messages containing speech_segment, typed_text, codex_selection, app_selection, or local_screenshot XML, including coloured LaTeX context and local screenshot references. Use on every such message in any Codex task, including mixed speech, typing, timestamps and multiple app highlights.
 ---
 
 # Interpret Agent Flow context
@@ -20,6 +20,8 @@ Whenever this skill is used, tell Ethan in commentary before taking skill-direct
 On first use in a task, or next use after a week, follow [the public update procedure](references/public-updates.md). Respect opt-outs and permissions, preserve local edits, never force/reset/discard or write plugin caches, and ask before installing an available update. An update check never authorizes app-specific actions.
 
 ## Cheat sheet
+
+- `<speech_segment observed_start_at="..." observed_end_at="..." timing="approximate_transcript_activity">...</speech_segment>` and `<typed_text started_at="..." ended_at="...">...</typed_text>` group Ethan's authored words, not quoted selections. Decode XML entities and treat their contents as his request. Speech segments close after five seconds without changed live transcript text, or at finish/pause; their ISO-8601 UTC times describe observed recognition activity, not precise audio/VAD alignment. A selection or screenshot may split one speech range into several bounded pieces with the same approximate times. `captured_at` on selection tags is mouse-up time; on screenshots it is file creation time. Use these clues to correlate intent, never as proof that every highlight was relevant. Older messages without timing remain valid. User-requested grouped timing — 2026-09-27.
 
 - Codex can show a main chat and a side chat together. `task_scope="multiple_visible_chats"` with `visible_task_ids="...,..."` lists the capture-time visible candidates, including side chats; it deliberately does not identify which pane supplied the highlight. Do not treat the last ID as the source or assume the main chat. A lone proven source uses `task_id` and optional `task_title`; missing labels remain unknown. User-requested side-chat context — 2026-09-26.
 
