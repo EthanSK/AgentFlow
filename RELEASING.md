@@ -1,5 +1,14 @@
 # Public Agent Flow releases
 
+[v2.0.365](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.365) separates
+different context section types with one blank line, keeps matching types compact,
+and leaves apostrophes/quotation marks readable in XML text while preserving safe
+attribute escaping. Source: `d00c8c3bcc4e96c1e68a12685849d4e5d71a1da5`;
+exact-build gate: 459 named tests across 18 suites through Xcode's canonical action.
+The universal Release archive is Developer ID signed, Apple notarized and stapled;
+the downloaded public ZIP matched SHA-256
+`da3558e4be95639e91ab0bb1aa2ca88c02fd8664a446866548afb2c0b825d744`.
+
 [v2.0.364](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.364) publishes plain
 History previews, natively rendered context, and an explicitly labelled session
 timing window for short speech without live callbacks. Stored/copied content and
