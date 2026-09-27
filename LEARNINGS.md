@@ -1,5 +1,27 @@
 # Learnings
 
+## 2026-09-28 — A paste-event limit is not a same-draft attachment limit
+
+Read-only inspection of ChatGPT.app 26.924.22138 (build 11645) confirms that the
+Codex composer compares the larger of plain-text and converted-Markdown lengths
+against 5,000 JavaScript UTF-16 units for each paste event. This is neither an
+accumulated draft-size limit nor Agent Flow's separate 64,000-unit presentation
+budget. Keep those three boundaries distinct, including emoji and LaTeX expansion.
+
+The same handler processes non-image files before text, so one clipboard event
+cannot both insert the opening prose and attach its context file. This does not
+prevent one draft from containing prose and files added through separate actions.
+The host also tracks pending attachments and waits for upload completion in its
+dictation path; posting paste and waiting a fixed interval is not proof of readiness.
+
+A hybrid delivery therefore needs proven existing-draft attachment support,
+bounded target/readiness checks, complete retained source content and one final
+submission only after both parts are accepted. Preserve existing attachments and
+the file until ingestion. App-server `turn/start` is not an existing-composer API.
+Source inspection establishes these constraints, not physical attachment acceptance;
+the latter still requires a disposable composer test. Do not bypass a Computer Use
+refusal or silently weaken Primary's current-input and the two Next route contracts.
+
 ## 2026-09-27 — A character-count shortcut can jump the HUD to full height
 
 The build-364 screenshot of a long dictation shows a near-screen-height recorder

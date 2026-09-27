@@ -218,6 +218,14 @@ the destination app accepted paste or submitted text.
 - **Reconsider only if:** a documented Codex API attaches a local image to the exact focused
   composer without another paste, focus change, or Return race, and a disposable-task physical
   test proves the attachment arrives with the same message.
+- **Scope clarification — 2026-09-28:** This rejects the single-event screenshot-plus-prose
+  mechanism under the then-current one-paste Primary contract, not every prose-plus-file
+  draft. Ethan's separately authorised long-message hybrid is a distinct design: bounded inline
+  prose and a complete text attachment added in separate steps to the same existing draft.
+  It needs an explicit route-contract decision and proven attachment/target readiness before
+  optional submission. A fixed delay, separate app-server turn, or private-IPC/Computer Use
+  bypass does not satisfy that gate. Source-level support for mixed drafts is not a physical
+  acceptance receipt.
 
 ## Red-box warnings
 
