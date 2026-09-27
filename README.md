@@ -14,9 +14,9 @@
 
 ## Download
 
-[Download Agent Flow v2.0.361 for Mac](https://github.com/EthanSK/AgentFlow/releases/download/v2.0.361/AgentFlow-v2.0.361-mac-universal.zip). Requires macOS 14.4 or later; supports Apple silicon and Intel. The public app is Developer ID signed, Apple notarized and stapled. Unzip it and move Agent Flow to Applications, then follow [Setup](SETUP.md).
+[Download Agent Flow v2.0.362 for Mac](https://github.com/EthanSK/AgentFlow/releases/download/v2.0.362/AgentFlow-v2.0.362-mac-universal.zip). Requires macOS 14.4 or later; supports Apple silicon and Intel. The public app is Developer ID signed, Apple notarized and stapled. Unzip it and move Agent Flow to Applications, then follow [Setup](SETUP.md).
 
-[Release notes and checksums](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.361) · [Build from source](#build-from-source)
+[Release notes and checksums](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.362) · [Build from source](#build-from-source)
 
 Updates are manual for now. The app's upstream VoiceInk check only reports releases; it does not install them over Agent Flow.
 
