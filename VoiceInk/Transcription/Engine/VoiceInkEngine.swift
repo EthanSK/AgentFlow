@@ -278,9 +278,11 @@ class VoiceInkEngine: NSObject, ObservableObject {
         do {
             if session.microphoneOff || session.liveRecordingState == .paused {
                 try await recorder.enableMicrophoneCapture()
-                guard activeRecordingSession === session else { return }
+                // Stop can publish .transcribing while waiting for this transition.
+                // Retain the fact that AUHAL captured audio before the live-UI guard,
+                // otherwise that same session would wrongly take typing-only finish.
                 session.hasCapturedAudio = true
-                guard session.phase == .recording else { return }
+                guard activeRecordingSession === session, session.phase == .recording else { return }
                 session.microphoneOff = false
                 session.liveRecordingState = .recording
                 let prepare = session.prepareMicrophoneTranscription
@@ -618,6 +620,9 @@ class VoiceInkEngine: NSObject, ObservableObject {
 
             case .paused:
                 try await recorder.enableMicrophoneCapture()
+                // The stop path waits for this transition; it still owns the audio
+                // even if it has already moved this session out of recording.
+                session.hasCapturedAudio = true
                 guard activeRecordingSession === session,
                       session.phase == .recording,
                       session.liveRecordingState == previousState,
@@ -626,7 +631,6 @@ class VoiceInkEngine: NSObject, ObservableObject {
                 }
                 session.liveRecordingState = .recording
                 session.microphoneOff = false
-                session.hasCapturedAudio = true
                 let prepare = session.prepareMicrophoneTranscription
                 session.prepareMicrophoneTranscription = nil
                 try await prepare?()

@@ -151,6 +151,13 @@ struct RecorderTypedInputTests {
         #expect(engine.contains("initiallyPaused: startedWithMicrophoneOff"))
         #expect(engine.contains("if session.microphoneOff { return }"))
         #expect(engine.contains("hasCapturedAudio: session.hasCapturedAudio"))
+        let enables = engine.components(separatedBy: "try await recorder.enableMicrophoneCapture()")
+        #expect(enables.count == 3)
+        for continuation in enables.dropFirst() {
+            let captured = try #require(continuation.range(of: "session.hasCapturedAudio = true"))
+            let liveGuard = try #require(continuation.range(of: "guard activeRecordingSession === session"))
+            #expect(captured.lowerBound < liveGuard.lowerBound)
+        }
     }
     @Test @MainActor func typingStartIntentBindsOnlyTheNewPrimaryReservation() async {
         let requestID = UUID()

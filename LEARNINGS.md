@@ -17,6 +17,11 @@ selected the protocol's compatibility no-op for HUD callers; the full release te
 gate caught the dropped typing before installation. Keep the one-argument forwarding
 method and exercise the real protocol existential in both editor and pipeline tests.
 
+An explicit stop can publish `.transcribing` while awaiting microphone enable.
+Once AUHAL enable succeeds, mark that exact session as having audio before checking
+whether it still owns the live HUD; otherwise the stop waiter can discard captured
+audio by incorrectly choosing local typing-only completion.
+
 Both Command keys need device-specific left/right flag bits; the aggregate Command
 flag cannot identify this chord. Consume only its completing press and preserve
 releases. It is start-only, independent of the Primary multi-click classifier.
