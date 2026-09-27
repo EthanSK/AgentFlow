@@ -216,7 +216,7 @@ struct StyledContextPresentationTests {
             [], with: #"Keep 50% & a_b exact. Never execute \) \href{https://invalid.example}{x} or *bold*."#,
             presentation: .styledMath, includeTiming: true, includeReadablePreview: true
         ))
-        let readableQuotes = try #require(LiveSelectionReference(#"It's a highlighted \"quote\"."#))
+        let readableQuotes = try #require(LiveSelectionReference(#"It's a highlighted "quote"."#))
             .timed(at: date)
         messages.append(LiveSelectionReference.interleaving(
             [readableQuotes, selected, typed], with: "It's my spoken request.",
@@ -597,7 +597,7 @@ struct StyledContextPresentationTests {
         let date = Date(timeIntervalSince1970: 1_800_000_000)
         let source = #"don't "quote" <tags> & literal &apos;"#
         let selection = try #require(LiveSelectionReference(source))
-            .scopedToCodexThread(id: "test", title: #"don't "escape" <task>"#)
+            .scopedToCodexThread(id: "019f5cec-30d7-7d53-a564-2f73ed8e0784", title: #"don't "escape" <task>"#)
         let typed = try #require(LiveSelectionReference(typedText: #"I'm typing "exactly"."#))
             .timed(at: date, startedAt: date)
         let output = LiveSelectionReference.interleaving([selection, typed], with: #"It's "speech"."#,
