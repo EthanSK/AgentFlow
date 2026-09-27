@@ -28,7 +28,8 @@ struct HistoryContextPresentationTests {
     }
 
     @Test func escapesAndAdjacentChunksPreserveExactVisibleText() {
-        let source = #"\(\textsf{\color{#67e8f9}\textbackslash{}\_\&\%\#\$\{\}{[}{]}\textasciicircum{}\textasciitilde{}}\)"#
+        // Two raw-string delimiters preserve the literal TeX \# escape.
+        let source = ##"\(\textsf{\color{#67e8f9}\textbackslash{}\_\&\%\#\$\{\}{[}{]}\textasciicircum{}\textasciitilde{}}\)"##
             + "\u{200B}" + #"\(\textsf{\color{#67e8f9}more}\)"#
         #expect(HistoryContextPresentation.document(source).plainText == "\\_&%#${}[]^~more")
         #expect(HistoryContextPresentation.document("plain\u{200B}text").plainText == "plain\u{200B}text")
