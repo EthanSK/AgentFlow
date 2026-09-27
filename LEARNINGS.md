@@ -1,5 +1,27 @@
 # Learnings
 
+## 2026-09-27 — Italic metadata must preserve payload and whole-message rendering
+
+The compact styled timeline renders every actual XML tag and attribute in
+`\\textit` inside its existing fixed section colour; payload text stays upright.
+Only adjacent metadata boundaries are compacted. Preserve exact source whitespace
+inside selection text, separate screenshot Markdown references from math, and keep
+the rainbow duplicate opening in its own paragraph. The styled outer context
+envelope avoids the raw-HTML parser boundary described below; historical plain
+envelopes still require the documented blank-line boundary. Never infer that an
+isolated formula rendering proves the complete pasted message will render.
+
+Verification used the installed Codex host's actual Markdown lexer and math
+extension for eight complete production fixtures, with 221 formulas and no KaTeX
+errors, plus a synthetic visual preview. Exact-text round trips, upright payload,
+italic tags, adjacent-tag compaction and complete plain fallback remain regression
+guards. This is not a claim that a live sent Codex bubble was manually verified.
+
+Ordinary main-window opening defaults to History, including reopening an existing
+window. Explicit destinations such as Settings, models and file transcription
+must still override that default; centralize the default in the navigation policy
+rather than changing every menu action into an unconditional History redirect.
+
 ## 2026-09-27 — Compact timing changes the representation, not the clock
 
 Context timestamps use locale-independent Unix seconds with three decimal places
