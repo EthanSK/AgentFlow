@@ -144,6 +144,7 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                     completionDisposition: stateProvider.completionDisposition,
                     recorder: recorder
                 )
+                .background(RecorderPanelDragSurface())
             }
 
             Spacer(minLength: 0)
