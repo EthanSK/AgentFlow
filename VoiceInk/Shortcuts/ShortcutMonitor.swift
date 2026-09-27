@@ -95,7 +95,8 @@ final class ShortcutMonitor {
         onModifierOnlySequenceProgress: ((ShortcutAction, TimeInterval) -> Void)? = nil,
         onNextTrackKeyDown: (() -> Bool)? = nil,
         onPrimaryTypingFocus: ((TimeInterval) -> Void)? = nil,
-        onTypingStart: (() -> Void)? = nil
+        onTypingStart: (() -> Void)? = nil,
+        installSystemEventTap: Bool = true
     ) -> Bool {
         stop()
 
@@ -116,7 +117,9 @@ final class ShortcutMonitor {
         self.onPrimaryTypingFocus = onPrimaryTypingFocus
         self.onTypingStart = onTypingStart
 
-        return installEventTap()
+        // Offline event-routing fixtures use the exact callback configuration
+        // without registering a second global keyboard consumer on the test Mac.
+        return !installSystemEventTap || installEventTap()
     }
 
     /// Proactively make sure the global hotkey event tap is installed AND enabled.
@@ -238,7 +241,7 @@ final class ShortcutMonitor {
         return true
     }
 
-    private func handleCGEvent(type: CGEventType, event: CGEvent) -> Bool {
+    func handleCGEvent(type: CGEventType, event: CGEvent) -> Bool {
         if type.rawValue == UInt32(NX_SYSDEFINED) {
             return handleSystemDefinedEvent(event)
         }
@@ -250,14 +253,20 @@ final class ShortcutMonitor {
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         let modifierFlags = NSEvent.ModifierFlags(rawValue: UInt(event.flags.rawValue))
         let receivedAt = ProcessInfo.processInfo.systemUptime
-        if eventKind == .flagsChanged {
+        if eventKind == .flagsChanged, let onTypingStart {
+            // ShortcutMonitor is shared by recording, Mode and visible-panel
+            // listeners. Only the recording listener owns both Command keys.
+            // The panel listener is inserted ahead of it when the HUD opens;
+            // consuming this chord there with a nil action made Start work but
+            // swallowed every Finish. Non-owners must pass it through untouched.
             let transition = Self.bothCommandTransition(
                 wasDown: bothCommandKeysDown, keyCode: keyCode,
                 rawFlags: modifierFlags.rawValue
             )
             bothCommandKeysDown = transition.isDown
             if transition.dispatchKeyDown {
-                DispatchQueue.main.async { [onTypingStart] in onTypingStart?() }
+                logger.info("Both Command shortcut accepted owner=recording")
+                DispatchQueue.main.async { onTypingStart() }
             }
             // The completing press is ours; every release still reaches the
             // foreground app. Never leave a logically held Command modifier.

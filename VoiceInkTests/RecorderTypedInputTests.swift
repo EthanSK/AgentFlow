@@ -6,6 +6,76 @@ import Testing
 @testable import VoiceInkPlusPlus
 
 struct RecorderTypedInputTests {
+    @Test @MainActor func bothCommandFinishesThroughVisiblePanelAndModeMonitors() async throws {
+        // Replay real CGEvents through the production tap handler, in the same
+        // head-insert order as macOS. Build 355's panel monitor swallowed the
+        // second chord before the recording monitor's callback could run.
+        let recording = ShortcutMonitor()
+        let panel = ShortcutMonitor()
+        let modes = ShortcutMonitor()
+        defer { recording.stop(); panel.stop(); modes.stop() }
+        var state: RecordingState = .idle
+        var starts = 0
+        var finishes: [RecordingPasteDestination] = []
+        var callbacks = 0
+        let handler = RecordingShortcutModeHandler(
+            canHandleShortcutAction: { true }, isRecorderVisible: { state != .idle },
+            recordingState: { state },
+            toggleRecorderPanel: { _, route in finishes.append(route); state = .idle },
+            cancelRecording: {}, reserveRecordingStart: { UUID() },
+            startReservedRecording: { _, _ in starts += 1; state = .recording }
+        )
+        recording.start(shortcuts: [.primaryRecording: .modifierOnly(keyCode: nil,
+            modifierFlags: [.shift, .control, .option])],
+            onKeyDown: { _, _ in }, onKeyUp: { _, _ in },
+            onTypingStart: {
+                callbacks += 1
+                Task { @MainActor in await handler.handleTypingToggle { _ in } }
+            }, installSystemEventTap: false)
+        panel.start(shortcuts: RecorderPanelShortcutPolicy.shortcuts(
+            explicitCancelShortcut: nil, canUseModeShortcuts: true),
+            onKeyDown: { _, _ in }, onKeyUp: { _, _ in }, installSystemEventTap: false)
+        modes.start(shortcuts: [.mode(UUID()): .key(keyCode: 18, modifierFlags: [.control])],
+            onKeyDown: { _, _ in }, onKeyUp: { _, _ in }, installSystemEventTap: false)
+        let command = CGEventFlags.maskCommand.rawValue
+        func chord(through monitors: [ShortcutMonitor], rightFirst: Bool = false) async throws {
+            let first: UInt16 = rightFirst ? 54 : 55
+            let second: UInt16 = rightFirst ? 55 : 54
+            let firstBit: UInt64 = rightFirst ? 0x10 : 0x08
+            let secondBit: UInt64 = rightFirst ? 0x08 : 0x10
+            for (key, flags, shouldConsume) in [
+                (first, command | firstBit, false), (second, command | 0x18, true),
+                (first, command | secondBit, false), (second, UInt64(0), false)
+            ] {
+                let event = try #require(CGEvent(keyboardEventSource: nil,
+                    virtualKey: key, keyDown: true))
+                event.type = .flagsChanged
+                event.flags = CGEventFlags(rawValue: flags)
+                var consumed = false
+                for monitor in monitors {
+                    if monitor.handleCGEvent(type: .flagsChanged, event: event) {
+                        #expect(monitor === recording)
+                        consumed = true
+                        break
+                    }
+                }
+                #expect(consumed == shouldConsume)
+            }
+            // Drain the actual tap-to-main-queue-to-handler handoff.
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        try await chord(through: [modes, recording])
+        #expect(state == .recording && starts == 1 && callbacks == 1)
+        try await chord(through: [panel, modes, recording])
+        #expect(state == .idle && finishes == [.primaryCurrentInput] && callbacks == 2)
+        try await chord(through: [modes, recording], rightFirst: true)
+        state = .paused
+        try await chord(through: [panel, modes, recording], rightFirst: true)
+        #expect(starts == 2 && finishes == [.primaryCurrentInput, .primaryCurrentInput])
+        #expect(callbacks == 4)
+        handler.reset()
+    }
+
     @Test @MainActor func scaledHUDControlsReceiveClicksAtEverySupportedSize() throws {
         // Use the real controls and actual AppKit event dispatch, not AXPress or
         // action closures called by the test. The old ancestor-bounds transform
