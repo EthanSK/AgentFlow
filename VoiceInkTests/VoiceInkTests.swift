@@ -852,6 +852,41 @@ struct VoiceInkTests {
         #expect(components.contains(".font(.system(size: MiniRecorderLayoutMetrics.liveTranscriptFontSize))"))
     }
 
+    @Test @MainActor func recorderHeightDoesNotJumpAtFormerCharacterCutoff() {
+        let base = String(repeating: "a sentence with several words. ", count: 100)
+        let before = String(base.prefix(3_000))
+        let after = before + "x"
+        #expect(before.count == 3_000)
+        for width: CGFloat in [688, 960] {
+            for cap: CGFloat in [1_100, 1_450] {
+                let speechBefore = MiniRecorderLayoutMetrics.transcriptHeight(
+                    parts: [.speech(before)], width: width, maxHeight: cap
+                )
+                let speechAfter = MiniRecorderLayoutMetrics.transcriptHeight(
+                    parts: [.speech(after)], width: width, maxHeight: cap
+                )
+                let typingBefore = MiniRecorderLayoutMetrics.typingHeight(
+                    text: before, width: width, maxHeight: cap
+                )
+                let typingAfter = MiniRecorderLayoutMetrics.typingHeight(
+                    text: after, width: width, maxHeight: cap
+                )
+                #expect(abs(speechAfter - speechBefore) < 40)
+                #expect(abs(typingAfter - typingBefore) < 40)
+                #expect(speechAfter <= cap)
+                #expect(typingAfter <= cap)
+                #expect(speechAfter < 1_450)
+            }
+        }
+        let saturated = String(repeating: "this is a much longer dictation. ", count: 4_000)
+        #expect(MiniRecorderLayoutMetrics.transcriptHeight(
+            parts: [.speech(saturated)], width: 688, maxHeight: 1_450
+        ) == 1_450)
+        #expect(MiniRecorderLayoutMetrics.typingHeight(
+            text: saturated, width: 688, maxHeight: 1_450
+        ) == 1_450)
+    }
+
     @Test func recorderHUDSizePersistsAndScalesTheWholeHost() throws {
         let suite = "VoiceInkHUDScaleTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))

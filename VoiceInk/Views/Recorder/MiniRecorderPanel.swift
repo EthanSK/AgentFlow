@@ -35,16 +35,34 @@ enum MiniRecorderLayoutMetrics {
     static let assistantPanelHeight: CGFloat = 320
     static let stackedCardSpacing: CGFloat = 46
 
+    /// Lay out only the lines that can fit in the current display's envelope.
+    /// A character count cannot establish that the HUD is full: at the same
+    /// font and width, 3,001 characters measured 919pt but the old shortcut
+    /// jumped straight to a 1,450pt panel. TextKit's height-bounded container
+    /// avoids that discontinuity without laying out an unbounded transcript
+    /// on every live provider update.
+    private static func measuredHeight(_ text: String, width: CGFloat, limit: CGFloat) -> CGFloat {
+        let storage = NSTextStorage(string: text, attributes: [
+            .font: NSFont.systemFont(ofSize: liveTranscriptFontSize)
+        ])
+        let layout = NSLayoutManager()
+        let container = NSTextContainer(size: NSSize(
+            width: max(1, width), height: max(1, limit - 16)
+        ))
+        container.lineFragmentPadding = 0
+        container.lineBreakMode = .byWordWrapping
+        layout.addTextContainer(container)
+        storage.addLayoutManager(layout)
+        _ = layout.glyphRange(for: container)
+        return min(limit, ceil(layout.usedRect(for: container).height) + 16)
+    }
+
     static func typingHeight(text: String, width: CGFloat, maxHeight: CGFloat) -> CGFloat {
         let limit = max(typedInputHeight, maxHeight)
         // Include the trailing insertion line: NSString otherwise omits it after Return.
-        if text.count > 3_000 { return limit }
-        let bounds = ((text + "\u{200B}") as NSString).boundingRect(
-            with: NSSize(width: max(1, width - 34 - typedInputControlWidth), height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: [.font: NSFont.systemFont(ofSize: liveTranscriptFontSize)]
-        )
-        return min(limit, max(typedInputHeight, ceil(bounds.height) + 16))
+        return max(typedInputHeight, measuredHeight(
+            text + "\u{200B}", width: width - 34 - typedInputControlWidth, limit: limit
+        ))
     }
 
     static func contextHeight(
@@ -79,16 +97,8 @@ enum MiniRecorderLayoutMetrics {
             }
         }.joined(separator: "  ")
         let content = plain.isEmpty ? "…" : plain
-        // After enough dictated context to fill any normal display, measuring
-        // the whole transcript on every provider partial would add HUD latency.
-        if content.count > 3_000 { return max(minimumHeight, maxHeight) }
-        let bounds = (content as NSString).boundingRect(
-            with: NSSize(width: max(1, width - 32), height: .greatestFiniteMagnitude),
-            options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: [.font: NSFont.systemFont(ofSize: liveTranscriptFontSize)]
-        )
-        return min(max(minimumHeight, maxHeight),
-                   max(minimumHeight, ceil(bounds.height) + 16))
+        let limit = max(minimumHeight, maxHeight)
+        return max(minimumHeight, measuredHeight(content, width: width - 32, limit: limit))
     }
 
     static func notificationBottomReservedHeight(
