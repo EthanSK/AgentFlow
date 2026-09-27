@@ -73,7 +73,7 @@ final class ShortcutMonitor {
     private var onNextTrackKeyDown: (() -> Bool)?
     private var onPrimaryTypingFocus: ((TimeInterval) -> Void)?
     private var onTypingStart: (() -> Void)?
-    private var bothCommandKeysDown = false
+    private var typingToggleKeysDown = false
     private var isConsumingNextTrackPress = false
     private var eventTap: CFMachPort?
     private var eventTapRunLoopSource: CFRunLoopSource?
@@ -192,7 +192,7 @@ final class ShortcutMonitor {
         onNextTrackKeyDown = nil
         onPrimaryTypingFocus = nil
         onTypingStart = nil
-        bothCommandKeysDown = false
+        typingToggleKeysDown = false
         isConsumingNextTrackPress = false
     }
 
@@ -255,17 +255,17 @@ final class ShortcutMonitor {
         let receivedAt = ProcessInfo.processInfo.systemUptime
         if eventKind == .flagsChanged, let onTypingStart {
             // ShortcutMonitor is shared by recording, Mode and visible-panel
-            // listeners. Only the recording listener owns both Command keys.
+            // listeners. Only the recording listener owns the typing chord.
             // The panel listener is inserted ahead of it when the HUD opens;
             // consuming this chord there with a nil action made Start work but
             // swallowed every Finish. Non-owners must pass it through untouched.
-            let transition = Self.bothCommandTransition(
-                wasDown: bothCommandKeysDown, keyCode: keyCode,
+            let transition = Self.typingToggleTransition(
+                wasDown: typingToggleKeysDown, keyCode: keyCode,
                 rawFlags: modifierFlags.rawValue
             )
-            bothCommandKeysDown = transition.isDown
+            typingToggleKeysDown = transition.isDown
             if transition.dispatchKeyDown {
-                logger.info("Both Command shortcut accepted owner=recording")
+                logger.info("Typing shortcut accepted owner=recording chord=bothCommandAndOption")
                 DispatchQueue.main.async { onTypingStart() }
             }
             // The completing press is ours; every release still reaches the
@@ -321,7 +321,7 @@ final class ShortcutMonitor {
     }
 
     private func resetPressedShortcutsAfterTapInterruption() {
-        bothCommandKeysDown = false
+        typingToggleKeysDown = false
         let eventTime = ProcessInfo.processInfo.systemUptime
         let pressedActions = shortcuts.compactMap { action, state in
             state.isDown ? action : nil
@@ -542,18 +542,21 @@ final class ShortcutMonitor {
         shortcut.isModifierOnly && shortcut.modifierFlags == [.shift, .control, .option]
     }
 
-    static func bothCommandTransition(
+    static func typingToggleTransition(
         wasDown: Bool, keyCode: UInt16, rawFlags: UInt
     ) -> ModifierOnlySequenceTransition {
-        // NX_DEVICELCMDKEYMASK and NX_DEVICERCMDKEYMASK identify physical sides;
-        // aggregate .command cannot distinguish one Command key from both.
-        let both = rawFlags & 0x18 == 0x18
-        let onlyCommand = Shortcut.normalizedModifierFlags(
+        // Ethan reserves both Command keys elsewhere. Typing now requires ALL
+        // FOUR physical keys: left/right Command (0x08/0x10) and Option (0x20/0x40).
+        // Aggregate Command+Option cannot distinguish one side from both sides.
+        // Partial chords, the old both-Command chord, and every release pass through.
+        let allFour = rawFlags & 0x78 == 0x78
+        let onlyCommandAndOption = Shortcut.normalizedModifierFlags(
             NSEvent.ModifierFlags(rawValue: rawFlags), forKeyCode: nil
-        ) == .command
-        let press = (keyCode == 54 || keyCode == 55) && both && onlyCommand && !wasDown
-        return .init(isDown: both, suppressDownstream: press,
-                     dispatchKeyDown: press, dispatchKeyUp: wasDown && !both)
+        ) == [.command, .option]
+        let press = [UInt16(54), 55, 58, 61].contains(keyCode)
+            && allFour && onlyCommandAndOption && !wasDown
+        return .init(isDown: allFour, suppressDownstream: press,
+                     dispatchKeyDown: press, dispatchKeyUp: wasDown && !allFour)
     }
 
     static func isTypingModifierChord(_ flags: NSEvent.ModifierFlags) -> Bool {

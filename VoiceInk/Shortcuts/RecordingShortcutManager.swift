@@ -2112,9 +2112,10 @@ final class RecordingShortcutModeHandler {
         vippLog.info("shortcut: Primary quadruple-click finish success=\(didFinish, privacy: .public) destination=primaryCurrentInput paste=true autoSend=false playback=restoredIfOwned")
     }
 
-    /// Both Command keys are a complete Start/Finish control, not a Primary
-    /// multi-click gesture. Build 354 treated them as start-only; Ethan explicitly
-    /// corrected that. Finish recording OR paused composition through the normal
+    /// Both Command AND both Option keys are a complete Start/Finish control, not
+    /// a Primary multi-click gesture. The earlier both-Command chord was start-only;
+    /// Ethan corrected that and then moved it to four keys to avoid another shortcut.
+    /// Finish recording OR paused composition through the normal
     /// current-input route, never resume the mic or select a saved destination.
     func handleTypingToggle(requestTypingFocus: @MainActor (UUID) -> Void) async {
         guard !isHandlingTypingToggle else { return }

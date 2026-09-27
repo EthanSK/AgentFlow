@@ -6,7 +6,7 @@ import Testing
 @testable import VoiceInkPlusPlus
 
 struct RecorderTypedInputTests {
-    @Test @MainActor func bothCommandFinishesThroughVisiblePanelAndModeMonitors() async throws {
+    @Test @MainActor func typingChordFinishesThroughVisiblePanelAndModeMonitors() async throws {
         // Replay real CGEvents through the production tap handler, in the same
         // head-insert order as macOS. Build 355's panel monitor swallowed the
         // second chord before the recording monitor's callback could run.
@@ -37,16 +37,18 @@ struct RecorderTypedInputTests {
             onKeyDown: { _, _ in }, onKeyUp: { _, _ in }, installSystemEventTap: false)
         modes.start(shortcuts: [.mode(UUID()): .key(keyCode: 18, modifierFlags: [.control])],
             onKeyDown: { _, _ in }, onKeyUp: { _, _ in }, installSystemEventTap: false)
-        let command = CGEventFlags.maskCommand.rawValue
         func chord(through monitors: [ShortcutMonitor], rightFirst: Bool = false) async throws {
-            let first: UInt16 = rightFirst ? 54 : 55
-            let second: UInt16 = rightFirst ? 55 : 54
-            let firstBit: UInt64 = rightFirst ? 0x10 : 0x08
-            let secondBit: UInt64 = rightFirst ? 0x08 : 0x10
-            for (key, flags, shouldConsume) in [
-                (first, command | firstBit, false), (second, command | 0x18, true),
-                (first, command | secondBit, false), (second, UInt64(0), false)
-            ] {
+            let keys: [(UInt16, UInt64)] = rightFirst
+                ? [(54, 0x10), (61, 0x40), (55, 0x08), (58, 0x20)]
+                : [(55, 0x08), (58, 0x20), (54, 0x10), (61, 0x40)]
+            var held: UInt64 = 0
+            for (index, keyAndBit) in (keys + keys).enumerated() {
+                let (key, bit) = keyAndBit
+                if index < 4 { held |= bit } else { held &= ~bit }
+                var flags = held
+                if held & 0x18 != 0 { flags |= CGEventFlags.maskCommand.rawValue }
+                if held & 0x60 != 0 { flags |= CGEventFlags.maskAlternate.rawValue }
+                let shouldConsume = index == 3
                 let event = try #require(CGEvent(keyboardEventSource: nil,
                     virtualKey: key, keyDown: true))
                 event.type = .flagsChanged
@@ -196,7 +198,7 @@ struct RecorderTypedInputTests {
             #expect(record.text == text)
         }
     }
-    @Test @MainActor func bothCommandToggleStartsTypingThenFinishesRecordingAndPausedSessions() async {
+    @Test @MainActor func typingToggleStartsTypingThenFinishesRecordingAndPausedSessions() async {
         let requestID = UUID()
         var state: RecordingState = .idle
         var starts: [UUID] = []
@@ -228,22 +230,48 @@ struct RecorderTypedInputTests {
         handler.reset()
     }
 
-    @Test func bothCommandShortcutUsesBothPhysicalSidesAndOneStart() {
-        let command = NSEvent.ModifierFlags.command.rawValue
-        var down = false
-        var starts = 0
-        for (key, flags) in [(55, command | 0x08), (54, command | 0x18),
-                             (54, command | 0x18), (55, command | 0x10), (54, 0)] {
-            let result = ShortcutMonitor.bothCommandTransition(wasDown: down, keyCode: UInt16(key), rawFlags: flags)
-            if result.dispatchKeyDown { starts += 1 }
-            if flags & 0x18 != 0x18 { #expect(!result.suppressDownstream) }
-            down = result.isDown
+    @Test func typingToggleRequiresAllFourPhysicalKeysInEveryOrder() {
+        let keys: [(UInt16, UInt)] = [(55, 0x08), (54, 0x10), (58, 0x20), (61, 0x40)]
+        func orders(_ values: [(UInt16, UInt)]) -> [[(UInt16, UInt)]] {
+            if values.isEmpty { return [[]] }
+            return values.indices.flatMap { index in
+                var rest = values; let first = rest.remove(at: index)
+                return orders(rest).map { [first] + $0 }
+            }
         }
-        #expect(starts == 1 && !down)
-        #expect(!ShortcutMonitor.bothCommandTransition(wasDown: false, keyCode: 55,
-            rawFlags: command).dispatchKeyDown)
-        #expect(!ShortcutMonitor.bothCommandTransition(wasDown: false, keyCode: 54,
-            rawFlags: command | 0x18 | NSEvent.ModifierFlags.shift.rawValue).dispatchKeyDown)
+        for order in orders(keys) {
+            var held: UInt = 0
+            var down = false
+            var actions = 0
+            for (index, keyAndBit) in (order + order).enumerated() {
+                let (key, bit) = keyAndBit
+                if index < 4 { held |= bit } else { held &= ~bit }
+                var flags = held | 0x100 // Real event's unrelated non-coalesced bit.
+                if held & 0x18 != 0 { flags |= NSEvent.ModifierFlags.command.rawValue }
+                if held & 0x60 != 0 { flags |= NSEvent.ModifierFlags.option.rawValue }
+                let result = ShortcutMonitor.typingToggleTransition(wasDown: down,
+                    keyCode: key, rawFlags: flags)
+                #expect(result.dispatchKeyDown == (index == 3))
+                #expect(result.suppressDownstream == (index == 3))
+                if result.dispatchKeyDown { actions += 1 }
+                if index == 3 {
+                    #expect(!ShortcutMonitor.typingToggleTransition(wasDown: true,
+                        keyCode: key, rawFlags: flags).dispatchKeyDown)
+                }
+                down = result.isDown
+            }
+            #expect(actions == 1 && !down)
+        }
+        let full = NSEvent.ModifierFlags([.command, .option]).rawValue | 0x78
+        for extra in [NSEvent.ModifierFlags.shift, .control, .function] {
+            #expect(!ShortcutMonitor.typingToggleTransition(wasDown: false, keyCode: 61,
+                rawFlags: full | extra.rawValue).dispatchKeyDown)
+        }
+        // Neither both Command alone nor one Command+Option pair is ours anymore.
+        for bits: UInt in [0x18, 0x28, 0x50] {
+            #expect(!ShortcutMonitor.typingToggleTransition(wasDown: false, keyCode: 54,
+                rawFlags: NSEvent.ModifierFlags([.command, .option]).rawValue | bits).dispatchKeyDown)
+        }
     }
 
     @Test @MainActor func typingOffRemainsFinishableAndKeepsAuthoredText() {
