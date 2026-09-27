@@ -543,8 +543,8 @@ struct ModeConfigFormView: View {
                 // pasted too, and delivery still uses this Mode's normal route.
                 Toggle(isOn: $draft.isStyledContextEnabled) {
                     HStack(spacing: 6) {
-                        Text("Rainbow text")
-                        InfoTip("Colors the opening speech and typed text. XML stays plain. For apps that render LaTeX, such as Codex.")
+                        Text("Colored context")
+                        InfoTip("Rainbow speech and typed text, with one color per XML section type. For apps that render LaTeX, such as Codex.")
                     }
                 }
             }

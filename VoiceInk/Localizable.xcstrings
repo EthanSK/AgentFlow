@@ -1,13 +1,13 @@
 {
   "sourceLanguage": "en",
   "strings": {
-    "Colors the opening speech and typed text. XML stays plain. For apps that render LaTeX, such as Codex.": {
+    "Rainbow speech and typed text, with one color per XML section type. For apps that render LaTeX, such as Codex.": {
       "extractionState": "manual",
-      "comment": "Help for the per-Mode rainbow opening option. Structured context remains plain XML."
+      "comment": "Help for per-Mode presentation: rainbow authored opening and fixed colors by XML section type."
     },
-    "Rainbow text": {
+    "Colored context": {
       "extractionState": "manual",
-      "comment": "Per-Mode option for a rainbow-coloured authored opening; it does not style XML."
+      "comment": "Per-Mode option for the rainbow opening and colored XML sections."
     },
     "": {
       "localizations": {

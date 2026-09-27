@@ -83,12 +83,13 @@ enum LiveSelectionReadPolicy {
     static let accessibilityRetryDelays: [UInt64] = [0, 150_000_000]
     /// A newly foregrounded Electron window may publish its selected range
     /// after both ordinary reads have returned empty. Give the Codex/ChatGPT
-    /// host one later chance, not a poller or a wider Accessibility search.
+    /// host two later chances, including one for a newly loaded chat's tree,
+    /// not a poller or a wider Accessibility search.
     /// Every attempt still requires the same frontmost source and is canceled
     /// by a new mouse-down or recording stop. No extra wait follows success.
     static func accessibilityRetryDelays(for bundleID: String?) -> [UInt64] {
         bundleID == "com.openai.codex"
-            ? accessibilityRetryDelays + [350_000_000]
+            ? accessibilityRetryDelays + [350_000_000, 700_000_000]
             : accessibilityRetryDelays
     }
     /// Whole-attempt budget across every Accessibility message.
@@ -254,6 +255,11 @@ struct LiveSelectionResolution: Equatable, Sendable {
     var rejectedElsewhere = 0
     var rejectedOutsideSourceWindow = 0
     var refusedSecure = 0
+    var emptyHitTests = 0
+    var rejectedUnverifiable = 0
+    var incompleteMessages = 0
+    var budgetExhausted = false
+    var hasGesture = false
 }
 
 /// Read-only Accessibility surface for one source process. The live
@@ -291,6 +297,7 @@ struct LiveSelectionAccessibilityResolver<Probe: LiveSelectionAccessibilityProbe
 
     func resolve() -> LiveSelectionResolution {
         var resolution = LiveSelectionResolution()
+        resolution.hasGesture = gesture != nil
         var visited: [Probe.Element] = []
         var focused: Probe.Element?
         var focusedCandidate: LiveSelectionCandidate?
@@ -322,7 +329,10 @@ struct LiveSelectionAccessibilityResolver<Probe: LiveSelectionAccessibilityProbe
         if let gesture {
             points: for point in gesture.hitTestPoints {
                 guard !probe.isExpired else { break }
-                guard var element = probe.element(at: point) else { continue }
+                guard var element = probe.element(at: point) else {
+                    resolution.emptyHitTests += 1
+                    continue
+                }
                 for _ in 0..<LiveSelectionReadPolicy.maximumAncestorDepth {
                     guard !probe.isExpired else { break points }
                     let role = probe.role(of: element)
@@ -405,6 +415,7 @@ struct LiveSelectionAccessibilityResolver<Probe: LiveSelectionAccessibilityProbe
             resolution.rejectedOutsideSourceWindow += 1
             return nil
         case .unverifiable where requiresGestureBounds:
+            resolution.rejectedUnverifiable += 1
             return nil
         case .atGesture, .unverifiable:
             return LiveSelectionCandidate(text: text, tier: tier, source: source, evidence: evidence)
@@ -420,7 +431,7 @@ struct LiveSelectionAccessibilityResolver<Probe: LiveSelectionAccessibilityProbe
 
 /// Live read-only probe bound to one source process. It only copies attribute
 /// values; there is no setter or action anywhere in this type.
-struct LiveAccessibilitySelectionProbe: LiveSelectionAccessibilityProbe {
+final class LiveAccessibilitySelectionProbe: LiveSelectionAccessibilityProbe {
     // Undocumented-but-stable WebKit/Chromium attribute names used by
     // VoiceOver. Reading them is a normal public-API copy with no side effect
     // beyond the app answering an Accessibility query.
@@ -430,6 +441,9 @@ struct LiveAccessibilitySelectionProbe: LiveSelectionAccessibilityProbe {
 
     private let application: AXUIElement
     private let deadline: UInt64
+    // One probe belongs to one serial attempt. Counts only: never retain failed
+    // attribute values or selected text for diagnostics.
+    private(set) var incompleteMessages = 0
 
     init(processIdentifier: pid_t, budget: TimeInterval) {
         application = AXUIElementCreateApplication(processIdentifier)
@@ -449,9 +463,11 @@ struct LiveAccessibilitySelectionProbe: LiveSelectionAccessibilityProbe {
         // app's own windows; the system-wide element would return whatever
         // other app's window happened to be on top.
         var hit: AXUIElement?
-        guard AXUIElementCopyElementAtPosition(
+        let result = AXUIElementCopyElementAtPosition(
             application, Float(point.x), Float(point.y), &hit
-        ) == .success, let hit else {
+        )
+        if result == .cannotComplete { incompleteMessages += 1 }
+        guard result == .success, let hit else {
             return nil
         }
         Self.limitMessaging(hit)
@@ -529,7 +545,9 @@ struct LiveAccessibilitySelectionProbe: LiveSelectionAccessibilityProbe {
     private func copy(_ attribute: String, of element: AXUIElement) -> CFTypeRef? {
         guard !isExpired else { return nil }
         var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else {
+        let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+        if result == .cannotComplete { incompleteMessages += 1 }
+        guard result == .success else {
             return nil
         }
         return value
@@ -542,9 +560,11 @@ struct LiveAccessibilitySelectionProbe: LiveSelectionAccessibilityProbe {
     ) -> CFTypeRef? {
         guard !isExpired else { return nil }
         var value: CFTypeRef?
-        guard AXUIElementCopyParameterizedAttributeValue(
+        let result = AXUIElementCopyParameterizedAttributeValue(
             element, attribute as CFString, parameter, &value
-        ) == .success else {
+        )
+        if result == .cannotComplete { incompleteMessages += 1 }
+        guard result == .success else {
             return nil
         }
         return value
@@ -590,10 +610,13 @@ enum LiveSelectionTextReader {
                 processIdentifier: processIdentifier,
                 budget: LiveSelectionReadPolicy.accessibilityBudget
             )
-            return LiveSelectionAccessibilityResolver(
+            var resolution = LiveSelectionAccessibilityResolver(
                 probe: probe, gesture: gesture, gestureInSourceWindow: inSourceWindow,
                 requiresGestureBounds: requiresGestureBounds
             ).resolve()
+            resolution.incompleteMessages = probe.incompleteMessages
+            resolution.budgetExhausted = probe.isExpired
+            return resolution
         }.value
     }
 }
@@ -720,8 +743,8 @@ enum LiveSelectionDiagnostics {
         bundleID: String?,
         startedAt: UInt64
     ) {
-        logger.info(
-            "Live selection unavailable trusted=\(resolution.accessibilityTrusted, privacy: .public) attempts=\(attempts, privacy: .public) examined=\(resolution.examinedElements, privacy: .public) elsewhere=\(resolution.rejectedElsewhere, privacy: .public) outsideSourceWindow=\(resolution.rejectedOutsideSourceWindow, privacy: .public) secure=\(resolution.refusedSecure, privacy: .public) bundle=\(bundleID ?? "unknown", privacy: .public) durationMs=\(elapsedMilliseconds(since: startedAt), privacy: .public)"
+        logger.notice(
+            "Live selection unavailable trusted=\(resolution.accessibilityTrusted, privacy: .public) attempts=\(attempts, privacy: .public) examined=\(resolution.examinedElements, privacy: .public) elsewhere=\(resolution.rejectedElsewhere, privacy: .public) outsideSourceWindow=\(resolution.rejectedOutsideSourceWindow, privacy: .public) secure=\(resolution.refusedSecure, privacy: .public) hasGesture=\(resolution.hasGesture, privacy: .public) emptyHitTests=\(resolution.emptyHitTests, privacy: .public) unverifiable=\(resolution.rejectedUnverifiable, privacy: .public) cannotComplete=\(resolution.incompleteMessages, privacy: .public) budgetExhausted=\(resolution.budgetExhausted, privacy: .public) bundle=\(bundleID ?? "unknown", privacy: .public) durationMs=\(elapsedMilliseconds(since: startedAt), privacy: .public)"
         )
     }
 

@@ -1,26 +1,39 @@
 # VoiceInk++ failed approaches and regression ledger
 
-## 2026-09-27 — LaTeX-styled XML inside a raw context envelope — REJECTED
+## 2026-09-27 — Reconstructed global-monitor CGEvent PID as source — REJECTED
+
+**Mechanism:** Prefer `event.cgEvent.eventTargetUnixProcessID` over the foreground app.
+**Failure:** Build 358–360 live logs repeatedly bound selection reads to Agent Flow's
+own bundle. The prior-highlight gesture then failed its same-app check as well.
+**Correction:** Sample foreground PID and Cocoa pointer synchronously in the monitor;
+reject the recorder's PID at both boundaries. Keep startup capture and capture-before-labels.
+**Reconsider only if:** A real global-monitor trace proves the original recipient and
+geometry across focus transitions, with structural self-exclusion and physical acceptance.
+
+## 2026-09-27 — Coloured XML without a Markdown envelope boundary — REJECTED
 
 **Mechanism:** Wrap speech, typing, selection and screenshot XML in coloured
 inline math inside `<agent_flow_context>`, validating only extracted formulas.
 **Failure condition:** The actual Codex message showed those formulas literally
 inside the XML block while its standalone rainbow opening rendered correctly.
-**Correction:** Keep the complete XML timeline plain, with visible blank-line
-separation; style only the authored opening. Preserve historical decoding.
-**Reconsider only if:** Ethan explicitly asks for styled XML again and a full
-production-message renderer test proves it works with the outer envelope. Passing
-KaTeX expressions individually is not sufficient evidence.
+**Correction:** Build 360 used plain XML; Ethan subsequently requested fixed XML
+section colours again. The installed host's actual lexer confirms that a blank
+line after the opening context tag ends its raw-HTML block and permits inline math.
+**Validation boundary:** Test complete production messages with the outer envelope.
+Passing isolated KaTeX expressions remains insufficient, and parser success is not
+a physical paste/queued-row rendering receipt.
 
 ## 2026-09-27 — Current pointer location as queued mouse-event geometry — REJECTED
 
 **Mechanism:** Sample `NSEvent.mouseLocation` in both global mouse-edge handlers.
 **Failure condition:** If dispatch is delayed until the pointer stops, a real drag
 can have identical sampled endpoints and be rejected as a click.
-**Correction:** Use each event's stored geometry and recipient; preserve timestamps
-and a bounded, text-free lifetime watcher. Do not add idle AX polling.
-**Reconsider only if:** A replacement proves original event geometry under delayed
-dispatch; sampling the live pointer cannot recover an earlier down location.
+**Attempted correction, now rejected:** Event geometry and recipient were used in
+build 358. The recipient caused the regression above. Synchronous pointer sampling
+is restored without the extra queued actor hop; it still cannot recover a mouse-down
+whose original AppKit delivery was delayed. Do not add idle AX polling.
+**Reconsider event geometry only if:** A live trace proves it independently of the
+rejected recipient field, across displays and delayed delivery.
 
 ## 2026-09-27 — Holding captured text until optional chat labels finish — REJECTED
 

@@ -92,7 +92,7 @@ struct LiveSelectionFallbackTests {
         let ordinary = LiveSelectionReadPolicy.accessibilityRetryDelays
         #expect(ordinary == [0, 150_000_000])
         #expect(LiveSelectionReadPolicy.accessibilityRetryDelays(for: "com.openai.codex")
-                == [0, 150_000_000, 350_000_000])
+                == [0, 150_000_000, 350_000_000, 700_000_000])
         for bundle in ["com.google.Chrome", "com.microsoft.VSCode", "org.telegram.desktop"] {
             #expect(LiveSelectionReadPolicy.accessibilityRetryDelays(for: bundle) == ordinary)
         }
@@ -100,6 +100,20 @@ struct LiveSelectionFallbackTests {
     }
 
     private let display = CGRect(x: 0, y: 0, width: 1440, height: 900)
+
+    @Test func missingHitTestsAndUnprovenBackgroundSelectionsAreCountedWithoutText() {
+        let probe = FakeSelectionProbe()
+        probe.focused = 1
+        probe.nodes[1] = .init(role: "AXTextArea", selectedText: "unrelated text")
+        let result = LiveSelectionAccessibilityResolver(probe: probe,
+            gesture: gesture(CGPoint(x: 100, y: 100), CGPoint(x: 200, y: 100)),
+            gestureInSourceWindow: true, requiresGestureBounds: true).resolve()
+        #expect(result.candidate == nil)
+        #expect(result.hasGesture)
+        #expect(result.emptyHitTests == 2)
+        #expect(result.rejectedUnverifiable == 1)
+        #expect(!resolve(probe, nil).hasGesture)
+    }
 
     private func gesture(_ down: CGPoint, _ up: CGPoint) -> LiveSelectionGesture {
         LiveSelectionGesture(mouseDown: down, mouseUp: up, displays: [display])

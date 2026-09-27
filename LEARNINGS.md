@@ -1,13 +1,34 @@
 # Learnings
 
+## 2026-09-27 — Global monitor CGEvent recipients are not selection sources
+
+Builds 358–360 preferred `NSEvent.cgEvent`'s target PID. Live failure logs named
+Agent Flow's own bundle as the selection source, so this routing was rejected.
+Restore the frontmost PID and Cocoa pointer sampled synchronously inside AppKit's
+monitor callback, exclude the recorder PID at both watcher and capture boundaries,
+and keep the no-extra-actor-hop improvement. Do not infer the source app from a
+reconstructed CGEvent. Event timestamp chronology is independent of source routing.
+The geometry conversion was reverted conservatively, not proven faulty by the logs.
+
+For the separate first-highlight-after-Codex-chat-switch miss, one additional
+700 ms failure-only retry follows the existing 150/350 ms retries. Each attempt
+creates a fresh AX probe, remains window/gesture-bound, and is canceled by a new
+mouse-down or stop. No idle polling or extra delay follows a successful read.
+Persist only failure counts (missing gesture, empty hit tests, unverifiable bounds,
+cannot-complete AX messages and exhausted budget), never selected text or titles.
+This is bounded hardening, not proof of the still-unobserved chat-switch cause.
+
 ## 2026-09-27 — Whole-message XML envelopes can suppress math rendering
 
 Ethan's build-359 message screenshot showed the rainbow authored opening rendered
 but literal LaTeX inside `<agent_flow_context>`. Earlier verification rendered the
 individual production formulas, not their Markdown/XML envelope, so it did not
-prove the complete message worked. He superseded coloured XML with plain XML:
-only the authored opening may use rainbow styling. Keep the old colour decoder
-in the interpretation skill for historical messages, not as a generation rule.
+prove the complete message worked. Build 360 temporarily made XML plain. Ethan
+then clarified that XML should retain fixed colours by section type, while only
+the authored opening is rainbow. The installed Codex host's actual Marked lexer
+and math extension reproduce the failure: a single newline after the opening
+context tag keeps the following formula inside raw HTML; a blank line ends that
+block and recognizes the formula as math. Preserve the two-newline boundary.
 Test the actual whole-message boundary and preserve source whitespace inside
 selection `<text>` when adding blank lines around its enclosing metadata.
 
@@ -58,11 +79,12 @@ that does not render math may expose the LaTeX even though the sent bubble rende
 
 ## 2026-09-27 — Selection edges and committed text must survive delayed metadata
 
-The old watcher sampled `NSEvent.mouseLocation` when queued callbacks ran, not the
+Historical diagnosis, partially superseded by the CGEvent-recipient lesson above:
+the old watcher sampled `NSEvent.mouseLocation` when queued callbacks ran, not the
 location stored in each event. If the main thread was busy until after mouse-up,
 both samples could be identical and a real drag became an ordinary click. Use
-the event's location, timestamp and recipient PID; the current foreground PID is
-only a fallback when the event has no recipient. AppKit documents monitor handlers
+the event's location, timestamp and recipient PID was the attempted correction;
+its PID preference is now rejected and geometry reverted. AppKit documents monitor handlers
 as main-thread callbacks, so an extra MainActor task hop is unnecessary.
 Official reference: https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/EventOverview/MonitoringEvents/MonitoringEvents.html
 

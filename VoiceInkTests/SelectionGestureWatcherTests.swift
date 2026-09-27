@@ -7,25 +7,38 @@ import Testing
 /// reading before pressing start, or during microphone start-up) were missed
 /// because each recording owned its own mouse monitor from its start onward.
 struct SelectionGestureWatcherTests {
-    @Test @MainActor func delayedMouseEdgesKeepTheirEventPositions() throws {
+    @Test @MainActor func mouseEdgesUseCallbackSnapshotNotReconstructedCGEvent() throws {
         let down = try #require(NSEvent.mouseEvent(with: .leftMouseDown,
             location: NSPoint(x: 123, y: 456), modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime - 1,
             windowNumber: 0, context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
         let up = try #require(NSEvent.mouseEvent(with: .leftMouseUp,
             location: NSPoint(x: 323, y: 456), modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime - 0.5,
             windowNumber: 0, context: nil, eventNumber: 1, clickCount: 1, pressure: 0))
-        let start = SelectionGestureWatcher.edge(from: down, primaryScreenTop: 900)
-        let end = SelectionGestureWatcher.edge(from: up, primaryScreenTop: 900)
+        let start = SelectionGestureWatcher.edge(from: down, mouseLocation: NSPoint(x: -800, y: 100))
+        let end = SelectionGestureWatcher.edge(from: up, mouseLocation: NSPoint(x: -600, y: 100))
         #expect(end.location.x - start.location.x == 200)
         #expect(LiveSelectionCapture.isSelectionGesture(from: start.location, to: end.location, clickCount: 1))
         #expect(start.occurredAt < end.occurredAt)
-        let shifted = SelectionGestureWatcher.edge(from: down, primaryScreenTop: 1200)
-        #expect(shifted.location.y - start.location.y == 300)
+        #expect(start.location == NSPoint(x: -800, y: 100))
+        #expect(end.location == NSPoint(x: -600, y: 100))
+        // Event-local coordinates deliberately differ from the real global
+        // snapshot; a fabricated NSEvent.cgEvent must not replace that snapshot.
+        #expect(start.location != down.locationInWindow)
     }
-    @Test func mouseRecipientWinsOverDelayedForegroundActivation() {
-        #expect(SelectionGestureWatcher.sourcePID(targetPID: 42, frontmostPID: 7) == 42)
-        #expect(SelectionGestureWatcher.sourcePID(targetPID: 0, frontmostPID: 7) == 7)
-        #expect(SelectionGestureWatcher.sourcePID(targetPID: nil, frontmostPID: nil) == nil)
+    @Test func mouseSourceUsesForegroundAndNeverTheRecorder() {
+        #expect(SelectionGestureWatcher.sourcePID(frontmostPID: 7, ownPID: 42) == 7)
+        #expect(SelectionGestureWatcher.sourcePID(frontmostPID: 42, ownPID: 42) == nil)
+        #expect(SelectionGestureWatcher.sourcePID(frontmostPID: 0, ownPID: 42) == nil)
+        #expect(SelectionGestureWatcher.sourcePID(frontmostPID: nil, ownPID: 42) == nil)
+    }
+
+    @Test func watcherDoesNotTrustReconstructedEventRouting() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent("VoiceInk/Services/SelectionGestureWatcher.swift"), encoding: .utf8)
+        #expect(!source.contains("event.cgEvent"))
+        #expect(!source.contains("eventTargetUnixProcessID"))
+        #expect(source.contains("mouseLocation: NSEvent.mouseLocation"))
+        #expect(source.contains("MainActor.assumeIsolated"))
     }
 
     @Test @MainActor func startupHighlightsAreRetainedAtTheGestureSpeechAnchor() throws {
@@ -113,6 +126,16 @@ struct SelectionGestureWatcherTests {
         watcher.handle(edge(.leftMouseDown, 400, clicks: 2, at: t0.addingTimeInterval(3)), frontmostPID: 7)
         watcher.handle(edge(.leftMouseUp, 400, clicks: 2, at: t0.addingTimeInterval(3.1)), frontmostPID: 7)
         #expect(watcher.lastSelectionGesture?.processIdentifier == 7)
+    }
+
+    @Test @MainActor func idleWatcherNeverRemembersItsOwnHUDAsSelectionSource() {
+        let watcher = SelectionGestureWatcher()
+        let now = Date()
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        watcher.handle(edge(.leftMouseDown, 10, at: now), frontmostPID: ownPID)
+        watcher.handle(edge(.leftMouseUp, 80, at: now), frontmostPID: ownPID)
+        #expect(watcher.pendingMouseDown == nil)
+        #expect(watcher.lastSelectionGesture == nil)
     }
 
     @Test func priorHighlightMustBeRecentSameAppAndBeforeCapture() {

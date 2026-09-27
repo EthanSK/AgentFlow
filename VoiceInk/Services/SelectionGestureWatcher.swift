@@ -12,7 +12,7 @@ import Foundation
 /// so a starting recording can adopt both.
 ///
 /// Privacy and cost boundary: while idle it records only pointer coordinates,
-/// timestamps, click counts and the recipient app's process identity. It never
+/// timestamps, click counts and the frontmost app's process identity. It never
 /// reads selected text, the pasteboard or Accessibility, and holds one gesture at
 /// most. Text is read only by an attached recording's `LiveSelectionCapture`, with
 /// the same read-only fallback chain and stable-source checks as before. One
@@ -32,14 +32,14 @@ final class SelectionGestureWatcher {
     /// dragging an old, still-highlighted passage into an unrelated dictation.
     nonisolated static let priorSelectionMaxAge: TimeInterval = 120
 
-    /// Keep the location stored in the event, not the pointer's later position.
-    /// A busy main thread can dispatch both drag edges after the pointer stopped.
+    /// Sample the pointer synchronously in the global callback, before any actor
+    /// hop. NSEvent.cgEvent may reconstruct an event for this monitoring process:
+    /// its target PID and converted location are not reliable source evidence.
     struct MouseEdge {
         let type: NSEvent.EventType
         let clickCount: Int
         let location: NSPoint
         let occurredAt: Date
-        var targetPID: pid_t? = nil
     }
 
     struct MouseDown: Equatable {
@@ -48,7 +48,7 @@ final class SelectionGestureWatcher {
     }
 
     /// A finished selection-shaped gesture. `processIdentifier` is the app that was
-    /// event recipient at mouse-up, matching the live capture's source binding.
+    /// frontmost at mouse-up, matching the live capture's source binding.
     struct CompletedGesture: Equatable {
         let start: NSPoint
         let end: NSPoint
@@ -71,7 +71,7 @@ final class SelectionGestureWatcher {
         monitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .leftMouseUp]
         ) { event in
-            let edge = Self.edge(from: event, primaryScreenTop: NSScreen.screens.first?.frame.maxY)
+            let edge = Self.edge(from: event, mouseLocation: NSEvent.mouseLocation)
             // Sample the frontmost app at the edge, as the live capture always did.
             let frontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
             // AppKit guarantees event-monitor callbacks on the main thread.
@@ -83,25 +83,19 @@ final class SelectionGestureWatcher {
         }
     }
 
-    static func edge(from event: NSEvent, primaryScreenTop: CGFloat?) -> MouseEdge {
-        let point: NSPoint
-        if let quartz = event.cgEvent?.location, let primaryScreenTop {
-            point = NSPoint(x: quartz.x, y: primaryScreenTop - quartz.y)
-        } else {
-            // Global-monitor events have no local window; their location is
-            // already global Cocoa coordinates. Do not sample live mouseLocation.
-            point = event.locationInWindow
-        }
-        return MouseEdge(type: event.type, clickCount: event.clickCount, location: point,
-            occurredAt: Date(timeIntervalSinceNow: event.timestamp - ProcessInfo.processInfo.systemUptime),
-            targetPID: event.cgEvent.map { pid_t($0.getIntegerValueField(.eventTargetUnixProcessID)) })
+    static func edge(from event: NSEvent, mouseLocation: NSPoint) -> MouseEdge {
+        // Restore the pre-358 global-monitor geometry. Keep the event timestamp
+        // for chronology, but never derive routing from a reconstructed CGEvent.
+        MouseEdge(type: event.type, clickCount: event.clickCount, location: mouseLocation,
+            occurredAt: Date(timeIntervalSinceNow: event.timestamp - ProcessInfo.processInfo.systemUptime))
     }
 
     /// Updates the remembered gesture state, then forwards the same edge to the
     /// attached recording, which keeps its own mouse-down copy (seeded from
     /// `pendingMouseDown` when it attached).
     func handle(_ edge: MouseEdge, frontmostPID: pid_t?) {
-        let sourcePID = Self.sourcePID(targetPID: edge.targetPID, frontmostPID: frontmostPID)
+        let sourcePID = Self.sourcePID(frontmostPID: frontmostPID,
+                                       ownPID: ProcessInfo.processInfo.processIdentifier)
         switch edge.type {
         case .leftMouseDown:
             pendingMouseDown = MouseDown(location: edge.location, occurredAt: edge.occurredAt)
@@ -124,9 +118,10 @@ final class SelectionGestureWatcher {
         listener?.handle(edge, sourcePID: sourcePID)
     }
 
-    nonisolated static func sourcePID(targetPID: pid_t?, frontmostPID: pid_t?) -> pid_t? {
-        if let targetPID, targetPID > 0 { return targetPID }
-        return frontmostPID.flatMap { $0 > 0 ? $0 : nil }
+    nonisolated static func sourcePID(frontmostPID: pid_t?, ownPID: pid_t) -> pid_t? {
+        // A global monitor observes other apps. Never read our own HUD as source
+        // context, even if a focus transition races the callback.
+        frontmostPID.flatMap { $0 > 0 && $0 != ownPID ? $0 : nil }
     }
 
     /// Whether a gesture completed before this recording's capture began may be
