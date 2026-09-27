@@ -1,5 +1,31 @@
 # Learnings
 
+## 2026-09-27 — Inline deleted diff text is not an editor selection
+
+Ethan's failed VS Code references contained U+FFFC plus the private-use codicon
+U+EC1F instead of selected code. His active configuration uses inline diffs. The
+original bridge fixture only selected modified text in a side-by-side diff; its
+earlier generic "diff editor" result did not cover inline deletions.
+
+An isolated Mini reproduction against Better Git `0f12512` / 1.2.101 and VS Code
+1.132.0 passed ordinary text, both side-by-side sides, and inline modified text,
+using both file and Git originals. Inline deleted text produced a nonempty DOM
+selection but no TextEditor selection event and a null bridge response; the normal
+AX selected-text, range and text-marker probes did not expose its code. Microsoft's
+diff renderer builds these deleted lines as selectable DOM view zones, separate
+from the modified TextEditor. Relaxing active-editor equality cannot recover an
+event that does not exist and risks returning a previous modified-side selection.
+Read-only inspection of Ethan's installed VS Code 1.138.0 bundle confirms the same
+deleted-line DOM renderer and `aria-hidden=true` on both view-zone containers;
+that corroborates the mechanism but is not a 1.138.0 live acceptance test. The
+exact icon string was user-supplied, not reproduced by the Mini's normal-state AX.
+
+The current Accessibility fallback accepts any non-whitespace string, including
+the supplied placeholder/icon-only example; that is not evidence that the intended
+code was captured. This investigation does not fix inline capture. Side-by-side is
+a verified alternative in the isolated host, not permission to override Ethan's
+display-specific inline preference. No native code or installed runtime changed.
+
 ## 2026-09-27 — Download-first users need an extras-only setup path
 
 The notarized ZIP contains Agent Flow, not the Codex skill or YouTube companion. The
