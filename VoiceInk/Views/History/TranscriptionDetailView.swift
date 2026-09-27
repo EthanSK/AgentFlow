@@ -101,8 +101,8 @@ private struct MessageBubble: View {
                     .padding(.horizontal, 12)
 
                 ScrollView {
-                    MarkdownContentView(
-                        text,
+                    HistoryMessageContentView(
+                        text: text,
                         fontSize: 14,
                         foregroundColor: AppTheme.Text.primary,
                         alignment: isEnhanced ? .leading : .trailing

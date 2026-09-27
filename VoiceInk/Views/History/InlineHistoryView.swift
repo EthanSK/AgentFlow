@@ -491,7 +491,7 @@ private struct HistoryCardRow: View {
                         .foregroundColor(.secondary)
 
                     if !isExpanded {
-                        Text(transcription.enhancedText ?? transcription.historyDisplayText)
+                        Text(HistoryContextPresentation.listPreview(transcription.enhancedText ?? transcription.historyDisplayText))
                             .font(.system(size: 13))
                             .lineLimit(2)
                             .foregroundColor(.primary)
@@ -546,8 +546,8 @@ private struct HistoryCardRow: View {
             }
 
             ScrollView {
-                MarkdownContentView(
-                    displayText,
+                HistoryMessageContentView(
+                    text: displayText,
                     fontSize: 14,
                     foregroundColor: AppTheme.Text.primary
                 )
