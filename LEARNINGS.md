@@ -1,5 +1,18 @@
 # Learnings
 
+## 2026-09-27 — Download-first users need an extras-only setup path
+
+The notarized ZIP contains Agent Flow, not the Codex skill or YouTube companion. The
+first-use source installer refuses an existing fork app before building anything, so
+advertising its extras flags to someone who already installed the ZIP leads to an
+intentional refusal. SETUP.md now gives the companion's standalone installer and the
+personal skill installation path explicitly; preserve the first-use replacement guard.
+The standalone companion needs Command Line Tools and Python, not a full native-app build.
+An existing VoiceInk++ account is not a clean test profile: the rebranded Agent Flow keeps
+its bundle identity and shares preferences, TCC and Keychain state. Verify genuine first-run
+permissions in a separate macOS user or VM; do not reset the owner's state or re-sign with
+a different bundle ID and describe that as acceptance of the public notarized artifact.
+
 ## 2026-09-27 — Removing the visible promo transcript does not remove captions
 
 The promo's narration and WebVTT captions come from `promo/narration.json`; the HTML
