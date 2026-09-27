@@ -2191,8 +2191,10 @@ struct VoiceInkTests {
         let finishStart = try #require(shortcutSource.range(
             of: "    private func finishPrimaryRecordingToClipboard(modeId: UUID?) async {"
         ))
+        // Bound this assertion to the method itself. A neighbouring shortcut
+        // may legitimately use normal paste without changing clipboard finish.
         let finishEnd = try #require(shortcutSource.range(
-            of: "\n    func cancelPendingPrimaryDecisions()",
+            of: "\n    }\n",
             range: finishStart.upperBound..<shortcutSource.endIndex
         ))
         let finishBody = shortcutSource[

@@ -22,6 +22,11 @@ Primary's multi-click pause/clipboard classifier and ignores transitional states
 `bothCommandToggleStartsTypingThenFinishesRecordingAndPausedSessions` guards that
 choice and preservation of the normal delivery route.
 
+Source-text contract tests must end at the guarded method's own closing brace,
+not at a later named neighbour. Adding the independent typing toggle between
+clipboard finish and `cancelPendingPrimaryDecisions` exposed such a false failure;
+the clipboard-finish body and its no-paste/no-cancel assertions remain unchanged.
+
 ## 2026-09-27 — Keyboard-only completion is not an empty audio request
 
 The previous pipeline obtained provider text before attaching keyboard runs, so
