@@ -12,8 +12,10 @@ struct RecorderTypedInputTests {
         provider.updateTypedInput("Text through the production HUD interface")
         #expect(session.typedInput == "Text through the production HUD interface")
         #expect(session.liveSelectionReferences.count == 1)
-        #expect(session.liveSelectionReferences.first?.capturedAt != nil)
-        #expect(session.liveSelectionReferences.first?.runStartedAt != nil)
+        let timed = LiveSelectionReference.interleaving(session.liveSelectionReferences,
+            with: "", includeTiming: true)
+        #expect(timed.contains("<typed_text started_at=\"") && timed.contains(" ended_at=\""))
+        #expect(timed.contains("Text through the production HUD interface\n</typed_text>"))
         session.endLiveSelectionCapture()
     }
 
