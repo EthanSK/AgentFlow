@@ -1,5 +1,30 @@
 # Learnings
 
+## 2026-09-27 — Authored rainbow and silver XML share the presentation budget
+
+Build 359 generates the authored opening locally with the exact 24-colour
+response-preferences palette, advancing once per whitespace-delimited word. It
+reserves one starting offset only at final styled AI output, using the existing
+separate `.lock` plus atomic counter-replacement protocol. The lock is nonblocking;
+an unavailable or malformed shared counter falls back to app-local state, never a
+helper process, model call, reset of shared state, or a delayed paste. Untimed,
+raw/skip, ordinary-app and live-HUD paths do not reserve an offset.
+
+Speech XML uses cool silver and typing XML warmer silver; selection cyan and
+screenshot magenta retain their meaning. Rainbow opening, timeline styling and
+screenshot links share one 64,000-UTF-16 presentation budget. When expansion does
+not fit, retain complete plain text/XML rather than clipping authored words or
+source context. The marked opening is still a duplicate, not another instruction.
+Whitespace may collapse in its per-word presentation; the timeline is authoritative.
+
+The Mini's exact build-359 native commit passed 439 named tests in 17 suites using
+the documented full-suite fallback after canonical TestManager actions stalled.
+Production Swift fixtures rendered 248 formulas in the installed host's KaTeX
+without errors or over-wide boxes at a 231px column. Visual inspection confirmed
+the dark-theme hierarchy; fixed pastel/silver colours are faint on light backgrounds.
+This fixture is not a live Codex paste or queued-row rendering receipt: a queue
+that does not render math may expose the LaTeX even though the sent bubble renders it.
+
 ## 2026-09-27 — Selection edges and committed text must survive delayed metadata
 
 The old watcher sampled `NSEvent.mouseLocation` when queued callbacks ran, not the
