@@ -151,7 +151,7 @@ struct RecorderTypedInputTests {
         let timed = LiveSelectionReference.interleaving(session.liveSelectionReferences,
             with: "", includeTiming: true)
         #expect(timed.contains("<typed_text start_at=\"") && timed.contains(" end_at=\""))
-        #expect(timed.contains("Text through the production HUD interface\n</typed_text>"))
+        #expect(timed.contains("Text through the production HUD interface\n\n</typed_text>"))
         session.endLiveSelectionCapture()
     }
 
