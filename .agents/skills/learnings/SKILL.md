@@ -30,6 +30,11 @@ validation contract applies.
 5. For a remembered historical rollback, never choose by version proximity or a version label alone. Correlate Ethan's timestamped acceptance/failure message with the immediately preceding verified install/restart, then require the artifact's build, CDHash or executable checksum, and delivery architecture to agree. Early build 203 was reused for materially different binaries, so its label is not an identity.
 6. State any relevant prior constraint before making a risky change.
 
+The keyword helper supports current `##`-headed entries and older delimited entries
+after `(newest first)`. Retest both with `python3 scripts/test-check.py` from this
+skill folder when changing its parser. Self-improved — 2026-09-27: the old parser
+silently skipped all newer headings; mixed-layout and literal-keyword fixtures now cover it.
+
 For upstream work, read `UPDATING.md` and treat upstream as a feature source, never a branch to merge wholesale. Audit in a disposable clone/worktree, obtain Ethan's approval for one user-visible feature, and manually port only that feature while preserving VoiceInk++'s destination, delivery, vocabulary, identity, and release guards.
 
 For public setup changes, keep `SETUP.md`, README, website and native Help destinations consistent. Verify that a linked repository feature is actually enabled before advertising it as a help or reporting path; VoiceInk++ GitHub Issues was disabled despite a readable `/issues` page. Treat app launch, provider/permissions, Codex skill discovery, Chrome extension loading, the YouTube helper/native host/login LaunchAgent, and optional mouse mappings as separate receipts. The public `scripts/install-first-use.sh` is only for a Mac without VoiceInk++ installed; it must refuse replacement and never impersonate the guarded Mini-to-MacBook native update. Only the optional YouTube helper installs a login LaunchAgent; the old fork auto-update LaunchAgent stays disabled. A successful build or `open` exit is not a persistent-PID or working-Chrome receipt. Self-improved — 2026-09-24: the shareable setup and disabled Issues setting exposed these distinct publication and installation boundaries.

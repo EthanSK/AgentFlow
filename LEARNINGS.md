@@ -1,5 +1,15 @@
 # Learnings
 
+## 2026-09-27 — Search both modern and historical learning-entry formats
+
+The keyword helper previously began parsing only after `(newest first)` and ignored
+all newer `##`-headed entries above that historical marker. A rainbow lookup returned
+no matches despite the exact word in the current entry. The helper now searches
+both formats, retains literal case-insensitive matching and includes rejected
+approaches. Three offline regression cases cover mixed layouts, the final heading
+at EOF, and literal punctuation with no match. A no-match result from the old helper
+was not proof that no project learning existed; `rg` remained the reliable cross-check.
+
 ## 2026-09-27 — Authored rainbow and silver XML share the presentation budget
 
 Build 359 generates the authored opening locally with the exact 24-colour

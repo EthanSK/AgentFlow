@@ -40,9 +40,31 @@ if [ -f "$LEARNINGS_FILE" ]; then
     count = 0
     buffer = ""
     matched = 0
+    modern_entry = 0
+    modern_buffer = ""
+    modern_matched = 0
   }
-  /\(newest first\)/ {
+  function flush_modern() {
+    if (modern_entry && modern_matched) {
+      printf "%s\n", modern_buffer
+      count++
+    }
+    modern_entry = 0
+    modern_buffer = ""
+    modern_matched = 0
+  }
+  /^[[:space:]]*\(newest first\)[[:space:]]*$/ {
+    flush_modern()
     after_marker = 1
+    next
+  }
+  !after_marker && /^## / {
+    flush_modern()
+    modern_entry = 1
+  }
+  !after_marker && modern_entry {
+    modern_buffer = modern_buffer $0 "\n"
+    if (index(tolower($0), tolower(kw)) > 0) modern_matched = 1
     next
   }
   after_marker && /^---$/ {
@@ -68,6 +90,7 @@ if [ -f "$LEARNINGS_FILE" ]; then
     }
   }
   END {
+    flush_modern()
     if (inside_entry && matched) {
       print "---"
       printf "%s", buffer
