@@ -1,5 +1,27 @@
 # Learnings
 
+## 2026-09-27 — Scaled HUD pixels and clicks must use the same transform
+
+Ethan reported that every floating control was unclickable in build 354. A process
+sample showed the main run loop waiting normally, not blocked. A Mini native fixture
+using the production `ScaledRecorderHostingView` drew its button correctly but
+dispatched zero actions at 0.5 and 0.85, while full scale dispatched one. Merely
+overriding first-mouse acceptance still dispatched zero scaled actions.
+
+Commit `c299063` keeps AppKit frame/bounds in physical coordinates and applies the
+matching transform within SwiftUI inside the genuinely scaled window. The same
+fixture then dispatched one action at each size without activating another app.
+`scaledHUDControlsReceiveClicksAtEverySupportedSize` exercises production Stop,
+Cancel, Skip, Mic and Unfocus controls using window-targeted NSEvents; unit fixture
+evidence remains distinct from the user's installed physical mouse acceptance.
+
+Both Command keys are a Start/Finish control, not start-only as build 354 shipped.
+The same commit starts microphone-off typing while idle and finishes recording or
+paused composition through normal `primaryCurrentInput`. It remains separate from
+Primary's multi-click pause/clipboard classifier and ignores transitional states.
+`bothCommandToggleStartsTypingThenFinishesRecordingAndPausedSessions` guards that
+choice and preservation of the normal delivery route.
+
 ## 2026-09-27 — Keyboard-only completion is not an empty audio request
 
 The previous pipeline obtained provider text before attaching keyboard runs, so
@@ -24,7 +46,8 @@ audio by incorrectly choosing local typing-only completion.
 
 Both Command keys need device-specific left/right flag bits; the aggregate Command
 flag cannot identify this chord. Consume only its completing press and preserve
-releases. It is start-only, independent of the Primary multi-click classifier.
+releases. Build 354 made it start-only, independent of the Primary multi-click
+classifier; Ethan's later correction above supersedes that start-only restriction.
 
 The model-switcher and MiniRecorderPanel previously shared the floating window
 level. Reordering the model strip could obscure the editor. A distinct recorder

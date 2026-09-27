@@ -1,5 +1,20 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-09-27 — Scaling the recorder through ancestor AppKit bounds — REJECTED
+
+**Mechanism:** Keep the physical recorder window small but enlarge its parent
+NSView bounds to map full-size SwiftUI content into that window.
+**Failure:** A Mini native click fixture rendered correctly but its SwiftUI action
+count stayed zero at 0.5 and 0.85, versus one at full scale. Overriding only
+`acceptsFirstMouse` did not repair the coordinates. Ethan reported all HUD controls
+unclickable in build 354; the app's main thread was not blocked.
+**Accepted correction:** Keep AppKit frame and bounds equal and apply scale inside
+SwiftUI with explicit source and physical frames. Require actual mouse-event tests
+for production controls, plus installed physical acceptance.
+**Reconsider only if:** A future hosting implementation proves transformed mouse,
+text-editor, accessibility and layout coordinates at every supported scale; visual
+geometry or AXPress alone is insufficient.
+
 ## 2026-09-27 — Replacing a protocol witness with a defaulted timestamp overload — REJECTED
 
 **Mechanism:** Replace `RecordingSession.updateTypedInput(_:)` with

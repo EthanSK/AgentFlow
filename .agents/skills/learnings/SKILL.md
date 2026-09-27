@@ -128,7 +128,11 @@ User-requested keyboard focus behaviour — 2026-09-26.
 
 Keyboard-only start must remain an active composing session, not gesture-Pause:
 Primary still finishes it rather than unexpectedly enabling the microphone. Both
-Command keys are an additional start-only shortcut; forward all modifier releases.
+Command keys are an additional Start/Finish shortcut: idle starts microphone-off
+typing; recording or paused composition finishes through `primaryCurrentInput`.
+Do not classify it as Primary multi-click, resume the mic, or change a pending
+transcription. Forward all modifier releases. Ethan corrected start-only behaviour
+on 2026-09-27.
 Do not prepare a streaming provider or submit the empty recovery WAV until capture
 was explicitly enabled. Test the actual pipeline with an audio-session spy and a
 delivery sink: authored text completes and is delivered once, empty input delivers
@@ -141,6 +145,13 @@ timestamp overloads; test edits through the protocol used by the real HUD, not o
 the concrete session. A defaulted extra argument is not the same Swift witness.
 Self-improved — 2026-09-27: the release gate caught typing falling into the protocol
 compatibility no-op; see LEARNINGS.md, keyboard-only completion.
+
+Verify scaled recorder controls with actual window-targeted mouse events at minimum,
+default and full scale, not only frame math or AXPress. Keep the AppKit host at its
+physical size and scale the content within SwiftUI; an ancestor NSView bounds
+transform drew the buttons correctly but misrouted clicks. Preserve nonactivation
+and explicit editor-only keyboard ownership. Self-improved — 2026-09-27: the native
+fixture failed at 0.5/0.85 and passed after this correction; see the scaled-HUD lesson.
 
 For a requested Soniox-versus-AssemblyAI comparison using saved recordings, read
 [references/provider-realtime-ab-test.md](references/provider-realtime-ab-test.md)
