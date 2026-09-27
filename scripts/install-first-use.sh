@@ -12,7 +12,7 @@ legacy_system_app="/Applications/VoiceInkPlusPlus.app"
 bridge_app="$HOME/Applications/YouTube Spotify Media Key.app"
 bridge_agent="$HOME/Library/LaunchAgents/com.ethan.youtubeSpotifyMediaKey.plist"
 bridge_manifest="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts/com.ethan.youtube_spotify_media_key.json"
-skill_target="$HOME/.agents/skills/interpret-voiceink-context"
+skill_target="$HOME/.agents/skills/interpret-agent-flow-context"
 with_bridge=false
 with_skill=false
 check_only=false
@@ -124,7 +124,7 @@ echo "Installed Agent Flow at $app_target"
 
 if "$with_skill"; then
   mkdir -p "$HOME/.agents/skills"
-  ditto "$repo_root/.agents/skills/interpret-voiceink-context" "$skill_target"
+  ditto "$repo_root/.agents/skills/interpret-agent-flow-context" "$skill_target"
   echo "Installed the Codex context skill at $skill_target"
 fi
 

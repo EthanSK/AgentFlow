@@ -8,7 +8,7 @@ No private API keys, mouse profiles or personal settings are bundled.
 | --- | --- | --- |
 | Agent Flow app | Recording, live recorder, transcription and final paste | [Notarized Mac download](https://github.com/EthanSK/AgentFlow/releases/download/v2.0.353/AgentFlow-v2.0.353-mac-universal.zip); macOS 14.4+. Xcode is only needed to build from source. |
 | Your OpenAI API key and macOS grants | Recommended GPT Live transcription and input delivery | Create an [OpenAI API key](https://platform.openai.com/api-keys), enable API billing, then grant Microphone and Accessibility in macOS. A local Parakeet model remains available. |
-| [Context interpretation skill](.agents/skills/interpret-voiceink-context/SKILL.md) | Helping Codex read the XML-style selection and screenshot references across tasks | Ask Codex to install the personal skill; `--with-codex-skill` is only for a first source installation |
+| [Context interpretation skill](.agents/skills/interpret-agent-flow-context/SKILL.md) | Helping Codex read the XML-style selection and screenshot references across tasks | Ask Codex to install the personal skill; `--with-codex-skill` is only for a first source installation |
 | [Agent Flow YouTube Bridge](companions/youtube-bridge/README.md) | Pausing the YouTube tab playing when dictation starts, plus optional Agentic Mouse Chrome controls | Use the companion's own installer after installing the app download; Chrome needs one manual extension step |
 | [Agentic Mouse](https://ethansk.github.io/agentic-mouse/) | Optional hardware control layer and extra mouse actions | Separate app and setup; not bundled with Agent Flow |
 | [Better Git VS Code](https://marketplace.visualstudio.com/items?itemName=EthanSK.better-git-vscode) 1.2.99+ | Mouse highlights in local code editors; code-editor use is confirmed, while diff editors have isolated-test coverage only | Install from the VS Code Marketplace and activate the updated extension; no extra LaunchAgent or permission grant |
@@ -34,8 +34,8 @@ The ZIP contains the app only. Do not run `install-first-use.sh --all` after ins
 that source-build installer deliberately refuses an existing app, even when an extras flag
 is supplied.
 
-- **Codex context skill:** ask Codex to install `interpret-voiceink-context` from
-  `EthanSK/AgentFlow/.agents/skills/interpret-voiceink-context` as a personal skill.
+- **Codex context skill:** ask Codex to install `interpret-agent-flow-context` from
+  `EthanSK/AgentFlow/.agents/skills/interpret-agent-flow-context` as a personal skill.
 - **YouTube Bridge:** clone this repository into a folder you will keep, then follow the
   [companion's requirements and installer](companions/youtube-bridge/README.md#requirements-and-standalone-source).
   Run `./companions/youtube-bridge/scripts/install.sh` from the repository root. This builds

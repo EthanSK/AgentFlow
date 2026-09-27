@@ -48,7 +48,7 @@ and make the empty state look like this.
 - Placement is best effort because live recognition can revise earlier words. A highlight can be reading context rather than an instruction.
 - Provisional words stay in the recorder until one final paste. The preview grows vertically to the display's safe height, then scrolls.
 
-For Codex to interpret this XML-style context across tasks, install the [Agent Flow context skill](.agents/skills/interpret-voiceink-context/SKILL.md) as a personal skill. You can ask Codex: “Install `interpret-voiceink-context` from `EthanSK/AgentFlow/.agents/skills/interpret-voiceink-context`.” The skill reads interleaved speech, selections and screenshot paths as best-effort context; it does not upload screenshot pixels or assume every highlight is an instruction.
+For Codex to interpret this XML-style context across tasks, install the [Agent Flow context skill](.agents/skills/interpret-agent-flow-context/SKILL.md) as a personal skill. You can ask Codex: “Install `interpret-agent-flow-context` from `EthanSK/AgentFlow/.agents/skills/interpret-agent-flow-context`.” The skill reads interleaved speech, selections and screenshot paths as best-effort context; it does not upload screenshot pixels or assume every highlight is an instruction.
 
 ## Controls
 
@@ -118,7 +118,7 @@ The upstream `voiceink` Homebrew cask and downloads install VoiceInk, not Agent 
 - [Read the accepted implementation learnings](LEARNINGS.md)
 - [Review failed approaches before retrying delivery work](FAILED_APPROACHES.md)
 - [Use the self-improving Codex/Claude Code learnings skill](.agents/skills/learnings/SKILL.md)
-- [Install the Agent Flow context interpretation skill](.agents/skills/interpret-voiceink-context/SKILL.md)
+- [Install the Agent Flow context interpretation skill](.agents/skills/interpret-agent-flow-context/SKILL.md)
 - [Review update guidance](UPDATING.md)
 - [Agent Flow on GitHub](https://github.com/EthanSK/AgentFlow)
 

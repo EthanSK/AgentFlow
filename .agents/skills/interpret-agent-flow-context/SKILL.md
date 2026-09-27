@@ -1,11 +1,11 @@
 ---
-name: interpret-voiceink-context
+name: interpret-agent-flow-context
 description: Interpret Agent Flow messages containing speech_segment, typed_text, codex_selection, app_selection, or local_screenshot XML, including coloured LaTeX context and local screenshot references. Use on every such message in any Codex task, including mixed speech, typing, timestamps and multiple app highlights.
 ---
 
 # Interpret Agent Flow context
 
-Read interleaved dictated speech and context tags as one messy, best-effort user message. Infer what Ethan is trying to say and which references he likely means; tag placement is a clue, not a precise binding or strict chronology. Keep the existing skill name and XML grammar so installed users and old messages continue to work.
+Read interleaved dictated speech and context tags as one messy, best-effort user message. Infer what Ethan is trying to say and which references he likely means; tag placement is a clue, not a precise binding or strict chronology. Preserve the XML grammar so old messages continue to work.
 
 ## Continuous improvement
 

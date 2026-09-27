@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/EthanSK/AgentFlow",
   "branch": "main",
-  "path": ".agents/skills/interpret-voiceink-context",
+  "path": ".agents/skills/interpret-agent-flow-context",
   "distribution": "git-or-copy"
 }
