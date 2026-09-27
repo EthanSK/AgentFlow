@@ -371,7 +371,7 @@ struct LiveSelectionReference: Equatable {
         }
         if presentation == .styledMath {
             return styled(parts, canonical: canonical, readablePreview: readablePreview,
-                          rainbowStartIndex: rainbowStartIndex)
+                          rainbowStartIndex: rainbowStartIndex, compactMetadata: includeTiming)
         }
         let structured = canonical.joined(separator: "\n\n")
         if let readablePreview {
@@ -392,7 +392,8 @@ struct LiveSelectionReference: Equatable {
     /// Optional colour still yields to complete source context at the paste budget; local
     /// screenshot links are part of the base output, never an attached pixel payload.
     private static func styled(_ parts: [InterleavedPart], canonical: [String],
-                               readablePreview: String? = nil, rainbowStartIndex: Int = 0) -> String {
+                               readablePreview: String? = nil, rainbowStartIndex: Int = 0,
+                               compactMetadata: Bool = false) -> String {
         let base = parts.enumerated().map { offset, part -> String in
             guard case let .reference(reference, _) = part,
                   let path = reference.screenshotPath else { return canonical[offset] }
@@ -400,6 +401,59 @@ struct LiveSelectionReference: Equatable {
         }
         let beforeTimeline = "\n\n<agent_flow_context preview=\"authored_text_above\">\n\n"
         let afterTimeline = "\n\n</agent_flow_context>"
+        if compactMetadata {
+            // Metadata is quiet scaffolding, not a paragraph per tag. Styling the
+            // envelope itself avoids the raw-HTML parser boundary that swallowed
+            // colour in build 359. Keep payload whitespace and image links intact.
+            var timeline = ""
+            if readablePreview != nil {
+                timeline = LiveSelectionStyledMath.coloredXML(
+                    "<agent_flow_context preview=\"authored_text_above\">",
+                    color: LiveSelectionStyledMath.captionColor)
+            }
+            for (offset, part) in parts.enumerated() {
+                let color: String
+                var path: String?
+                switch part {
+                case .text:
+                    timeline += "\n\n" + base[offset] + "\n\n"
+                    continue
+                case .authoredXML(_, let authoredColor): color = authoredColor
+                case .reference(let reference, _):
+                    path = reference.screenshotPath
+                    color = path == nil ? LiveSelectionStyledMath.selectionColor : LiveSelectionStyledMath.screenshotColor
+                }
+                // Only whitespace BETWEEN actual tags is scaffolding. All source
+                // angles are XML-escaped; never collapse whitespace inside <text>.
+                let compact = canonical[offset].replacingOccurrences(
+                    of: #">\s+<"#, with: "><", options: .regularExpression)
+                if timeline.hasSuffix("\\)") { timeline += LiveSelectionStyledMath.zeroWidthSpace }
+                timeline += LiveSelectionStyledMath.coloredXML(compact, color: color)
+                if let path {
+                    timeline += "\n\n" + LiveSelectionStyledMath.localImageReference(path: path) + "\n\n"
+                }
+            }
+            if readablePreview != nil {
+                if timeline.hasSuffix("\\)") { timeline += LiveSelectionStyledMath.zeroWidthSpace }
+                timeline += LiveSelectionStyledMath.coloredXML("</agent_flow_context>",
+                    color: LiveSelectionStyledMath.captionColor)
+            }
+            // A real paragraph boundary after the readable opening; unlike the
+            // old raw-HTML envelope, the italic marker now forms its own paragraph.
+            let opening = readablePreview.flatMap {
+                AuthoredTextRainbow.render($0, startIndex: rainbowStartIndex,
+                    maxUTF16Count: LiveSelectionStyledMath.messageUTF16Budget)
+            }
+            let candidate = opening.map { $0 + "\n\n" + timeline } ?? timeline
+            if (readablePreview == nil || opening != nil),
+               candidate.utf16.count <= LiveSelectionStyledMath.messageUTF16Budget {
+                return candidate
+            }
+            // Fall back as one unit. Mixing raw XML with later math can recreate
+            // the host's swallowed-colour bug; never clip words to buy styling.
+            let plain = base.joined(separator: "\n\n")
+            return readablePreview.map { $0 + beforeTimeline + plain + afterTimeline } ?? plain
+        }
         let envelopeSize = readablePreview.map { $0.utf16.count + beforeTimeline.utf16.count + afterTimeline.utf16.count } ?? 0
         var remaining = LiveSelectionStyledMath.messageUTF16Budget
             - base.joined(separator: "\n\n").utf16.count - envelopeSize
@@ -621,12 +675,36 @@ enum LiveSelectionStyledMath {
                 renderable.unicodeScalars.append(scalar)
             }
         }
-        return renderable.components(separatedBy: "\n").map { line in
-            pieces(of: line).map { piece in
-                let escaped = escapedTeX(piece).replacingOccurrences(of: " ", with: "\\ ")
-                return "\\(\\textsf{\\color{\(color)}\(escaped)}\\)"
-            }.joined(separator: zeroWidthSpace)
-        }.joined(separator: "\n")
+        // Canonical payloads escape < and > before reaching presentation. Only
+        // real tags/attributes are italic; even quoted XML remains upright text.
+        var metadata = false
+        var runs: [(String, Bool)] = []
+        var current = ""
+        for character in renderable {
+            if character == "<" {
+                if !current.isEmpty { runs.append((current, metadata)) }
+                current = ""
+                metadata = true
+            }
+            current.append(character)
+            if character == ">", metadata {
+                runs.append((current, true))
+                current = ""
+                metadata = false
+            }
+        }
+        if !current.isEmpty { runs.append((current, metadata)) }
+        return runs.map { text, italic in
+            text.components(separatedBy: "\n").map { line in
+                pieces(of: line).map { piece in
+                    let escaped = escapedTeX(piece).replacingOccurrences(of: " ", with: "\\ ")
+                    let body = italic ? "\\textit{\(escaped)}" : escaped
+                    return "\\(\\textsf{\\color{\(color)}\(body)}\\)"
+                }.joined(separator: zeroWidthSpace)
+            }.joined(separator: "\n")
+        }.reduce("") { output, run in
+            output + (output.hasSuffix("\\)") && run.hasPrefix("\\(") ? zeroWidthSpace : "") + run
+        }
     }
 
     /// An ordinary local Markdown image reference, never a KaTeX command or a

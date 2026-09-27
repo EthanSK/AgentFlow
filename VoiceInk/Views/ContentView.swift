@@ -12,12 +12,18 @@ enum ViewType: String, CaseIterable, Identifiable {
     case settings = "Settings"
 
     var id: String { rawValue }
+
+    static func openingDestination(requested: Self? = nil) -> Self {
+        // Opening the app is usually transcript recovery, not a dashboard visit.
+        // Explicit Settings/model/file navigation must still win over that default.
+        requested ?? .history
+    }
 }
 
 struct ContentView: View {
     private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "ContentView")
     private static let detailBackgroundTintOpacity = 0.50
-    @State private var selectedView: ViewType = .dashboard
+    @State private var selectedView: ViewType = .openingDestination()
 
     var body: some View {
         HStack(spacing: 0) {

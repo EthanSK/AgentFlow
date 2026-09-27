@@ -48,12 +48,14 @@ class WindowManager: NSObject {
         window.delegate = self
     }
     
-    func showMainWindow() -> NSWindow? {
+    func showMainWindow(destination: ViewType? = nil) -> NSWindow? {
         guard let window = resolveMainWindow() else {
             return nil
         }
         
         window.makeKeyAndOrderFront(nil)
+        NotificationCenter.default.post(name: .navigateToDestination, object: nil,
+            userInfo: ["destination": ViewType.openingDestination(requested: destination).rawValue])
         NSApplication.shared.activate(ignoringOtherApps: true)
         return window
     }

@@ -67,10 +67,10 @@ private extension ViewType {
     }
 
     static let primaryItems: [ViewType] = [
+        .history,
         .dashboard,
         .modes,
         .transcribeAudio,
-        .history,
         .dictionary,
         .models,
         .audio

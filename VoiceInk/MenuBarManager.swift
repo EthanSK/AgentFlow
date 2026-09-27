@@ -94,7 +94,7 @@ class MenuBarManager: ObservableObject {
         NSApplication.shared.setActivationPolicy(.regular)
         logger.notice("openMainWindowAndNavigate: activation policy set to .regular")
 
-        guard WindowManager.shared.showMainWindow() != nil else {
+        guard WindowManager.shared.showMainWindow(destination: ViewType(rawValue: destination)) != nil else {
             logger.error("openMainWindowAndNavigate: showMainWindow returned nil — cannot navigate to \(destination, privacy: .public)")
             return
         }

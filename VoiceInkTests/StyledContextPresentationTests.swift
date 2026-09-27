@@ -10,6 +10,12 @@ import Testing
 /// route boundaries established from the installed Codex bundle (see the
 /// `LiveSelectionStyledMath` comment). They cannot prove live bubble pixels.
 struct StyledContextPresentationTests {
+    @Test func mainWindowOpensHistoryUnlessADestinationIsExplicit() {
+        #expect(ViewType.openingDestination() == .history)
+        for destination in ViewType.allCases {
+            #expect(ViewType.openingDestination(requested: destination) == destination)
+        }
+    }
     @Test func plainPresentationIsTheUnchangedCanonicalGrammar() throws {
         let selection = try #require(LiveSelectionReference("Look at <this> & that"))
         let typed = try #require(LiveSelectionReference(typedText: "typed words"))
@@ -276,7 +282,7 @@ struct StyledContextPresentationTests {
         let timed = LiveSelectionReference.interleaving([reference], with: "", presentation: .styledMath,
             includeTiming: true)
         #expect(try xmlText(in: unwrappedXML(timed)) == selected)
-        #expect(try unwrappedXML(timed).contains(">\n\n  <text>"))
+        #expect(try unwrappedXML(timed).contains("><text>"))
     }
 
     @Test func screenshotXMLStaysMagentaWithSafeLocalImageReference() throws {
@@ -499,7 +505,7 @@ struct StyledContextPresentationTests {
         let references = [typed, selected, shot]
         let styled = LiveSelectionReference.interleaving(references, with: "spoken first then last",
             presentation: .styledMath, includeTiming: true, includeReadablePreview: true, rainbowStartIndex: 23)
-        let opening = try #require(styled.components(separatedBy: "\n\n<agent_flow_context").first)
+        let opening = try #require(styled.components(separatedBy: "\n\n").first)
         #expect(opening == AuthoredTextRainbow.render("spoken first typed & exact then last", startIndex: 23))
         #expect(!opening.contains("not authored") && !opening.contains("shot.png"))
         let timeline = String(styled.dropFirst(opening.count))
@@ -508,32 +514,54 @@ struct StyledContextPresentationTests {
             #expect(timeline.contains("\\color{\(color)}"))
         }
         let decodedTimeline = try unwrappedXML(timeline)
-        #expect(timeline.contains("<agent_flow_context preview=\"authored_text_above\">\n\n"))
+        #expect(decodedTimeline.contains("<agent_flow_context preview=\"authored_text_above\"><speech"))
         #expect(decodedTimeline.contains("<speech timing=\"unavailable\">\n\nspoken first\n\n</speech>"))
         #expect(decodedTimeline.contains(">\n\ntyped &amp; exact\n\n</typed_text>"))
-        #expect(decodedTimeline.contains(">\n\n  <text>not authored</text>\n\n</codex_selection>"))
+        #expect(decodedTimeline.contains("><text>not authored</text></codex_selection>"))
         #expect(decodedTimeline.contains("<local_screenshot path=\"/Users/test/shot.png\"/>"))
         let colors = Set(formulaBodies(in: timeline).compactMap { body -> String? in
             guard let start = body.range(of: "\\color{"), let end = body[start.upperBound...].firstIndex(of: "}") else { return nil }
             return String(body[start.upperBound..<end])
         })
-        #expect(colors == Set(["#f1f5f9", "#f4f4f5", "#67e8f9", "#e879f9"]))
+        #expect(colors == Set(["#f1f5f9", "#f4f4f5", "#67e8f9", "#e879f9", "#94a3b8"]))
         let plain = LiveSelectionReference.interleaving(references, with: "spoken first then last",
             includeTiming: true, includeReadablePreview: true)
-        #expect(try unwrappedXML(styled).replacingOccurrences(of: "\n\n![Screenshot](</Users/test/shot.png>)", with: "") == plain)
+        let restored = try unwrappedXML(styled).replacingOccurrences(of: "\n\n![Screenshot](</Users/test/shot.png>)", with: "")
+        #expect(restored.replacingOccurrences(of: #">\s+<"#, with: "><", options: .regularExpression)
+            == plain.replacingOccurrences(of: #">\s+<"#, with: "><", options: .regularExpression))
         #expect(styled.contains("![Screenshot](</Users/test/shot.png>)"))
     }
 
-    @Test func coloredTimelineHasABlankLineAfterRawEnvelope() throws {
+    @Test func coloredTimelineUsesItalicEnvelopeWithSeparateReadableOpening() throws {
         let selection = try #require(LiveSelectionReference("first highlighted text"))
         for references in [[], [selection]] {
             let message = LiveSelectionReference.interleaving(references, with: "spoken request",
                 presentation: .styledMath, includeTiming: true, includeReadablePreview: true)
             let marker = "<agent_flow_context preview=\"authored_text_above\">"
-            #expect(message.contains(marker + "\n\n\\("))
-            #expect(!message.contains(marker + "\n\\("))
-            #expect(message.hasSuffix("\n\n</agent_flow_context>"))
+            let opening = try #require(AuthoredTextRainbow.render("spoken request", startIndex: 0))
+            #expect(message.hasPrefix(opening + "\n\n\\(\\textsf{\\color{#94a3b8}\\textit{"))
+            #expect(!message.contains(marker))
+            let decoded = try unwrappedXML(message)
+            #expect(decoded.contains(marker + (references.isEmpty ? "<speech" : "<codex_selection")))
+            #expect(decoded.hasSuffix("</speech></agent_flow_context>"))
         }
+    }
+
+    @Test func onlyXMLMetadataIsItalicAndAdjacentTagsStayTogether() throws {
+        let text = "  exact <quoted> text\n\n  with spacing  "
+        let reference = try #require(LiveSelectionReference(text))
+        let message = LiveSelectionReference.interleaving([reference], with: "upright speech",
+            presentation: .styledMath, includeTiming: true, includeReadablePreview: true)
+        let restored = try unwrappedXML(message)
+        #expect(restored.contains("><text>"))
+        #expect(restored.contains("</text></codex_selection><speech"))
+        #expect(try xmlText(in: restored) == text)
+        let bodies = formulaBodies(in: message)
+        #expect(bodies.contains { $0.contains("\\textit{<text>") })
+        #expect(bodies.contains { $0.contains("upright\\ speech") && !$0.contains("\\textit{") })
+        #expect(bodies.contains { $0.contains("quoted") && !$0.contains("\\textit{") })
+        for body in bodies { #expect(hasBalancedGroups(body)) }
+        #expect(!restored.contains("</speech>\n\n</agent_flow_context>"))
     }
 
     @Test func rainbowOpeningYieldsToPlainXMLBudgetWithoutClippingWords() throws {
@@ -595,7 +623,11 @@ struct StyledContextPresentationTests {
             let colorEnd = try #require(styled[start.upperBound...].firstIndex(of: "}"))
             let bodyStart = styled.index(after: colorEnd)
             let end = try #require(styled.range(of: "\\)", range: bodyStart..<styled.endIndex))
-            let body = String(styled[bodyStart..<end.lowerBound].dropLast())
+            var body = String(styled[bodyStart..<end.lowerBound].dropLast())
+            if body.hasPrefix("\\textit{") {
+                #expect(body.hasSuffix("}"))
+                body = String(body.dropFirst("\\textit{".count).dropLast())
+            }
             var index = body.startIndex
             while index < body.endIndex {
                 if let (encoded, decoded) = commands.first(where: { body[index...].hasPrefix($0.0) }) {
