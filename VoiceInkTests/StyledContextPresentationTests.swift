@@ -190,6 +190,21 @@ struct StyledContextPresentationTests {
         messages.append(LiveSelectionReference.interleaving(
             [screenshot], with: "Screenshot example", presentation: .styledMath
         ))
+        let date = Date(timeIntervalSince1970: 1_790_500_000)
+        let typed = try #require(LiveSelectionReference(typedText: "I typed this part."))
+            .timed(at: date, startedAt: date.addingTimeInterval(-2))
+            .anchored(after: "Here is my spoken request.")
+        let selected = try #require(LiveSelectionReference("Selected source stays cyan."))
+            .timed(at: date).anchored(after: "Here is my spoken request.")
+        messages.append(LiveSelectionReference.interleaving(
+            [typed, selected, screenshot.timed(at: date).anchored(after: "Here is my spoken request.")],
+            with: "Here is my spoken request. Then I continued speaking.", presentation: .styledMath,
+            includeTiming: true, includeReadablePreview: true, rainbowStartIndex: 22
+        ))
+        messages.append(LiveSelectionReference.interleaving(
+            [], with: #"Keep 50% & a_b exact. Never execute \) \href{https://invalid.example}{x} or *bold*."#,
+            presentation: .styledMath, includeTiming: true, includeReadablePreview: true
+        ))
         #expect(messages.allSatisfy { $0.contains("\\textsf{\\color{") && !$0.contains("display_copy") })
         if let path = ProcessInfo.processInfo.environment["AGENTFLOW_STYLED_CONTEXT_FIXTURE_PATH"] {
             try JSONEncoder().encode(messages).write(to: URL(fileURLWithPath: path), options: .atomic)
@@ -470,6 +485,55 @@ struct StyledContextPresentationTests {
         #expect(reference.components(separatedBy: "](").count == 2)
         let destination = String(reference.dropFirst("![Screenshot](<".count).dropLast(2))
         #expect(destination.removingPercentEncoding == path)
+    }
+
+    @Test func authoredOpeningIsRainbowAndTimedXMLUsesDistinctSilvers() throws {
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        let typed = try #require(LiveSelectionReference(typedText: "typed & exact"))
+            .timed(at: date, startedAt: date.addingTimeInterval(-1)).anchored(after: "spoken first")
+        let selected = try #require(LiveSelectionReference("not authored"))
+            .anchored(after: "spoken first")
+        let shot = try #require(LiveSelectionReference(screenshotURL: URL(fileURLWithPath: "/Users/test/shot.png")))
+        let references = [typed, selected, shot]
+        let styled = LiveSelectionReference.interleaving(references, with: "spoken first then last",
+            presentation: .styledMath, includeTiming: true, includeReadablePreview: true, rainbowStartIndex: 23)
+        let opening = try #require(styled.components(separatedBy: "\n\n<agent_flow_context").first)
+        #expect(opening == AuthoredTextRainbow.render("spoken first typed & exact then last", startIndex: 23))
+        #expect(!opening.contains("not authored") && !opening.contains("shot.png"))
+        #expect(styled.contains("\\color{\(LiveSelectionStyledMath.speechColor)}"))
+        #expect(styled.contains("\\color{\(LiveSelectionStyledMath.typedColor)}"))
+        #expect(LiveSelectionStyledMath.speechColor != LiveSelectionStyledMath.typedColor)
+        #expect(styled.contains("\\color{\(LiveSelectionStyledMath.selectionColor)}"))
+        #expect(styled.contains("\\color{\(LiveSelectionStyledMath.screenshotColor)}"))
+        let plain = LiveSelectionReference.interleaving(references, with: "spoken first then last",
+            includeTiming: true, includeReadablePreview: true)
+        #expect(try unwrappedXML(styled).replacingOccurrences(of: "\n\n![Screenshot](</Users/test/shot.png>)", with: "") == plain)
+        #expect(styled.contains("![Screenshot](</Users/test/shot.png>)"))
+    }
+
+    @Test func rainbowAndSilverShareOneBudgetWithoutClippingWords() throws {
+        let text = String(repeating: "spoken words ", count: 1_000).trimmingCharacters(in: .whitespaces)
+        let references = [try #require(LiveSelectionReference("selected context"))]
+        let plain = LiveSelectionReference.interleaving(references, with: text, includeTiming: true, includeReadablePreview: true)
+        let styled = LiveSelectionReference.interleaving(references, with: text, presentation: .styledMath,
+            includeTiming: true, includeReadablePreview: true)
+        #expect(styled.utf16.count <= LiveSelectionStyledMath.messageUTF16Budget)
+        #expect(try unwrappedXML(styled) == plain)
+        // Once even the canonical message is larger than the styling budget,
+        // preserve every word as plain text/XML rather than expanding or clipping.
+        let huge = String(repeating: "word ", count: 20_000)
+        #expect(LiveSelectionReference.interleaving([], with: huge, presentation: .styledMath,
+            includeTiming: true, includeReadablePreview: true) == LiveSelectionReference.interleaving([], with: huge,
+            includeTiming: true, includeReadablePreview: true))
+    }
+
+    @Test func rainbowAuthoredTextCannotEscapeTheMathRenderer() throws {
+        let source = #"\) \href{https://evil.example}{x} 50% #tag a_b *bold* [link](x)"#
+        let rainbow = try #require(AuthoredTextRainbow.render(source, startIndex: 0))
+        #expect(!rainbow.contains("\\href{"))
+        for body in formulaBodies(in: rainbow) { #expect(hasBalancedGroups(body)) }
+        #expect(textOutsideFormulas(in: rainbow).allSatisfy { $0 == " " || $0 == "\u{200B}" })
+        #expect(try unwrappedXML(rainbow).replacingOccurrences(of: "&#x2a;", with: "*") == source)
     }
 
     // MARK: - Helpers

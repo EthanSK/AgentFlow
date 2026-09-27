@@ -361,7 +361,9 @@ struct RecorderTypedInputTests {
         for presentation in [LiveSelectionReference.Presentation.plain, .styledMath] {
             let result = LiveSelectionReference.interleaving(references, with: "spoken first then last",
                 presentation: presentation, includeTiming: true, includeReadablePreview: true)
-            #expect(result.hasPrefix("spoken first typed words then last\n\n<agent_flow_context preview=\"authored_text_above\">"))
+            let opening = presentation == .plain ? "spoken first typed words then last"
+                : try #require(AuthoredTextRainbow.render("spoken first typed words then last", startIndex: 0))
+            #expect(result.hasPrefix(opening + "\n\n<agent_flow_context preview=\"authored_text_above\">"))
             #expect(result.hasSuffix("</agent_flow_context>"))
             #expect(result.components(separatedBy: "<agent_flow_context ").count == 2)
         }

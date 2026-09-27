@@ -202,7 +202,7 @@ class TranscriptionPipeline {
             // one final destination write, never a streaming composer edit.
             // Keep raw/skip authored prose verbatim. Source references still do
             // not enter commands or recorder-assistant responses.
-            // `.styledMath` only adds display previews above the unchanged XML;
+            // `.styledMath` colours the authored opening and canonical XML;
             // it never adds a paste, an attachment, or a delivery route.
             guard !assistant.isFollowUp,
                   let current = finalText else { return }
@@ -211,12 +211,20 @@ class TranscriptionPipeline {
             let references = liveSelectionReferences().filter {
                 (includeSourceContext && !skipPostProcessingNow) || $0.isTypedText
             }
+            let hasAuthoredWords = current.contains(where: { !$0.isWhitespace })
+                || references.contains(where: \.isTypedText)
+            // Reserve one shared palette offset only for this final styled AI
+            // message. The formatter itself stays pure, and plain/raw output
+            // must neither acquire a file lock nor consume a colour position.
+            let rainbowStart = presentation == .styledMath && includeSourceContext
+                && !skipPostProcessingNow && hasAuthoredWords ? AuthoredTextRainbow.reserveStartIndex() : 0
             let annotated = LiveSelectionReference.interleaving(
                 references,
                 with: current,
                 presentation: presentation,
                 includeTiming: includeSourceContext && !skipPostProcessingNow,
-                includeReadablePreview: includeSourceContext && !skipPostProcessingNow
+                includeReadablePreview: includeSourceContext && !skipPostProcessingNow,
+                rainbowStartIndex: rainbowStart
             )
             finalContextAttached = true
             guard annotated != current else { return }

@@ -45,11 +45,12 @@ struct LiveSelectionReference: Equatable {
 
     private enum InterleavedPart {
         case text(String)
+        case authoredXML(String, color: String)
         case reference(LiveSelectionReference, index: Int)
 
         var canonical: String {
             switch self {
-            case .text(let text):
+            case .text(let text), .authoredXML(let text, _):
                 return text
             case let .reference(reference, index):
                 return reference.xml(index: index, hasDisplayCopy: false)
@@ -279,7 +280,8 @@ struct LiveSelectionReference: Equatable {
         with transcript: String,
         presentation: Presentation = .plain,
         includeTiming: Bool = false,
-        includeReadablePreview: Bool = false
+        includeReadablePreview: Bool = false,
+        rainbowStartIndex: Int = 0
     ) -> String {
         guard includeTiming || !references.isEmpty else {
             return transcript
@@ -320,15 +322,16 @@ struct LiveSelectionReference: Equatable {
             let speech = String(transcript[previousEnd..<insertion])
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if !speech.isEmpty {
-                parts.append(.text(timedSpeech(speech, through: wordCount)))
+                let text = timedSpeech(speech, through: wordCount)
+                parts.append(includeTiming ? .authoredXML(text, color: LiveSelectionStyledMath.speechColor) : .text(text))
             }
             if reference.isSelection { selectionIndex += 1 }
             if reference.speechBoundary {
                 // The timestamp belongs to the grouped speech, not a free-floating tag.
             } else if includeTiming, reference.isTypedText, let ended = reference.capturedAt {
                 let started = reference.runStartedAt ?? ended
-                parts.append(.text("<typed_text start_at=\"\(timestamp(started))\" end_at=\"\(timestamp(ended))\">\n"
-                    + xmlEscaped(reference.typedText ?? "") + "\n</typed_text>"))
+                parts.append(.authoredXML("<typed_text start_at=\"\(timestamp(started))\" end_at=\"\(timestamp(ended))\">\n"
+                    + xmlEscaped(reference.typedText ?? "") + "\n</typed_text>", color: LiveSelectionStyledMath.typedColor))
             } else {
                 parts.append(.reference(reference, index: selectionIndex))
             }
@@ -338,26 +341,36 @@ struct LiveSelectionReference: Equatable {
         let remainingSpeech = String(transcript[previousEnd...])
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if !remainingSpeech.isEmpty {
-            parts.append(.text(timedSpeech(remainingSpeech, through: wordEnds.count)))
+            let text = timedSpeech(remainingSpeech, through: wordEnds.count)
+            parts.append(includeTiming ? .authoredXML(text, color: LiveSelectionStyledMath.speechColor) : .text(text))
         }
         // Untimed/plain output keeps its accepted grammar. Timed AI output uses
         // uniform start_at/end_at; the skill also accepts historical field names.
         let canonical = parts.map(\.canonical)
-        let structured = presentation == .styledMath
-            ? styled(parts, canonical: canonical) : canonical.joined(separator: "\n\n")
+        var readablePreview: String?
         if includeTiming && includeReadablePreview {
-            // Queue previews must begin with authored words, never XML or a
+            // Queue previews must begin with authored words, never a source XML tag or a
             // highlighted quote. This is one display copy; the marked timeline
             // below is authoritative for context placement and is not a second
             // request. Ordinary-app paste never enters this AI-only presentation.
+            // Ethan now wants this opening rainbow-coloured where styled output
+            // is enabled; queue surfaces that do not render math may show LaTeX.
             let readable = previewParts(references, with: transcript).compactMap { part -> String? in
                 if case .speech(let text) = part { return text }
                 return nil
             }.joined(separator: " ")
             if !readable.isEmpty {
-                return readable + "\n\n<agent_flow_context preview=\"authored_text_above\">\n"
-                    + structured + "\n</agent_flow_context>"
+                readablePreview = readable
             }
+        }
+        if presentation == .styledMath {
+            return styled(parts, canonical: canonical, readablePreview: readablePreview,
+                          rainbowStartIndex: rainbowStartIndex)
+        }
+        let structured = canonical.joined(separator: "\n\n")
+        if let readablePreview {
+            return readablePreview + "\n\n<agent_flow_context preview=\"authored_text_above\">\n"
+                + structured + "\n</agent_flow_context>"
         }
         return structured
     }
@@ -369,24 +382,50 @@ struct LiveSelectionReference: Equatable {
     /// Now style that same XML in place: a second white copy was confusing in the
     /// actual user bubble. Optional colour still yields to complete source context
     /// at the paste budget; local screenshot links are part of the base output.
-    private static func styled(_ parts: [InterleavedPart], canonical: [String]) -> String {
+    private static func styled(_ parts: [InterleavedPart], canonical: [String],
+                               readablePreview: String? = nil, rainbowStartIndex: Int = 0) -> String {
         let base = parts.enumerated().map { offset, part -> String in
             guard case let .reference(reference, _) = part,
                   let path = reference.screenshotPath else { return canonical[offset] }
             return canonical[offset] + "\n\n" + LiveSelectionStyledMath.localImageReference(path: path)
         }
+        let beforeTimeline = "\n\n<agent_flow_context preview=\"authored_text_above\">\n"
+        let afterTimeline = "\n</agent_flow_context>"
+        let envelopeSize = readablePreview.map { $0.utf16.count + beforeTimeline.utf16.count + afterTimeline.utf16.count } ?? 0
         var remaining = LiveSelectionStyledMath.messageUTF16Budget
-            - base.joined(separator: "\n\n").utf16.count
+            - base.joined(separator: "\n\n").utf16.count - envelopeSize
+        var opening = readablePreview
+        if let readablePreview, remaining > 0 {
+            // Reserve the opening before colouring XML, but share one expansion
+            // budget. Colour must never crowd out authored words or source context.
+            if let rainbow = AuthoredTextRainbow.render(readablePreview, startIndex: rainbowStartIndex,
+                maxUTF16Count: readablePreview.utf16.count + remaining) {
+                let cost = rainbow.utf16.count - readablePreview.utf16.count
+                opening = rainbow
+                remaining -= cost
+            }
+        }
         var output: [String] = []
         for (offset, part) in parts.enumerated() {
-            guard case let .reference(reference, _) = part, !reference.isTypedText else {
+            guard remaining > 0 else { output.append(base[offset]); continue }
+            let color: String
+            var screenshotPath: String?
+            switch part {
+            case .text:
                 output.append(base[offset])
                 continue
+            case .authoredXML(_, let authoredColor):
+                color = authoredColor
+            case .reference(let reference, _):
+                guard !reference.isTypedText else {
+                    output.append(base[offset])
+                    continue
+                }
+                screenshotPath = reference.screenshotPath
+                color = screenshotPath == nil ? LiveSelectionStyledMath.selectionColor : LiveSelectionStyledMath.screenshotColor
             }
-            let color = reference.screenshotPath == nil
-                ? LiveSelectionStyledMath.selectionColor : LiveSelectionStyledMath.screenshotColor
             var colored = LiveSelectionStyledMath.coloredXML(canonical[offset], color: color)
-            if let path = reference.screenshotPath {
+            if let path = screenshotPath {
                 colored += "\n\n" + LiveSelectionStyledMath.localImageReference(path: path)
             }
             let cost = colored.utf16.count - base[offset].utf16.count
@@ -399,7 +438,9 @@ struct LiveSelectionReference: Equatable {
             // renders literally. Wrapping the tag itself removes that duplicate.
             output.append(colored)
         }
-        return output.joined(separator: "\n\n")
+        let timeline = output.joined(separator: "\n\n")
+        if let opening { return opening + beforeTimeline + timeline + afterTimeline }
+        return timeline
     }
 
     /// Display-only preview for `.styledMath`. Typed prose is authored text that is
@@ -539,6 +580,10 @@ enum LiveSelectionStyledMath {
     static let selectionColor = "#67e8f9"
     /// Screenshot XML is magenta, distinct from cyan selected-text context.
     static let screenshotColor = "#e879f9"
+    /// Authored XML stays quiet beside source context: cool silver speech and
+    /// slightly warmer silver typing. The readable opening owns the rainbow.
+    static let speechColor = "#cbd5e1"
+    static let typedColor = "#d4d4d8"
     /// Quiet captions let the coloured source text carry the emphasis.
     static let captionColor = "#94a3b8"
     /// Conservative width (wide CJK/emoji, M/W and wide punctuation count twice) per formula,
