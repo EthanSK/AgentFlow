@@ -11,6 +11,12 @@ The production pipeline accepts authored text locally and refuses empty delivery
 before paste/Return. The typing suite exercises that boundary with a throwing audio
 spy and an injected delivery sink rather than touching a user's current input.
 
+Timestamp overloads must retain the exact `RecorderStateProvider.updateTypedInput(_:)`
+witness. Replacing it with a two-argument method whose date has a default silently
+selected the protocol's compatibility no-op for HUD callers; the full release test
+gate caught the dropped typing before installation. Keep the one-argument forwarding
+method and exercise the real protocol existential in both editor and pipeline tests.
+
 Both Command keys need device-specific left/right flag bits; the aggregate Command
 flag cannot identify this chord. Consume only its completing press and preserve
 releases. It is start-only, independent of the Primary multi-click classifier.

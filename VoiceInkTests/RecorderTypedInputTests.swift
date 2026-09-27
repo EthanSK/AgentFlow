@@ -6,6 +6,17 @@ import Testing
 @testable import VoiceInkPlusPlus
 
 struct RecorderTypedInputTests {
+    @Test @MainActor func protocolTypedInputWitnessRetainsTextAndTiming() {
+        let session = RecordingSession()
+        let provider: any RecorderStateProvider = session
+        provider.updateTypedInput("Text through the production HUD interface")
+        #expect(session.typedInput == "Text through the production HUD interface")
+        #expect(session.liveSelectionReferences.count == 1)
+        #expect(session.liveSelectionReferences.first?.capturedAt != nil)
+        #expect(session.liveSelectionReferences.first?.runStartedAt != nil)
+        session.endLiveSelectionCapture()
+    }
+
     @Test @MainActor func typedOnlyProductionPipelineCompletesWithoutCallingAudioAndDeliversOnce() async throws {
         for text in ["Typed words\nand another line", ""] {
             let schema = Schema([Transcription.self, WordReplacement.self, SessionMetric.self])
@@ -20,7 +31,8 @@ struct RecorderTypedInputTests {
             let pipeline = TranscriptionPipeline(modelContext: context, serviceRegistry: registry,
                 enhancementService: nil, delivery: output)
             let recording = RecordingSession()
-            recording.updateTypedInput(text)
+            let provider: any RecorderStateProvider = recording
+            provider.updateTypedInput(text)
             recording.endLiveSelectionCapture()
             let record = Transcription(text: "", duration: 0)
             context.insert(record)

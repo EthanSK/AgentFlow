@@ -272,7 +272,13 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         }
     }
 
-    func updateTypedInput(_ value: String, at date: Date = Date()) {
+    // Keep the exact RecorderStateProvider witness. Adding a defaulted timestamp
+    // alone changes the signature and would select its compatibility no-op in HUDs.
+    func updateTypedInput(_ value: String) {
+        updateTypedInput(value, at: Date())
+    }
+
+    func updateTypedInput(_ value: String, at date: Date) {
         guard canTypeInHUD else { return }
         typedInput = value
         if typedSpeechAnchor == nil { typedSpeechAnchor = partialTranscript }

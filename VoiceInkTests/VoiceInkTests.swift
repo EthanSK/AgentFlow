@@ -2173,7 +2173,7 @@ struct VoiceInkTests {
             "                    outputForThisDelivery.outputMode == .respond"
         ))
         #expect(source.contains(
-            "if !skipPostProcessingNow,\n" +
+            "if hasCapturedAudio, !skipPostProcessingNow,\n" +
             "                   !suppressesModeResponse,"
         ))
     }

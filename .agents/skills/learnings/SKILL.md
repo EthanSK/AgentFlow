@@ -136,6 +136,12 @@ nothing, and neither calls transcription. Group speech/typed timing in XML only
 where context is allowed; recognition-activity times are approximate, not VAD.
 User-requested microphone-off typing and timing — 2026-09-27.
 
+Keep the exact `RecorderStateProvider.updateTypedInput(_:)` witness when adding
+timestamp overloads; test edits through the protocol used by the real HUD, not only
+the concrete session. A defaulted extra argument is not the same Swift witness.
+Self-improved — 2026-09-27: the release gate caught typing falling into the protocol
+compatibility no-op; see LEARNINGS.md, keyboard-only completion.
+
 For a requested Soniox-versus-AssemblyAI comparison using saved recordings, read
 [references/provider-realtime-ab-test.md](references/provider-realtime-ab-test.md)
 and use `scripts/compare-realtime-stt.mjs`. Dry-run the corpus first, require one
