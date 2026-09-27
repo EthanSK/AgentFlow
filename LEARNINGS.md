@@ -1,5 +1,15 @@
 # Learnings
 
+## 2026-09-27 — Signing can fail after a successful build on a nearly-full volume
+
+The build-359 universal Release completed, but outer local signing reported an
+internal Code Signing error with only 132 MiB free on the release volume. After
+verifying no compiler remained active, removing only that completed build's
+712 MiB `Build/Intermediates.noindex` directory made the unchanged signing step
+succeed. Preserve Products, test/build logs, signed apps and rollback copies;
+compiler intermediates are regenerable. A successful compile is not evidence
+that enough working space remains for signing, archive creation or notarization.
+
 ## 2026-09-27 — Search both modern and historical learning-entry formats
 
 The keyword helper previously began parsing only after `(newest first)` and ignored
