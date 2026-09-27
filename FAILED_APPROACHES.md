@@ -1098,7 +1098,7 @@ No row may be promoted merely because a later build reused part of it.
 
 ### Assuming 3,000 characters fill every recorder display
 
-- **State:** REJECTED as a sizing assumption; still present in installed build 365 at diagnosis.
+- **State:** REJECTED as a sizing assumption; removed from build 366 source (installed build 365 still had it at diagnosis).
 - **Failure:** `transcriptHeight` and `typingHeight` jump straight to their maximum above 3,000 characters. A Mini AppKit probe at the production 18pt font and 656pt preview width measured 919pt on both sides of the threshold, while the current branch jumped from 919pt to a 1450pt cap at 3,001 characters. Ethan's long-dictation screenshot shows the resulting excess space.
 - **Rule:** Preserve content-driven, screen-bounded growth without a count-based discontinuity. Cover speech and typing, scale and display bounds, and bounded measurement work; do not restore the rejected fixed-height layout.
 - **Reconsider only if:** the shortcut is gated by a proven actual-layout bound for the current width/font/scale, so crossing it cannot enlarge the panel beyond the measured content or introduce a jump.

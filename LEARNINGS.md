@@ -21,6 +21,15 @@ scrolling, rather than restore the rejected fixed-height HUD. Test both speech a
 typing at the count boundary across widths/scales and keep measurement bounded by
 actual layout geometry, not an assumed universal character count.
 
+Build 366 replaces both count shortcuts with one height-bounded TextKit layout.
+The visible glyph range determines whether the current display's cap is truly
+reached; an extra character alone cannot expand the host. The regression checks
+speech and typing on both sides of 3,000 characters at two widths and two caps,
+and verifies much longer text saturates without unbounded layout. On the exact
+candidate, the Mini's canonical focused runs named and passed the two sizing
+tests and 45 HUD/typing/Primary/Next guards. A live long-dictation visual check
+on Ethan's display remains distinct from these automated results.
+
 ## 2026-09-27 — Compact metadata needs a boundary between section types
 
 Keep adjacent XML metadata compact only within consecutive sections of the same
