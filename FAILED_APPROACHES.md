@@ -1,5 +1,18 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-09-27 — Replacing a protocol witness with a defaulted timestamp overload — REJECTED
+
+**Mechanism:** Replace `RecordingSession.updateTypedInput(_:)` with
+`updateTypedInput(_:at:)`, giving the timestamp a default value.
+**Failure:** The recorder protocol still requires the one-argument signature, so HUD
+callers select its compatibility no-op and lose typed edits. The Mini release gate
+reproduced the loss before installation; concrete timed calls did not expose it.
+**Accepted correction:** Keep the exact one-argument forwarding witness and verify
+both text retention and grouped timing through `any RecorderStateProvider`, including
+the production pipeline's typed-only completion test.
+**Reconsider only if:** The protocol and all conformers/callers deliberately move to a
+new signature together, and the production-interface typing regressions still pass.
+
 ## 2026-09-25 — Hard-coded Sparkle version-A helper signing — REJECTED
 
 **Mechanism:** Sign `Sparkle.framework/Versions/A/Autoupdate` only if that path exists, then
