@@ -7,6 +7,61 @@ import Testing
 /// reading before pressing start, or during microphone start-up) were missed
 /// because each recording owned its own mouse monitor from its start onward.
 struct SelectionGestureWatcherTests {
+    @Test @MainActor func delayedMouseEdgesKeepTheirEventPositions() throws {
+        let down = try #require(NSEvent.mouseEvent(with: .leftMouseDown,
+            location: NSPoint(x: 123, y: 456), modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime - 1,
+            windowNumber: 0, context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+        let up = try #require(NSEvent.mouseEvent(with: .leftMouseUp,
+            location: NSPoint(x: 323, y: 456), modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime - 0.5,
+            windowNumber: 0, context: nil, eventNumber: 1, clickCount: 1, pressure: 0))
+        let start = SelectionGestureWatcher.edge(from: down, primaryScreenTop: 900)
+        let end = SelectionGestureWatcher.edge(from: up, primaryScreenTop: 900)
+        #expect(end.location.x - start.location.x == 200)
+        #expect(LiveSelectionCapture.isSelectionGesture(from: start.location, to: end.location, clickCount: 1))
+        #expect(start.occurredAt < end.occurredAt)
+        let shifted = SelectionGestureWatcher.edge(from: down, primaryScreenTop: 1200)
+        #expect(shifted.location.y - start.location.y == 300)
+    }
+    @Test func mouseRecipientWinsOverDelayedForegroundActivation() {
+        #expect(SelectionGestureWatcher.sourcePID(targetPID: 42, frontmostPID: 7) == 42)
+        #expect(SelectionGestureWatcher.sourcePID(targetPID: 0, frontmostPID: 7) == 7)
+        #expect(SelectionGestureWatcher.sourcePID(targetPID: nil, frontmostPID: nil) == nil)
+    }
+
+    @Test @MainActor func startupHighlightsAreRetainedAtTheGestureSpeechAnchor() throws {
+        let session = RecordingSession()
+        session.liveRecordingState = .starting
+        let first = try #require(LiveSelectionReference("during microphone startup"))
+        session.recordLiveSelection(first, spokenAnchor: "")
+        session.liveRecordingState = .recording
+        session.partialTranscript = "words arriving while AX reads"
+        let second = try #require(LiveSelectionReference("first new chat highlight"))
+        session.recordLiveSelection(second, spokenAnchor: "words")
+        #expect(session.liveSelectionReferences == [first.anchored(after: ""), second.anchored(after: "words")])
+        session.shouldCancel = true
+        session.recordLiveSelection(first)
+        #expect(session.liveSelectionReferences.count == 2)
+    }
+
+    @Test func selectionAttachesBeforeAudioHandshakeAndTypingFocus() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let engine = try String(contentsOf: root.appendingPathComponent("VoiceInk/Transcription/Engine/VoiceInkEngine.swift"), encoding: .utf8)
+        let capture = try #require(engine.range(of: "session.beginLiveSelectionCapture()"))
+        let audio = try #require(engine.range(of: "session.recordingInputDevice = try await self.recorder.startRecording("))
+        let focus = try #require(engine.range(of: "session.typingFocus.requestInitialFocus()", range: capture.upperBound..<engine.endIndex))
+        #expect(capture.lowerBound < audio.lowerBound && capture.lowerBound < focus.lowerBound)
+    }
+
+    @Test func optionalCodexLabelsNeverScanLogsOnTheMainActor() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let reader = try String(contentsOf: root.appendingPathComponent("VoiceInk/Transcription/Engine/CodexConversationContext.swift"), encoding: .utf8)
+        let capture = try String(contentsOf: root.appendingPathComponent("VoiceInk/Services/LiveSelectionCapture.swift"), encoding: .utf8)
+        #expect(reader.contains("private actor CodexSelectionLogWorker"))
+        #expect(reader.contains("nonisolated static func readSelectionThreadIDs"))
+        #expect(capture.contains("await CodexConversationContextReader.selectionThreadIDs"))
+        #expect(!capture.contains("visibleSelectionThreadIDsIfFrontmost("))
+        #expect(capture.contains("hasGesture: false"))
+    }
     private func edge(_ type: NSEvent.EventType, _ x: CGFloat, clicks: Int = 1, at time: Date)
         -> SelectionGestureWatcher.MouseEdge {
         SelectionGestureWatcher.MouseEdge(

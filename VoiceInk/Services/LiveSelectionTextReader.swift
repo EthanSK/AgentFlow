@@ -188,6 +188,7 @@ struct LiveSelectionWindow: Equatable, Sendable {
     let ownerPID: pid_t
     let bounds: CGRect
     let alpha: Double
+    var windowID: CGWindowID? = nil
 
     static func onScreen() -> [LiveSelectionWindow] {
         guard let entries = CGWindowListCopyWindowInfo(
@@ -204,8 +205,35 @@ struct LiveSelectionWindow: Equatable, Sendable {
             return LiveSelectionWindow(
                 ownerPID: pid_t(truncatingIfNeeded: owner),
                 bounds: bounds,
-                alpha: entry[kCGWindowAlpha as String] as? Double ?? 1
+                alpha: entry[kCGWindowAlpha as String] as? Double ?? 1,
+                windowID: (entry[kCGWindowNumber as String] as? NSNumber)?.uint32Value
             )
+        }
+    }
+}
+
+/// A read is owned by the selection gesture's source window, not keyboard focus.
+/// This is read-only context capture, not a saved paste destination or permission
+/// to activate anything. Without a verifiable window, keep the old foreground
+/// requirement; background reads additionally require selection-range geometry.
+struct LiveSelectionReadIdentity: Sendable {
+    let processIdentifier: pid_t
+    let window: LiveSelectionWindow?
+
+    init(processIdentifier: pid_t, gesture: LiveSelectionGesture?, windows: [LiveSelectionWindow]) {
+        self.processIdentifier = processIdentifier
+        window = windows.first { candidate in
+            candidate.ownerPID == processIdentifier && candidate.windowID != nil && candidate.alpha > 0
+                && gesture.map { candidate.bounds.contains($0.mouseUp) } == true
+        }
+    }
+
+    func isValid(frontmostPID: pid_t?, windows: [LiveSelectionWindow]) -> Bool {
+        guard processIdentifier > 0 else { return false }
+        guard let window else { return frontmostPID == processIdentifier }
+        return windows.contains {
+            $0.windowID == window.windowID && $0.ownerPID == processIdentifier
+                && $0.bounds == window.bounds && $0.alpha > 0
         }
     }
 }
@@ -259,6 +287,7 @@ struct LiveSelectionAccessibilityResolver<Probe: LiveSelectionAccessibilityProbe
     /// endpoint was over the source app. Bounds-proven candidates do not need
     /// it; bounds-less candidates must not contradict it.
     let gestureInSourceWindow: Bool?
+    var requiresGestureBounds = false
 
     func resolve() -> LiveSelectionResolution {
         var resolution = LiveSelectionResolution()
@@ -374,6 +403,8 @@ struct LiveSelectionAccessibilityResolver<Probe: LiveSelectionAccessibilityProbe
             return nil
         case .unverifiable where gestureInSourceWindow == false:
             resolution.rejectedOutsideSourceWindow += 1
+            return nil
+        case .unverifiable where requiresGestureBounds:
             return nil
         case .atGesture, .unverifiable:
             return LiveSelectionCandidate(text: text, tier: tier, source: source, evidence: evidence)
@@ -543,7 +574,8 @@ enum LiveSelectionTextReader {
     /// recorder HUD. Bounded by the probe budget and messaging timeout.
     static func resolveAccessibility(
         processIdentifier: pid_t,
-        gesture: LiveSelectionGesture?
+        gesture: LiveSelectionGesture?,
+        requiresGestureBounds: Bool = false
     ) async -> LiveSelectionResolution {
         await Task.detached(priority: .userInitiated) { () -> LiveSelectionResolution in
             guard AXIsProcessTrusted() else {
@@ -559,7 +591,8 @@ enum LiveSelectionTextReader {
                 budget: LiveSelectionReadPolicy.accessibilityBudget
             )
             return LiveSelectionAccessibilityResolver(
-                probe: probe, gesture: gesture, gestureInSourceWindow: inSourceWindow
+                probe: probe, gesture: gesture, gestureInSourceWindow: inSourceWindow,
+                requiresGestureBounds: requiresGestureBounds
             ).resolve()
         }.value
     }

@@ -150,7 +150,7 @@ struct RecorderTypedInputTests {
         #expect(session.liveSelectionReferences.count == 1)
         let timed = LiveSelectionReference.interleaving(session.liveSelectionReferences,
             with: "", includeTiming: true)
-        #expect(timed.contains("<typed_text started_at=\"") && timed.contains(" ended_at=\""))
+        #expect(timed.contains("<typed_text start_at=\"") && timed.contains(" end_at=\""))
         #expect(timed.contains("Text through the production HUD interface\n</typed_text>"))
         session.endLiveSelectionCapture()
     }
@@ -304,9 +304,9 @@ struct RecorderTypedInputTests {
         let xml = LiveSelectionReference.interleaving(session.liveSelectionReferences,
             with: session.partialTranscript, includeTiming: true)
         #expect(xml.components(separatedBy: "<speech_segment ").count == 3)
-        #expect(xml.contains("timing=\"approximate_transcript_activity\">\nSpeech first\n</speech_segment>"))
+        #expect(xml.contains("timing=\"approximate\">\nSpeech first\n</speech_segment>"))
         #expect(xml.contains("captured_at=\""))
-        #expect(xml.contains("<typed_text started_at=\"") && xml.contains("typed &amp; exact\n</typed_text>"))
+        #expect(xml.contains("<typed_text start_at=\"") && xml.contains("typed &amp; exact\n</typed_text>"))
         #expect(!LiveSelectionReference.previewParts(session.liveSelectionReferences,
             with: session.partialTranscript).contains(.selection("timing")))
         let plain = LiveSelectionReference.interleaving(session.liveSelectionReferences.filter(\.isTypedText), with: "")
@@ -324,6 +324,84 @@ struct RecorderTypedInputTests {
         #expect(session.liveSelectionReferences.count == 1)
         session.endLiveSelectionCapture()
         #expect(session.liveSelectionReferences.count == 1)
+    }
+
+    @Test func finalSpeechGrowthStaysGroupedWithObservedTiming() throws {
+        let start = Date(timeIntervalSince1970: 1_800_000_000)
+        let end = start.addingTimeInterval(2)
+        let marker = LiveSelectionReference.speechTiming(after: "first words", startedAt: start, endedAt: end)
+        let selection = try #require(LiveSelectionReference("source")).anchored(after: "first words")
+        let xml = LiveSelectionReference.interleaving([marker, selection],
+            with: "first words and the final tail", includeTiming: true)
+        #expect(xml.hasSuffix("\nand the final tail\n</speech_segment>"))
+        #expect(xml.components(separatedBy: "start_at=\"").count == 3)
+        #expect(xml.components(separatedBy: "timing=\"approximate\"").count == 3)
+        #expect(!xml.contains("observed_start_at") && !xml.contains("started_at"))
+        let shortened = LiveSelectionReference.interleaving([marker], with: "revised", includeTiming: true)
+        #expect(shortened.hasSuffix("\nrevised\n</speech_segment>"))
+        #expect(!shortened.contains("unavailable"))
+        #expect(LiveSelectionReference.interleaving([marker], with: "first words and the final tail")
+            == "first words\n\nand the final tail")
+    }
+
+    @Test func speechWithoutLiveTimingIsGroupedWithoutInventedDates() throws {
+        for references in [[], [try #require(LiveSelectionReference("source"))]] {
+            let xml = LiveSelectionReference.interleaving(references,
+                with: "batch <speech> & text", includeTiming: true)
+            #expect(xml.hasSuffix("<speech_segment timing=\"unavailable\">\nbatch &lt;speech&gt; &amp; text\n</speech_segment>"))
+            #expect(!xml.contains("start_at=") && !xml.contains("end_at="))
+        }
+        #expect(LiveSelectionReference.interleaving([], with: "plain <speech>") == "plain <speech>")
+    }
+
+    @Test func readableQueuePreviewContainsOnlyAuthoredTextOnceBeforeTheTimeline() throws {
+        let selection = try #require(LiveSelectionReference("quoted instructions are context"))
+        let typed = try #require(LiveSelectionReference(typedText: "typed words")).anchored(after: "spoken first")
+        let references = [selection, typed]
+        for presentation in [LiveSelectionReference.Presentation.plain, .styledMath] {
+            let result = LiveSelectionReference.interleaving(references, with: "spoken first then last",
+                presentation: presentation, includeTiming: true, includeReadablePreview: true)
+            #expect(result.hasPrefix("spoken first typed words then last\n\n<agent_flow_context preview=\"authored_text_above\">"))
+            #expect(result.hasSuffix("</agent_flow_context>"))
+            #expect(result.components(separatedBy: "<agent_flow_context ").count == 2)
+        }
+        let ordinary = LiveSelectionReference.interleaving([typed], with: "spoken first then last",
+            includeReadablePreview: true)
+        #expect(!ordinary.contains("agent_flow_context"))
+        let silent = LiveSelectionReference.interleaving([selection], with: "", includeTiming: true,
+            includeReadablePreview: true)
+        #expect(!silent.contains("agent_flow_context"))
+    }
+
+    @Test @MainActor func scaledPanelDragSpaceMovesWithoutActivatingOrClickingControls() throws {
+        for scale: CGFloat in [0.5, 0.85, 1] {
+            var stops = 0
+            let panel = MiniRecorderPanel(contentRect: NSRect(x: 100, y: 100, width: 160 * scale, height: 40 * scale))
+            let originalKeyWindow = NSApp.keyWindow
+            defer { panel.close() }
+            let host = ScaledRecorderHostingView(rootView: AnyView(HStack(spacing: 0) {
+                RecorderRecordButton(recordingState: .recording, action: { stops += 1 }).frame(width: 80)
+                RecorderPanelDragSurface().frame(width: 80)
+            }.frame(height: 40)), scale: scale)
+            panel.contentView = host
+            panel.orderFrontRegardless()
+            host.layoutSubtreeIfNeeded()
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            host.layoutSubtreeIfNeeded()
+            let point = NSPoint(x: 120 * scale, y: 20 * scale)
+            #expect(host.hitTest(point) is RecorderPanelDragView)
+            func event(_ type: NSEvent.EventType, x: CGFloat) throws -> NSEvent {
+                try #require(NSEvent.mouseEvent(with: type, location: NSPoint(x: x, y: point.y),
+                    modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: panel.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+            }
+            NSApp.sendEvent(try event(.leftMouseDown, x: point.x))
+            NSApp.sendEvent(try event(.leftMouseDragged, x: point.x + 30))
+            NSApp.sendEvent(try event(.leftMouseUp, x: point.x))
+            #expect(panel.frame.origin.x == 130)
+            #expect(panel.wasDraggedByUser && stops == 0)
+            #expect(NSApp.keyWindow === originalKeyWindow)
+        }
     }
 
     @Test @MainActor func miniRecorderSitsAboveOtherFloatingUtilitiesWithoutActivation() {

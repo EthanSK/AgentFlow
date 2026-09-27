@@ -1127,6 +1127,10 @@ class VoiceInkEngine: NSObject, ObservableObject {
         // Append to the collection so the card appears immediately (shows the .starting state).
         sessions.append(session)
         recomputeDerivedState()
+        // The user's composing session starts now, not after the microphone
+        // handshake. Catch first highlights during startup and before explicit
+        // typing focus moves into our panel. removeSession owns cancellation.
+        session.beginLiveSelectionCapture()
 
         if let recordingStartIdentityTask,
            let recordingStartFocusedInput {
@@ -1248,7 +1252,6 @@ class VoiceInkEngine: NSObject, ObservableObject {
                 typingFocusStartID = nil
                 session.typingFocus.requestInitialFocus()
             }
-            session.beginLiveSelectionCapture()
             if session.recordingStartFocusedInput == nil {
                 let retryTarget = FocusLockService.shared
                     .captureFocusedInputSnapshot(

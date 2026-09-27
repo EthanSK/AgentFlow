@@ -98,3 +98,38 @@ final class RecorderControlsHostingView: NSHostingView<AnyView> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override var mouseDownCanMoveWindow: Bool { false }
 }
+
+/// Explicit nonactivating drag space: the hosting view must not reinterpret a
+/// Stop/Mic/editor click as a window drag. Put this only in blank control-bar
+/// space, not over buttons or the selectable typing editor.
+struct RecorderPanelDragSurface: NSViewRepresentable {
+    func makeNSView(context: Context) -> RecorderPanelDragView { RecorderPanelDragView() }
+    func updateNSView(_ view: RecorderPanelDragView, context: Context) {}
+}
+
+final class RecorderPanelDragView: NSView {
+    private var pointerStart: NSPoint?
+    private var windowStart: NSPoint?
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    override func mouseDown(with event: NSEvent) {
+        guard let panel = window as? MiniRecorderPanel else { return }
+        pointerStart = panel.convertPoint(toScreen: event.locationInWindow)
+        windowStart = panel.frame.origin
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let panel = window as? MiniRecorderPanel,
+              let pointerStart, let windowStart else { return }
+        let current = panel.convertPoint(toScreen: event.locationInWindow)
+        panel.wasDraggedByUser = true
+        panel.setFrameOrigin(NSPoint(x: windowStart.x + current.x - pointerStart.x,
+                                     y: windowStart.y + current.y - pointerStart.y))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        pointerStart = nil
+        windowStart = nil
+    }
+}

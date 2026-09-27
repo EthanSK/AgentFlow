@@ -287,6 +287,18 @@ enum CodexConversationContextPolicy {
 /// or participates in VoiceInk++ destination/delivery selection.
 @MainActor
 enum CodexConversationContextReader {
+    /// Optional labels must not block mouse dispatch or the recorder HUD.
+    /// A serial worker bounds concurrent scans without any idle polling/cache.
+    nonisolated static func selectionThreadIDs(processIdentifier: pid_t) async -> [String] {
+        await CodexSelectionLogWorker.shared.read(processIdentifier: processIdentifier)
+    }
+
+    nonisolated static func readSelectionThreadIDs(processIdentifier: pid_t) -> [String] {
+        let logs = codexLogURLs(processIdentifier: processIdentifier, fileManager: .default)
+            .prefix(CodexConversationContextPolicy.maximumLogFiles)
+            .compactMap { tailString(at: $0, maximumBytes: CodexConversationContextPolicy.maximumLogTailBytes) }
+        return CodexConversationContextPolicy.visibleSelectionThreadIDs(from: logs.joined(separator: "\n"))
+    }
     static func visibleSelectionThreadIDsIfFrontmost(
         frontmostApplication: NSRunningApplication?,
         fileManager: FileManager = .default
@@ -384,7 +396,7 @@ enum CodexConversationContextReader {
         return fileManager.isExecutableFile(atPath: codexBinary.path)
     }
 
-    private static func codexLogURLs(
+    nonisolated private static func codexLogURLs(
         processIdentifier: pid_t,
         fileManager: FileManager,
         now: Date = Date()
@@ -460,7 +472,7 @@ enum CodexConversationContextReader {
         return matches.count == 1 ? matches[0] : nil
     }
 
-    private static func tailString(at url: URL, maximumBytes: Int) -> String? {
+    nonisolated private static func tailString(at url: URL, maximumBytes: Int) -> String? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
 
@@ -478,5 +490,13 @@ enum CodexConversationContextReader {
         } catch {
             return nil
         }
+    }
+}
+
+private actor CodexSelectionLogWorker {
+    static let shared = CodexSelectionLogWorker()
+    func read(processIdentifier: pid_t) -> [String] {
+        guard !Task.isCancelled else { return [] }
+        return CodexConversationContextReader.readSelectionThreadIDs(processIdentifier: processIdentifier)
     }
 }

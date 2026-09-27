@@ -259,9 +259,10 @@ struct LiveSelectionReference: Equatable {
         _ references: [Self],
         with transcript: String,
         presentation: Presentation = .plain,
-        includeTiming: Bool = false
+        includeTiming: Bool = false,
+        includeReadablePreview: Bool = false
     ) -> String {
-        guard !references.isEmpty else {
+        guard includeTiming || !references.isEmpty else {
             return transcript
         }
 
@@ -274,13 +275,23 @@ struct LiveSelectionReference: Equatable {
         var selectionIndex = 0
         var previousEnd = transcript.startIndex
         var parts: [InterleavedPart] = []
+        let speechTimings = references.filter(\.speechBoundary)
         func timedSpeech(_ speech: String, through wordCount: Int) -> String {
-            guard includeTiming,
-                  let timing = references.first(where: { $0.speechBoundary && $0.spokenWordCount >= wordCount }),
-                  let started = timing.runStartedAt, let ended = timing.capturedAt else { return speech }
+            guard includeTiming else { return speech }
+            // The final provider result may grow beyond its last live partial.
+            // Keep that revised tail grouped with the last observed speech run;
+            // never invent a finish-time/audio timestamp or let words escape XML.
+            // Batch-only results have no callback timing, but still need a group.
+            let timing = speechTimings.first(where: { $0.spokenWordCount >= wordCount })
+                ?? speechTimings.last
+            guard let started = timing?.runStartedAt, let ended = timing?.capturedAt,
+                  started <= ended else {
+                return "<speech_segment timing=\"unavailable\">\n"
+                    + xmlEscaped(speech) + "\n</speech_segment>"
+            }
             // Recognition callbacks are delayed and may revise words. These are
             // observed transcript-activity ranges, never precise audio alignment.
-            return "<speech_segment observed_start_at=\"\(timestamp(started))\" observed_end_at=\"\(timestamp(ended))\" timing=\"approximate_transcript_activity\">\n"
+            return "<speech_segment start_at=\"\(timestamp(started))\" end_at=\"\(timestamp(ended))\" timing=\"approximate\">\n"
                 + xmlEscaped(speech) + "\n</speech_segment>"
         }
         for reference in references {
@@ -297,7 +308,7 @@ struct LiveSelectionReference: Equatable {
                 // The timestamp belongs to the grouped speech, not a free-floating tag.
             } else if includeTiming, reference.isTypedText, let ended = reference.capturedAt {
                 let started = reference.runStartedAt ?? ended
-                parts.append(.text("<typed_text started_at=\"\(timestamp(started))\" ended_at=\"\(timestamp(ended))\">\n"
+                parts.append(.text("<typed_text start_at=\"\(timestamp(started))\" end_at=\"\(timestamp(ended))\">\n"
                     + xmlEscaped(reference.typedText ?? "") + "\n</typed_text>"))
             } else {
                 parts.append(.reference(reference, index: selectionIndex))
@@ -310,13 +321,26 @@ struct LiveSelectionReference: Equatable {
         if !remainingSpeech.isEmpty {
             parts.append(.text(timedSpeech(remainingSpeech, through: wordEnds.count)))
         }
-        // Plain output must stay byte-identical to the accepted grammar: older
-        // messages, the interpretation skill, and History all depend on it.
+        // Untimed/plain output keeps its accepted grammar. Timed AI output uses
+        // uniform start_at/end_at; the skill also accepts historical field names.
         let canonical = parts.map(\.canonical)
-        guard presentation == .styledMath else {
-            return canonical.joined(separator: "\n\n")
+        let structured = presentation == .styledMath
+            ? styled(parts, canonical: canonical) : canonical.joined(separator: "\n\n")
+        if includeTiming && includeReadablePreview {
+            // Queue previews must begin with authored words, never XML or a
+            // highlighted quote. This is one display copy; the marked timeline
+            // below is authoritative for context placement and is not a second
+            // request. Ordinary-app paste never enters this AI-only presentation.
+            let readable = previewParts(references, with: transcript).compactMap { part -> String? in
+                if case .speech(let text) = part { return text }
+                return nil
+            }.joined(separator: " ")
+            if !readable.isEmpty {
+                return readable + "\n\n<agent_flow_context preview=\"authored_text_above\">\n"
+                    + structured + "\n</agent_flow_context>"
+            }
         }
-        return styled(parts, canonical: canonical)
+        return structured
     }
 
     /// The previous implementation added previews in capture order only while the message stayed inside
@@ -904,7 +928,8 @@ final class LiveSelectionCapture {
 
     /// `precedesSpeech` is true only for a highlight made before this capture
     /// attached; the session anchors it before all dictated words.
-    private let onCapture: (_ reference: LiveSelectionReference, _ precedesSpeech: Bool) -> Void
+    private let onCapture: (_ reference: LiveSelectionReference, _ precedesSpeech: Bool, _ spokenAnchor: String) -> Void
+    private let speechSnapshot: () -> String
     /// True between start() and stop(). Replaces this object's former private
     /// NSEvent monitor: edges now arrive from the shared watcher only while attached.
     private var isAttached = false
@@ -918,7 +943,9 @@ final class LiveSelectionCapture {
     private var screenshotStart = Date.distantFuture
     private var screenshotScanTask: Task<Void, Never>?
 
-    init(onCapture: @escaping (_ reference: LiveSelectionReference, _ precedesSpeech: Bool) -> Void) {
+    init(speechSnapshot: @escaping () -> String,
+         onCapture: @escaping (_ reference: LiveSelectionReference, _ precedesSpeech: Bool, _ spokenAnchor: String) -> Void) {
+        self.speechSnapshot = speechSnapshot
         self.onCapture = onCapture
     }
 
@@ -1034,7 +1061,7 @@ final class LiveSelectionCapture {
                   let reference = LiveSelectionReference(screenshotURL: url) else { continue }
             screenshotBaseline.insert(name)
             let created = (try? url.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? Date()
-            onCapture(reference.timed(at: created), false)
+            onCapture(reference.timed(at: created), false, speechSnapshot())
         }
     }
 
@@ -1082,7 +1109,7 @@ final class LiveSelectionCapture {
     }
 
     /// Called by `SelectionGestureWatcher` for every mouse edge while attached.
-    func handle(_ edge: MouseEdge) {
+    func handle(_ edge: MouseEdge, sourcePID: pid_t?) {
         guard isAttached else { return }
         switch edge.type {
         case .leftMouseDown:
@@ -1103,7 +1130,7 @@ final class LiveSelectionCapture {
                       to: endPoint,
                       clickCount: edge.clickCount
                   ),
-                  let app = NSWorkspace.shared.frontmostApplication else {
+                  let sourcePID, let app = NSRunningApplication(processIdentifier: sourcePID) else {
                 return
             }
             beginSelectionRead(
@@ -1122,16 +1149,26 @@ final class LiveSelectionCapture {
     /// gesture-bounded reader as a live highlight, so a stale or elsewhere
     /// selection fails closed rather than borrowing unrelated text.
     private func capturePriorSelection(_ gesture: SelectionGestureWatcher.CompletedGesture?) {
-        guard let gesture,
-              let app = NSWorkspace.shared.frontmostApplication,
-              SelectionGestureWatcher.isEligiblePriorGesture(
+        guard let app = NSWorkspace.shared.frontmostApplication,
+              app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
+        if let gesture, SelectionGestureWatcher.isEligiblePriorGesture(
                   gesture, now: Date(), captureStartedAt: attachedAt,
                   frontmostPID: app.processIdentifier
-              ) else { return }
-        beginSelectionRead(
-            from: gesture.start, to: gesture.end, gestureStartedAt: gesture.startedAt, selectedAt: gesture.endedAt,
-            app: app, precedesSpeech: true
-        )
+              ) {
+            beginSelectionRead(
+                from: gesture.start, to: gesture.end, gestureStartedAt: gesture.startedAt, selectedAt: gesture.endedAt,
+                app: app, precedesSpeech: true
+            )
+        } else {
+            // A keyboard highlight or one predating the watcher has no mouse
+            // history. Read the current app's focused AX selection once, without
+            // inventing gesture geometry from the pointer's unrelated location.
+            // This records observation time, not a fabricated mouse-up time.
+            let point = NSEvent.mouseLocation
+            beginSelectionRead(from: point, to: point, gestureStartedAt: attachedAt,
+                               selectedAt: attachedAt, app: app, precedesSpeech: true,
+                               hasGesture: false)
+        }
     }
 
     /// Shared by live mouse-ups and the one prior-highlight read. A newer
@@ -1143,23 +1180,30 @@ final class LiveSelectionCapture {
         gestureStartedAt: Date,
         selectedAt: Date,
         app: NSRunningApplication,
-        precedesSpeech: Bool
+        precedesSpeech: Bool,
+        hasGesture: Bool = true
     ) {
         // A drag can activate an app that was backgrounded at mouse-down.
-        // Bind to the app at mouse-up, then require it to stay frontmost
-        // throughout the asynchronous selected-text read.
+        // Bind to its event recipient and visible source window, not keyboard
+        // focus. Background AX reads additionally need selection-range geometry;
+        // APIs without that proof retain their foreground-only restriction.
         let sourcePID = app.processIdentifier
         let bundleID = app.bundleIdentifier
-        let gesture = LiveSelectionGesture.fromCocoa(
+        let spokenAnchor = precedesSpeech ? "" : speechSnapshot()
+        let gesture = hasGesture ? LiveSelectionGesture.fromCocoa(
             mouseDown: startPoint,
             mouseUp: endPoint,
             screenFrames: NSScreen.screens.map(\.frame)
-        )
+        ) : nil
+        let identity = LiveSelectionReadIdentity(processIdentifier: sourcePID, gesture: gesture,
+                                                 windows: LiveSelectionWindow.onScreen())
         let isCodex = CodexConversationContextReader.isSupportedCodexApplication(
             app, fileManager: .default
         )
         captureTask?.cancel()
         captureTask = Task { @MainActor [weak self] in
+            async let beforeLabels: [String] = isCodex
+                ? CodexConversationContextReader.selectionThreadIDs(processIdentifier: sourcePID) : []
             let startedAt = DispatchTime.now().uptimeNanoseconds
             var outcome = "canceled-by-new-gesture-or-stop"
             defer {
@@ -1171,15 +1215,10 @@ final class LiveSelectionCapture {
             // this read. A newer gesture or stop cancels the pending read.
             try? await Task.sleep(nanoseconds: 40_000_000)
             guard !Task.isCancelled else { return }
-            guard Self.hasStableSource(expectedPID: sourcePID,
-                                       currentPID: NSWorkspace.shared.frontmostApplication?.processIdentifier) else {
+            guard Self.canRead(identity) else {
                 outcome = "source-changed-before-read"
                 return
             }
-            let threadsBefore = isCodex
-                ? CodexConversationContextReader.visibleSelectionThreadIDsIfFrontmost(
-                    frontmostApplication: app
-                ) : []
             // Chrome's DOM override has no selection geometry of its own.
             // If the gesture was visibly outside Chrome's windows, do not
             // borrow an older selection from its active tab.
@@ -1191,7 +1230,7 @@ final class LiveSelectionCapture {
                 outcome = "gesture-outside-source-window"
                 return
             }
-            let chromeContext = bundleID == "com.google.Chrome"
+            let chromeContext = bundleID == "com.google.Chrome" && Self.isFrontmost(sourcePID)
                 ? await ChromeSelectionContextReader.capture() : nil
             let selectedText: String?
             if let chromeContext {
@@ -1203,6 +1242,7 @@ final class LiveSelectionCapture {
             } else {
                 selectedText = await Self.readSelectedText(
                     sourcePID: sourcePID,
+                    identity: identity,
                     bundleID: bundleID,
                     gesture: gesture,
                     gestureStartedAt: gestureStartedAt,
@@ -1210,8 +1250,7 @@ final class LiveSelectionCapture {
                 )
             }
             guard !Task.isCancelled else { return }
-            guard Self.hasStableSource(expectedPID: sourcePID,
-                                       currentPID: NSWorkspace.shared.frontmostApplication?.processIdentifier) else {
+            guard Self.canRead(identity) else {
                 outcome = "source-changed-during-read"
                 return
             }
@@ -1223,9 +1262,8 @@ final class LiveSelectionCapture {
             if isCodex {
                 // Only the verified Codex app may add a task label. A task
                 // switch during selection leaves the existing plain tag.
-                let threadsAfter = CodexConversationContextReader.visibleSelectionThreadIDsIfFrontmost(
-                    frontmostApplication: app
-                )
+                let threadsBefore = await beforeLabels
+                let threadsAfter = await CodexConversationContextReader.selectionThreadIDs(processIdentifier: sourcePID)
                 if threadsBefore == threadsAfter, threadsBefore.count == 1,
                    let id = threadsBefore.first {
                     labeled = reference.scopedToCodexThread(
@@ -1245,23 +1283,23 @@ final class LiveSelectionCapture {
                 ).scopedToChrome(chromeContext)
             }
             guard !Task.isCancelled else { return }
-            guard Self.hasStableSource(expectedPID: sourcePID,
-                                       currentPID: NSWorkspace.shared.frontmostApplication?.processIdentifier) else {
+            guard Self.canRead(identity) else {
                 outcome = "source-changed-before-emit"
                 return
             }
             guard let self else { return }
-            self.onCapture(labeled.timed(at: selectedAt), precedesSpeech)
+            self.onCapture(labeled.timed(at: selectedAt), precedesSpeech, spokenAnchor)
             outcome = "emitted-to-session"
         }
     }
 
     /// Generic tiers after Chrome's override: app-scoped Accessibility (with one
     /// bounded settle re-read, plus one late Codex/ChatGPT retry), then Safari/Edge
-    /// read-only scripting. The source
-    /// must stay frontmost before every attempt; any doubt yields no reference.
+    /// read-only scripting. Every attempt revalidates the source window; a
+    /// background source additionally needs gesture-bounded AX evidence.
     private static func readSelectedText(
         sourcePID: pid_t,
+        identity: LiveSelectionReadIdentity,
         bundleID: String?,
         gesture: LiveSelectionGesture?,
         gestureStartedAt: Date,
@@ -1270,7 +1308,7 @@ final class LiveSelectionCapture {
         // VS Code's default Monaco editor intentionally exposes no AX text.
         // Better Git can prove a fresh mouse selection in the focused editor;
         // ask only during capture, never enable screen-reader mode or copy.
-        if VSCodeSelectionBridge.supports(bundleID),
+        if isFrontmost(sourcePID), VSCodeSelectionBridge.supports(bundleID),
            gesture?.touchesWindow(ownedBy: sourcePID, in: LiveSelectionWindow.onScreen()) == true,
            let text = await VSCodeSelectionBridge.read(sourcePID: sourcePID, gestureStartedAt: gestureStartedAt) {
             LiveSelectionDiagnostics.captured(
@@ -1285,16 +1323,16 @@ final class LiveSelectionCapture {
             if delay > 0 {
                 try? await Task.sleep(nanoseconds: delay)
             }
-            guard !Task.isCancelled,
-                  hasStableSource(expectedPID: sourcePID,
-                                  currentPID: NSWorkspace.shared.frontmostApplication?.processIdentifier) else {
+            guard !Task.isCancelled, canRead(identity) else {
                 return nil
             }
             attempts += 1
             last = await LiveSelectionTextReader.resolveAccessibility(
-                processIdentifier: sourcePID, gesture: gesture
+                processIdentifier: sourcePID, gesture: gesture,
+                requiresGestureBounds: !isFrontmost(sourcePID)
             )
-            if let candidate = last.candidate {
+            if let candidate = last.candidate,
+               isFrontmost(sourcePID) || candidate.evidence == .atGesture {
                 LiveSelectionDiagnostics.captured(
                     tier: candidate.tier, source: candidate.source,
                     evidence: candidate.evidence, attempt: attempts,
@@ -1306,9 +1344,7 @@ final class LiveSelectionCapture {
             if !last.accessibilityTrusted { break }
         }
 
-        guard !Task.isCancelled,
-              hasStableSource(expectedPID: sourcePID,
-                              currentPID: NSWorkspace.shared.frontmostApplication?.processIdentifier) else {
+        guard !Task.isCancelled, canRead(identity), isFrontmost(sourcePID) else {
             return nil
         }
         if LiveSelectionBrowserScriptReader.engine(for: bundleID) != nil,
@@ -1327,6 +1363,15 @@ final class LiveSelectionCapture {
             last, attempts: attempts, bundleID: bundleID, startedAt: startedAt
         )
         return nil
+    }
+
+    private static func isFrontmost(_ pid: pid_t) -> Bool {
+        NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
+    }
+
+    private static func canRead(_ identity: LiveSelectionReadIdentity) -> Bool {
+        identity.isValid(frontmostPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+                         windows: LiveSelectionWindow.onScreen())
     }
 
     static func isSelectionGesture(

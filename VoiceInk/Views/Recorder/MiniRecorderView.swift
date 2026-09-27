@@ -128,6 +128,8 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
             .animation(.easeInOut(duration: 0.2), value: shouldShowCancelButton)
 
             Spacer(minLength: 0)
+                .frame(maxHeight: .infinity)
+                .background(RecorderPanelDragSurface())
 
             HStack(spacing: 6) {
                 // Mode belongs immediately to the LEFT of the waveform. The slot it
@@ -145,6 +147,8 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
             }
 
             Spacer(minLength: 0)
+                .frame(maxHeight: .infinity)
+                .background(RecorderPanelDragSurface())
 
             HStack(spacing: 6) {
                 CurrentFocusApplicationIndicator(

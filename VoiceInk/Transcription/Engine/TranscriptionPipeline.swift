@@ -215,7 +215,8 @@ class TranscriptionPipeline {
                 references,
                 with: current,
                 presentation: presentation,
-                includeTiming: includeSourceContext && !skipPostProcessingNow
+                includeTiming: includeSourceContext && !skipPostProcessingNow,
+                includeReadablePreview: includeSourceContext && !skipPostProcessingNow
             )
             finalContextAttached = true
             guard annotated != current else { return }

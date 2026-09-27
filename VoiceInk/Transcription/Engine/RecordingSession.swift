@@ -560,9 +560,12 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
 
     func beginLiveSelectionCapture() {
         guard liveSelectionCapture == nil else { return }
-        let capture = LiveSelectionCapture { [weak self] reference, precedesSpeech in
-            self?.recordLiveSelection(reference, precedesSpeech: precedesSpeech)
-        }
+        let capture = LiveSelectionCapture(
+            speechSnapshot: { [weak self] in self?.partialTranscript ?? "" },
+            onCapture: { [weak self] reference, precedesSpeech, spokenAnchor in
+                self?.recordLiveSelection(reference, precedesSpeech: precedesSpeech, spokenAnchor: spokenAnchor)
+            }
+        )
         liveSelectionCapture = capture
         capture.start()
     }
@@ -570,19 +573,26 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     /// `precedesSpeech` marks a highlight made before this recording's capture
     /// attached (while reading, then pressing start). Its read can finish after
     /// the first live words arrive, so it is anchored before all speech instead.
-    func recordLiveSelection(_ reference: LiveSelectionReference, precedesSpeech: Bool = false) {
-        guard phase == .recording,
-              liveRecordingState.isRecordingOrPaused else { return }
+    func recordLiveSelection(_ reference: LiveSelectionReference, precedesSpeech: Bool = false,
+                             spokenAnchor: String? = nil) {
+        guard phase == .recording, !shouldCancel,
+              liveRecordingState == .starting || liveRecordingState.isRecordingOrPaused else { return }
         RecorderTypingTextView.sealFocusedRun()
         endTypingRun()
         // Freeze the live speech visible at selection mouse-up or screenshot
         // save. Final transcription may revise words, so this is an approximate
         // insertion anchor, not an AX range or a live destination write.
-        let anchored = reference.anchored(after: precedesSpeech ? "" : partialTranscript)
+        let anchored = reference.anchored(after: precedesSpeech ? "" : (spokenAnchor ?? partialTranscript))
         // Distinct highlights at the same speech anchor are still a reading
         // trail. Preserve every gesture in capture order, even across silence
         // or a screenshot; the receiving agent decides which cues matter.
-        liveSelectionReferences.append(anchored)
+        if precedesSpeech {
+            // An asynchronous initial-selection read can finish after a timing
+            // marker or typed run. Its chronology still precedes those words.
+            liveSelectionReferences.insert(anchored, at: 0)
+        } else {
+            liveSelectionReferences.append(anchored)
+        }
         typingFocus.returnAfterContext()
     }
 

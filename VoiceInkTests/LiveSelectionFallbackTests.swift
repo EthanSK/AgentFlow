@@ -69,6 +69,25 @@ private final class FakeSelectionProbe: LiveSelectionAccessibilityProbe {
 }
 
 struct LiveSelectionFallbackTests {
+    @Test func backgroundSelectionRequiresTheSameVisibleWindowAndRangeBounds() {
+        let window = LiveSelectionWindow(ownerPID: 42, bounds: CGRect(x: 0, y: 0, width: 500, height: 500), alpha: 1, windowID: 99)
+        let g = gesture(CGPoint(x: 100, y: 100), CGPoint(x: 200, y: 100))
+        let identity = LiveSelectionReadIdentity(processIdentifier: 42, gesture: g, windows: [window])
+        #expect(identity.isValid(frontmostPID: 7, windows: [window]))
+        #expect(!identity.isValid(frontmostPID: 42, windows: []))
+        let replaced = LiveSelectionWindow(ownerPID: 7, bounds: window.bounds, alpha: 1, windowID: 99)
+        #expect(!identity.isValid(frontmostPID: 7, windows: [replaced]))
+        let noWindow = LiveSelectionReadIdentity(processIdentifier: 42, gesture: g, windows: [])
+        #expect(!noWindow.isValid(frontmostPID: 7, windows: []))
+        let probe = FakeSelectionProbe()
+        probe.focused = 1
+        probe.nodes[1] = .init(role: "AXTextArea", selectedText: "unproven old selection")
+        #expect(LiveSelectionAccessibilityResolver(probe: probe, gesture: g, gestureInSourceWindow: true,
+            requiresGestureBounds: true).resolve().candidate == nil)
+        probe.nodes[1]?.bounds = CGRect(x: 90, y: 90, width: 130, height: 30)
+        #expect(LiveSelectionAccessibilityResolver(probe: probe, gesture: g, gestureInSourceWindow: true,
+            requiresGestureBounds: true).resolve().candidate?.text == "unproven old selection")
+    }
     @Test func codexSelectionRetryBudgetIsBoundedAndAppScoped() {
         let ordinary = LiveSelectionReadPolicy.accessibilityRetryDelays
         #expect(ordinary == [0, 150_000_000])

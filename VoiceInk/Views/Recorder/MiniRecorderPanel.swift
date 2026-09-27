@@ -148,15 +148,18 @@ struct RecorderPanelHeightSync: NSViewRepresentable {
             guard abs(panel.frame.height - height) > 1 else { return }
             var frame = panel.frame
             frame.size.height = height
-            frame.origin.y = edge == .bottom
-                ? screen.visibleFrame.minY + MiniRecorderLayoutMetrics.bottomPadding
-                : screen.frame.maxY - height
+            if (panel as? MiniRecorderPanel)?.wasDraggedByUser != true {
+                frame.origin.y = edge == .bottom
+                    ? screen.visibleFrame.minY + MiniRecorderLayoutMetrics.bottomPadding
+                    : screen.frame.maxY - height
+            }
             panel.setFrame(frame, display: true)
         }
     }
 }
 
 class MiniRecorderPanel: NSPanel {
+    var wasDraggedByUser = false
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
     
