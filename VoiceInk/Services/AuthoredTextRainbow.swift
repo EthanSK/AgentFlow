@@ -57,8 +57,8 @@ enum AuthoredTextRainbow {
         let descriptor = Darwin.open(lock.path, O_CREAT | O_RDWR | O_NOFOLLOW, S_IRUSR | S_IWUSR)
         guard descriptor >= 0 else { return nil }
         defer { Darwin.close(descriptor) }
-        guard Darwin.flock(descriptor, LOCK_EX | LOCK_NB) == 0 else { return nil }
-        defer { Darwin.flock(descriptor, LOCK_UN) }
+        guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else { return nil }
+        defer { flock(descriptor, LOCK_UN) }
 
         var index = 0
         let input = Darwin.open(state.path, O_RDONLY | O_NOFOLLOW)

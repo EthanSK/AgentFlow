@@ -36,12 +36,12 @@ struct AuthoredTextRainbowTests {
         let descriptor = Darwin.open(lock.path, O_RDWR)
         #expect(descriptor >= 0)
         defer { Darwin.close(descriptor) }
-        #expect(Darwin.flock(descriptor, LOCK_EX | LOCK_NB) == 0)
+        #expect(flock(descriptor, LOCK_EX | LOCK_NB) == 0)
         let started = Date()
         #expect(AuthoredTextRainbow.reserve(at: state) == nil)
         #expect(Date().timeIntervalSince(started) < 0.2)
         #expect(try String(contentsOf: state, encoding: .utf8) == "0\n")
-        #expect(Darwin.flock(descriptor, LOCK_UN) == 0)
+        #expect(flock(descriptor, LOCK_UN) == 0)
         #expect(AuthoredTextRainbow.reserve(at: state) == 0)
 
         try Data("not an index\n".utf8).write(to: state)
