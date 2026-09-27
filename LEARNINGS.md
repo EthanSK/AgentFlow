@@ -1,5 +1,23 @@
 # Learnings
 
+## 2026-09-27 — Telegram message selection is distinct from composer delivery
+
+The native Telegram 12.10/282987 app exposed its window and menus but no readable
+message-selection control in the inspected Accessibility tree. Its open-source
+`TextView` is a custom control whose selected range is internal; its accessibility
+label returns the whole text, not the selected substring. At TelegramSwift commit
+`579cebbf0c01fd41b712eff3647fa7f69db9665d`, TGUIKit `View` also returns no
+accessibility parent and reports that it is not an accessibility element.
+The Copy path writes the general pasteboard; it is not a passive selection API.
+Sources: `packages/TGUIKit/Sources/View.swift`, `TextView.swift`, and
+`Telegram-Mac/ChatSelectText.swift` in the upstream TelegramSwift repository.
+
+Ethan chose exact text only and screenshots instead of an OCR fallback. Do not
+infer support for reading highlighted messages from the older pinned Telegram
+composer-delivery tests, and do not present whole-message text as the exact
+highlight. The attempted Computer Use drag returned `AXError.notImplemented`,
+so that attempt does not prove a real highlight was exercised or captured.
+
 ## 2026-09-27 — Explicit typing focus is separate from automatic context refocus
 
 Ethan asked to disable the automatic return to the recorder editor after a

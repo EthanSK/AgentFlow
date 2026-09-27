@@ -1,5 +1,18 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-09-27 — Treating Telegram message text as an exposed AX selection — INCONCLUSIVE
+
+**Mechanism:** Read native Telegram highlighted messages through the standard
+Accessibility selection chain, or infer the highlight from a whole-text label.
+**Evidence:** The inspected 12.10/282987 tree exposed no message-selection control;
+upstream custom TextView keeps its selected range internally and exposes whole text
+as its label. A Computer Use selection drag returned `AXError.notImplemented`, not
+a successful live highlight. Older composer-delivery evidence is unrelated.
+**Boundary:** Keep exact-text-only capture; Ethan explicitly chose screenshots and
+declined approximate OCR. Do not use clipboard Copy as an unnoticed fallback.
+**Reconsider only if:** A new Telegram version exposes a verifiable read-only exact
+selected-text API or bridge, with a real message-highlight test on that version.
+
 ## 2026-09-27 — Recognizing reserved chords in every shared listener — REJECTED
 
 **Mechanism:** Handle both Command keys in `ShortcutMonitor` even when that
