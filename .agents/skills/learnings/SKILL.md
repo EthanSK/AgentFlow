@@ -111,6 +111,11 @@ stacked cards, and notification clearance synchronized. Require
 `onlyFreshNativeScreenshotsEnterLiveContext`,
 `recorderContextGrowsBeforeItsScreenBound`, and the existing chronological-preview and
 HUD-only guards before release. A test of final XML alone does not prove the live HUD.
+Test measurement shortcuts across their boundary at each relevant width/scale; a
+character count does not prove the text fills the display. Both speech and typing
+must retain content-driven growth without jumping to maximum height. Self-improved —
+2026-09-27: a Mini AppKit probe disproved the 3,000-character fill assumption; see
+LEARNINGS.md, “A character-count shortcut can jump the HUD to full height”.
 For intermittent first-highlight misses, test delayed mouse-edge dispatch using each
 event's original coordinates and recipient, capture attachment before the audio
 handshake, and the gesture-time speech anchor. A background source needs a stable

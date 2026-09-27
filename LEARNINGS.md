@@ -1,5 +1,26 @@
 # Learnings
 
+## 2026-09-27 — A character-count shortcut can jump the HUD to full height
+
+The build-364 screenshot of a long dictation shows a near-screen-height recorder
+with substantial blank space below its preview. The same sizing code remains in
+build 365: both `MiniRecorderLayoutMetrics.transcriptHeight` and `typingHeight`
+return their maximum immediately above 3,000 characters, instead of measuring.
+The assumption that this count fills every normal display is false for the shared
+688pt width, 18pt font and scaled display-height cap.
+
+A non-recording AppKit measurement on the Mini, using the production font, 656pt
+preview content width and a 1450pt cap, measured the same 919pt for 2,999, 3,000 and
+3,001 synthetic characters. The current branch instead selects 1450pt at 3,001.
+This establishes a deterministic sizing discontinuity matching the reported jump;
+it is not a live recorder reproduction or a new installed fix. No microphone,
+shortcut, focus or recording state was changed during diagnosis.
+
+Repair must preserve content-driven growth up to the screen-safe bound, then
+scrolling, rather than restore the rejected fixed-height HUD. Test both speech and
+typing at the count boundary across widths/scales and keep measurement bounded by
+actual layout geometry, not an assumed universal character count.
+
 ## 2026-09-27 — Compact metadata needs a boundary between section types
 
 Keep adjacent XML metadata compact only within consecutive sections of the same
