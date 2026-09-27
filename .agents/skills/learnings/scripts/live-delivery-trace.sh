@@ -15,7 +15,7 @@ LOCK_PID_FILE="$LOCK_DIR/pid"
 LAUNCHD_LABEL="com.ethansk.voiceink.live-delivery-trace.$(id -u)"
 LAUNCHD_SERVICE="gui/$(id -u)/$LAUNCHD_LABEL"
 
-PREDICATE='process == "VoiceInkPlusPlus" && ((subsystem == "com.ethansk.VoiceInkPlusPlus" && (category == "VIPPDebug" || category == "FocusLock" || category == "CodexConversationContext" || category == "TranscriptionRequestContext")) || (subsystem == "com.prakashjoshipax.voiceink" && (category == "ShortcutMonitor" || category == "RecordingShortcutManager" || category == "CursorPaster" || category == "StreamingTranscriptionSession" || category == "StreamingTranscriptionService" || category == "OpenAIStreamingProvider" || category == "Recorder" || category == "CoreAudioRecorder")))'
+PREDICATE='(process == "VoiceInkPlusPlus" || process == "AgentFlow") && ((subsystem == "com.ethansk.VoiceInkPlusPlus" && (category == "VIPPDebug" || category == "FocusLock" || category == "CodexConversationContext" || category == "TranscriptionRequestContext")) || (subsystem == "com.prakashjoshipax.voiceink" && (category == "ShortcutMonitor" || category == "RecordingShortcutManager" || category == "CursorPaster" || category == "StreamingTranscriptionSession" || category == "StreamingTranscriptionService" || category == "OpenAIStreamingProvider" || category == "Recorder" || category == "CoreAudioRecorder")))'
 
 usage() {
   printf 'usage: %s start|status|stop|show [line-count]\n' "$0" >&2
@@ -328,6 +328,7 @@ run_trace() {
       *'[com.ethansk.VoiceInkPlusPlus:FocusLock]'*'Application activation'*|\
       *'[com.prakashjoshipax.voiceink:ShortcutMonitor]'*'Next Track'*|\
       *'[com.prakashjoshipax.voiceink:ShortcutMonitor]'*'Primary shortcut event received eventTimestampNs='*|\
+      *'[com.prakashjoshipax.voiceink:ShortcutMonitor]'*'Typing shortcut accepted owner=recording chord=bothCommandAndOption'*|\
       *'[com.prakashjoshipax.voiceink:ShortcutMonitor]'*'Event tap'*|\
       *'[com.prakashjoshipax.voiceink:RecordingShortcutManager]'*'Recording shortcut'*|\
       *'[com.prakashjoshipax.voiceink:RecordingShortcutManager]'*'Next Track'*|\

@@ -128,11 +128,19 @@ User-requested keyboard focus behaviour — 2026-09-26.
 
 Keyboard-only start must remain an active composing session, not gesture-Pause:
 Primary still finishes it rather than unexpectedly enabling the microphone. Both
-Command keys are an additional Start/Finish shortcut: idle starts microphone-off
+Command keys AND both Option keys together are the additional Start/Finish shortcut:
+idle starts microphone-off
 typing; recording or paused composition finishes through `primaryCurrentInput`.
 Do not classify it as Primary multi-click, resume the mic, or change a pending
 transcription. Forward all modifier releases. Ethan corrected start-only behaviour
-on 2026-09-27.
+on 2026-09-27, then added both Option keys to avoid his existing both-Command shortcut.
+Require all four physical-side flags; aggregate Command+Option is not enough.
+Leave both Command alone and every partial/released chord untouched.
+Recognize reserved typing chords only in the shared monitor with their owner
+callback. Replay CGEvents through recording, visible-panel and Mode monitors in
+head-insert order, not just directly through the action handler. Self-improved —
+2026-09-27: a newer non-owner panel monitor swallowed Finish; see LEARNINGS.md,
+“Shared shortcut monitors must not consume unowned chords”.
 Do not prepare a streaming provider or submit the empty recovery WAV until capture
 was explicitly enabled. Test the actual pipeline with an audio-session spy and a
 delivery sink: authored text completes and is delivered once, empty input delivers

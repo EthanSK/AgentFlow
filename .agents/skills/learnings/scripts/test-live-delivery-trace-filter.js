@@ -6,6 +6,8 @@ const path = require('node:path');
 const {execFileSync} = require('node:child_process');
 
 const source = fs.readFileSync(path.join(__dirname, 'live-delivery-trace.sh'), 'utf8');
+assert(source.includes('(process == "VoiceInkPlusPlus" || process == "AgentFlow")'),
+  'trace must include the renamed production executable');
 const start = source.indexOf('    case "$line" in', source.indexOf('run_trace()'));
 const end = source.indexOf('    esac', start);
 assert(start >= 0 && end > start, 'real trace allowlist must be found');
@@ -26,6 +28,7 @@ const allowed = [
   '[com.ethansk.VoiceInkPlusPlus:VIPPDebug] recorder HUD: presentation verified reason=recording start style=mini attempt=1 screens=2',
   '[com.ethansk.VoiceInkPlusPlus:FocusLock] Exact-input context scan durationMs=20 nodes=100 anchors=16 regionFiltered=true',
   '[com.prakashjoshipax.voiceink:ShortcutMonitor] Primary shortcut event received eventTimestampNs=123000000 callbackUptime=0.125',
+  '[com.prakashjoshipax.voiceink:ShortcutMonitor] Typing shortcut accepted owner=recording chord=bothCommandAndOption',
   '[com.prakashjoshipax.voiceink:RecordingShortcutManager] Recording shortcut key-down action=primaryRecording dispatchLatencyMs=2',
   '[com.ethansk.VoiceInkPlusPlus:VIPPDebug] pipeline remove generation=2 sequence=1 recordingSessionID=synthetic'
 ].map(line => prefix + line);
@@ -44,4 +47,4 @@ assert.deepEqual(result.slice(0, allowed.length), allowed);
 assert.equal(result.length, allowed.length + 1);
 assert(result.at(-1).includes('error=<redacted> generation=2 sequence=1'));
 assert(!result.join('\n').includes('PRIVATE-'));
-console.log('PASS: eight metadata receipts retained, five content messages excluded, provider error redacted');
+console.log('PASS: nine metadata receipts retained, five content messages excluded, provider error redacted');
