@@ -33,7 +33,10 @@ struct LiveSelectionReference: Equatable {
     /// `\(...\)` inline math such as the Codex desktop user bubble. The tag then says
     /// `display_copy="above"`, so neither Ethan's agent nor a reader without the skill
     /// could mistake the preview for a second selection, instruction, or context event.
-    /// Build 351 instead colours the XML itself, once, with reversible TeX escaping.
+    /// Build 351 instead coloured the XML itself, once, with reversible TeX escaping.
+    /// That historical form is superseded: a raw XML envelope can suppress inline
+    /// math rendering. Only the authored opening gets rainbow styling now; every
+    /// timeline tag and payload stays ordinary, readable XML in both presentations.
     /// Screenshot references also receive a normal local Markdown image link outside
     /// math. That is still text in this one paste, not an attached pixel payload.
     /// The choice comes from the Mode that the existing route already resolved, never
@@ -45,15 +48,15 @@ struct LiveSelectionReference: Equatable {
 
     private enum InterleavedPart {
         case text(String)
-        case authoredXML(String, color: String)
+        case authoredXML(String)
         case reference(LiveSelectionReference, index: Int)
 
-        var canonical: String {
+        func canonical(separateContent: Bool) -> String {
             switch self {
-            case .text(let text), .authoredXML(let text, _):
+            case .text(let text), .authoredXML(let text):
                 return text
             case let .reference(reference, index):
-                return reference.xml(index: index, hasDisplayCopy: false)
+                return reference.xml(index: index, hasDisplayCopy: false, separateContent: separateContent)
             }
         }
     }
@@ -307,13 +310,13 @@ struct LiveSelectionReference: Equatable {
                 ?? speechTimings.last
             guard let started = timing?.runStartedAt, let ended = timing?.capturedAt,
                   started <= ended else {
-                return "<speech_segment timing=\"unavailable\">\n"
-                    + xmlEscaped(speech) + "\n</speech_segment>"
+                return "<speech_segment timing=\"unavailable\">\n\n"
+                    + xmlEscaped(speech) + "\n\n</speech_segment>"
             }
             // Recognition callbacks are delayed and may revise words. These are
             // observed transcript-activity ranges, never precise audio alignment.
-            return "<speech_segment start_at=\"\(timestamp(started))\" end_at=\"\(timestamp(ended))\" timing=\"approximate\">\n"
-                + xmlEscaped(speech) + "\n</speech_segment>"
+            return "<speech_segment start_at=\"\(timestamp(started))\" end_at=\"\(timestamp(ended))\" timing=\"approximate\">\n\n"
+                + xmlEscaped(speech) + "\n\n</speech_segment>"
         }
         for reference in references {
             let spokenWordCount = reference.spokenWordCount
@@ -323,15 +326,15 @@ struct LiveSelectionReference: Equatable {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if !speech.isEmpty {
                 let text = timedSpeech(speech, through: wordCount)
-                parts.append(includeTiming ? .authoredXML(text, color: LiveSelectionStyledMath.speechColor) : .text(text))
+                parts.append(includeTiming ? .authoredXML(text) : .text(text))
             }
             if reference.isSelection { selectionIndex += 1 }
             if reference.speechBoundary {
                 // The timestamp belongs to the grouped speech, not a free-floating tag.
             } else if includeTiming, reference.isTypedText, let ended = reference.capturedAt {
                 let started = reference.runStartedAt ?? ended
-                parts.append(.authoredXML("<typed_text start_at=\"\(timestamp(started))\" end_at=\"\(timestamp(ended))\">\n"
-                    + xmlEscaped(reference.typedText ?? "") + "\n</typed_text>", color: LiveSelectionStyledMath.typedColor))
+                parts.append(.authoredXML("<typed_text start_at=\"\(timestamp(started))\" end_at=\"\(timestamp(ended))\">\n\n"
+                    + xmlEscaped(reference.typedText ?? "") + "\n\n</typed_text>"))
             } else {
                 parts.append(.reference(reference, index: selectionIndex))
             }
@@ -342,11 +345,11 @@ struct LiveSelectionReference: Equatable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if !remainingSpeech.isEmpty {
             let text = timedSpeech(remainingSpeech, through: wordEnds.count)
-            parts.append(includeTiming ? .authoredXML(text, color: LiveSelectionStyledMath.speechColor) : .text(text))
+            parts.append(includeTiming ? .authoredXML(text) : .text(text))
         }
         // Untimed/plain output keeps its accepted grammar. Timed AI output uses
         // uniform start_at/end_at; the skill also accepts historical field names.
-        let canonical = parts.map(\.canonical)
+        let canonical = parts.map { $0.canonical(separateContent: includeTiming) }
         var readablePreview: String?
         if includeTiming && includeReadablePreview {
             // Queue previews must begin with authored words, never a source XML tag or a
@@ -369,8 +372,8 @@ struct LiveSelectionReference: Equatable {
         }
         let structured = canonical.joined(separator: "\n\n")
         if let readablePreview {
-            return readablePreview + "\n\n<agent_flow_context preview=\"authored_text_above\">\n"
-                + structured + "\n</agent_flow_context>"
+            return readablePreview + "\n\n<agent_flow_context preview=\"authored_text_above\">\n\n"
+                + structured + "\n\n</agent_flow_context>"
         }
         return structured
     }
@@ -379,9 +382,10 @@ struct LiveSelectionReference: Equatable {
     /// the renderer's paste budget. A preview that does not fit is omitted and its
     /// tag stays exactly canonical, so `display_copy="above"` never appears without
     /// the preview it described. The canonical message itself was never shortened.
-    /// Now style that same XML in place: a second white copy was confusing in the
-    /// actual user bubble. Optional colour still yields to complete source context
-    /// at the paste budget; local screenshot links are part of the base output.
+    /// Styling that XML in place subsequently showed raw TeX inside the context
+    /// envelope. Keep the timeline plain; only the opening may be coloured. Optional
+    /// colour still yields to complete source context at the paste budget; local
+    /// screenshot links are part of the base output, never an attached pixel payload.
     private static func styled(_ parts: [InterleavedPart], canonical: [String],
                                readablePreview: String? = nil, rainbowStartIndex: Int = 0) -> String {
         let base = parts.enumerated().map { offset, part -> String in
@@ -389,56 +393,23 @@ struct LiveSelectionReference: Equatable {
                   let path = reference.screenshotPath else { return canonical[offset] }
             return canonical[offset] + "\n\n" + LiveSelectionStyledMath.localImageReference(path: path)
         }
-        let beforeTimeline = "\n\n<agent_flow_context preview=\"authored_text_above\">\n"
-        let afterTimeline = "\n</agent_flow_context>"
+        let beforeTimeline = "\n\n<agent_flow_context preview=\"authored_text_above\">\n\n"
+        let afterTimeline = "\n\n</agent_flow_context>"
         let envelopeSize = readablePreview.map { $0.utf16.count + beforeTimeline.utf16.count + afterTimeline.utf16.count } ?? 0
-        var remaining = LiveSelectionStyledMath.messageUTF16Budget
+        let remaining = LiveSelectionStyledMath.messageUTF16Budget
             - base.joined(separator: "\n\n").utf16.count - envelopeSize
         var opening = readablePreview
         if let readablePreview, remaining > 0 {
-            // Reserve the opening before colouring XML, but share one expansion
-            // budget. Colour must never crowd out authored words or source context.
+            // Only the opening consumes optional presentation budget. Do not put
+            // LaTeX around XML again: isolated formula tests cannot prove that
+            // Markdown will render it inside a raw XML block in a real message.
+            // Colour must never crowd out authored words or source context.
             if let rainbow = AuthoredTextRainbow.render(readablePreview, startIndex: rainbowStartIndex,
                 maxUTF16Count: readablePreview.utf16.count + remaining) {
-                let cost = rainbow.utf16.count - readablePreview.utf16.count
                 opening = rainbow
-                remaining -= cost
             }
         }
-        var output: [String] = []
-        for (offset, part) in parts.enumerated() {
-            guard remaining > 0 else { output.append(base[offset]); continue }
-            let color: String
-            var screenshotPath: String?
-            switch part {
-            case .text:
-                output.append(base[offset])
-                continue
-            case .authoredXML(_, let authoredColor):
-                color = authoredColor
-            case .reference(let reference, _):
-                guard !reference.isTypedText else {
-                    output.append(base[offset])
-                    continue
-                }
-                screenshotPath = reference.screenshotPath
-                color = screenshotPath == nil ? LiveSelectionStyledMath.selectionColor : LiveSelectionStyledMath.screenshotColor
-            }
-            var colored = LiveSelectionStyledMath.coloredXML(canonical[offset], color: color)
-            if let path = screenshotPath {
-                colored += "\n\n" + LiveSelectionStyledMath.localImageReference(path: path)
-            }
-            let cost = colored.utf16.count - base[offset].utf16.count
-            guard cost <= remaining else {
-                output.append(base[offset])
-                continue
-            }
-            remaining -= cost
-            // Previously a separate preview preceded the tag because raw XML
-            // renders literally. Wrapping the tag itself removes that duplicate.
-            output.append(colored)
-        }
-        let timeline = output.joined(separator: "\n\n")
+        let timeline = base.joined(separator: "\n\n")
         if let opening { return opening + beforeTimeline + timeline + afterTimeline }
         return timeline
     }
@@ -467,7 +438,7 @@ struct LiveSelectionReference: Equatable {
         )
     }
 
-    private func xml(index: Int, hasDisplayCopy: Bool) -> String {
+    private func xml(index: Int, hasDisplayCopy: Bool, separateContent: Bool = false) -> String {
         if let typedText { return typedText }
         // Emitted only when the preview paragraph directly above was included.
         let displayCopy = hasDisplayCopy ? " display_copy=\"above\"" : ""
@@ -514,8 +485,11 @@ struct LiveSelectionReference: Equatable {
             attributes += " visible_task_ids=\"\(visibleCodexThreadIDs.joined(separator: ","))\""
         }
         attributes += timing + displayCopy
-        return "<\(tag) \(attributes)>\n"
-            + "  <text>\(Self.xmlEscaped(selectedText))</text>\n"
+        // Separate metadata from the payload visibly without adding whitespace
+        // inside <text>: source indentation and leading/trailing lines stay exact.
+        let gap = separateContent ? "\n\n" : "\n"
+        return "<\(tag) \(attributes)>" + gap
+            + "  <text>\(Self.xmlEscaped(selectedText))</text>" + gap
             + "</\(tag)>"
     }
 
@@ -573,15 +547,17 @@ struct LiveSelectionReference: Equatable {
 ///   exists, so preview text must not create Markdown emphasis or link syntax.
 /// Ethan verified that short `\(\textsf{\color{#rrggbb}…}\)` spans render in a
 /// sent Codex bubble. The original preview helpers below remain legacy fixtures;
-/// production now uses reversible `coloredXML`, never their lossy sanitization.
+/// production uses reversible `coloredXML` only for words in the authored opening,
+/// never around the XML timeline and never their lossy preview sanitization.
 /// XML entities protect unsupported/invisible scalars without deleting source data.
 enum LiveSelectionStyledMath {
-    /// Ethan's verified bubble cyan; selections stay cyan as in the recorder HUD.
+    /// Historical XML/preview palettes retained for compatibility fixtures;
+    /// current pasted XML has no colour. The recorder HUD keeps its own colours.
     static let selectionColor = "#67e8f9"
-    /// Screenshot XML is magenta, distinct from cyan selected-text context.
+    /// Historical screenshot XML was magenta, distinct from selected-text context.
     static let screenshotColor = "#e879f9"
-    /// Authored XML stays quiet beside source context: cool silver speech and
-    /// slightly warmer silver typing. The readable opening owns the rainbow.
+    /// Historical authored XML used cool silver speech and warmer silver typing.
+    /// Those shades are no longer emitted; the readable opening owns the rainbow.
     static let speechColor = "#cbd5e1"
     static let typedColor = "#d4d4d8"
     /// Quiet captions let the coloured source text carry the emphasis.
@@ -831,7 +807,11 @@ enum LiveSelectionStyledMath {
 /// browser-hosted chats deliberately get only authored speech/typing.
 enum LiveContextPastePolicy {
     static let recipientBundleIdentifiers: Set<String> = [
-        "com.openai.codex", "com.openai.chat", "com.anthropic.claudefordesktop"
+        "com.openai.codex", "com.openai.chat", "com.anthropic.claudefordesktop",
+        // Ethan also uses Telegram chats as agent destinations. This explicit
+        // output opt-in does not authorize Telegram selection capture or change
+        // Primary/Next insertion, auto-send, focus, or exact-chat safeguards.
+        "ru.keepcoder.Telegram"
     ]
 
     static func includesSourceContext(

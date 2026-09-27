@@ -3,7 +3,8 @@ import Testing
 @testable import VoiceInkPlusPlus
 
 /// Build 350 used display-only KaTeX paragraphs above the exact context XML.
-/// Build 351 colours the XML once; legacy preview tests remain negative/escaping
+/// Build 351 coloured the XML once; the current format keeps XML plain and styles
+/// only the authored opening. Legacy preview tests remain negative/escaping
 /// fixtures. These tests pin the renderer-safety, ordering, budget, Mode, and
 /// route boundaries established from the installed Codex bundle (see the
 /// `LiveSelectionStyledMath` comment). They cannot prove live bubble pixels.
@@ -44,7 +45,7 @@ struct StyledContextPresentationTests {
             """)
     }
 
-    @Test func styledPresentationColorsExactXMLWithoutDuplicatePreview() throws {
+    @Test func styledPresentationKeepsExactPlainXMLWithoutDuplicatePreview() throws {
         let selection = try #require(LiveSelectionReference("Look at <this> & that"))
             .scopedToCodexThread(
                 id: "019f5cec-30d7-7d53-a564-2f73ed8e0784",
@@ -59,7 +60,8 @@ struct StyledContextPresentationTests {
 
         #expect(parts.count == 3)
         #expect(parts[0] == "Compare")
-        #expect(parts[1].hasPrefix("\\(\\textsf{\\color{\(LiveSelectionStyledMath.selectionColor)}"))
+        #expect(parts[1].hasPrefix("<codex_selection "))
+        #expect(!message.contains("\\textsf{"))
         let xml = try unwrappedXML(parts[1])
         #expect(xml.contains("task_title=\"Task &amp; title\">"))
         #expect(xml.contains("<text>Look at &lt;this&gt; &amp; that</text>"))
@@ -171,7 +173,7 @@ struct StyledContextPresentationTests {
     /// the production serializer, never reads a user's selections or screenshots.
     @Test func styledRendererFixtureUsesProductionSerialization() throws {
         let examples = [
-            "Selected context stays cyan, with source text preserved below.",
+            "Selected context stays plain, with source text preserved below.",
             "func greet() {\n    print(\"Hello & goodbye\")\n}",
             "        " + String(repeating: "W", count: 70),
             "cafe\u{0301} 😀 漢字 العربية नमस्ते a\u{1AB0} <tag> 50% a_b \\) [link](x) *bold*",
@@ -181,20 +183,22 @@ struct StyledContextPresentationTests {
         for text in examples {
             let reference = try #require(LiveSelectionReference(text))
             messages.append(LiveSelectionReference.interleaving(
-                [reference.anchored(after: "Look")], with: "Look here", presentation: .styledMath
+                [reference.anchored(after: "Look")], with: "Look here", presentation: .styledMath,
+                includeTiming: true, includeReadablePreview: true
             ))
         }
         let screenshot = try #require(LiveSelectionReference(
             screenshotURL: URL(fileURLWithPath: "/Users/test/Screenshots/Screenshot 2026-09-26 at 20.59.11.png")
         ))
         messages.append(LiveSelectionReference.interleaving(
-            [screenshot], with: "Screenshot example", presentation: .styledMath
+            [screenshot], with: "Screenshot example", presentation: .styledMath,
+            includeTiming: true, includeReadablePreview: true
         ))
         let date = Date(timeIntervalSince1970: 1_790_500_000)
         let typed = try #require(LiveSelectionReference(typedText: "I typed this part."))
             .timed(at: date, startedAt: date.addingTimeInterval(-2))
             .anchored(after: "Here is my spoken request.")
-        let selected = try #require(LiveSelectionReference("Selected source stays cyan."))
+        let selected = try #require(LiveSelectionReference("Selected source stays plain."))
             .timed(at: date).anchored(after: "Here is my spoken request.")
         messages.append(LiveSelectionReference.interleaving(
             [typed, selected, screenshot.timed(at: date).anchored(after: "Here is my spoken request.")],
@@ -231,7 +235,7 @@ struct StyledContextPresentationTests {
         #expect(disguised.contains("safetxt.exe😀"))
     }
 
-    @Test func coloredXMLFitsBudgetOrFallsBackWithoutLosingContext() throws {
+    @Test func plainXMLNeverConsumesOptionalColorBudget() throws {
         let long = (0..<40)
             .map { line in String(repeating: "word\(line) ", count: 24) }
             .joined(separator: "\n")
@@ -243,11 +247,10 @@ struct StyledContextPresentationTests {
         )
         #expect(plain.utf16.count < LiveSelectionStyledMath.messageUTF16Budget)
         #expect(styled.utf16.count <= LiveSelectionStyledMath.messageUTF16Budget)
-        #expect(styled.contains("\\textsf{"))
+        #expect(!styled.contains("\\textsf{"))
         #expect(styled.contains("<codex_selection index=\"8\""))
         #expect(!styled.contains("display_copy"))
-        // Capture order wins the budget; a tag without a preview stays canonical.
-        // Unwrapping colour (formerly removing previews) recovers the exact plain message.
+        // Every tag stays canonical regardless of the optional colour budget.
         #expect(try unwrappedXML(styled) == plain)
 
         let crowded = Array(repeating: selection.anchored(after: "Look"), count: 14)
@@ -258,23 +261,26 @@ struct StyledContextPresentationTests {
         ) == crowdedPlain)
     }
 
-    @Test func longColoredSelectionPreservesAllLinesAndWhitespace() throws {
+    @Test func longPlainSelectionPreservesAllLinesAndWhitespace() throws {
         let selected = "\n  " + String(repeating: "    selected code & <value>\n", count: 200) + "\t  "
         let reference = try #require(LiveSelectionReference(selected))
         #expect(!reference.truncated)
         let plain = LiveSelectionReference.interleaving([reference], with: "")
         let styled = LiveSelectionReference.interleaving([reference], with: "", presentation: .styledMath)
-        #expect(styled.contains("\\textsf{"))
-        #expect(!styled.contains("<codex_selection"))
-        // Presentation may escape tabs as numeric entities; compare XML text,
-        // not the optional representation of the same preserved source data.
+        #expect(!styled.contains("\\textsf{"))
+        #expect(styled.contains("<codex_selection"))
+        // Styling the opening must not rewrite source whitespace in the XML.
         #expect(try xmlText(in: unwrappedXML(styled)) == selected)
         #expect(try xmlText(in: plain) == selected)
         #expect(styled.utf16.count > 5_000)
         #expect(styled.utf16.count <= LiveSelectionStyledMath.messageUTF16Budget)
+        let timed = LiveSelectionReference.interleaving([reference], with: "", presentation: .styledMath,
+            includeTiming: true)
+        #expect(try xmlText(in: timed) == selected)
+        #expect(timed.contains(">\n\n  <text>"))
     }
 
-    @Test func screenshotXMLIsMagentaWithSafeLocalImageReference() throws {
+    @Test func screenshotXMLStaysPlainWithSafeLocalImageReference() throws {
         let screenshot = try #require(LiveSelectionReference(
             screenshotURL: URL(fileURLWithPath: "/Users/test/Screenshots/Screenshot & <one> at 20.59.11.png")
         ))
@@ -284,8 +290,8 @@ struct StyledContextPresentationTests {
         let parts = message.components(separatedBy: "\n\n")
 
         #expect(parts.count == 2)
-        #expect(parts[0].hasPrefix("\\(\\textsf{\\color{#e879f9}"))
-        #expect(parts[0].contains("\\&"))
+        #expect(parts[0].hasPrefix("<local_screenshot "))
+        #expect(!message.contains("\\textsf{"))
         let xml = try unwrappedXML(parts[0])
         #expect(xml == "<local_screenshot path=\"/Users/test/Screenshots/Screenshot &amp; &lt;one&gt; at 20.59.11.png\"/>")
         #expect(XMLParser(data: Data(xml.utf8)).parse())
@@ -405,7 +411,7 @@ struct StyledContextPresentationTests {
     }
 
     @Test func capturedContextIsOnlyPastedIntoNativeAgentApps() {
-        for bundle in ["com.openai.codex", "com.openai.chat", "com.anthropic.claudefordesktop"] {
+        for bundle in ["com.openai.codex", "com.openai.chat", "com.anthropic.claudefordesktop", "ru.keepcoder.Telegram"] {
             #expect(LiveContextPastePolicy.includesSourceContext(
                 destination: .primaryCurrentInput,
                 currentApplicationBundleIdentifier: bundle,
@@ -420,7 +426,7 @@ struct StyledContextPresentationTests {
             }
         }
         for bundle in [nil, "com.google.Chrome", "com.apple.Safari", "com.microsoft.VSCode",
-                       "com.apple.Terminal", "ru.keepcoder.Telegram", "unknown.app"] as [String?] {
+                       "com.apple.Terminal", "com.googlecode.iterm2", "unknown.app"] as [String?] {
             #expect(!LiveContextPastePolicy.includesSourceContext(
                 destination: .primaryCurrentInput,
                 currentApplicationBundleIdentifier: bundle,
@@ -451,7 +457,7 @@ struct StyledContextPresentationTests {
         #expect(!proseOnly.contains("\\("))
     }
 
-    @Test func coloredXMLPreservesUnicodeWhitespaceAndHostileText() throws {
+    @Test func plainXMLPreservesUnicodeWhitespaceAndHostileText() throws {
         #expect(LiveSelectionStyledMath.displayWidth(of: "&#x2a;") == 8)
         let text = "  cafe\u{0301}\t*bold* a\u{0331} 😀\u{200D}😀\u{202E} <tag> & \\) {x} [link](x) 50% a_b\nnext  line"
         let reference = try #require(LiveSelectionReference(text))
@@ -467,12 +473,10 @@ struct StyledContextPresentationTests {
         #expect(actualParser.parse())
         #expect(expectedParser.parse())
         #expect(actual.text == expected.text)
-        #expect(!styled.contains("\u{202E}"))
+        #expect(styled == plain)
+        #expect(try xmlText(in: styled) == text)
         #expect(!styled.contains("\\includegraphics"))
-        for body in formulaBodies(in: styled) { #expect(hasBalancedGroups(body)) }
-        #expect(textOutsideFormulas(in: styled).allSatisfy {
-            $0 == "\n" || $0 == "\u{200B}"
-        })
+        #expect(!styled.contains("\\textsf{"))
     }
 
     @Test func localImageReferenceCannotEscapeItsMarkdownDestination() throws {
@@ -487,7 +491,7 @@ struct StyledContextPresentationTests {
         #expect(destination.removingPercentEncoding == path)
     }
 
-    @Test func authoredOpeningIsRainbowAndTimedXMLUsesDistinctSilvers() throws {
+    @Test func authoredOpeningIsRainbowAndEveryTimelineXMLBlockStaysPlain() throws {
         let date = Date(timeIntervalSince1970: 1_800_000_000)
         let typed = try #require(LiveSelectionReference(typedText: "typed & exact"))
             .timed(at: date, startedAt: date.addingTimeInterval(-1)).anchored(after: "spoken first")
@@ -500,18 +504,20 @@ struct StyledContextPresentationTests {
         let opening = try #require(styled.components(separatedBy: "\n\n<agent_flow_context").first)
         #expect(opening == AuthoredTextRainbow.render("spoken first typed & exact then last", startIndex: 23))
         #expect(!opening.contains("not authored") && !opening.contains("shot.png"))
-        #expect(styled.contains("\\color{\(LiveSelectionStyledMath.speechColor)}"))
-        #expect(styled.contains("\\color{\(LiveSelectionStyledMath.typedColor)}"))
-        #expect(LiveSelectionStyledMath.speechColor != LiveSelectionStyledMath.typedColor)
-        #expect(styled.contains("\\color{\(LiveSelectionStyledMath.selectionColor)}"))
-        #expect(styled.contains("\\color{\(LiveSelectionStyledMath.screenshotColor)}"))
+        let timeline = String(styled.dropFirst(opening.count))
+        #expect(!timeline.contains("\\textsf{") && !timeline.contains("\\color{"))
+        #expect(timeline.contains("<agent_flow_context preview=\"authored_text_above\">\n\n"))
+        #expect(timeline.contains("<speech_segment timing=\"unavailable\">\n\nspoken first\n\n</speech_segment>"))
+        #expect(timeline.contains(">\n\ntyped &amp; exact\n\n</typed_text>"))
+        #expect(timeline.contains(">\n\n  <text>not authored</text>\n\n</codex_selection>"))
+        #expect(timeline.contains("<local_screenshot path=\"/Users/test/shot.png\"/>"))
         let plain = LiveSelectionReference.interleaving(references, with: "spoken first then last",
             includeTiming: true, includeReadablePreview: true)
         #expect(try unwrappedXML(styled).replacingOccurrences(of: "\n\n![Screenshot](</Users/test/shot.png>)", with: "") == plain)
         #expect(styled.contains("![Screenshot](</Users/test/shot.png>)"))
     }
 
-    @Test func rainbowAndSilverShareOneBudgetWithoutClippingWords() throws {
+    @Test func rainbowOpeningYieldsToPlainXMLBudgetWithoutClippingWords() throws {
         let text = String(repeating: "spoken words ", count: 1_000).trimmingCharacters(in: .whitespaces)
         let references = [try #require(LiveSelectionReference("selected context"))]
         let plain = LiveSelectionReference.interleaving(references, with: text, includeTiming: true, includeReadablePreview: true)

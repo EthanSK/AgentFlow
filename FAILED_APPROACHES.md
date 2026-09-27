@@ -1,5 +1,17 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-09-27 — LaTeX-styled XML inside a raw context envelope — REJECTED
+
+**Mechanism:** Wrap speech, typing, selection and screenshot XML in coloured
+inline math inside `<agent_flow_context>`, validating only extracted formulas.
+**Failure condition:** The actual Codex message showed those formulas literally
+inside the XML block while its standalone rainbow opening rendered correctly.
+**Correction:** Keep the complete XML timeline plain, with visible blank-line
+separation; style only the authored opening. Preserve historical decoding.
+**Reconsider only if:** Ethan explicitly asks for styled XML again and a full
+production-message renderer test proves it works with the outer envelope. Passing
+KaTeX expressions individually is not sufficient evidence.
+
 ## 2026-09-27 — Current pointer location as queued mouse-event geometry — REJECTED
 
 **Mechanism:** Sample `NSEvent.mouseLocation` in both global mouse-edge handlers.

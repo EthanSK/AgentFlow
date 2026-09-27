@@ -1,13 +1,13 @@
 {
   "sourceLanguage": "en",
   "strings": {
-    "Colors highlight and screenshot XML and adds local screenshot links. For apps that render LaTeX, such as Codex.": {
+    "Colors the opening speech and typed text. XML stays plain. For apps that render LaTeX, such as Codex.": {
       "extractionState": "manual",
-      "comment": "Help for the per-Mode styled context option. Other apps keep plain XML by default."
+      "comment": "Help for the per-Mode rainbow opening option. Structured context remains plain XML."
     },
-    "Styled highlights": {
+    "Rainbow text": {
       "extractionState": "manual",
-      "comment": "Per-Mode option that now colors context XML itself instead of adding display-only previews above it."
+      "comment": "Per-Mode option for a rainbow-coloured authored opening; it does not style XML."
     },
     "": {
       "localizations": {

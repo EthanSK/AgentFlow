@@ -304,9 +304,9 @@ struct RecorderTypedInputTests {
         let xml = LiveSelectionReference.interleaving(session.liveSelectionReferences,
             with: session.partialTranscript, includeTiming: true)
         #expect(xml.components(separatedBy: "<speech_segment ").count == 3)
-        #expect(xml.contains("timing=\"approximate\">\nSpeech first\n</speech_segment>"))
+        #expect(xml.contains("timing=\"approximate\">\n\nSpeech first\n\n</speech_segment>"))
         #expect(xml.contains("captured_at=\""))
-        #expect(xml.contains("<typed_text start_at=\"") && xml.contains("typed &amp; exact\n</typed_text>"))
+        #expect(xml.contains("<typed_text start_at=\"") && xml.contains("typed &amp; exact\n\n</typed_text>"))
         #expect(!LiveSelectionReference.previewParts(session.liveSelectionReferences,
             with: session.partialTranscript).contains(.selection("timing")))
         let plain = LiveSelectionReference.interleaving(session.liveSelectionReferences.filter(\.isTypedText), with: "")
@@ -333,12 +333,12 @@ struct RecorderTypedInputTests {
         let selection = try #require(LiveSelectionReference("source")).anchored(after: "first words")
         let xml = LiveSelectionReference.interleaving([marker, selection],
             with: "first words and the final tail", includeTiming: true)
-        #expect(xml.hasSuffix("\nand the final tail\n</speech_segment>"))
+        #expect(xml.hasSuffix("\n\nand the final tail\n\n</speech_segment>"))
         #expect(xml.components(separatedBy: "start_at=\"").count == 3)
         #expect(xml.components(separatedBy: "timing=\"approximate\"").count == 3)
         #expect(!xml.contains("observed_start_at") && !xml.contains("started_at"))
         let shortened = LiveSelectionReference.interleaving([marker], with: "revised", includeTiming: true)
-        #expect(shortened.hasSuffix("\nrevised\n</speech_segment>"))
+        #expect(shortened.hasSuffix("\n\nrevised\n\n</speech_segment>"))
         #expect(!shortened.contains("unavailable"))
         #expect(LiveSelectionReference.interleaving([marker], with: "first words and the final tail")
             == "first words\n\nand the final tail")
@@ -348,7 +348,7 @@ struct RecorderTypedInputTests {
         for references in [[], [try #require(LiveSelectionReference("source"))]] {
             let xml = LiveSelectionReference.interleaving(references,
                 with: "batch <speech> & text", includeTiming: true)
-            #expect(xml.hasSuffix("<speech_segment timing=\"unavailable\">\nbatch &lt;speech&gt; &amp; text\n</speech_segment>"))
+            #expect(xml.hasSuffix("<speech_segment timing=\"unavailable\">\n\nbatch &lt;speech&gt; &amp; text\n\n</speech_segment>"))
             #expect(!xml.contains("start_at=") && !xml.contains("end_at="))
         }
         #expect(LiveSelectionReference.interleaving([], with: "plain <speech>") == "plain <speech>")

@@ -1,5 +1,16 @@
 # Learnings
 
+## 2026-09-27 — Whole-message XML envelopes can suppress math rendering
+
+Ethan's build-359 message screenshot showed the rainbow authored opening rendered
+but literal LaTeX inside `<agent_flow_context>`. Earlier verification rendered the
+individual production formulas, not their Markdown/XML envelope, so it did not
+prove the complete message worked. He superseded coloured XML with plain XML:
+only the authored opening may use rainbow styling. Keep the old colour decoder
+in the interpretation skill for historical messages, not as a generation rule.
+Test the actual whole-message boundary and preserve source whitespace inside
+selection `<text>` when adding blank lines around its enclosing metadata.
+
 ## 2026-09-27 — Signing can fail after a successful build on a nearly-full volume
 
 The build-359 universal Release completed, but outer local signing reported an

@@ -543,8 +543,8 @@ struct ModeConfigFormView: View {
                 // pasted too, and delivery still uses this Mode's normal route.
                 Toggle(isOn: $draft.isStyledContextEnabled) {
                     HStack(spacing: 6) {
-                        Text("Styled highlights")
-                        InfoTip("Colors highlight and screenshot XML and adds local screenshot links. For apps that render LaTeX, such as Codex.")
+                        Text("Rainbow text")
+                        InfoTip("Colors the opening speech and typed text. XML stays plain. For apps that render LaTeX, such as Codex.")
                     }
                 }
             }

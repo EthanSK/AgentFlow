@@ -202,7 +202,7 @@ class TranscriptionPipeline {
             // one final destination write, never a streaming composer edit.
             // Keep raw/skip authored prose verbatim. Source references still do
             // not enter commands or recorder-assistant responses.
-            // `.styledMath` colours the authored opening and canonical XML;
+            // `.styledMath` colours only the authored opening; XML stays plain.
             // it never adds a paste, an attachment, or a delivery route.
             guard !assistant.isFollowUp,
                   let current = finalText else { return }
