@@ -26,6 +26,12 @@ the production handlers in real tap order and covers both physical key orders,
 active/paused finish, repeated sessions and release pass-through. Direct handler
 tests alone cannot establish that an earlier shared listener delivers the event.
 
+The privacy-bounded trace helper also still filtered only the old executable name,
+so it could produce an empty trace while AgentFlow was running. Commit `04cfaef`
+accepts both executable names and the fixed typing-chord receipt, without adding
+text/key contents. Its real Bash allowlist fixture retains nine metadata receipts,
+rejects five content-bearing samples and redacts provider errors.
+
 ## 2026-09-27 — Scaled HUD pixels and clicks must use the same transform
 
 Ethan reported that every floating control was unclickable in build 354. A process
