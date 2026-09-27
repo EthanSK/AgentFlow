@@ -1,5 +1,19 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-09-27 — Recognizing reserved chords in every shared listener — REJECTED
+
+**Mechanism:** Handle both Command keys in `ShortcutMonitor` even when that
+instance has no typing-toggle callback, then consume the completing press.
+**Failure:** Start works with the main monitor, but opening the HUD inserts the
+panel monitor ahead of it. That non-owner consumes Finish and calls nothing.
+The direct handler test passes because it bypasses this event-routing boundary.
+**Accepted correction:** Require an installed owner callback before recognizing
+or consuming the chord; replay events through the recording, panel and Mode
+listeners in their real order, including releases and a second session.
+**Reconsider only if:** A replacement central dispatcher proves single ownership
+and passes complete multi-listener Start/Finish sequences; a reducer or action
+callback test on its own remains insufficient.
+
 ## 2026-09-27 — Scaling the recorder through ancestor AppKit bounds — REJECTED
 
 **Mechanism:** Keep the physical recorder window small but enlarge its parent

@@ -1,5 +1,24 @@
 # Learnings
 
+## 2026-09-27 — Shared shortcut monitors must not consume unowned chords
+
+Build 355's both-Command handler passed its direct callback test, but Ethan's
+physical chord still started without finishing. `CGGetEventTapList` showed two
+enabled taps belonging to Agent Flow once its panel was visible. The shared
+`ShortcutMonitor` recognized and consumed both Command keys unconditionally;
+`RecorderPanelShortcutManager` installs a newer head-insert tap without the
+`onTypingStart` callback, so it swallowed Finish before the recording listener.
+Mode shortcut monitors had the same latent interception path.
+
+Commit `317d532` requires that callback before recognizing or consuming this
+reserved chord. Non-owner monitors pass it unchanged; the recording owner still
+dispatches once and forwards every release. The recorder's normal Primary finish,
+microphone-off start, current-input paste and configured submit are unchanged.
+`bothCommandFinishesThroughVisiblePanelAndModeMonitors` replays CGEvents through
+the production handlers in real tap order and covers both physical key orders,
+active/paused finish, repeated sessions and release pass-through. Direct handler
+tests alone cannot establish that an earlier shared listener delivers the event.
+
 ## 2026-09-27 — Scaled HUD pixels and clicks must use the same transform
 
 Ethan reported that every floating control was unclickable in build 354. A process
