@@ -179,6 +179,13 @@ Rendered bubbles do not prove queued rows
 render math. Keep installed/public interpretation guides aligned, including historical
 colour decoding. See LEARNINGS.md, “Whole-message XML envelopes can suppress math rendering”.
 
+For compact italic metadata, retain one blank-line gap between different section
+types/colours and compact only consecutive matching types. Keep literal quotes and
+apostrophes in XML character data while escaping them in attributes; preserve
+ampersand/angle escaping and exact text round trips. Test valid thread identities
+when asserting task-title attributes. User-requested section spacing and readable
+apostrophes — 2026-09-27; see LEARNINGS.md, “Compact metadata needs a boundary between section types”.
+
 Never infer selection source from a global monitor's reconstructed CGEvent target
 PID: it can name the recorder itself. Sample the frontmost PID and pointer inside
 the monitor callback, structurally exclude self, and keep capture text-free while

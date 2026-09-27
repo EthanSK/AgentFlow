@@ -1,5 +1,28 @@
 # Learnings
 
+## 2026-09-27 — Compact metadata needs a boundary between section types
+
+Keep adjacent XML metadata compact only within consecutive sections of the same
+type/colour. Insert one blank-line gap when the fixed section colour changes,
+including the outer envelope; otherwise a cyan selection's closing tag visually
+touches the following silver speech tag. Preserve payload whitespace and existing
+standalone screenshot Markdown references. Do not change capture or delivery to
+repair this presentation-only issue.
+
+XML character data may contain literal apostrophes and quotation marks. Escape
+those in attributes, but leave them readable in speech, typing and selection text;
+continue escaping ampersands/angle brackets and rejecting XML-forbidden controls.
+A quoted literal `&apos;` must remain literal after one XML decode, not become an
+apostrophe through double decoding. Use a valid UUID in thread-title fixtures so
+the production identity guard actually includes the attribute under test.
+
+Build 365's exact source passed 40 focused tests and all 459 release tests across
+18 suites through the canonical Xcode action on the Mini. Two new regression tests
+cover matching/different section boundaries and XML quote round trips. A disposable
+browser fixture using production serialized messages and the installed Codex host's
+Markdown lexer visibly rendered the gaps, upright apostrophes and italic metadata;
+this does not establish a manually verified live sent Codex bubble.
+
 ## 2026-09-27 — History presentation must not rewrite stored context
 
 History list rows need a plain authored preview, while expanded messages can render
