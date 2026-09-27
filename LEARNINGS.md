@@ -2,6 +2,13 @@
 
 ## 2026-09-27 — Shared shortcut monitors must not consume unowned chords
 
+Ethan subsequently chose **both Command and both Option keys together** because
+both Command alone belongs to another shortcut. Commit `d4ebd31` replaces the
+old chord, requires all four physical-side bits, and passes the old chord through.
+`typingToggleRequiresAllFourPhysicalKeysInEveryOrder` covers all 24 press orders;
+`typingChordFinishesThroughVisiblePanelAndModeMonitors` retains the routing guard
+below for this final four-key chord. No Karabiner remapping is required.
+
 Build 355's both-Command handler passed its direct callback test, but Ethan's
 physical chord still started without finishing. `CGGetEventTapList` showed two
 enabled taps belonging to Agent Flow once its panel was visible. The shared
