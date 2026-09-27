@@ -71,6 +71,7 @@ struct LiveSelectionReference: Equatable {
     private var capturedAt: Date?
     private var runStartedAt: Date?
     private var speechBoundary = false
+    private var speechTimingSource = "approximate"
     private var spokenPrefix = ""
     private var codexThreadID: String?
     private var codexThreadTitle: String?
@@ -153,11 +154,13 @@ struct LiveSelectionReference: Equatable {
         return copy
     }
 
-    static func speechTiming(after transcript: String, startedAt: Date, endedAt: Date) -> Self {
+    static func speechTiming(after transcript: String, startedAt: Date, endedAt: Date,
+                             sessionWindow: Bool = false) -> Self {
         // An internal timing marker, never a selected passage or HUD row.
         var marker = Self(typedText: "timing")!
         marker.typedText = nil
         marker.speechBoundary = true
+        marker.speechTimingSource = sessionWindow ? "session_window" : "approximate"
         return marker.anchored(after: transcript).timed(at: endedAt, startedAt: startedAt)
     }
 
@@ -182,6 +185,7 @@ struct LiveSelectionReference: Equatable {
     }
 
     var isTypedText: Bool { typedText != nil }
+    var hasSpeechTiming: Bool { speechBoundary }
     var isSelection: Bool { screenshotPath == nil && !isTypedText && !speechBoundary }
 
     var spokenWordCount: Int {
@@ -308,7 +312,9 @@ struct LiveSelectionReference: Equatable {
             // The final provider result may grow beyond its last live partial.
             // Keep that revised tail grouped with the last observed speech run;
             // never invent a finish-time/audio timestamp or let words escape XML.
-            // Batch-only results have no callback timing, but still need a group.
+            // New short/batch-only recordings carry a frozen session-window
+            // fallback. Historical/imported text without any observed window
+            // stays unavailable rather than receiving invented dates.
             let timing = speechTimings.first(where: { $0.spokenWordCount >= wordCount })
                 ?? speechTimings.last
             guard let started = timing?.runStartedAt, let ended = timing?.capturedAt,
@@ -318,7 +324,9 @@ struct LiveSelectionReference: Equatable {
             }
             // Recognition callbacks are delayed and may revise words. These are
             // observed transcript-activity ranges, never precise audio alignment.
-            return "<speech start_at=\"\(timestamp(started))\" end_at=\"\(timestamp(ended))\" timing=\"approximate\">\n\n"
+            // session_window explicitly means the broader composing-session bounds.
+            let timingSource = timing?.speechTimingSource ?? "approximate"
+            return "<speech start_at=\"\(timestamp(started))\" end_at=\"\(timestamp(ended))\" timing=\"\(timingSource)\">\n\n"
                 + xmlEscaped(speech) + "\n\n</speech>"
         }
         for reference in references {

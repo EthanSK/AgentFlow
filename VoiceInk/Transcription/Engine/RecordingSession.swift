@@ -257,6 +257,21 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     private var lastSpeechActivityAt: Date?
     private var pendingSpeechAnchor = ""
     private var speechTimingTask: Task<Void, Never>?
+    private var contextCaptureEndedAt: Date?
+
+    /// A short utterance can reach its final result without a live callback.
+    /// Preserve the real composing-session bounds in that case, explicitly
+    /// labelled as broader than speech activity. This does not claim word/audio
+    /// alignment, restart a clock at delivery, or modify the HUD's reference list.
+    var liveSelectionReferencesForDelivery: [LiveSelectionReference] {
+        guard hasCapturedAudio, useCase == .newSession,
+              let ended = contextCaptureEndedAt, createdAt <= ended,
+              !liveSelectionReferences.contains(where: \.hasSpeechTiming) else {
+            return liveSelectionReferences
+        }
+        return liveSelectionReferences + [.speechTiming(after: partialTranscript,
+            startedAt: createdAt, endedAt: ended, sessionWindow: true)]
+    }
     lazy var typingFocus = RecorderTypingFocus(canFocus: { [weak self] in self?.canTypeInHUD == true })
     var typingFocusController: RecorderTypingFocus? { typingFocus }
 
@@ -605,7 +620,9 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         liveSelectionReferences[index] = liveSelectionReferences[index].updatingSourceLabels(from: reference)
     }
 
-    func endLiveSelectionCapture() {
+    func endLiveSelectionCapture(at date: Date = Date()) {
+        // Freeze once at capture finish, never at provider/network completion.
+        if contextCaptureEndedAt == nil { contextCaptureEndedAt = date }
         flushSpeechTiming()
         typingFocus.disable(releaseKeyboard: false)
         endTypingRun()

@@ -365,6 +365,57 @@ struct RecorderTypedInputTests {
             == "first words\n\nand the final tail")
     }
 
+    @Test @MainActor func shortSpeechWithoutCallbacksKeepsFrozenSessionTimestamps() {
+        let session = RecordingSession()
+        let finish = session.createdAt.addingTimeInterval(3)
+        session.endLiveSelectionCapture(at: finish)
+        let original = session.liveSelectionReferencesForDelivery
+        session.endLiveSelectionCapture(at: finish.addingTimeInterval(40))
+        #expect(session.liveSelectionReferencesForDelivery == original)
+        #expect(session.liveSelectionReferences.isEmpty)
+        let xml = LiveSelectionReference.interleaving(original, with: "Short speech", includeTiming: true)
+        let stamp = { (date: Date) in String(format: "%.3f", locale: Locale(identifier: "en_US_POSIX"), date.timeIntervalSince1970) }
+        #expect(xml.contains("start_at=\"\(stamp(session.createdAt))\""))
+        #expect(xml.contains("end_at=\"\(stamp(finish))\" timing=\"session_window\""))
+        #expect(!xml.contains("unavailable"))
+        #expect(LiveSelectionReference.interleaving(original, with: "Short speech") == "Short speech")
+    }
+
+    @Test @MainActor func liveSpeechTimingOutranksSessionWindowFallback() {
+        let session = RecordingSession()
+        session.recordSpeechActivity("Live speech", at: session.createdAt.addingTimeInterval(1))
+        session.partialTranscript = "Live speech"
+        session.endLiveSelectionCapture(at: session.createdAt.addingTimeInterval(3))
+        #expect(session.liveSelectionReferencesForDelivery == session.liveSelectionReferences)
+        let xml = LiveSelectionReference.interleaving(session.liveSelectionReferencesForDelivery,
+            with: "Live speech", includeTiming: true)
+        #expect(xml.contains("timing=\"approximate\""))
+        #expect(!xml.contains("session_window"))
+    }
+
+    @Test @MainActor func typingOnlyNeverInventsSpeechWindow() {
+        let session = RecordingSession()
+        session.hasCapturedAudio = false
+        session.microphoneOff = true
+        session.updateTypedInput("Typed only")
+        session.endLiveSelectionCapture()
+        #expect(session.liveSelectionReferencesForDelivery == session.liveSelectionReferences)
+        let xml = LiveSelectionReference.interleaving(session.liveSelectionReferencesForDelivery,
+            with: "", includeTiming: true)
+        #expect(xml.contains("<typed_text start_at="))
+        #expect(!xml.contains("<speech") && !xml.contains("session_window"))
+    }
+
+    @Test @MainActor func retryPreservesOriginalSessionWindowWithoutNewDates() {
+        let original = RecordingSession()
+        original.endLiveSelectionCapture(at: original.createdAt.addingTimeInterval(2))
+        let references = original.liveSelectionReferencesForDelivery
+        let retry = RecordingSession(phase: .transcribing)
+        retry.restoreLiveContextForRetry(references)
+        retry.endLiveSelectionCapture(at: original.createdAt.addingTimeInterval(100))
+        #expect(retry.liveSelectionReferencesForDelivery == references)
+    }
+
     @Test func speechWithoutLiveTimingIsGroupedWithoutInventedDates() throws {
         for references in [[], [try #require(LiveSelectionReference("source"))]] {
             let xml = LiveSelectionReference.interleaving(references,

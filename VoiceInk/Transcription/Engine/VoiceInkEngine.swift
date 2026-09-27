@@ -59,7 +59,8 @@ final class FailedTranscriptionRetry {
         inputDevice = session.recordingInputDevice
         realtimeDraft = transcription.recoverableRealtimeDraftText
             ?? session.recoverablePartialTranscript
-        liveContextReferences = session.liveSelectionReferences
+        // Retry keeps the original capture timing, never the later retry clock.
+        liveContextReferences = session.liveSelectionReferencesForDelivery
         pasteTarget = session.pasteTarget
         context = session.retryContextSnapshot ?? session.contextStore?.snapshot
         skipPostProcessing = session.skipPostProcessing
@@ -1852,7 +1853,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
                 }
             },
             liveSelectionReferences: { [weak session] in
-                session?.liveSelectionReferences ?? []
+                session?.liveSelectionReferencesForDelivery ?? []
             },
             pasteTarget: { [weak session] in
                 guard let session else {
