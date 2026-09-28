@@ -227,6 +227,39 @@ the destination app accepted paste or submitted text.
   bypass does not satisfy that gate. Source-level support for mixed drafts is not a physical
   acceptance receipt.
 
+### Using plain-text paste to avoid Codex's long-paste conversion
+
+- **State:** REJECTED by the installed handler and an isolated Mini fixture on
+  2026-09-28; no live Codex composer was controlled.
+- **Evidence:** In ChatGPT.app 26.924.22138/build 11645, `handlePaste` emits
+  `pasted-text` at 5,000 UTF-16 units before its literal/plain-text insertion
+  branch. Both literal-paste and plain-mode fixtures still emitted the exact long
+  payload as a pasted-text event. The complete 16-test handler fixture passed.
+- **Use instead:** Keep the inline payload below the observed per-paste boundary,
+  or use an explicitly approved multi-part delivery design with complete retained
+  context and proven readiness. Do not silently truncate the authoritative text.
+- **Reconsider only if:** an inspected future host moves the literal branch before
+  the size check or exposes a documented setting, followed by a permitted live
+  acceptance check on that exact host.
+
+### Chaining independent clipboard sessions for one prose-plus-file draft
+
+- **State:** REJECTED by source inspection on 2026-09-28; not shipped or tested
+  against Ethan's live clipboard.
+- **Evidence:** `CursorPaster.performPasteSession` snapshots the current clipboard
+  before acquiring its foreground lease. A successful session holds later mutation
+  for 150 ms, but `scheduleClipboardRestore` waits at least 250 ms. An immediately
+  following independent session can therefore save the first payload as the
+  supposed original clipboard and later restore it, while invalidating the first
+  session's guarded restoration.
+- **Use instead:** For an explicitly approved multi-paste contract, design one
+  transaction with a single original snapshot, per-item ownership/target checks
+  and one final guarded restoration. Prove that the target consumed each item
+  and that its attachment is ready before optional submission.
+- **Reconsider only if:** the implementation owns the complete sequence as one
+  transaction and tests prove clipboard restoration, target/cancel boundaries and
+  readiness; repeated calls or a guessed sleep alone are insufficient.
+
 ## Red-box warnings
 
 These are the highest-cost mistakes from the audited session.

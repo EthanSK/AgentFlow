@@ -22,6 +22,29 @@ Source inspection establishes these constraints, not physical attachment accepta
 the latter still requires a disposable composer test. Do not bypass a Computer Use
 refusal or silently weaken Primary's current-input and the two Next route contracts.
 
+A later isolated Mini fixture executed this host's exact, unmodified `handlePaste`
+method with injected editor/clipboard services. Sixteen named checks passed: the
+4,999/5,000/5,001 boundaries, surrogate pairs, combining marks, trailing space,
+literal/plain modes, Markdown expansion, mixed-file priority, event cancellation,
+unconsumed conversion, existing-draft independence and exact XML/LaTeX retention.
+Literal/Shift-paste is not a workaround: the large-paste decision precedes that
+branch. The fixture proves handler decisions only, not native clipboard timing,
+attachment writes/readiness or live submission.
+
+Ordinary large-text paste is itself an existing-draft attachment mechanism when
+the host's pasted-text feature handler is enabled; the visible attachment chips
+are evidence of that mechanism, not evidence that a new external attachment API
+is required. A bounded opening followed by the complete long payload can therefore
+take different branches in two paste events. That is a design candidate, not a
+shipped exception to Primary's one-paste contract or a readiness guarantee.
+
+Do not compose two `CursorPaster.startPasteAtCursor` sessions to implement it:
+the current coordinator releases after 150 ms, while clipboard restoration waits
+at least 250 ms. A later session can snapshot the previous payload and restore
+that instead of the user's original clipboard. Any approved multi-paste route
+needs one clipboard transaction, one guarded restore, cancellation/target guards
+and independent proof of attachment readiness before optional Return.
+
 ## 2026-09-27 — A character-count shortcut can jump the HUD to full height
 
 The build-364 screenshot of a long dictation shows a near-screen-height recorder
