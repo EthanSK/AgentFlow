@@ -8,7 +8,7 @@
   // Real-time context demo. index.html already contains the finished example, so
   // the page is complete without JavaScript. This only hides those existing parts
   // and reveals them at their data-at times (ms). It must never hold demo or route
-  // copy of its own. One pass lasts about four seconds and then stops, so the
+  // copy of its own. One pass lasts under five seconds and then stops, so the
   // moving content stays under WCAG 2.2.2's five-second limit; Replay restarts it.
   // The Mac screen's TextEdit selection is one of these parts: CSS withholds only
   // its cyan wash, so the highlight lands just before the recorder's Selected Text

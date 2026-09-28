@@ -509,7 +509,8 @@ async function main() {
       const m = timeline.moments;
       const moments = times.length ? times : [
         2.4, m.hudIn + 2.4, m.dragEnd, m.selLand + 0.15, m.shotEnd, m.shotLand + 0.1,
-        m.dockClick + 0.6, m.pasteLand + 1.2, m.glowShot + 0.6, m.endDetails + 1,
+        m.typeEnd + 0.15, m.dockClick + 0.6, m.sendAt + 0.9, m.detailsClick + 0.5,
+        m.scrollEnd + 0.3, m.endDetails + 1,
       ];
       const page = await openScene(browser, promo, deviceScale);
       for (const t of moments) {
@@ -604,10 +605,10 @@ async function main() {
     ]);
     writeFileSync(captionsFile, captions());
 
-    // Poster at 1× so the JPEG stays small: both references are in the recorder and the
-    // screenshot thumbnail is still on screen.
+    // Poster at 1× so the JPEG stays small: the recorder holds the spoken words, both
+    // references and the name being typed, which explains the product in one frame.
     const posterPage = await openScene(browser, promo, 1);
-    await posterPage.evaluate((t) => window.renderAt(t), timeline.moments.shotLand + 0.1);
+    await posterPage.evaluate((t) => window.renderAt(t), timeline.moments.typeEnd + 0.15);
     await posterPage.screenshot({ path: posterFile, type: "jpeg", quality: 86 });
 
     const measured = measureFile(target);

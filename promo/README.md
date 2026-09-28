@@ -4,6 +4,9 @@ Source for the narrated video on the [Agent Flow website](https://ethansk.github
 
 - `narration.json` is the spoken script: voice direction plus one segment per spoken line, each
   with its start time. Everything else is timed from it.
+- `timeline.mjs` turns those start times into every on-screen and sound cue. It also holds the
+  two unspoken parts of the example: the typed text (`TYPED_TEXT`) and the screenshot's clock
+  time (`SCREENSHOT_EPOCH`), from which the prompt viewer's timestamps are derived.
 - `scene.html` is the whole picture as one 1920×1080 web page. `window.renderAt(seconds)` draws
   any moment; nothing animates on its own, so every frame is reproducible.
 - `music.mjs` synthesizes the original music bed and interface sounds from code. There are no
@@ -53,14 +56,22 @@ the published video. `--draft` and `--stills` only write where `--out` points. F
 a work folder (`--work DIR`, default in the system temp folder) as an encoded picture cache and reused when the timing hasn't
 changed, so remixing a new voice take is quick.
 
+## Story
+
+Talk, highlight a function, take a screenshot, then type an exact name in the recorder's
+"Click to type" line during the pause after the screenshot line (no one speaks it; soft
+keystrokes mark it). Codex comes forward, the stop sends one short message, and the full-prompt
+link opens Agent Flow's prompt viewer under "…so your agent can see what you were looking at."
+
 ## Sound
 
 - **Music:** 100 bpm in D major. A detuned pad, a plucked arpeggio with echo, a sine sub bass,
   and a soft kick and hi-hats come in once the recorder starts, with a short lift into the paste.
   It resolves on the end card.
-- **Interface sounds:** quiet clicks for the shortcut, the Dock click and stop, a soft chime when
-  each reference joins the recorder, a screenshot shutter and a whoosh for the paste. They mark
-  actions without competing with the voice.
+- **Interface sounds:** quiet clicks for the shortcut, the typing line, each keystroke, the Dock,
+  stop, auto-send and the viewer's links; a soft chime when each reference joins the recorder, a
+  screenshot shutter and a whoosh for the paste. They mark actions without competing with the
+  voice.
 - **Mix:** the music sits 6 LU below the voice between lines and ducks another 6 dB during
   speech. The renderer measures gated, K-weighted loudness, targets −16 LUFS integrated and
   applies a −2 dBFS sample-peak limiter before 48 kHz stereo AAC at 192 kbps. It then measures
@@ -77,5 +88,13 @@ changed, so remixing a new voice take is quick.
   messages in the scene.
 - The recorder is the website's stylized recorder (black panel, live words, stop control, mint
   waveform), not a pixel copy of the app. Codex appears only as a plain text label, with no logo.
+- After the stop, Codex's single message and the prompt viewer mirror `AgentFlowPromptPreview`
+  and `AgentFlowPromptViewer` in the local build after public v2.0.366: rainbow authored words
+  (Colored context on) with `<selection>` and `<screenshot>` markers, then
+  `Read the full prompt before answering.`, whose "full prompt" is the only link. The Codex Mode
+  shown has auto-send on, so the raw paste is visible for an instant before it renders. The link
+  is a local file; nothing is uploaded.
+- While the public download is older than that build, the website keeps its "Next release" fact
+  beside the demo. Remove that fact when the download includes the short preview.
 - When the site's demo or those claims change, update `narration.json` and the scene to match,
   then re-render.

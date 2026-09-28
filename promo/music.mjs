@@ -441,9 +441,18 @@ export function renderSoundtrack(tl) {
   chime(m.selLand, 0.11, -0.2);              // Selected Text joins the recorder
   shutter(m.shutter, 0.5);
   chime(m.shotLand, 0.11, 0.2);              // Screenshot joins the recorder
+  tick(m.typeClick, 2100, 0.12, -0.1);       // click the recorder's typing line
+  // One soft keystroke per typed character, varied so it doesn't sound like a metronome.
+  (tl.typing || []).forEach((key, i) => {
+    const vary = Math.abs(Math.sin(i * 7.31));
+    tick(key.at, key.char === " " ? 700 : 1500 + 700 * vary, key.char === " " ? 0.09 : 0.055 + 0.03 * vary, -0.25 + 0.5 * vary);
+  });
   tick(m.dockClick, 2100, 0.14, 0.3);        // Dock click
   tick(m.stop, 900, 0.2);                    // shortcut to stop
   whoosh(m.pasteLand, 0.5);                  // the paste
+  tick(m.sendAt, 1700, 0.12, 0.2);           // auto-send
+  if (m.linkClick !== undefined) tick(m.linkClick, 2100, 0.12, 0.1);     // open the full prompt
+  if (m.detailsClick !== undefined) tick(m.detailsClick, 2300, 0.09);    // expand Details
   mixInto(sfx, reverb(sfxSend, sr, { room: 0.7, damp: 0.4 }), 0.8);
 
   return { music, sfx };

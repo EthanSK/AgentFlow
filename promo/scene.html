@@ -17,15 +17,24 @@
   The picture is one continuous shot of a Mac desktop, like the website hero: wallpaper, menu
   bar, windows, the recorder bottom-centred above a quiet Dock. A camera glides to whatever the
   narrator is describing. The one flourish is that each captured reference visibly flies into
-  the recorder, because that capture is the product.
+  the recorder, because that capture is the product. After the stop, the same example is seen
+  twice more: as Codex's one short message, then in full in Agent Flow's prompt viewer.
 
   Truthfulness rules (this is public marketing for a real product):
   - Narration says only what docs/index.html already claims. The dictation, selection and
     screenshot path are the website demo's invented example. Never use real selections,
     paths or messages.
   - The recorder is the website's stylized HUD, not a pixel copy of the native SwiftUI view.
+    Its "Click to type" line and the typed run mirror RecorderComponents/RecordingSession:
+    the active run stays in the editor and joins the live words when focus leaves it.
   - A normal stop pastes into the input focused when the result arrives, so Codex is brought
-    forward (focused composer) before the stop. Auto-send starts off, so nothing is sent.
+    forward (focused composer) before the stop. This Codex Mode has auto-send turned on, so
+    the paste is sent as one message. Colour markup renders only once sent, so the composer
+    shows the raw paste for that instant.
+  - The short rainbow message with its full-prompt link and the prompt viewer mirror
+    AgentFlowPromptPreview/AgentFlowPromptViewer in the local build that follows public
+    v2.0.366. The website says so beside the demo; keep that sentence while the download is
+    older than the build this video shows. Nothing is uploaded: the link is a local file.
   - No third-party logos: TextEdit and Codex appear only as plain text labels. The Codex Dock
     icon is a generic glyph.
 -->
@@ -205,6 +214,8 @@
     justify-content: center;
     gap: 16px;
     background: #fbfcfc;
+    /* Set, not inherited, so the viewer's embedded copy keeps its dark text. */
+    color: var(--ink);
     font-family: var(--system);
   }
 
@@ -243,85 +254,206 @@
     font-weight: 600;
   }
 
-  /* Codex opens from the Dock just before the stop. Plain label, no logo. */
+  /* Codex opens from the Dock just before the stop. Plain label, no logo. It is dark, as
+     many people run it, which is also where the rainbow palette is designed to be read. */
   #codex {
     left: 300px;
-    top: 100px;
+    top: 96px;
     width: 1320px;
-    height: 826px;
-    background: #fbfcfc;
+    height: 830px;
+    background: #1c1c1f;
+    border-color: rgba(0, 0, 0, 0.55);
   }
+
+  .dark .titlebar {
+    border-bottom-color: #323236;
+    background: #27272b;
+    color: #a1a1aa;
+  }
+
+  /* The one sent message: the authored words in the fixed rainbow, italic cyan and
+     magenta markers where the selection and screenshot were, then
+     the reading instruction. Same order and wording as AgentFlowPromptPreview. */
+  #bubble {
+    position: absolute;
+    right: 150px;
+    bottom: 196px;
+    max-width: 900px;
+    padding: 26px 34px 28px;
+    border-radius: 26px;
+    background: #2c2c31;
+    color: #e4e4e7;
+    font-family: var(--system);
+    font-size: 30px;
+    line-height: 1.5;
+  }
+
+  #bubble p { margin: 0; }
+  #bubble p + p { margin-top: 18px; }
+
+  #bubble a {
+    color: #8ab4f8;
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 5px;
+  }
+
+  .mk { font-style: italic; }
 
   #composer {
     position: absolute;
-    left: 60px;
-    right: 60px;
-    bottom: 44px;
-    overflow: hidden;
-    border: 1px solid var(--rule);
+    left: 140px;
+    right: 140px;
+    bottom: 40px;
+    height: 110px;
+    border: 1px solid #3a3a40;
     border-radius: 26px;
-    background: var(--sheet);
-    box-shadow: 0 18px 40px -30px rgba(8, 22, 18, 0.45);
-    font-family: var(--system);
-    font-size: 31px;
-    line-height: 1.4;
+    background: #242428;
   }
 
-  /* Bottom-aligned so the composer grows upward, like a chat input. */
-  #composerBody {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    padding: 30px 36px 84px;
-  }
-
-  #composerBody p { margin: 0; }
-
-  .xml {
-    margin: 0;
-    padding: 14px 20px;
-    border-left: 5px solid;
-    border-radius: 6px 12px 12px 6px;
+  /* The raw paste, for the instant before auto-send: Markdown and colour markup only
+     render once the message is sent. */
+  #composerRaw {
+    position: absolute;
+    left: 34px;
+    right: 100px;
+    top: 36px;
+    overflow: hidden;
     font-family: var(--mono);
-    font-size: 21px;
-    line-height: 1.55;
-    white-space: pre-wrap;
-    color: var(--ink);
+    font-size: 20px;
+    line-height: 1.5;
+    color: #9a9aa3;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
-
-  .xml .a { color: var(--graphite); }
-  .xml-select { border-color: var(--cyan-ink); background: var(--cyan-tint); }
-  .xml-select .t { color: var(--cyan-ink); }
-  .xml-shot { border-color: var(--violet-ink); background: var(--violet-tint); }
-  .xml-shot .t { color: var(--violet-ink); }
 
   .caret {
     display: inline-block;
     width: 3px;
     height: 1.1em;
-    margin-left: 2px;
     vertical-align: -0.2em;
-    background: var(--ink);
+    background: #e4e4e7;
   }
 
   #emptyCaret {
     position: absolute;
-    left: 38px;
-    top: 32px;
+    left: 36px;
+    top: 34px;
     height: 38px;
   }
 
   .send {
     position: absolute;
-    right: 18px;
-    bottom: 16px;
-    width: 48px;
-    height: 48px;
+    right: 20px;
+    bottom: 23px;
+    width: 62px;
+    height: 62px;
     border-radius: 50%;
-    background: #d9dfdd;
+    background: #3a3a40;
     display: grid;
     place-items: center;
   }
+
+  /* The full prompt as Agent Flow's own viewer draws it: dark page, one numbered section
+     per event in its fixed colour, metadata folded into Details, the screenshot itself
+     embedded. Type is 1.6× the real viewer's so it reads in a video. */
+  #viewer {
+    left: 360px;
+    top: 62px;
+    width: 1200px;
+    height: 900px;
+    background: #141416;
+    border-color: rgba(0, 0, 0, 0.6);
+  }
+
+  #viewerBody {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50px;
+    bottom: 0;
+    overflow: hidden;
+  }
+
+  #viewerDoc {
+    width: 1020px;
+    margin: 0 auto;
+    padding: 44px 0 80px;
+    color: #f1f5f9;
+    font-family: var(--system);
+    font-size: 27px;
+    line-height: 1.55;
+  }
+
+  .v-title { display: flex; align-items: baseline; gap: 18px; margin-bottom: 40px; }
+  .v-title h1 { margin: 0; font-size: 35px; letter-spacing: -0.8px; }
+  .v-subtitle { color: #94a3b8; font-size: 22px; }
+
+  .v-close {
+    margin-left: auto;
+    padding: 7px 19px;
+    border: 1px solid #414147;
+    border-radius: 11px;
+    background: #242428;
+    color: #cbd5e1;
+    font-size: 21px;
+  }
+
+  .v-source { display: inline-block; margin-bottom: 26px; color: #94a3b8; font-size: 21px; }
+  .v-summary { color: #94a3b8; font-size: 21px; }
+  .v-summary::before { content: "▸  "; }
+  .v-summary.open::before { content: "▾  "; }
+  .v-opening { margin-bottom: 44px; }
+
+  .v-event {
+    margin: 0 0 46px 12px;
+    padding-left: 35px;
+    border-left: 3px solid var(--c);
+  }
+
+  .v-head {
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+    margin-bottom: 12px;
+    color: var(--c);
+  }
+
+  .v-index { font-family: var(--mono); font-size: 19px; opacity: 0.7; }
+  .v-head h2 { margin: 0; font-size: 21px; font-weight: 600; }
+  .v-app { font-size: 21px; opacity: 0.8; }
+  .v-payload { color: var(--c); white-space: pre-wrap; }
+  .v-details { margin-top: 14px; }
+
+  .v-dl {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 8px 28px;
+    margin: 0;
+    overflow: hidden;
+    font-family: var(--mono);
+    font-size: 19px;
+    line-height: 1.6;
+    color: #94a3b8;
+  }
+
+  .v-dl dt { font-style: italic; }
+  .v-dl dt:first-child, .v-dl dt:first-child + dd { margin-top: 16px; }
+  .v-dl dd { margin: 0; }
+  .v-shotlink { color: #e879f9; }
+
+  .v-image {
+    position: relative;
+    width: 560px;
+    height: 414px;
+    margin-top: 18px;
+    overflow: hidden;
+    border: 1px solid #303036;
+    border-radius: 12px;
+    background: #fbfcfc;
+  }
+
+  .v-full { margin-top: 56px; padding-top: 30px; border-top: 1px solid #303036; }
 
   /* macOS region screenshot: translucent grey fill with a thin outline. */
   #shotRegion {
@@ -357,9 +489,9 @@
 
   #hud {
     position: absolute;
-    left: 460px;
+    left: 410px;
     bottom: 132px;
-    width: 1000px;
+    width: 1100px;
     border-radius: 28px;
     background: var(--hud);
     color: rgba(255, 255, 255, 0.87);
@@ -371,12 +503,15 @@
   }
 
   /* Bottom-aligned: new words appear on the last line and earlier lines scroll up as the
-     recorder grows, the way the real panel grows from its bottom edge. */
+     recorder grows, the way the real panel grows from its bottom edge. Like the real card,
+     it stops growing at a share of the screen and then scrolls, fading out at the top. */
   #hudTextBox {
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
     overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 22px);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 22px);
   }
 
   #hudText {
@@ -396,6 +531,29 @@
 
   .cue-select { color: var(--cyan); }
   .cue-shot { color: var(--violet); }
+
+  /* The recorder's typing line: "Click to type" until you type, the active run while you
+     do, then empty again once that run has joined the words above. */
+  #hudEditor {
+    margin: 4px 22px 0;
+    padding: 0 12px;
+    border-radius: 10px;
+    font-size: 29px;
+    line-height: 1.5;
+    white-space: nowrap;
+  }
+
+  #hudTyped { color: rgba(255, 255, 255, 0.92); }
+  #hudPlaceholder { color: rgba(255, 255, 255, 0.35); }
+
+  #hudCaret {
+    display: inline-block;
+    width: 2px;
+    height: 1.05em;
+    margin: 0 2px 0 1px;
+    vertical-align: -0.16em;
+    background: #fff;
+  }
 
   .hud-bar {
     display: flex;
@@ -701,19 +859,27 @@
         </div>
       </div>
 
-      <div class="window" id="codex">
+      <div class="window dark" id="codex">
         <div class="titlebar"><span class="lights"><i></i><i></i><i></i></span>Codex</div>
+        <div id="bubble"><p id="bubbleWords"></p><p>Read the <a id="bubbleLink">full prompt</a> before answering.</p></div>
         <div id="composer">
           <span class="caret" id="emptyCaret"></span>
-          <div id="composerBody">
-            <p id="pasteWords1"></p>
-            <pre class="xml xml-select" id="xmlSelect"><span class="t">&lt;app_selection</span> <span class="a">index="1" source="TextEdit" characters="32" middle_omitted="false" truncated="false" bundle_id="com.apple.TextEdit"</span><span class="t">&gt;</span>
-  <span class="t">&lt;text&gt;</span>func loadRows(from cache: Cache)<span class="t">&lt;/text&gt;</span>
-<span class="t">&lt;/app_selection&gt;</span></pre>
-            <p id="pasteWords2"></p>
-            <pre class="xml xml-shot" id="xmlShot"><span class="t">&lt;local_screenshot</span> <span class="a">path="/Users/you/Desktop/Screenshot 2026-09-24 at 10.41.12.png"</span><span class="t">/&gt;</span><span class="caret" id="pasteCaret"></span></pre>
+          <div id="composerRaw"></div>
+          <span class="send" id="sendBtn"><svg viewBox="0 0 24 24" width="30" height="30"><path d="M12 19V5m-6 6 6-6 6 6" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        </div>
+      </div>
+
+      <!-- The prompt viewer's structure and labels follow AgentFlowPromptViewer.html(). -->
+      <div class="window dark" id="viewer">
+        <div class="titlebar"><span class="lights"><i></i><i></i><i></i></span>Agent Flow prompt</div>
+        <div id="viewerBody">
+          <div id="viewerDoc">
+            <div class="v-title"><h1>Agent Flow</h1><span class="v-subtitle">Prompt</span><span class="v-close">Close</span></div>
+            <span class="v-source">Source</span>
+            <div class="v-opening"><span class="v-summary">Your words</span></div>
+            <div id="viewerEvents"></div>
+            <div class="v-full"><span class="v-summary">Full source</span></div>
           </div>
-          <span class="send"><svg viewBox="0 0 24 24" width="24" height="24"><path d="M12 19V5m-6 6 6-6 6 6" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
         </div>
       </div>
 
@@ -722,6 +888,7 @@
 
       <div id="hud">
         <div id="hudTextBox"><p id="hudText"></p></div>
+        <div id="hudEditor"><span id="hudTyped"></span><span id="hudCaret"></span><span id="hudPlaceholder">Click to type</span></div>
         <div class="hud-bar">
           <span id="stopBtn"><span id="stopRing"></span></span>
           <span id="wave"></span>
@@ -844,6 +1011,23 @@
   // Dictation loudness for this frame, 0–1 (render.mjs measures it from the voice takes).
   const level = (t) => P.level[Math.max(0, Math.min(P.level.length - 1, Math.round(t * P.fps)))] || 0;
 
+  // The invented example, shared by the recorder, the Codex message and the prompt viewer.
+  const SELECTED = "func loadRows(from cache: Cache)";
+  const SHOT_PATH = "/Users/you/Desktop/Screenshot 2026-09-24 at 10.41.12.png";
+  const SHOT_NAME = SHOT_PATH.split("/").pop();
+  // AuthoredTextRainbow.palette, one colour per authored word; markers keep their section
+  // colours from LiveSelectionStyledMath.
+  const RAINBOW = [
+    "#fa7070", "#fa9370", "#fab570", "#fad870", "#fafa70", "#d8fa70",
+    "#b5fa70", "#93fa70", "#70fa70", "#70fa93", "#70fab5", "#70fad8",
+    "#70fafa", "#70d8fa", "#70b5fa", "#7093fa", "#7070fa", "#9370fa",
+    "#b570fa", "#d870fa", "#fa70fa", "#fa70d8", "#fa70b5", "#fa7093",
+  ];
+  const COLOR = { speech: "#f1f5f9", typed: "#f4f4f5", selection: "#67e8f9", screenshot: "#e879f9" };
+  // Unix seconds for a moment in the video, anchored so the screenshot is taken during
+  // 10:41:12, with the millisecond part real captures have.
+  const epochAt = (t) => (P.screenshotEpoch + 0.463 + (t - M.shutter)).toFixed(3);
+
   // ---------- One-time layout (camera at identity) ----------
 
   const L = {};
@@ -865,6 +1049,8 @@
     parts.push({ cue: "select", text: "Selected Text: TextEdit — “func loadRows(from cache: Cache)”", at: M.selLand });
     addWords("dictate2");
     parts.push({ cue: "shot", text: "Screenshot: Screenshot 2026-09-24 at 10.41.12.png", at: M.shotLand });
+    // The typed run joins the live words once focus leaves the recorder's typing line.
+    parts.push({ text: `${P.typed} `, at: M.seal });
     parts.sort((a, b) => a.at - b.at);
     const hudText = $("hudText");
     L.parts = parts.map((part) => {
@@ -874,8 +1060,93 @@
       hudText.appendChild(el);
       return { ...part, el };
     });
-    $("pasteWords1").textContent = SEG.dictate1.text;
-    $("pasteWords2").textContent = SEG.dictate2.text;
+
+    // Codex's sent message: rainbow words and section markers, then the reading instruction,
+    // whose "full prompt" is the only link (Ethan removed the leading icon link, 2026-09-28).
+    const bubbleWords = $("bubbleWords");
+    let colourIndex = 0;
+    const tokens = [
+      ...SEG.dictate1.text.split(/\s+/),
+      { marker: "<selection>", color: COLOR.selection },
+      ...SEG.dictate2.text.split(/\s+/),
+      { marker: "<screenshot>", color: COLOR.screenshot },
+      ...P.typed.split(/\s+/),
+    ];
+    for (const token of tokens) {
+      if (bubbleWords.childNodes.length) bubbleWords.appendChild(document.createTextNode(" "));
+      const span = document.createElement("span");
+      if (typeof token === "string") {
+        span.textContent = token;
+        span.style.color = RAINBOW[colourIndex++ % RAINBOW.length];
+      } else {
+        span.textContent = token.marker;
+        span.className = "mk";
+        span.style.color = token.color;
+      }
+      bubbleWords.appendChild(span);
+    }
+    // What the composer holds for an instant: the same message as raw TeX, starting with the
+    // first coloured word; the footer's link is past the visible edge of this one line.
+    const tex = (word, color) => `\\(\\textsf{\\color{${color}}${word}}\\)`;
+    $("composerRaw").textContent = SEG.dictate1.text.split(/\s+/).map((w, i) => tex(w, RAINBOW[i])).join(" ");
+
+    // The prompt viewer: one numbered section per event, in capture order.
+    const events = [
+      { label: "Speech", color: COLOR.speech, text: SEG.dictate1.text },
+      { label: "Selection", color: COLOR.selection, app: "TextEdit", text: SELECTED, open: true, rows: [
+        ["bundle_id", "com.apple.TextEdit"], ["captured_at", epochAt(M.dragEnd)], ["characters", String(SELECTED.length)],
+        ["index", "1"], ["middle_omitted", "false"], ["source", "TextEdit"], ["truncated", "false"],
+      ] },
+      { label: "Speech", color: COLOR.speech, text: SEG.dictate2.text },
+      { label: "Screenshot", color: COLOR.screenshot, screenshot: true },
+      { label: "Typed text", color: COLOR.typed, text: P.typed },
+    ];
+    const holder = $("viewerEvents");
+    events.forEach((event, i) => {
+      const section = document.createElement("section");
+      section.className = "v-event";
+      section.style.setProperty("--c", event.color);
+      section.innerHTML = `<header class="v-head"><span class="v-index">${i + 1}</span><h2></h2>${event.app ? '<span class="v-app"></span>' : ""}</header>`;
+      section.querySelector("h2").textContent = event.label;
+      if (event.app) section.querySelector(".v-app").textContent = event.app;
+      if (event.screenshot) {
+        const shotLink = document.createElement("div");
+        shotLink.className = "v-shotlink";
+        shotLink.textContent = `${SHOT_NAME} ↗`;
+        const image = document.createElement("div");
+        image.className = "v-image";
+        image.id = "viewerImage";
+        section.append(shotLink, image);
+      } else {
+        const payload = document.createElement("div");
+        payload.className = "v-payload";
+        payload.textContent = event.text;
+        section.appendChild(payload);
+      }
+      const details = document.createElement("div");
+      details.className = "v-details";
+      const summary = document.createElement("span");
+      summary.className = "v-summary";
+      summary.textContent = "Details";
+      details.appendChild(summary);
+      if (event.open) {
+        summary.id = "selDetails";
+        const list = document.createElement("dl");
+        list.className = "v-dl";
+        list.id = "selRows";
+        for (const [key, value] of event.rows) {
+          const dt = document.createElement("dt");
+          const dd = document.createElement("dd");
+          dt.textContent = key;
+          dd.textContent = value;
+          list.append(dt, dd);
+        }
+        details.appendChild(list);
+      }
+      section.appendChild(details);
+      if (i === events.length - 1) section.id = "viewerLast";
+      holder.appendChild(section);
+    });
 
     // Measure the recorder after each reveal, so it can ease between heights, and find where
     // each reference lands for its flight.
@@ -896,6 +1167,10 @@
     L.parts.forEach((part) => (part.el.style.display = "none"));
     L.cueSel = L.parts.find((p) => p.cue === "select");
     L.cueShot = L.parts.find((p) => p.cue === "shot");
+    // Three lines of words, then it scrolls (the real card's quarter-screen cap, scaled).
+    const lineHeight = parseFloat(getComputedStyle(hudText).lineHeight);
+    L.capHeight = L.baseHeight + 3 * lineHeight;
+    L.editorRow = rectIn($("hudEditor"));
 
     // Selection geometry inside TextEdit.
     const editor = rectIn($("editor"));
@@ -917,15 +1192,16 @@
     flash.style.width = `${L.shot.x1 - L.shot.x0}px`;
     flash.style.height = `${L.shot.y1 - L.shot.y0}px`;
 
-    // Thumbnail and its flying copy: scaled clones of exactly the captured region.
-    for (const holder of [$("thumb"), $("flyShot")]) {
+    // Thumbnail, its flying copy and the viewer's embedded image: scaled clones of exactly
+    // the captured region.
+    for (const holder of [$("thumb"), $("flyShot"), $("viewerImage")]) {
       const clone = $("design").cloneNode(true);
       clone.removeAttribute("id");
       clone.style.left = "0";
       clone.style.top = "0";
       clone.style.width = `${design.w}px`;
       clone.style.height = `${design.h}px`;
-      const scale = 242 / (L.shot.x1 - L.shot.x0);
+      const scale = holder.clientWidth / (L.shot.x1 - L.shot.x0);
       const wrap = document.createElement("div");
       wrap.className = "clone";
       wrap.style.transform = `scale(${scale}) translate(${-(L.shot.x0 - design.x)}px, ${-(L.shot.y0 - design.y)}px)`;
@@ -934,14 +1210,13 @@
     }
     L.thumb = rectIn($("thumb"));
 
-    // Composer heights before and after the paste.
-    const body = $("composerBody");
-    const composer = $("composer");
-    L.composerFull = composer.offsetHeight;
-    body.style.display = "none";
-    L.composerEmpty = 132;
-    body.style.display = "";
-    L.composer = rectIn(composer);
+    // Where the camera and pointer go in Codex and in the viewer. The viewer scrolls far
+    // enough, with Details open, to show the embedded screenshot and the typed text.
+    L.bubble = rectIn($("bubble"));
+    L.link = rectIn($("bubbleLink"));
+    L.details = rectIn($("selDetails"));
+    L.rowsHeight = $("selRows").offsetHeight;
+    L.scrollTarget = Math.max(0, rectIn($("viewerLast")).y + rectIn($("viewerLast")).h - rectIn($("viewerBody")).y - rectIn($("viewerBody")).h + 60);
 
     // Dock: centre it, then find the Codex icon for the click and the window's zoom origin.
     const dock = $("dock");
@@ -973,10 +1248,15 @@
       [M.crossOn - 0.05, 1400, 360, 1.3],
       [M.shutter + 0.1, 1400, 370, 1.3],
       [M.shotLand + 0.1, 1120, 620, 1.05],
+      [M.typeClick - 0.1, 960, 700, 1.25],
+      [M.typeEnd + 0.25, 960, 700, 1.25],
       [M.dockClick + 0.5, 960, 540, 1],
-      [M.pasteLand - 0.25, 960, 540, 1],
-      [M.pasteLand + 0.9, 960, 660, 1.25],
-      [M.glowShot + 1.3, 960, 665, 1.27],
+      [M.pasteLand - 0.1, 960, 540, 1],
+      [M.sendAt + 0.7, L.bubble.cx, L.bubble.cy, 1.3],
+      [M.linkClick, L.bubble.cx, L.bubble.cy + 10, 1.3],
+      [M.viewerOpen + 0.8, 960, 500, 1.12],
+      [M.scrollStart, 960, 500, 1.12],
+      [M.scrollEnd + 0.3, 960, 540, 1.16],
       [M.endIn + 0.8, 960, 540, 1.04],
       [P.duration, 960, 540, 1],
     ]));
@@ -1018,10 +1298,13 @@
     $("mbCodex").style.display = codexFront ? "flex" : "none";
     show($("micDot"), win(t, M.hudIn - 0.15, M.stop + 0.5, 0.15, 0.2));
 
-    // Pointer: idle → drag-select the function → crosshair screenshot → Codex in the Dock.
+    // Pointer: idle → drag-select the function → crosshair screenshot → click the typing
+    // line (macOS hides the pointer while you type) → Codex in the Dock → the full-prompt
+    // link → the selection's Details.
     const sel = L.sel;
     const shot = L.shot;
     const dock = L.dockIcon;
+    const edit = L.editorRow;
     const selY = sel.cy + 2;
     const [px, py] = track(t, ordered([
       [M.deskIn + 0.6, 1240, 660],
@@ -1039,13 +1322,23 @@
       [M.shotEnd, shot.x1, shot.y1],
       [M.shutter, shot.x1, shot.y1],
       [M.shotLand, shot.x1 - 20, shot.y1 + 90],
+      [M.typeClick - 0.05, edit.x + 90, edit.cy],
+      [M.typeEnd + 0.3, edit.x + 90, edit.cy],
       [M.dockClick - 0.08, dock.cx, dock.cy],
       [M.dockClick + 0.3, dock.cx, dock.cy],
-      // Out of the way, onto the wallpaper right of the Dock, before the paste lands.
+      // Out of the way, onto the wallpaper right of the Dock, while the paste is sent.
       [M.pasteLand, dock.cx + 430, dock.cy - 50],
+      [M.linkClick - 0.8, dock.cx + 430, dock.cy - 50],
+      [M.linkClick - 0.05, L.link.x + L.link.w * 0.45, L.link.cy + 4],
+      [M.linkClick + 0.3, L.link.x + L.link.w * 0.45, L.link.cy + 4],
+      [M.detailsClick - 0.08, L.details.x + 30, L.details.cy + 4],
+      [M.detailsClick + 0.3, L.details.x + 30, L.details.cy + 4],
+      [M.scrollStart + 0.5, 1500, 660],
     ]));
-    const click = win(t, M.dockClick - 0.05, M.dockClick + 0.16, 0.05, 0.11);
-    show($("pointer"), win(t, M.deskIn + 0.6, M.pasteLand + 0.6, 0.3, 0.5), `translate(${px.toFixed(2)}px, ${py.toFixed(2)}px) scale(${(1 - 0.12 * click).toFixed(3)})`);
+    const click = Math.max(...[M.typeClick, M.dockClick, M.linkClick, M.detailsClick]
+      .map((at) => win(t, at - 0.05, at + 0.16, 0.05, 0.11)));
+    const typingHidden = t >= M.typeStart && t < M.typeEnd + 0.3 ? 0 : 1;
+    show($("pointer"), win(t, M.deskIn + 0.6, M.endIn + 0.4, 0.3, 0.5) * typingHidden, `translate(${px.toFixed(2)}px, ${py.toFixed(2)}px) scale(${(1 - 0.12 * click).toFixed(3)})`);
     const beam = t >= M.dragStart - 0.3 && t < M.dragEnd + 0.35;
     const cross = t >= M.crossOn && t < M.shutter + 0.02;
     $("pArrow").style.display = !beam && !cross ? "block" : "none";
@@ -1076,7 +1369,7 @@
     show($("hud"), hudIn * (1 - hudOut), tr(0, lerp(30, 0, hudIn) + hudOut * 24, lerp(0.97, 1, hudIn)));
     let height = L.baseHeight;
     L.parts.forEach((part) => (height += part.delta * prog(t, part.at, part.at + 0.28, easeOut)));
-    $("hudTextBox").style.height = `${height.toFixed(2)}px`;
+    $("hudTextBox").style.height = `${Math.min(height, L.capHeight).toFixed(2)}px`;
     L.parts.forEach((part) => {
       part.el.style.display = t >= part.at ? "inline" : "none";
       part.el.style.opacity = prog(t, part.at, part.at + 0.18, easeOut).toFixed(3);
@@ -1086,6 +1379,19 @@
         part.el.style.background = `rgba(${rgb}, ${(0.26 * glow).toFixed(3)})`;
       }
     });
+
+    // Typing line: a click focuses it, characters arrive one keystroke at a time, and the
+    // run moves up into the words when focus leaves for Codex.
+    const typingFocused = t >= M.typeClick && t < M.seal;
+    const typedCount = P.typing.filter((key) => t >= key.at).length;
+    const typedNow = t < M.seal ? P.typed.slice(0, typedCount) : "";
+    $("hudTyped").textContent = typedNow;
+    $("hudPlaceholder").style.display = typedNow ? "none" : "inline";
+    const lastKey = typedCount ? P.typing[typedCount - 1].at : M.typeClick;
+    const caretOn = typingFocused && (t - lastKey < 0.5 || Math.floor((t - lastKey) / 0.53) % 2 === 1);
+    $("hudCaret").style.opacity = caretOn ? "1" : "0";
+    const focusK = win(t, M.typeClick, M.seal + 0.1, 0.15, 0.2);
+    $("hudEditor").style.background = `rgba(255, 255, 255, ${(0.07 * focusK).toFixed(3)})`;
 
     // Waveform: driven by the dictation takes, a quiet shimmer otherwise, flat after stop.
     const recording = t >= M.hudIn - 0.2 && t < M.stop;
@@ -1128,17 +1434,29 @@
     const open = prog(t, M.dockClick + 0.05, M.dockClick + 0.5, easeOut);
     show($("codex"), prog(t, M.dockClick + 0.05, M.dockClick + 0.25), `scale(${lerp(0.12, 1, open).toFixed(4)})`);
 
-    // One paste: the words with both references, then the composer holds (auto-send is off).
-    const land = prog(t, M.pasteLand, M.pasteLand + 0.32, easeOut);
-    $("composer").style.height = `${lerp(L.composerEmpty, L.composerFull, land).toFixed(2)}px`;
-    show($("composerBody"), prog(t, M.pasteLand + 0.05, M.pasteLand + 0.3, easeOut));
+    // One paste. The composer shows it raw for an instant, auto-send sends it, and Codex
+    // renders one short message: rainbow words, markers, and the full-prompt link.
     const blink = (from) => (t >= from && Math.floor((t - from) / 0.53) % 2 === 0 ? "1" : "0");
-    $("emptyCaret").style.opacity = t < M.pasteLand ? blink(M.dockClick + 0.45) : "0";
-    $("pasteCaret").style.opacity = blink(M.pasteLand + 0.3);
-    const selGlow = win(t, M.glowSel, M.glowSel + 1.3, 0.25, 0.5);
-    const shotGlow = win(t, M.glowShot, M.glowShot + 1.3, 0.25, 0.5);
-    $("xmlSelect").style.boxShadow = `0 0 0 ${(6 * selGlow).toFixed(2)}px rgba(0, 111, 142, ${(0.24 * selGlow).toFixed(3)})`;
-    $("xmlShot").style.boxShadow = `0 0 0 ${(6 * shotGlow).toFixed(2)}px rgba(126, 43, 174, ${(0.24 * shotGlow).toFixed(3)})`;
+    const rawShown = t >= M.pasteLand && t < M.sendAt;
+    show($("composerRaw"), rawShown ? prog(t, M.pasteLand, M.pasteLand + 0.08) : 0);
+    $("emptyCaret").style.opacity = rawShown ? "0" : blink(t < M.sendAt ? M.dockClick + 0.45 : M.sendAt + 0.1);
+    const sendPulse = win(t, M.sendAt - 0.04, M.sendAt + 0.3, 0.04, 0.26);
+    $("sendBtn").style.background = `rgb(${lerp(58, 138, sendPulse).toFixed(0)}, ${lerp(58, 180, sendPulse).toFixed(0)}, ${lerp(64, 248, sendPulse).toFixed(0)})`;
+    const sentK = prog(t, M.sendAt, M.sendAt + 0.35, easeOut);
+    show($("bubble"), sentK, tr(0, lerp(40, 0, sentK)));
+    const pressed = win(t, M.linkClick - 0.03, M.linkClick + 0.35, 0.03, 0.2);
+    $("bubbleLink").style.color = pressed > 0.01 ? `rgb(${lerp(138, 190, pressed).toFixed(0)}, ${lerp(180, 210, pressed).toFixed(0)}, 248)` : "";
+
+    // The full prompt opens: every section in its colour, the selection's Details expand,
+    // then it scrolls to the embedded screenshot and the typed text.
+    const viewK = prog(t, M.viewerOpen, M.viewerOpen + 0.35, easeOut);
+    show($("viewer"), viewK, `scale(${lerp(0.97, 1, viewK).toFixed(4)})`);
+    const rowsK = prog(t, M.detailsClick + 0.05, M.detailsClick + 0.4, easeOut);
+    $("selDetails").classList.toggle("open", t >= M.detailsClick + 0.05);
+    $("selRows").style.height = `${(L.rowsHeight * rowsK).toFixed(2)}px`;
+    $("selRows").style.opacity = rowsK.toFixed(3);
+    const scrollK = prog(t, M.scrollStart, M.scrollEnd, easeInOut);
+    $("viewerDoc").style.transform = `translateY(${(-L.scrollTarget * scrollK).toFixed(2)}px)`;
   };
 
   init();

@@ -635,6 +635,37 @@ main:focus {
   color: var(--violet);
 }
 
+/* The recorder's typing line. It reads "Click to type" until the typed name appears,
+   and keeps the typed words when the demo is complete, static or motion-reduced. */
+.hud-type {
+  margin-top: 0.4rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.9);
+  overflow-wrap: anywhere;
+}
+
+.hud-placeholder {
+  display: none;
+  color: rgba(255, 255, 255, 0.36);
+}
+
+.demo-armed .typed,
+.is-playing .typed:not(.is-shown) {
+  display: none;
+}
+
+.demo-armed .hud-placeholder,
+.is-playing .typed:not(.is-shown) + .hud-placeholder {
+  display: inline;
+}
+
+@container mac (min-width: 26rem) {
+  .hud-type {
+    font-size: 0.95rem;
+  }
+}
+
 .hud-bar {
   display: flex;
   align-items: center;

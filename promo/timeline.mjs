@@ -17,6 +17,16 @@ export const REQUIRED_SEGMENTS = [
 const WORD_REVEAL_POINT = 0.75;
 const WORD_REVEAL_LAG = 0.06;
 
+// Typed into the recorder between the screenshot and the stop. It is picture and interface
+// sound only (no one says it), so it lives here rather than in narration.json. An exact
+// name is the thing people would rather type than dictate.
+export const TYPED_TEXT = "Call it fetchRows.";
+
+// Seconds after the Unix epoch at which the screenshot is taken: 10:41:12 BST on
+// 24 September 2026, matching the invented `Screenshot 2026-09-24 at 10.41.12.png`. Every
+// timestamp the full-prompt viewer shows is derived from this and the timeline.
+export const SCREENSHOT_EPOCH = Date.UTC(2026, 8, 24, 9, 41, 12) / 1000;
+
 // Vowel-group syllable count. Only used for rough estimates and to share a dictation line's
 // spoken time between its words, so an approximate count is enough.
 export function syllables(word) {
@@ -102,7 +112,9 @@ export function buildTimeline(narration, measured = {}) {
   const S = (id) => seg[id].start;
   // Every on-screen action, as an offset from the line it illustrates. With the default
   // starts, the groove, highlight, screenshot, stop and paste land on beats of the 100 bpm
-  // music. Offsets inside a line follow where its words fall in the narrator's take.
+  // music. Offsets inside a line follow where its words fall in the narrator's take. The
+  // typing beat has no line of its own: it sits in the pause before "Press again…" and is
+  // anchored to that line so it always finishes before Codex comes forward.
   const moments = {
     titleOut: S("talk") - 0.5,      // title lifts away once the first line is finished
     deskIn: S("talk") - 0.2,        // menu bar, windows and Dock settle in once it's gone
@@ -116,14 +128,38 @@ export function buildTimeline(narration, measured = {}) {
     shotEnd: S("screenshot") + 0.95,
     shutter: S("screenshot") + 1.2, // just after "Take a screenshot"
     shotLand: S("screenshot") + 1.8, // Screenshot reference joins the live words
+    typeClick: S("paste") - 3.05,   // click the recorder's "Click to type" line
+    typeStart: S("paste") - 2.85,
+    typeEnd: S("paste") - 1.35,
     dockClick: S("paste") - 0.6,    // Codex comes forward with its composer focused
+    seal: S("paste") - 0.55,        // focus leaves the recorder, so the typed run joins the words
     stop: S("paste"),               // "Press again…"
     pasteLand: S("paste") + 1.2,    // one paste, as she says "…and Agent Flow pastes it all…"
-    glowSel: S("paste") + 4.1,      // "…so your agent can see…"
-    glowShot: S("paste") + 5.0,     // "…what you were looking at."
+    sendAt: S("paste") + 1.5,       // the Codex Mode's auto-send turns it into one short message
+    linkClick: S("paste") + 3.5,    // open the full prompt
+    viewerOpen: S("paste") + 3.6,   // "…so your agent can see what you were looking at."
+    detailsClick: S("paste") + 4.6, // expand the selection's metadata
+    scrollStart: S("paste") + 5.2,  // down to the screenshot itself
+    scrollEnd: S("paste") + 6.2,
     endIn: S("outro") - 1.2,
     endDetails: S("outro") + 1.5,   // "Open source, for Mac."
   };
 
-  return { fps: FPS, sampleRate: SAMPLE_RATE, bpm: narration.bpm, beat, duration, seg, words, moments, shifts };
+  // One keystroke per character, a little uneven like real typing, with a longer gap after
+  // each space. Deterministic, so the interface sounds and the picture agree every render.
+  const chars = [...TYPED_TEXT];
+  const weights = chars.map((c, i) => (c === " " ? 1.7 : 1) * (0.8 + 0.4 * Math.abs(Math.sin(i * 12.9898))));
+  const span = moments.typeEnd - moments.typeStart;
+  const totalWeight = weights.reduce((a, b) => a + b, 0);
+  let typedSoFar = 0;
+  const typing = chars.map((char, i) => {
+    const at = moments.typeStart + (typedSoFar / totalWeight) * span;
+    typedSoFar += weights[i];
+    return { char, at };
+  });
+
+  return {
+    fps: FPS, sampleRate: SAMPLE_RATE, bpm: narration.bpm, beat, duration, seg, words, moments,
+    shifts, typed: TYPED_TEXT, typing, screenshotEpoch: SCREENSHOT_EPOCH,
+  };
 }

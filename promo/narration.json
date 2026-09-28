@@ -10,7 +10,7 @@
     "files": "One speech-only file per segment, named <id>.wav (44.1 or 48 kHz, mono or stereo). No music, effects or processing."
   },
   "bpm": 100,
-  "duration": 33,
+  "duration": 37.2,
   "minGap": 0.3,
   "segments": [
     {
@@ -53,19 +53,19 @@
       "kind": "narration",
       "start": 18,
       "text": "Take a screenshot to show what you want.",
-      "picture": "A screenshot of the design window; a Screenshot reference joins the live words."
+      "picture": "A screenshot of the design window; a Screenshot reference joins the live words. Then, in the pause after this line, a click on the recorder to type a name."
     },
     {
       "id": "paste",
       "kind": "narration",
-      "start": 21,
+      "start": 24,
       "text": "Press again, and Agent Flow pastes it all in one go, so your agent can see what you were looking at.",
-      "picture": "Stop. The words, the selection and the screenshot path paste into Codex together."
+      "picture": "Stop. Codex receives one short coloured message linking to the full prompt, which then opens with the selection and the screenshot."
     },
     {
       "id": "outro",
       "kind": "narration",
-      "start": 28.2,
+      "start": 32.4,
       "text": "Agent Flow. Open source, for Mac.",
       "picture": "End card with the download link."
     }

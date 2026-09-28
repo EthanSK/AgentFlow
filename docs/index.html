@@ -21,7 +21,7 @@
   <link rel="icon" href="assets/agentflow-icon.png">
   <link rel="apple-touch-icon" href="assets/agentflow-icon-512.png">
   <link rel="manifest" href="site.webmanifest">
-  <link rel="stylesheet" href="styles.css?v=353-no-video-credit">
+  <link rel="stylesheet" href="styles.css?v=379-typing-line">
   <script>
     // Pre-hide the demo before first paint so autoplay never flashes the finished
     // example. If script.js hasn't taken over within 2.5 s, show everything.
@@ -60,8 +60,10 @@
       Example text is invented. Never put Ethan's real selections or screenshot paths here.
       Serialized tags match LiveSelectionReference. This demo deliberately uses
       a generic selection from TextEdit; Codex keeps its own task-aware tag.
+      The recorder's typing line shows "Click to type" until the typed name appears; the
+      same typed words close the Codex paste. It matches the promo video's example.
     -->
-    <section class="hero" aria-labelledby="hero-title" data-demo-root data-stop-at="2800">
+    <section class="hero" aria-labelledby="hero-title" data-demo-root data-stop-at="3050">
       <div class="wrap">
         <div class="hero-head">
           <h1 id="hero-title">Speech to text, with your <span class="g-select">highlights</span> and <span class="g-shot">screenshots</span></h1>
@@ -132,6 +134,7 @@
                     <span class="step" data-at="2110">this.</span>
                     <span class="step cue cue-shot" data-at="2450">Screenshot: Screenshot 2026-09-24 at 10.41.12.png</span>
                   </p>
+                  <p class="hud-type"><span class="step typed" data-at="2700">Call it fetchRows.</span><span class="hud-placeholder" aria-hidden="true">Click to type</span></p>
                   <div class="hud-bar" aria-hidden="true">
                     <span class="hud-stop"></span>
                     <span class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
@@ -152,12 +155,13 @@
           <div class="pane">
             <p class="pane-label">Pasted into Codex</p>
             <div class="composer">
-              <p class="msg step" data-at="3050">Rename this function</p>
-              <pre class="msg-xml xml-select step" data-at="3300"><code><span class="t">&lt;app_selection</span> <span class="a">index="1" source="TextEdit" characters="32" middle_omitted="false" truncated="false" bundle_id="com.apple.TextEdit"</span><span class="t">&gt;</span>
+              <p class="msg step" data-at="3300">Rename this function</p>
+              <pre class="msg-xml xml-select step" data-at="3550"><code><span class="t">&lt;app_selection</span> <span class="a">index="1" source="TextEdit" characters="32" middle_omitted="false" truncated="false" bundle_id="com.apple.TextEdit"</span><span class="t">&gt;</span>
   <span class="t">&lt;text&gt;</span>func loadRows(from cache: Cache)<span class="t">&lt;/text&gt;</span>
 <span class="t">&lt;/app_selection&gt;</span></code></pre>
-              <p class="msg step" data-at="3550">and make the empty state look like this.</p>
-              <pre class="msg-xml xml-shot step" data-at="3800"><code><span class="t">&lt;local_screenshot</span> <span class="a">path="/Users/you/Desktop/Screenshot 2026-09-24 at 10.41.12.png"</span><span class="t">/&gt;</span></code></pre>
+              <p class="msg step" data-at="3800">and make the empty state look like this.</p>
+              <pre class="msg-xml xml-shot step" data-at="4050"><code><span class="t">&lt;local_screenshot</span> <span class="a">path="/Users/you/Desktop/Screenshot 2026-09-24 at 10.41.12.png"</span><span class="t">/&gt;</span></code></pre>
+              <p class="msg step" data-at="4300">Call it fetchRows.</p>
             </div>
           </div>
 
@@ -170,6 +174,7 @@
               <li>Context is pasted only into the native Codex, ChatGPT, Claude and Telegram apps. Other apps receive your spoken and typed words without the tags.</li>
               <li>Saved screenshots add a file path, not an upload. Your agent needs access to that file.</li>
               <li>A Mode's <strong>Colored context</strong> option colours your opening words in a rainbow and each XML block by type: speech and typing silver, selections cyan, screenshots magenta with a local link. It's off by default, and messages too long to colour stay plain.</li>
+              <li>Next release: Codex gets a short preview linking to the full prompt, as shown in the video.</li>
               <li>Placement is approximate: live recognition can revise earlier words.</li>
               <li>Selection capture depends on the app. Codex can add its task label; Chrome can add page details.</li>
               <li>Highlights are read without pressing Copy. Password fields are skipped.</li>
@@ -185,6 +190,8 @@
       It reuses the hero demo's invented example and only states claims this page already
       makes, so re-render it whenever the demo example or those claims change. Speech,
       music and captions share the same timeline; audio starts only after a visitor plays it.
+      It shows the local build after the download: Codex's short preview and the full-prompt
+      viewer. Keep the "Next release" fact beside the demo until the download includes them.
       Ethan asked for no visible title, subtitle or transcript here (2026-09-27): the video
       sits in the page like a normal embedded promo. The section keeps id="video" for the
       top navigation and takes its accessible name from aria-label. The captions track
@@ -195,11 +202,11 @@
       <div class="wrap">
         <figure class="promo-video">
           <video controls playsinline preload="metadata" width="1920" height="1080"
-            poster="assets/agentflow-promo-poster.jpg?v=e3126f64"
-            aria-label="Agent Flow in use: dictating into the recorder, highlighting a function and taking a screenshot, then pasting the words with both references into Codex">
-            <source src="assets/agentflow-promo.mp4?v=3eaac33f" type="video/mp4">
-            <track kind="captions" src="assets/agentflow-promo.vtt?v=b80ec054" srclang="en" label="English">
-            <a href="assets/agentflow-promo.mp4?v=3eaac33f">Agent Flow video (MP4)</a>
+            poster="assets/agentflow-promo-poster.jpg?v=cd3b7da5"
+            aria-label="Agent Flow in use: dictating, highlighting a function, taking a screenshot and typing a name in the recorder, then sending one short message to Codex and opening its full prompt">
+            <source src="assets/agentflow-promo.mp4?v=0949ae0f" type="video/mp4">
+            <track kind="captions" src="assets/agentflow-promo.vtt?v=963678fc" srclang="en" label="English">
+            <a href="assets/agentflow-promo.mp4?v=0949ae0f">Agent Flow video (MP4)</a>
           </video>
         </figure>
       </div>
@@ -250,6 +257,7 @@
         <div class="band-body">
           <ul class="setup-steps">
             <li>Press once to start, then again to stop and paste.</li>
+            <li>Press both Command and both Option keys together to type with the microphone off, then again to paste.</li>
             <li>Press twice while recording to finish without pasting. The text stays on your clipboard and in History.</li>
             <li>Press three times while recording to pause, then once to resume.</li>
             <li>Start another recording while the last one is still transcribing.</li>
@@ -313,6 +321,6 @@ cd AgentFlow
     </div>
   </footer>
 
-  <script src="script.js?v=345-desktop"></script>
+  <script src="script.js?v=379-typing-line"></script>
 </body>
 </html>
