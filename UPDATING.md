@@ -1,0 +1,277 @@
+# Updating Agent Flow against upstream VoiceInk
+
+This is Ethan's personal GPL-3.0 fork of [Beingpax/VoiceInk](https://github.com/Beingpax/VoiceInk).
+VoiceInk++ now deliberately diverges in destination routing, non-activating delivery, recorder UI,
+identity, and custom-model vocabulary handling. Treat upstream as a source of individual features,
+not as a branch to merge wholesale.
+
+## In-app Agent Flow release checks
+
+The daily and manual update checks use only
+`https://api.github.com/repos/EthanSK/AgentFlow/releases/latest`. They compare our published
+`v<marketing-version>.<build-number>` tag with the installed app's version and build, so an older
+public release is not offered to a newer local install. Drafts, prereleases, invalid versions and
+release links outside `EthanSK/AgentFlow` are rejected.
+
+The existing daily-check opt-out is preserved. Checks notify about available downloads; they do
+not install binaries, restart a recording, merge source, or fall back to upstream VoiceInk.
+Upstream feature review remains the separate manual process described below.
+
+## Our patches (preserve these through every upstream port)
+
+The fork's important behavioral patches are:
+
+- **#785 — Mode follows the current app (the load-bearing fix).** Adds an
+  `NSWorkspace.didActivateApplicationNotification` observer in `ActiveWindowService.start()` so the
+  active Mode re-resolves whenever the frontmost app changes — *including during recording*. Upstream
+  only resolves the Mode at record-start, which breaks the common "start dictating, then click the
+  target field" workflow (it pastes into the right app but with the wrong app's auto-send). With the
+  observer, at paste/delivery time the Mode matches the app you're actually in.
+- **#784 — neutral nil-fallback.** When an app has no enabled matching Mode and there's no
+  enabled+default Mode, `setActiveConfiguration(nil)` (neutral paste / no auto-send) instead of
+  silently retaining the previous app's Mode.
+- **ChatGPT floating-window fix — resolve the KEYBOARD-focused app via Accessibility.** Adds
+  `accessibilityFocusedApplication()` to `ActiveWindowService` and uses it (with a
+  `frontmostApplication` fallback) inside `beginApplyingConfiguration`. The ChatGPT desktop app's
+  floating companion/quick-access window is a `.nonactivatingPanel`: it takes keyboard focus WITHOUT
+  changing `NSWorkspace.frontmostApplication` and WITHOUT firing `didActivateApplicationNotification`,
+  so neither the record-start read nor the #785 observer ever saw ChatGPT → its per-app Mode (incl.
+  auto-Enter) never activated and the menu-bar Mode indicator stayed wrong. The AX system-wide
+  focused element DOES follow into the panel, so we read its owning pid → bundle id. Safe/additive:
+  for ordinary windows the AX-focused app == frontmost app. Falls back when AX is untrusted, exposes
+  no focused element, or the focus is VoiceInk's own (also non-activating) recorder panel.
+- **Per-recording destination control — keep Primary simple and make Next exact.** The normal
+  recording shortcut is base VoiceInk: after a Primary stop, final delivery follows whichever system
+  keyboard input and Mode are current at that moment (`primaryCurrentInput`) and never enters an
+  app-specific exact-input resolver. The macOS Next Track media key stops into the exact Accessibility
+  input captured at recording start (`recordingStart`), or supplies the one-click
+  `focusedDuringTranscription` second chance after a normal stop. When Electron/Chromium exposes only
+  `AXWebArea` during the shortcut, the recording-start Next route may fall back to the owning
+  application. The black recorder/transcription bar owns Next Track for its whole visible lifetime:
+  eligible presses perform their route, late/ineligible presses are safe no-ops, and only after the
+  bar hides does Next Track return to media. Each
+  `RecordingSession` owns its immutable start input and resolved paste target, preventing concurrent
+  background transcriptions from mixing destinations. While the newest transcription is still
+  running and before destination-dependent post-processing begins, Next Track can replace its target
+  with the input focused at that moment; the pipeline freezes input + complete Mode before formatting
+  or enhancement. Delivery re-resolves and verifies the
+  exact element without activating a background target, and copies to the clipboard rather than pasting
+  into an unintended field if verification fails. The post-stop Next Track action is a distinct second-chance
+  route: while the newest result is loading it atomically replaces both the pending exact input and
+  that target app's auto-send key, so moving to another app before delivery cannot remove Return.
+  This is never a toggle and must not be confused with Next Track while recording, which stops into
+  the recording-start input. A normal Primary stop never owns an exact input and must never reuse or
+  fall back to that recording-start input. See the canonical
+  [Mouse terminology](TERMINOLOGY.md) and [Recording Destination Controls](RECORDING_DESTINATIONS.md)
+  for user examples, setup, failure behavior, logs, and the implementation map.
+- **Real-time transcription is recorder-HUD-only.** Soniox or another streaming provider may update
+  only `RecordingSession.partialTranscript` for the mirrored black recorder bar. Never port or add a
+  destination-side provisional draft, mutable input range, migration, or cleanup. On stop, the
+  provider finalizes once and the existing Primary or Next route performs one final paste plus its
+  configured auto-send. The superseded `e19a123`–`2332296` draft experiment is negative evidence in
+  `FAILED_APPROACHES.md`, not an upstream feature to resurrect.
+- **Exact non-activating delivery.** When a session owns an exact input in a background app,
+  VoiceInk++ uniquely re-resolves its window/editor, opens one internal activation-state session when
+  needed, and verifies immediate keyboard-focus safety plus exact insertion. The same route handles a
+  different input in the already-frontmost target app through direct Accessibility only, so it cannot
+  steal intra-app focus. Telegram alone has an allowlisted retained-element and retained labelled-Send
+  fallback, but only while independently readable chat-context anchors still match; hidden or mismatched
+  context fails closed. v2.0.207 live proof is still required. Chat verification requires a composer
+  reset. Apple Terminal/iTerm capture stable window-ID + TTY/session-ID pairs and send transcript text
+  plus Return to that exact pair in one native operation, verified through native contents and a prompt
+  transition; Apple Terminal paste-only fails closed while iTerm may use `newline false`; mutable titles are never identities;
+  Ghostty, Warp, VS Code, Cursor, Chrome, Notion, and generic editors have no safe generic background
+  Return. Only a proven unchanged OpenAI composer that still owns system keyboard focus may retry one
+  ordinary-HID Return. Semantic AX Send requires an explicit Send label; an unlabelled OpenAI square
+  can be Stop while an agent runs and is never pressed based on wrapper/geometry alone. Background
+  Command-V, process-targeted Return, and activating a
+  background target as a fallback remain forbidden. See `BACKGROUND_DELIVERY_TEST_MATRIX.md`.
+
+The active-window service's `start()` is wired once at app launch in `VoiceInk.swift` (right after
+`ActiveWindowService.shared`).
+
+## Build (MUST be on the Mac Mini — never the MBP)
+
+`xcodebuild` fires codesign dialogs on the MBP; the Mini is the dedicated build box. VoiceInk is a
+native Swift/SwiftUI app, **not** Electron, so changes require a recompile (you can't hot-patch the
+installed `.app`).
+
+```sh
+# on the Mac Mini:
+cd ~/Projects/VoiceInk-build        # the Mini's clone of this fork
+make local                          # builds whisper.cpp (cached after first time) + ad-hoc-signed xcodebuild
+# output: ~/Downloads/AgentFlow.app  (quarantine already stripped by the Makefile)
+```
+
+AgentFlow contains no commercial license, trial, purchase, affiliate-promotion, or remote
+promotional-announcement runtime. Do not reintroduce those upstream systems during a feature port.
+`make local` still injects the `LOCAL_BUILD` compile flag for standalone capabilities and uses
+ad-hoc `CODE_SIGN_IDENTITY = -`, so no paid Apple Developer certificate is needed. Mic /
+Accessibility / Screen-Recording are normal TCC grants on first launch.
+
+The built bundle is **`AgentFlow.app`** (output: `~/Downloads/AgentFlow.app`) — the
+`PRODUCT_NAME` is `AgentFlow`; the user-visible name is **AgentFlow** via
+`CFBundleDisplayName`.
+
+### Install completed fixes into the running app (mandatory)
+
+A native AgentFlow fix is not complete when the source builds: install that exact build into
+`/Applications/AgentFlow.app` and relaunch it so Ethan is testing the corrected binary. Never
+replace or stop `/Applications/VoiceInk.app`, which is the separate official app.
+
+For the first AgentFlow release, `/Applications/VoiceInkPlusPlus.app` is the legacy path. After the
+idle check and restart notice, preserve the entire old bundle as a verified ZIP rollback, install the new-named
+bundle, and verify only one instance of bundle ID `com.ethansk.VoiceInkPlusPlus` is running. Keep
+that identifier, preferences, Keychain service, recordings and user settings unchanged; changing
+the app filename and display name is not a data migration. A fresh Accessibility grant may still
+be needed if macOS ties the permission to the old path.
+
+Before every native release, increment `CURRENT_PROJECT_VERSION` in both main-app build configurations.
+The recorder bar renders `v<MARKETING_VERSION>` on its first row and
+`.<CURRENT_PROJECT_VERSION>` on its second row immediately left of Stop, so each installed binary must
+have a unique build number. Do not reuse a build number after changing native source, and do not call
+source-only work released or installed.
+
+Before every update that quits or replaces the running AgentFlow app, warn Ethan and give him a real
+five-second recovery window:
+
+```sh
+osascript -e 'display notification "AgentFlow will restart in 5 seconds" with title "AgentFlow update"'
+sleep 5
+```
+
+Only after that delay and a fresh idle check: cooperatively quit the installed app, preserve a verified ZIP rollback, replace it,
+relaunch it, and verify the new PID plus the strict/deep code signature and stable designated
+requirement. Do not claim a live fix while an older PID/build remains running.
+
+### Keep rollback backups out of app menus
+
+Use `python3 scripts/archive-local-rollback.py /Applications/AgentFlow.app` before a guarded
+replacement. It stores a private ZIP under `~/Library/Application Support/AgentFlow/Release
+Rollbacks/Archives`, extracts it temporarily, and verifies the restored build, executable checksum
+and deep/strict signature before publishing it without overwriting an existing checkpoint.
+The helper never quits, moves or deletes the source; the installer still owns the idle check,
+cooperative termination veto, restart warning and replacement transaction.
+
+Do not leave old unpacked `.app` bundles in `/Applications`, `~/Applications`, Downloads,
+Application Support or agent output folders. Hiding them or adding `.bak` does not prevent
+LaunchServices from registering their bundle contents. Keep required historical checkpoints and
+the pre-update rollback as ZIPs, not extra launchable apps. Retire obsolete copies to Trash and
+unregister only their exact final Trash and stale original LaunchServices paths: registrations
+can follow a moved bundle. Never reset all app registrations. Do not
+delete recordings, settings, prompts, the official VoiceInk app, or Time Machine snapshots.
+User-requested backup cleanup and recurrence prevention — 2026-10-06.
+
+## Standalone-fork identity — AgentFlow (separate app from the official VoiceInk)
+
+This fork is branded **AgentFlow** with its **own** bundle ID so it installs and permissions
+**alongside** the official VoiceInk without colliding on TCC permissions, UserDefaults/prefs, keychain,
+or Application Support storage.
+
+- **Bundle id:** `com.ethansk.VoiceInkPlusPlus` (main app). Tests use
+  `com.ethansk.VoiceInkPlusPlus.Tests` / `.UITests`. (Was `com.prakashjoshipax.VoiceInk` upstream.)
+- **Product name / file:** `AgentFlow` → builds `AgentFlow.app`.
+- **Display name (CFBundleDisplayName):** `AgentFlow` (what the user sees in the menu bar, Dock,
+  About panel, window title).
+- **Self-storage moved to the new id:** Application Support folder
+  (`~/Library/Application Support/com.ethansk.VoiceInkPlusPlus/`), the `Recordings` subfolder, and the
+  keychain service name (`com.ethansk.VoiceInkPlusPlus`) all use the stable ID, so AgentFlow keeps its
+  own data/models/recordings/secrets separate from the official app.
+- **Prefs plist:** macOS auto-derives it from the bundle ID, so AgentFlow's prefs live at
+  `~/Library/Preferences/com.ethansk.VoiceInkPlusPlus.plist` — no longer shared with the official app.
+- **Deliberately LEFT as the upstream id (don't change without provisioning):** the iCloud CloudKit
+  container `iCloud.com.prakashjoshipax.VoiceInk` (entitlements + `VoiceInk.swift`). It must match a
+  provisioned container in the Apple Developer account; Ethan's `make local` path forces CloudKit to
+  `.none` (and the local entitlements omit iCloud), so the old container id is inert for his builds.
+  The lowercase OSLog subsystem / dispatch-queue labels (`com.prakashjoshipax.voiceink`) are also left
+  as-is — they're cosmetic logging namespaces, not TCC/storage identity.
+
+### Mini resign-local.sh / Designated Requirement (DR) impact
+
+Because the bundle id changed, the Mini's resign / install pipeline (`resign-local.sh` and any DR
+pinning) must now expect the **new** identity. The Designated Requirement becomes:
+
+```
+identifier "com.ethansk.VoiceInkPlusPlus" and certificate leaf = H"..."
+```
+
+(was `identifier "com.prakashjoshipax.VoiceInk" and ...`). Update any DR/codesign verification on the
+Mini to match `com.ethansk.VoiceInkPlusPlus`, and point any app-path references at
+`AgentFlow.app` (display name `AgentFlow`). The bundle ID and designated requirement remain stable
+through the AgentFlow name change; verify permissions rather than assuming they transfer or reset.
+
+The final outer-app signing step must also pass the checked-in
+`VoiceInk/VoiceInk.local.entitlements`. Replacing only the outer signature without that file can
+silently remove `com.apple.security.automation.apple-events`, even while nested frameworks and
+`codesign --verify --deep --strict` still pass. Treat the final entitlement dump as a separate release
+gate whenever exact Terminal/iTerm delivery is included.
+
+Do not trust this requirement to documentation alone: the actual Mac Mini helper was still signing
+the outer app without entitlements during the v2.0.211 release. Its current interface accepts the
+checked-in entitlements as argument 2, refuses a missing file, and verifies Automation after signing:
+
+```sh
+~/Projects/VoiceInk-build/resign-local.sh \
+  ~/Downloads/AgentFlow.app \
+  "$PWD/VoiceInk/VoiceInk.local.entitlements"
+```
+
+## Port upstream features one at a time
+
+The 2026-07-15 audit found the fork 68 commits ahead and upstream 80 commits ahead of merge base
+`eda0786`. A trial whole-branch merge produced 17 conflicts, including the destination, recorder,
+pipeline, delivery, cloud-transcription, project, and test files. A whole upstream merge is therefore
+not a supported update procedure.
+
+For each update:
+
+1. Fetch upstream and audit the candidate in a disposable clone or worktree.
+2. Ask Ethan to approve one user-visible feature.
+3. Manually port only that feature onto a dedicated branch, preserving VoiceInk++'s adjacent intent
+   comments, exact-destination contracts, marked vocabulary carrier, and error redaction.
+4. Run the complete unit suite and the relevant disposable live matrix, then follow the numbered
+   Mac Mini sign/install procedure above.
+5. Commit and publish only the reviewed port. Never reset `main` or merge `upstream/main` wholesale.
+
+The best candidates from that audit, in suggested order, are:
+
+- `3a96487` + `a1f0dc6`: AVAssetReader fallback for imported MP4/M4A/Teams audio (PR #807).
+- `d587497` + `d4dda90` + `9c24a8d` + `21e9322` + `23d7abc`: edit/test custom-model API keys and validate schemes, while retaining VoiceInk++ vocabulary and response redaction.
+- `4be8719`: per-request URLSession to avoid remote custom-endpoint HTTP/3/VPN upload hangs; retain the fork's timeouts.
+- `4c4b8fe` (merged as `eb76c75`): preferred-input-channel loopback exclusion.
+- `3c965ee`: keep mini/notch recorder panels visible when the app hides.
+
+Do not port `cde93d3` as written: it removes non-Whisper custom/cloud prompts and would delete the
+marked prompt block that carries VoiceInk++ vocabulary to the local Deepgram adapter. Also skip the
+large formatter-only `f20ac14`; it adds conflict without product behavior. Streaming, live-transcript,
+media-muting, window-recovery, and provider-list changes remain deferred until Ethan asks for those
+features and their local interaction tests are defined. Upstream licensing, trial, purchase,
+affiliate, and promotional-announcement changes are intentionally rejected for this commercial-free
+fork.
+
+Sparkle installation remains disabled for local builds. VoiceInk++ instead performs a default-on,
+notification-only check of the official VoiceInk GitHub release feed at most once per day. The
+Settings toggle can disable those checks. A notification opens the upstream release for review; it
+must never install the official app, merge upstream, or reinterpret a release as approved source.
+The legacy Mini script
+`~/.claude/scripts/voiceink-fork-update.sh` still exists, but its LaunchAgent is deliberately named
+`com.ethansk.voiceink-fork-autoupdate.plist.DISABLED`; keep it disabled because its wholesale-merge
+workflow is incompatible with the current fork.
+
+## Settings / data
+
+**As of the VoiceInk++ rebrand, this is now a SEPARATE app with its own bundle id**
+(`com.ethansk.VoiceInkPlusPlus`), so it does **not** share prefs / Modes / app-support with the
+official VoiceInk anymore. VoiceInk++'s data lives at:
+
+- Prefs: `~/Library/Preferences/com.ethansk.VoiceInkPlusPlus.plist`
+- App support / models / recordings: `~/Library/Application Support/com.ethansk.VoiceInkPlusPlus/`
+- Keychain service: `com.ethansk.VoiceInkPlusPlus`
+
+This is intentional — the split lets VoiceInk++ run alongside the official VoiceInk without TCC /
+prefs collisions. To carry over your existing setup from the official app's
+`com.prakashjoshipax.VoiceInk` store, copy/import the data manually (Settings → Import Settings, or
+copy the Application Support folder). A pre-migration backup lives at `~/voiceink-settings-backup-*`.
+
+> Historical note: before the rebrand this fork shared `com.prakashjoshipax.VoiceInk` with the
+> official app, which is exactly the TCC/prefs collision the rebrand fixes.

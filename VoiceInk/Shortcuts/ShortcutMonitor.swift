@@ -1,0 +1,711 @@
+import AppKit
+import CoreGraphics
+import Foundation
+import IOKit
+import os
+
+final class ShortcutMonitor {
+    fileprivate enum EventKind {
+        case keyDown
+        case keyUp
+        case flagsChanged
+    }
+
+    struct ModifierOnlySequenceTransition: Equatable {
+        let isDown: Bool
+        let suppressDownstream: Bool
+        let dispatchKeyDown: Bool
+        let dispatchKeyUp: Bool
+    }
+
+    /// Pure reducer for Ethan's G HUB modifier sequence. Suppress only the event
+    /// that completes the configured VoiceInk++ chord and any full-chord repeats.
+    /// Earlier partial modifier events and every release remain balanced downstream;
+    /// swallowing the whole sequence would risk leaving another app logically stuck.
+    static func modifierOnlySequenceTransition(
+        shortcut: Shortcut,
+        wasDown: Bool,
+        keyCode: UInt16,
+        modifierFlags: NSEvent.ModifierFlags
+    ) -> ModifierOnlySequenceTransition {
+        let sequenceIsActive = shortcut.modifierSequenceIsActive(
+            keyCode: keyCode,
+            modifierFlags: modifierFlags
+        )
+        if wasDown {
+            let release = shortcut.shouldReleaseModifierEvent(
+                keyCode: keyCode,
+                modifierFlags: modifierFlags
+            )
+            return ModifierOnlySequenceTransition(
+                isDown: !release,
+                suppressDownstream: sequenceIsActive,
+                dispatchKeyDown: false,
+                dispatchKeyUp: release
+            )
+        }
+        let press = shortcut.matchesModifierEvent(
+            keyCode: keyCode,
+            modifierFlags: modifierFlags
+        )
+        return ModifierOnlySequenceTransition(
+            isDown: press,
+            suppressDownstream: press,
+            dispatchKeyDown: press,
+            dispatchKeyUp: false
+        )
+    }
+
+    private struct ShortcutState {
+        var shortcut: Shortcut
+        var isDown = false
+        var pressedAt: TimeInterval?
+        var isInterrupted = false
+        var typingFocusRequested = false
+    }
+
+    private var shortcuts: [ShortcutAction: ShortcutState] = [:]
+    private var interruptibleActions: Set<ShortcutAction> = []
+    private var onKeyDown: ((ShortcutAction, TimeInterval) -> Void)?
+    private var onKeyUp: ((ShortcutAction, TimeInterval) -> Void)?
+    private var onShortcutInterrupted: ((ShortcutAction, TimeInterval) -> Void)?
+    private var onModifierOnlySequenceProgress: ((ShortcutAction, TimeInterval) -> Void)?
+    private var onNextTrackKeyDown: (() -> Bool)?
+    private var onPrimaryTypingFocus: ((TimeInterval) -> Void)?
+    private var onTypingStart: ((Bool) -> Void)?
+    private var onStandaloneShift: (() -> Void)?
+    private var typingToggleKeysDown = false
+    private var standaloneShiftCandidate = false
+    private var shiftWasDown = false
+    private var isConsumingNextTrackPress = false
+    private var eventTap: CFMachPort?
+    private var eventTapRunLoopSource: CFRunLoopSource?
+    private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "ShortcutMonitor")
+
+    private static let shortcutInterruptionWindow: TimeInterval = 1.0
+
+    deinit {
+        stop()
+    }
+
+    @discardableResult
+    func start(
+        shortcuts: [ShortcutAction: Shortcut],
+        interruptibleActions: Set<ShortcutAction> = [],
+        onKeyDown: @escaping (ShortcutAction, TimeInterval) -> Void,
+        onKeyUp: @escaping (ShortcutAction, TimeInterval) -> Void,
+        onShortcutInterrupted: ((ShortcutAction, TimeInterval) -> Void)? = nil,
+        onModifierOnlySequenceProgress: ((ShortcutAction, TimeInterval) -> Void)? = nil,
+        onNextTrackKeyDown: (() -> Bool)? = nil,
+        onPrimaryTypingFocus: ((TimeInterval) -> Void)? = nil,
+        onTypingStart: ((Bool) -> Void)? = nil,
+        onStandaloneShift: (() -> Void)? = nil,
+        installSystemEventTap: Bool = true
+    ) -> Bool {
+        stop()
+
+        for (action, shortcut) in shortcuts {
+            self.shortcuts[action] = ShortcutState(shortcut: shortcut)
+        }
+
+        guard !self.shortcuts.isEmpty else {
+            return true
+        }
+
+        self.interruptibleActions = interruptibleActions
+        self.onKeyDown = onKeyDown
+        self.onKeyUp = onKeyUp
+        self.onShortcutInterrupted = onShortcutInterrupted
+        self.onModifierOnlySequenceProgress = onModifierOnlySequenceProgress
+        self.onNextTrackKeyDown = onNextTrackKeyDown
+        self.onPrimaryTypingFocus = onPrimaryTypingFocus
+        self.onTypingStart = onTypingStart
+        self.onStandaloneShift = onStandaloneShift
+
+        // Offline event-routing fixtures use the exact callback configuration
+        // without registering a second global keyboard consumer on the test Mac.
+        return !installSystemEventTap || installEventTap()
+    }
+
+    /// Proactively make sure the global hotkey event tap is installed AND enabled.
+    ///
+    /// ── WHY THIS EXISTS (idle-miss bug) ───────────────────────────────────────────
+    /// The in-callback re-enable on `.tapDisabledByTimeout` / `.tapDisabledByUserInput`
+    /// (see installEventTap) is REACTIVE: it only fires when an event finally reaches the
+    /// tap AFTER macOS has disabled it — and that waking event is consumed re-arming the
+    /// tap instead of starting a recording. After the Mac has been idle (App Nap throttling
+    /// the main run loop) or after a system sleep/wake, the tap can be left disabled with no
+    /// event in flight to trigger that reactive path. The result is Ethan's symptom: the
+    /// first press(es) after idle do nothing.
+    ///
+    /// This method is the PROACTIVE counterpart. Call it on wake/unlock and from a periodic
+    /// watchdog (see RecordingShortcutManager). It checks `CGEvent.tapIsEnabled` and:
+    ///   • re-enables the tap if it exists but is disabled, or
+    ///   • fully reinstalls it if the Mach port was invalidated.
+    /// So the NEXT press after idle starts a recording instead of being eaten.
+    func ensureEventTapHealthy(reason: String) {
+        guard !shortcuts.isEmpty else { return }
+
+        // Mach port gone entirely → rebuild from scratch.
+        guard let eventTap, CFMachPortIsValid(eventTap) else {
+            logger.notice("Event tap missing/invalid (reason=\(reason, privacy: .public)) — reinstalling")
+            reinstallEventTap()
+            return
+        }
+
+        // Port is valid but the tap may have been disabled by macOS while we were idle.
+        if !CGEvent.tapIsEnabled(tap: eventTap) {
+            logger.notice("Event tap was disabled (reason=\(reason, privacy: .public)) — re-enabling")
+            // Clear any stuck key-down state captured before the tap went quiet, otherwise a
+            // never-delivered key-up could leave a shortcut stuck "down".
+            resetPressedShortcutsAfterTapInterruption()
+            CGEvent.tapEnable(tap: eventTap, enable: true)
+        }
+    }
+
+    /// Tear down and rebuild the event tap + run-loop source. Used by ensureEventTapHealthy
+    /// when the Mach port has been invalidated (cannot just re-enable a dead port).
+    private func reinstallEventTap() {
+        if let eventTapRunLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), eventTapRunLoopSource, .commonModes)
+            self.eventTapRunLoopSource = nil
+        }
+        if let eventTap {
+            CFMachPortInvalidate(eventTap)
+            self.eventTap = nil
+        }
+        _ = installEventTap()
+    }
+
+    func stop() {
+        if let eventTapRunLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), eventTapRunLoopSource, .commonModes)
+            self.eventTapRunLoopSource = nil
+        }
+
+        if let eventTap {
+            CFMachPortInvalidate(eventTap)
+            self.eventTap = nil
+        }
+
+        shortcuts = [:]
+        interruptibleActions = []
+        onKeyDown = nil
+        onKeyUp = nil
+        onShortcutInterrupted = nil
+        onModifierOnlySequenceProgress = nil
+        onNextTrackKeyDown = nil
+        onPrimaryTypingFocus = nil
+        onTypingStart = nil
+        onStandaloneShift = nil
+        typingToggleKeysDown = false
+        standaloneShiftCandidate = false
+        shiftWasDown = false
+        isConsumingNextTrackPress = false
+    }
+
+    private func installEventTap() -> Bool {
+        let callback: CGEventTapCallBack = { _, type, event, userInfo in
+            guard let userInfo else {
+                return Unmanaged.passUnretained(event)
+            }
+
+            let monitor = Unmanaged<ShortcutMonitor>.fromOpaque(userInfo).takeUnretainedValue()
+
+            if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+                monitor.resetPressedShortcutsAfterTapInterruption()
+                if let eventTap = monitor.eventTap {
+                    CGEvent.tapEnable(tap: eventTap, enable: true)
+                }
+                return Unmanaged.passUnretained(event)
+            }
+
+            let shouldSuppress = monitor.handleCGEvent(type: type, event: event)
+            return shouldSuppress ? nil : Unmanaged.passUnretained(event)
+        }
+
+        guard let eventTap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .defaultTap,
+            eventsOfInterest: Self.eventMask,
+            callback: callback,
+            userInfo: Unmanaged.passUnretained(self).toOpaque()
+        ) else {
+            logger.error("Failed to install global shortcut event tap")
+            return false
+        }
+
+        guard let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0) else {
+            CFMachPortInvalidate(eventTap)
+            logger.error("Failed to create global shortcut event tap run loop source")
+            return false
+        }
+
+        self.eventTap = eventTap
+        eventTapRunLoopSource = source
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: eventTap, enable: true)
+        return true
+    }
+
+    func handleCGEvent(type: CGEventType, event: CGEvent) -> Bool {
+        if type.rawValue == UInt32(NX_SYSDEFINED) {
+            return handleSystemDefinedEvent(event)
+        }
+
+        guard let eventKind = EventKind(type) else {
+            return false
+        }
+
+        let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
+        let modifierFlags = NSEvent.ModifierFlags(rawValue: UInt(event.flags.rawValue))
+        let receivedAt = ProcessInfo.processInfo.systemUptime
+        if let onStandaloneShift {
+            let shift = Self.standaloneShiftTransition(
+                wasCandidate: standaloneShiftCandidate, wasShiftDown: shiftWasDown,
+                type: type, keyCode: keyCode, modifierFlags: modifierFlags
+            )
+            standaloneShiftCandidate = shift.isCandidate
+            shiftWasDown = shift.isShiftDown
+            // Observe a Shift-only tap, never swallow its down or release. Waiting
+            // for release distinguishes it from capital-letter typing and the Shift
+            // prefix of Primary's mouse macro; neither must suppress a pending paste.
+            // The owner checks the exact chord-stopped result synchronously before
+            // its completion policy freezes. Panel/Mode listeners have no callback.
+            if shift.dispatch { onStandaloneShift() }
+        }
+        if eventKind == .flagsChanged, let onTypingStart {
+            // ShortcutMonitor is shared by recording, Mode and visible-panel
+            // listeners. Only the recording listener owns the typing chord.
+            // The panel listener is inserted ahead of it when the HUD opens;
+            // consuming this chord there with a nil action made Start work but
+            // swallowed every Finish. Non-owners must pass it through untouched.
+            let transition = Self.typingToggleTransition(
+                wasDown: typingToggleKeysDown, keyCode: keyCode,
+                rawFlags: modifierFlags.rawValue
+            )
+            typingToggleKeysDown = transition.isDown
+            if transition.dispatchKeyDown {
+                // Freeze Shift at the completing key, not after the asynchronous
+                // callback (when Ethan may already have released the modifiers).
+                let clipboardOnly = modifierFlags.contains(.shift)
+                logger.info("Typing shortcut accepted owner=recording chord=bothCommandAndOption clipboardOnly=\(clipboardOnly, privacy: .public)")
+                DispatchQueue.main.async { onTypingStart(clipboardOnly) }
+            }
+            // The completing press is ours; every release still reaches the
+            // foreground app. Never leave a logically held Command modifier.
+            if transition.suppressDownstream { return true }
+        }
+        let primaryWasDown = shortcuts[.primaryRecording]?.isDown == true
+        let shouldSuppress = handleEvent(
+            kind: eventKind,
+            keyCode: keyCode,
+            modifierFlags: modifierFlags,
+            eventTime: receivedAt
+        )
+        if !primaryWasDown, shortcuts[.primaryRecording]?.isDown == true {
+            // Observe only a newly recognized Primary chord, never unrelated keys.
+            // Keep raw clocks so event-tap backlog can be distinguished from the
+            // later MainActor handoff. Gesture/coalescing decisions deliberately keep
+            // their existing callback clock; telemetry must not alter their timing.
+            logger.info("Primary shortcut event received eventTimestampNs=\(event.timestamp, privacy: .public) callbackUptime=\(receivedAt, privacy: .public)")
+        }
+        return shouldSuppress
+    }
+
+    private func handleSystemDefinedEvent(_ event: CGEvent) -> Bool {
+        guard let systemEvent = NSEvent(cgEvent: event),
+              systemEvent.subtype.rawValue == NX_SUBTYPE_AUX_CONTROL_BUTTONS else {
+            return false
+        }
+
+        let data = UInt32(truncatingIfNeeded: systemEvent.data1)
+        let keyType = Int((data & 0xFFFF_0000) >> 16)
+        guard keyType == NX_KEYTYPE_NEXT else { return false }
+
+        let keyState = Int((data & 0x0000_FF00) >> 8)
+        switch keyState {
+        case Int(NX_KEYDOWN):
+            if isConsumingNextTrackPress {
+                logger.info("Next Track repeat consumed because its initial key-down was consumed")
+                return true
+            }
+
+            isConsumingNextTrackPress = onNextTrackKeyDown?() == true
+            logger.info("Next Track key-down detected consumed=\(self.isConsumingNextTrackPress, privacy: .public)")
+            return isConsumingNextTrackPress
+        case Int(NX_KEYUP):
+            guard isConsumingNextTrackPress else { return false }
+            isConsumingNextTrackPress = false
+            logger.info("Next Track key-up consumed to complete the intercepted press")
+            return true
+        default:
+            return false
+        }
+    }
+
+    private func resetPressedShortcutsAfterTapInterruption() {
+        typingToggleKeysDown = false
+        standaloneShiftCandidate = false
+        shiftWasDown = false
+        let eventTime = ProcessInfo.processInfo.systemUptime
+        let pressedActions = shortcuts.compactMap { action, state in
+            state.isDown ? action : nil
+        }
+
+        guard !pressedActions.isEmpty else {
+            return
+        }
+
+        for action in pressedActions {
+            if var state = shortcuts[action] {
+                state.isDown = false
+                state.pressedAt = nil
+                state.isInterrupted = false
+                state.typingFocusRequested = false
+                shortcuts[action] = state
+            }
+            dispatchKeyUp(for: action, eventTime: eventTime)
+        }
+    }
+
+    private func handleEvent(
+        kind: EventKind,
+        keyCode: UInt16,
+        modifierFlags: NSEvent.ModifierFlags,
+        eventTime: TimeInterval
+    ) -> Bool {
+        var shouldSuppress = false
+
+        if kind == .keyDown {
+            handleShortcutInterruptions(keyCode: keyCode, eventTime: eventTime)
+        }
+
+        for action in Array(shortcuts.keys) {
+            guard var state = shortcuts[action] else {
+                continue
+            }
+
+            if state.shortcut.isModifierOnly {
+                shouldSuppress = handleModifierOnlyShortcut(
+                    action: action,
+                    state: state,
+                    kind: kind,
+                    keyCode: keyCode,
+                    modifierFlags: modifierFlags,
+                    eventTime: eventTime
+                ) || shouldSuppress
+                continue
+            }
+
+            let transition = transitionForKeyShortcut(
+                state.shortcut,
+                isDown: state.isDown,
+                kind: kind,
+                keyCode: keyCode,
+                modifierFlags: modifierFlags
+            )
+
+            switch transition {
+            case .none:
+                break
+            case .suppress:
+                shouldSuppress = true
+            case .keyDown:
+                state.isDown = true
+                state.pressedAt = eventTime
+                state.isInterrupted = false
+                shortcuts[action] = state
+                shouldSuppress = true
+                dispatchKeyDown(for: action, eventTime: eventTime)
+            case .keyUp:
+                state.isDown = false
+                state.pressedAt = nil
+                state.isInterrupted = false
+                shortcuts[action] = state
+                shouldSuppress = true
+                dispatchKeyUp(for: action, eventTime: eventTime)
+            }
+        }
+
+        return shouldSuppress
+    }
+
+    private enum ShortcutTransition {
+        case none
+        case suppress
+        case keyDown
+        case keyUp
+    }
+
+    private func transitionForKeyShortcut(
+        _ shortcut: Shortcut,
+        isDown: Bool,
+        kind: EventKind,
+        keyCode: UInt16,
+        modifierFlags: NSEvent.ModifierFlags
+    ) -> ShortcutTransition {
+        switch kind {
+        case .keyDown:
+            guard shortcut.matchesKeyEvent(keyCode: keyCode, modifierFlags: modifierFlags) else {
+                return .none
+            }
+
+            return isDown ? .suppress : .keyDown
+        case .keyUp:
+            return isDown && keyCode == shortcut.keyCode ? .keyUp : .none
+        case .flagsChanged:
+            guard isDown else {
+                return .none
+            }
+
+            let currentFlags = Shortcut.normalizedModifierFlags(
+                modifierFlags,
+                forKeyCode: shortcut.keyCode
+            )
+            return currentFlags.isSuperset(of: shortcut.modifierFlags) ? .suppress : .keyUp
+        }
+    }
+
+    private func handleModifierOnlyShortcut(
+        action: ShortcutAction,
+        state: ShortcutState,
+        kind: EventKind,
+        keyCode: UInt16,
+        modifierFlags: NSEvent.ModifierFlags,
+        eventTime: TimeInterval
+    ) -> Bool {
+        var state = state
+
+        guard kind == .flagsChanged else {
+            return false
+        }
+
+        // Command extends only the configured Shift-Control-Option Primary chord.
+        // Strip it for that chord's existing down/up reducer so Command-first and
+        // Command-last are one press, and releasing Command cannot start a second
+        // recording. The extra callback requests microphone-off typing for that
+        // same start reservation; it never creates a delivery/stop route.
+        let typingVariant = action == .primaryRecording && Self.supportsTypingVariant(state.shortcut)
+        let hasTypingModifiers = typingVariant && Self.isTypingModifierChord(modifierFlags)
+        let effectiveFlags = typingVariant ? modifierFlags.subtracting(.command) : modifierFlags
+
+        // Ethan's G HUB Primary macro presses Shift, Control, and Option in a
+        // sequence. Electron may replace the focused AXTextArea with an AXGroup or
+        // AXWebArea by the time the final modifier completes the owned chord. Observe
+        // the earlier partial sequence without suppressing it so VoiceInk++ can take
+        // one passive exact-input snapshot before that transient focus change.
+        if Self.isPartialModifierOnlySequence(
+            shortcut: state.shortcut,
+            wasDown: state.isDown,
+            keyCode: keyCode,
+            modifierFlags: effectiveFlags
+        ) {
+            dispatchModifierOnlySequenceProgress(
+                for: action,
+                eventTime: eventTime
+            )
+        }
+
+        let transition = Self.typingAwareModifierTransition(
+            shortcut: state.shortcut,
+            typingVariant: typingVariant,
+            wasDown: state.isDown,
+            keyCode: keyCode,
+            modifierFlags: modifierFlags
+        )
+
+        if transition.dispatchKeyUp {
+            state.isDown = false
+            state.pressedAt = nil
+            state.isInterrupted = false
+            state.typingFocusRequested = false
+            shortcuts[action] = state
+            dispatchKeyUp(for: action, eventTime: eventTime)
+            return transition.suppressDownstream
+        }
+
+        if transition.dispatchKeyDown {
+            state.isDown = true
+            state.pressedAt = eventTime
+            state.isInterrupted = false
+            state.typingFocusRequested = hasTypingModifiers
+            shortcuts[action] = state
+            dispatchKeyDown(for: action, eventTime: eventTime, typingFocus: hasTypingModifiers)
+        } else {
+            shortcuts[action] = state
+        }
+        if hasTypingModifiers, state.isDown, !state.typingFocusRequested,
+           let startedAt = state.pressedAt {
+            state.typingFocusRequested = true
+            shortcuts[action] = state
+            DispatchQueue.main.async { [onPrimaryTypingFocus] in
+                onPrimaryTypingFocus?(startedAt)
+            }
+        }
+        return transition.suppressDownstream
+    }
+
+    static func typingAwareModifierTransition(
+        shortcut: Shortcut, typingVariant: Bool, wasDown: Bool,
+        keyCode: UInt16, modifierFlags: NSEvent.ModifierFlags
+    ) -> ModifierOnlySequenceTransition {
+        let transition = modifierOnlySequenceTransition(
+            shortcut: shortcut, wasDown: wasDown, keyCode: keyCode,
+            modifierFlags: typingVariant ? modifierFlags.subtracting(.command) : modifierFlags
+        )
+        // Command-up is a release even while the three base modifiers remain
+        // held. Forward it so the foreground app never retains a stuck modifier.
+        if typingVariant, [UInt16(54), 55].contains(keyCode), !modifierFlags.contains(.command) {
+            return .init(isDown: transition.isDown, suppressDownstream: false,
+                         dispatchKeyDown: transition.dispatchKeyDown,
+                         dispatchKeyUp: transition.dispatchKeyUp)
+        }
+        return transition
+    }
+
+    static func supportsTypingVariant(_ shortcut: Shortcut) -> Bool {
+        shortcut.isModifierOnly && shortcut.modifierFlags == [.shift, .control, .option]
+    }
+
+    static func typingToggleTransition(
+        wasDown: Bool, keyCode: UInt16, rawFlags: UInt
+    ) -> ModifierOnlySequenceTransition {
+        // Ethan reserves both Command keys elsewhere. Typing now requires ALL
+        // FOUR physical keys: left/right Command (0x08/0x10) and Option (0x20/0x40).
+        // Aggregate Command+Option cannot distinguish one side from both sides.
+        // Partial chords, the old both-Command chord, and every release pass through.
+        let allFour = rawFlags & 0x78 == 0x78
+        let modifiers = Shortcut.normalizedModifierFlags(
+            NSEvent.ModifierFlags(rawValue: rawFlags), forKeyCode: nil
+        )
+        // Shift selects the existing Won't paste finish; Control/Function remain
+        // unrelated shortcuts. Adding/releasing Shift after a consumed chord must
+        // not dispatch a second action, and every modifier release is forwarded.
+        let supportedModifiers = modifiers == [.command, .option]
+            || modifiers == [.command, .option, .shift]
+        let press = [UInt16(54), 55, 58, 61].contains(keyCode)
+            && allFour && supportedModifiers && !wasDown
+        return .init(isDown: allFour, suppressDownstream: press,
+                     dispatchKeyDown: press, dispatchKeyUp: wasDown && !allFour)
+    }
+
+    static func standaloneShiftTransition(
+        wasCandidate: Bool, wasShiftDown: Bool, type: CGEventType,
+        keyCode: UInt16, modifierFlags: NSEvent.ModifierFlags
+    ) -> (isCandidate: Bool, isShiftDown: Bool, dispatch: Bool) {
+        let modifiers = Shortcut.normalizedModifierFlags(modifierFlags, forKeyCode: nil)
+        let shiftDown = modifiers.contains(.shift)
+        let shiftEvent = type == .flagsChanged && [UInt16(56), 60].contains(keyCode)
+        if shiftEvent && !shiftDown {
+            return (false, false, wasCandidate && modifiers.isEmpty)
+        }
+        if shiftEvent && shiftDown && !wasShiftDown && modifiers == [.shift] {
+            return (true, true, false)
+        }
+        let candidate = wasCandidate && type != .keyDown
+            && (!shiftEvent) && modifiers == [.shift]
+        return (candidate, shiftDown, false)
+    }
+
+    static func isTypingModifierChord(_ flags: NSEvent.ModifierFlags) -> Bool {
+        Shortcut.normalizedModifierFlags(flags, forKeyCode: nil) == [.shift, .control, .option, .command]
+    }
+
+    private func handleShortcutInterruptions(keyCode: UInt16, eventTime: TimeInterval) {
+        guard !Shortcut.isModifierKeyCode(keyCode) else {
+            return
+        }
+
+        for action in interruptibleActions {
+            guard var state = shortcuts[action],
+                  state.isDown,
+                  !state.isInterrupted,
+                  let pressedAt = state.pressedAt,
+                  eventTime - pressedAt <= Self.shortcutInterruptionWindow,
+                  state.shortcut.isInterruptedByAdditionalKeyDown(keyCode: keyCode)
+            else {
+                continue
+            }
+
+            state.isInterrupted = true
+            shortcuts[action] = state
+            dispatchShortcutInterrupted(for: action, eventTime: eventTime)
+        }
+    }
+
+    private func dispatchKeyDown(for action: ShortcutAction, eventTime: TimeInterval, typingFocus: Bool = false) {
+        DispatchQueue.main.async { [onKeyDown, onPrimaryTypingFocus] in
+            onKeyDown?(action, eventTime)
+            // Set the owned intent in the same main-queue block, before the
+            // key-down handler's async start can reach hardware/provider setup.
+            if typingFocus { onPrimaryTypingFocus?(eventTime) }
+        }
+    }
+
+    private func dispatchKeyUp(for action: ShortcutAction, eventTime: TimeInterval) {
+        DispatchQueue.main.async { [onKeyUp] in
+            onKeyUp?(action, eventTime)
+        }
+    }
+
+    private func dispatchShortcutInterrupted(for action: ShortcutAction, eventTime: TimeInterval) {
+        DispatchQueue.main.async { [onShortcutInterrupted] in
+            onShortcutInterrupted?(action, eventTime)
+        }
+    }
+
+    private func dispatchModifierOnlySequenceProgress(
+        for action: ShortcutAction,
+        eventTime: TimeInterval
+    ) {
+        DispatchQueue.main.async { [onModifierOnlySequenceProgress] in
+            onModifierOnlySequenceProgress?(action, eventTime)
+        }
+    }
+
+    static func isPartialModifierOnlySequence(
+        shortcut: Shortcut,
+        wasDown: Bool,
+        keyCode: UInt16,
+        modifierFlags: NSEvent.ModifierFlags
+    ) -> Bool {
+        guard shortcut.isModifierOnly,
+              !wasDown,
+              Shortcut.isModifierKeyCode(keyCode) else {
+            return false
+        }
+        let observed = Shortcut.normalizedModifierFlags(
+            modifierFlags,
+            forKeyCode: keyCode
+        )
+        let required = shortcut.modifierFlags
+        return !observed.isEmpty
+            && observed != required
+            && required.isSuperset(of: observed)
+    }
+
+    private static let eventMask: CGEventMask = [
+        CGEventType.keyDown,
+        CGEventType.keyUp,
+        CGEventType.flagsChanged
+    ].reduce(CGEventMask(0)) { mask, type in
+        mask | (CGEventMask(1) << Int(type.rawValue))
+    } | (CGEventMask(1) << Int(NX_SYSDEFINED)) // Media keys arrive as legacy NX_SYSDEFINED events, which CGEventType does not expose as a named Swift case.
+}
+
+private extension ShortcutMonitor.EventKind {
+    init?(_ type: CGEventType) {
+        switch type {
+        case .keyDown:
+            self = .keyDown
+        case .keyUp:
+            self = .keyUp
+        case .flagsChanged:
+            self = .flagsChanged
+        default:
+            return nil
+        }
+    }
+}

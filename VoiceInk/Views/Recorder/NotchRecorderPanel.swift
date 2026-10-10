@@ -1,0 +1,95 @@
+import SwiftUI
+import AppKit
+
+class KeyablePanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
+class NotchRecorderPanel: KeyablePanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+
+    init(contentRect: NSRect) {
+        super.init(
+            contentRect: contentRect,
+            styleMask: [.nonactivatingPanel, .fullSizeContentView, .hudWindow],
+            backing: .buffered,
+            defer: false
+        )
+
+        self.isFloatingPanel = true
+        self.becomesKeyOnlyIfNeeded = true
+        self.level = .statusBar + 3
+        self.backgroundColor = .clear
+        self.isOpaque = false
+        self.alphaValue = 1.0
+        self.hasShadow = false
+        self.isMovableByWindowBackground = false
+        self.hidesOnDeactivate = false
+        self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        self.appearance = NSAppearance(named: .darkAqua)
+        self.styleMask.remove(.titled)
+        self.titlebarAppearsTransparent = true
+        self.titleVisibility = .hidden
+        self.standardWindowButton(.closeButton)?.isHidden = true
+        self.isMovable = false
+
+    }
+
+    static func calculateWindowMetrics(
+        for screen: NSScreen? = NSScreen.main,
+        scale: CGFloat = 1
+    ) -> (frame: NSRect, notchWidth: CGFloat, notchHeight: CGFloat) {
+        guard let screen else {
+            return (NSRect(x: 0, y: 0, width: 280 * scale, height: 24 * scale), 280, 24)
+        }
+
+        let safeAreaInsets = screen.safeAreaInsets
+        let notchHeight: CGFloat = safeAreaInsets.top > 0 ? safeAreaInsets.top : NSStatusBar.system.thickness
+
+        let notchWidth: CGFloat = {
+            if let left = screen.auxiliaryTopLeftArea?.width,
+               let right = screen.auxiliaryTopRightArea?.width {
+                return screen.frame.width - left - right
+            }
+            return 180
+        }()
+
+        let maxSideExpansion = MiniRecorderLayoutMetrics.notchTranscriptSideExpansion
+        let sideMargin: CGFloat = 10
+        let totalWidth = max(
+            MiniRecorderLayoutMetrics.contextWidth(screenWidth: screen.visibleFrame.width, scale: scale) + 16,
+            min(screen.visibleFrame.width / scale - 32, notchWidth + (maxSideExpansion + sideMargin) * 2)
+        ) * scale
+
+        // 430 already accommodates the assistant panel (320). It also comfortably fits the
+        // record-while-transcribing stack: the notch pill (~43) plus several "transcribing…"
+        // chips (~38 each incl. spacing) beneath it stay well under 430, so no enlargement is
+        // needed for the stacked-chip UI. (If the chip count ever grows past ~8 this would
+        // need bumping.)
+        let maxContentHeight: CGFloat = 430 * scale
+        let xPosition = screen.frame.midX - (totalWidth / 2)
+        let yPosition = screen.frame.maxY - maxContentHeight
+
+        let frame = NSRect(x: xPosition, y: yPosition, width: totalWidth, height: maxContentHeight)
+        return (frame, notchWidth, notchHeight)
+    }
+
+    func show(on screen: NSScreen, scale: CGFloat = 1) {
+        let metrics = NotchRecorderPanel.calculateWindowMetrics(for: screen, scale: scale)
+        setFrame(metrics.frame, display: true)
+        orderFrontRegardless()
+        // Flush the first hosted frame while preserving nonactivating behavior; window
+        // visibility itself comes from orderFrontRegardless above.
+        displayIfNeeded()
+    }
+}
+
+class NotchRecorderHostingController<Content: View>: NSHostingController<Content> {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.clear.cgColor
+    }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "Agent Flow",
+  "short_name": "Agent Flow",
+  "description": "Speech to text for Mac, with your highlights and screenshot paths.",
+  "start_url": "/AgentFlow/",
+  "display": "standalone",
+  "background_color": "#e5eae8",
+  "theme_color": "#e5eae8",
+  "icons": [
+    {
+      "src": "assets/agentflow-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

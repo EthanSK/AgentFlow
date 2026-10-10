@@ -1,0 +1,2089 @@
+# VoiceInk++ failed approaches and regression ledger
+
+## 2026-10-10 — Fake delivery alone proves typed-error recovery — REJECTED
+
+**Failure condition:** A pipeline fake accepts a failed record while production
+delivery rejects it, or a later destination Mode restores Return/respond despite
+an earlier no-submit configuration. The initial recovery candidate had both gaps.
+**Use instead:** An explicit failed-typing-only request with a production gate that
+rejects commands/respond/Return, production pipeline tests, and a final OS-transport
+substitution only. Retries must not automatically duplicate an already pasted draft.
+**Reconsider only if:** The fake models every production authorization/configuration
+boundary and separately verified integration coverage remains; fake success alone
+never proves native paste. Missing HUD words cannot prove captured audio was silent.
+
+
+## 2026-10-09 — Hard drag-span size veto for Codex selections — WITHDRAWN
+
+**Failure condition:** Build 414's fresh-drag rectangle policy reported repeated
+overextended candidate refusals while Ethan reported missed partial-word highlights.
+Its focused-marker fast return also bypassed pointer comparison. Retained prompts
+and counts-only logs prove the misses/broad captures, not exact glyph geometry.
+**Use instead:** Keep span size diagnostic-only; compare the bounded pointer leaf
+before accepting a focused marker on Codex. Preserve an explicit foreground
+pointer selection over a containing broader marker, and retain existing background,
+elsewhere/window, password and editable-field safeguards. No inferred trimming.
+**Reconsider only if:** The exact host supplies a proven selected-glyph/range
+identity and attended partial-word, cross-symbol and cross-node checks demonstrate
+no lost highlights or whole-sentence widening; synthetic rectangles alone cannot
+justify a hard size veto.
+
+## 2026-10-09 — Containment-only marker widening — REJECTED
+
+**Failure condition:** A longer marker contains a highlighted symbol/address and
+its rectangle overlaps a drag endpoint, but encompasses text outside the drag.
+The previous same-box fixture selected the full sentence over the short symbol.
+This can fabricate a broader context even when a narrower source range exists.
+**Use instead:** Keep the narrower range unless independently consistent fresh
+drag geometry shows it misses an endpoint and the marker covers both. Treat
+aggregate span size as diagnostic, not a hard veto; never trim or OCR inferred glyphs.
+Record counts-only range decisions for physical acceptance, preserving delayed,
+multiclick and autoscroll uncertainty. Zero global-monitor clicks is a real drag,
+not sufficient reason to bypass the single-drag guard.
+**Reconsider only if:** The exact host supplies independently verified selected
+range identity/endpoints and real cross-node plus single-address tests establish
+precision without widening the user's choice. Containment/overlap alone remains
+insufficient, even if the candidate includes the desired address.
+
+
+## 2026-10-09 — Refusal-only microphone repair without live mute acceptance — WITHDRAWN
+
+**Failure condition:** Build 413 required an observed listening control at the toggle boundary and a verified mute before restoration ownership. Background Codex can expose neither state, so the repair skips muting. Ethan reported that Voice no longer muted at all and requested rollback; passing policy fixtures did not establish a usable live integration.
+**Use instead:** Honour the explicit rollback to exact signed build 412 and report its known manually-muted inversion limitation. Do not describe that rollback as state reconciliation or automatically reinstall the withdrawn refusal-only policy.
+**Reconsider only if:** An authoritative supported state/control feed and attended initially-listening/manual-mute tests establish actual suppression and owned restoration without inversion. Do not widen permissions, poll, click the pointer, use AXPress, globally mute input or patch Codex to bypass missing support.
+
+## 2026-10-09 — Paired microphone toggles with unknown state — REJECTED
+
+**Runtime exception:** Ethan explicitly requested the exact build-412 rollback after build 413 failed to mute in his workflow. That restores this historical behaviour, not acceptance of its inversion risk; never silently repeat either experiment as a new fix.
+
+**Failure condition:** ChatGPT's input stream stays active while its Voice microphone is manually muted. The old coordinator treated an unreadable control plus that active stream as permission to toggle, then remembered the accepted key event for an inverse at stop. This can unmute an already-muted call. A successful event post, retained application PID or Core Audio activity proves neither current mute state nor same-call ownership.
+**Use instead:** Unknown or already-muted start state performs no input. Require a fresh observed listening state at the event boundary and verify the resulting mute before owning restoration. Unknown restoration state relinquishes ownership without a toggle; failed restoration is never replayed in another capture. Build-413 canonical Mini tests reproduce and guard these policy conditions; the user's live Voice regression remains separate acceptance evidence.
+**Reconsider only if:** The exact host provides supported absolute mute control and authoritative same-session/manual-override state. Never restore a blind paired toggle merely because the current control is unreadable, and do not manufacture a state feed with AXPress, pointer automation, global microphone mute or private app patching.
+
+## 2026-10-09 — Conditional desktop Voice output shortcuts — UNSUPPORTED
+
+**Failure condition:** Offline inspection of ChatGPT desktop 26.1002.52244/build
+13536 found a user keymap schema containing only `command` and `key`. Its resolver
+returns accelerator strings, with no `when` expression or speaker-muted context.
+The shared catalogue's `when` field belongs to VS Code's extension bindings,
+not desktop. The Voice output handler's internal `isActive` predicate tests only
+whether a call is active and invokes `toggle-output-mute`. No binding was changed
+or event posted; this is source-proven missing support, not a failed audible test.
+**Use instead:** Require an externally supported absolute control or an observable
+same-session speaker state before automatic suppression/restoration. Do not
+invent a `when` key or treat private `set-output-muted` RPC as a public API.
+**Reconsider only if:** The exact installed desktop parser and dispatcher expose
+a documented conditional output-state binding, or a supported absolute control
+plus same-session/manual-override ownership becomes available. Verify those
+semantics before any live recording/playback test or Agent Flow integration.
+
+## 2026-10-09 — Preferring layer-zero windows under a floating selection source — REJECTED
+
+**Failure:** The uninstalled build-410 candidate preferred a same-app layer-zero
+window after filtering transient overlays. With a real floating panel above an
+overlapping main window, identity bound the main window instead and stayed valid
+after the floating panel disappeared. The canonical Mini regression executed and
+failed two assertions for this exact arrangement before the repair.
+**Use instead:** Exclude menu/tooltip-level overlays, then retain CGWindow's
+front-to-back ordering among eligible content windows. A real floating source must
+keep its own exact window identity and bounds. Preserve the overlapping-panel
+fixture in `sourceIdentityIgnoresTransientOverlayButStillRejectsResizedWindow`.
+**Reconsider only if:** An independently verified gesture-window identity replaces
+the ordering policy while still rejecting removed/replaced/resized source windows;
+layer zero alone must never stand in for the user's actual source.
+
+## 2026-10-06 — Keeping unpacked rollback apps outside Applications — REJECTED
+
+**Failure:** macOS registered dated VoiceInk/AgentFlow backup bundles in Downloads,
+Application Support and agent output directories, including hidden and `.bak` bundles.
+Moving them out of Applications did not prevent app-picker clutter. Unregistering
+only the original path before a Trash move also left some records at the new path.
+**Use instead:** Preserve required rollbacks as verified ZIPs using
+`scripts/archive-local-rollback.py`; never leave persistent launchable backup bundles.
+For an authorized cleanup, verify exact identities, retain checkpoint archives,
+move obsolete copies to recoverable Trash, then unregister their final retired
+paths and stale original paths. Do not reset all LaunchServices or touch snapshots.
+**Reconsider only if:** A documented macOS app-discovery exclusion is proven to cover
+all app menus, Spotlight and nested bundle registration without changing unrelated
+application discovery; archive storage remains the default until then.
+
+## 2026-10-05 — Hard-muting all capture during spoken reminders — SUPERSEDED
+
+**Failure:** The accepted build-403 gate removed all captured PCM during reminder
+playback, including Ethan's genuine speech. Ethan explicitly said he still wants
+to dictate during reminders, replacing muting with a Potential ignore section.
+**Use instead (2026-10-09):** Keep all captured audio and skip Codex TTS while recording, without waiting or replaying it later; still send the notification. Ethan replaced live Potential ignore annotation with recording-priority playback. Never revive microphone suppression; retain old annotation parsing only for saved archives.
+**Reconsider only if:** Ethan explicitly requests full capture suppression again
+and accepts that it also excludes his own simultaneous speech.
+
+## 2026-10-05 — Rejecting every end notice after child-death pruning — REJECTED
+
+**Failure:** The receiver's 100ms sweep can observe a reaped child before the
+sender's matching end message arrives. A plain tombstone rejected that valid end,
+leaving an inferred later overlap boundary and no usable end acknowledgement.
+**Use instead:** Retain frozen original owner/start/deadline in bounded tombstones;
+allow only the matching idempotent end to shorten an inferred completed window,
+never restart it or extend its deadline/tail. The focused end-race test passes.
+**Reconsider only if:** The transport provides a proven atomic child-exit/end
+boundary without weakening process identity or bounded replay protection.
+
+## 2026-10-03 — Treating every local app as an agent recipient — REJECTED
+
+**Failure:** Build 400 removed source-context eligibility and made compact local
+prompt links the default for Chrome, editors, terminals and unknown recipients.
+Ethan's ordinary YouTube comment therefore received an agent prompt wrapper.
+Classifier tests expecting Chrome links reinforced the regression.
+**Use instead:** Filter ordinary automatic pastes to authored speech/typing first;
+choose Codex local-file versus Telegram inline presentation only for those two
+approved app overrides. All other recipients remain plain authored text. Keep the decision after the queue wait and respect Primary/current
+versus Next/saved identity. Test the actual production pipeline with context on/off
+and styling on/off; complete archives and explicit Won't paste retain context.
+**Reconsider only if:** Ethan explicitly requests agent context in an ordinary
+app or supplies an explicit recipient opt-in. Being local, Chrome, or unknown
+is not evidence that the receiving field is an AI prompt.
+
+
+## 2026-10-01 — Reusing the early Primary freeze for late typing Shift — REJECTED
+
+**Failure:** The standalone Shift second-chance handler used
+`acceptsCompletionDispositionChanges`. The provider-boundary freeze closes that
+policy before archive preparation and delivery finish; a typed-only live trace
+froze roughly 120 ms after stop while the HUD remained visible for almost a
+second. Presence of the handler and immediate fixture success did not prove a
+usable human reaction window. Karabiner changes cannot repair this lifecycle gap.
+**Use instead:** A separate exact stopped-typing decision with a one-second
+minimum, open through preparation and queue waits, sealed before the first
+irreversible output effect. Keep Primary's existing freeze, balanced modifier
+forwarding, stale/new-session rejection, complete clipboard/History retention
+and post-wait cancellation/lineage checks. Never try to undo emitted output.
+**Reconsider only if:** The visible eligibility ends at the same boundary and
+physical evidence proves a usable released-chord Shift window for fast results;
+do not weaken the Primary contract to make an unrelated late-Shift choice work.
+
+## 2026-09-30 — Horizontal CSS gradients for continuous authored rainbows — REJECTED
+
+**Failure:** A payload-wide horizontal gradient colours screen x-coordinates,
+so wrapped lines repeat the same progression and new payload elements start
+again. Ethan explicitly requested continuation after the preceding authored word.
+**Use instead:** Fixed per-word palette spans preserving exact whitespace, one
+cursor across authored cards, and a separately persisted per-chat reservation
+for subsequent archives. Context is excluded and reopening consumes nothing.
+**Reconsider only if:** The desired design becomes a spatial paint effect rather
+than word-sequence continuity, or a renderer proves equivalent word positions
+through wrapping, explicit newlines, card boundaries and later messages.
+
+## 2026-09-30 — Checking styled History with raw plain-text substrings — REJECTED
+
+**Failure:** The first build-396 full gate failed only the new clipboard/history
+retention assertion. It searched for contiguous unformatted words inside the
+canonical styled string; producer-LaTeX formulas split those words even though
+the text and exact archive bytes were retained.
+**Use instead:** Assert readable content through the production History
+presentation's plain-text projection and independently assert canonical archive
+bytes, typed timing and context metadata. Preserve the first failed gate and run
+the corrected exact-source release gate; the corrected 523-test bundle passed.
+**Reconsider only if:** The storage contract explicitly becomes plain text;
+never remove formatting or weaken retention solely to satisfy a substring test.
+
+## 2026-09-30 — Publishing builder paths in checksum manifests — REJECTED
+
+**Mechanism:** Generate the public `SHA256SUMS` from an absolute path in the
+builder's temporary directory and accept matching hash text as sufficient.
+**Failure:** The website's build-366 ZIP matched the public hash, but the
+downloaded manifest's normal `shasum -a 256 -c SHA256SUMS` command attempted to
+open the absent builder path and failed before verifying the user's ZIP.
+**Use instead:** Publish bare distributed filenames and run the manifest check
+from a separate download directory containing the public ZIP and manifest.
+**Reconsider only if:** The published verification procedure deliberately maps
+paths and passes on an independent download without relying on builder state.
+
+## 2026-09-30 — Math inside Codex file-link labels — REJECTED
+
+**Failure:** The installed unified host's base Markdown parser accepted
+`\(...\)` in a link, but its additional user-message composer-link tokenizer
+escaped those delimiters and produced no math tokens. A base-parser-only check
+would therefore falsely accept a raw-LaTeX link label. The replacement `$$...$$`
+experiment passed that tokenizer and KaTeX, but Ethan's installed build-393
+message screenshot at 01:13:49 still displayed the complete raw LaTeX in its link.
+Token and standalone-math validity did not prove the bubble's link renderer.
+
+**Use instead:** Keep a literal `full prompt` link label and both original encoded
+absolute targets. Preserve the plain authored words and inline angular markers.
+Do not substitute another math delimiter based on parser evidence alone.
+
+**Reconsider only if:** A supported host mechanism or a disposable actual bubble
+proves a coloured clickable label renders without raw commands; then obtain
+Ethan's direction before restoring the rejected optional accent.
+
+## 2026-09-30 — Square preview markers with forced rows — SUPERSEDED
+
+**Failure:** Build 391 changed editable context cues to `[selection]` and
+`[screenshot]`, retaining an explicit Markdown hard break after every cue.
+Ethan rejected both the square brackets and forced line breaks in the compact
+message preview.
+
+**Use instead:** Keep opening-only angular markers protected by inline-code
+delimiters, join words and markers with spaces, and preserve the separate footer.
+Natural width-based wrapping is not a forced row. The canonical file remains
+unchanged and retains exact context and timing metadata.
+
+**Reconsider only if:** Ethan explicitly requests square markers or forced rows
+again; the historical newline preference is not authority to restore them.
+
+## 2026-09-30 — Testing compact prompts only with a generic Codex.app recipient — REJECTED
+
+**Failure:** The generic recipient fixture still passed after the installed
+ChatGPT.app local-Codex host updated to 26.928.20755/build 12246. A stale
+presentation allowlist bypassed the complete compact preview, losing its opening
+and footer links while delivering full styled XML. Archives themselves remained
+nonempty and intact.
+
+**Verified recurrence — 2026-10-01:** The official ChatGPT.app local-Codex host
+updated again to 26.928.31416/build 12553. Installed Agent Flow build 398 still
+recognizes only 11645 and 12246 for automatic compact presentation. Its separate
+clipboard-only branch builds the compact linked prompt without that recipient
+gate, explaining different formats from one binary depending on the completion
+gesture. One current Agent Flow process, its expected signed executable, and
+576 nonempty canonical prompt files were verified; this recurrence is not
+evidence of an app downgrade or missing archive data. No compatibility fix was
+implemented by the diagnostic sweep. Do not describe another hard-coded tuple
+addition as a durable fix for host updates.
+
+**Use instead:** Identify both known local-Codex desktop host names under
+`com.openai.codex` without pinning the presentation to release versions. Exercise
+the production pipeline with the actual installed host and an unknown future
+version. Require both links, every authored word across inline context markers,
+no XML attributes in the preview, and parity with Won't paste after normalizing
+only the immutable file paths. Keep foreign/cloud-only app identities rejected,
+raw output unchanged and exact-input mutation tuple gates separate.
+
+**Reconsider only if:** A host actually loses local-file prompt support or the
+user requests version-specific presentation. A renamed release string alone
+must not change the generic Primary paste payload; bundle-ID-only fixtures still
+cannot substitute for a production unified-host pipeline test.
+
+## 2026-09-29 — Finishing immediately on paused Primary click two — REJECTED
+
+- The paused-state double-click called clipboard-only finalization immediately.
+  A following third click therefore could not resume the existing capture.
+- Use instead: click two shows provisional Won't paste, then waits through the
+  full macOS multi-click continuation for click three to resume. If no third
+  click arrives, finalize clipboard-only once; a late click cannot undo it.
+- Reconsider only if Ethan explicitly replaces paused triple-click Resume and
+  accepts that the second press irreversibly ends the current recording.
+
+## 2026-09-29 — Refocus on the active four-modifier typing chord — REJECTED
+
+- The chord's active-session branch consumed the first press to restore the
+  floating editor when it lacked focus, requiring another press to finish.
+  Ethan explicitly disliked and reversed that behavior.
+- Use instead: make both Command plus both Option finish the active session
+  regardless of floating-editor focus. Preserve separate initial typing focus,
+  context-capture focus return, and Shift plus chord for Won't paste.
+- Reconsider only if Ethan explicitly asks to restore refocus-on-shortcut.
+
+## 2026-09-29 — Embedding Full source after the rendered prompt — REJECTED
+
+- The offline HTML viewer already renders each prompt event and points to its
+  adjacent canonical Markdown through early `agent-flow-source` metadata and
+  a Source link. Its collapsed Full source disclosure duplicated the complete
+  prompt in the HTML bytes; collapsing hid text from people, not from a tool
+  reading the file.
+- Use instead: keep the human timeline and exact Markdown pointer, but store the
+  full XML only in the canonical `.md`. Agents read that file once, never the
+  whole rendered HTML or embedded image data.
+- Reconsider only if a future offline viewer must remain complete after its
+  separate canonical prompt has been deliberately removed, with an explicit
+  user decision to trade storage and agent-reading cost for self-containment.
+
+## 2026-09-29 — Gating Won't paste formatting on the current foreground app — REJECTED
+
+- Build 381 prepared a compact prompt only when Codex was frontmost at clipboard
+  completion. The HUD/source app can be focused then, while the actual manual
+  paste happens later; the guard caused plain output with no prompt link. Mini
+  production-pipeline tests reproduced it across five other app identities for
+  typed-only and mixed input.
+- Use instead: prepare the paste-mode clipboard prompt without a recipient lookup;
+  retain raw/skip, archive-failure recovery and the normal-delivery filter.
+- Reconsider only if Ethan explicitly requests destination-aware manual clipboard
+  formatting and supplies a way to select that destination. Never infer the future
+  recipient or add an unsolicited clipboard watcher.
+
+## 2026-09-28 — Angle-wrapped prompt-file destinations — REJECTED
+
+**Mechanism:** Emit `[label](<absolute path with spaces>)` and accept the Markdown
+lexer's clean href as proof that the native file button resolves correctly.
+**Failure:** The audited host's native scanner reparses raw Markdown, preserves
+the angle brackets, and resolves the target relative to the current workspace.
+The editor opens an empty untitled buffer while the actual archive remains intact.
+VS Code's saved buffer URI and logs reproduce the reported build-374 failure.
+**Replacement:** Percent-encoded absolute paths without angle delimiters; validate
+the real native target and exact file contents as well as Markdown rendering.
+**Reconsider only if:** A later host's native scanner demonstrably strips delimiters
+and both generated links resolve to the existing canonical file end to end.
+
+## 2026-09-28 — One-turn context refocus — REJECTED
+
+**Mechanism:** Dispatch once to the main queue, abandon if a mouse button is held,
+the preferred editor is unavailable or the window cannot take keyboard ownership.
+**Failure:** A captured selection/screenshot can reach the controller during those
+transitions. Source also let an initial capture replace pending explicit startup
+focus with a nil preferred editor. No later callback repaired the discarded request.
+**Replacement:** One coalesced, cancellable two-second retry tied to the active
+session, verifying actual key-window/first-responder state and never dragging focus
+during a held mouse gesture. No idle polling or recorder startup is introduced.
+**Reconsider only if:** An event-based AppKit ownership callback is proven to cover
+mouse release, delayed editor mounting and screenshot UI teardown without lost events.
+
+## 2026-09-28 — Automatic full-attachment plus opening — SUPERSEDED
+
+**Mechanism:** Paste a full long payload, require a new ready AX attachment card,
+paste the short opening, then verify the editor before optional Return.
+**Evidence:** Build 372 sometimes produced a ready card but timed out with
+`openingUnconfirmed`; other normal-use attempts still refused the initial editor
+capture. The user reported one successful-looking attempt and then explicitly
+confirmed the split remained unreliable. Automated receipt fixtures did not prove
+the live editor/card boundary. Never reinterpret that partial success as acceptance.
+**Replacement:** One bounded compact preview with an explicit link to a durable
+full-prompt file; no AX attachment inventory, second paste or retry.
+**Reconsider only if:** The user explicitly requests actual attachment delivery
+again and a permitted, representative host fixture proves both parts end to end,
+including side chats, existing cards, focus changes and late user input.
+
+## 2026-09-28 — One AX ancestor per pasted-text card — REJECTED
+
+**Mechanism:** Ascend from each removal button until one parent contains exactly
+one removal button and a ready/pending label.
+**Failure:** A flattened shared attachment row can contain several removal buttons;
+the scanner rejects the entire inventory rather than recognizing two ready cards.
+The live build-371 failure independently reached `attachmentUnconfirmed`; its
+transient logs do not establish that this tree shape was the exact live cause.
+**Correction:** Count semantic controls in the already bounded single-editor
+composer and require one ready receipt per card, no pending cards, exactly one
+new card and all original identities retained. Never infer readiness from a timer.
+**Reconsider only if:** The audited host exposes stable per-card AX containers and
+an actual host fixture proves their identity with multiple existing attachments.
+
+## 2026-09-27 — Reconstructed global-monitor CGEvent PID as source — REJECTED
+
+**Mechanism:** Prefer `event.cgEvent.eventTargetUnixProcessID` over the foreground app.
+**Failure:** Build 358–360 live logs repeatedly bound selection reads to Agent Flow's
+own bundle. The prior-highlight gesture then failed its same-app check as well.
+**Correction:** Sample foreground PID and Cocoa pointer synchronously in the monitor;
+reject the recorder's PID at both boundaries. Keep startup capture and capture-before-labels.
+**Reconsider only if:** A real global-monitor trace proves the original recipient and
+geometry across focus transitions, with structural self-exclusion and physical acceptance.
+
+## 2026-09-27 — Coloured XML without a Markdown envelope boundary — REJECTED
+
+**Mechanism:** Wrap speech, typing, selection and screenshot XML in coloured
+inline math inside `<agent_flow_context>`, validating only extracted formulas.
+**Failure condition:** The actual Codex message showed those formulas literally
+inside the XML block while its standalone rainbow opening rendered correctly.
+**Correction:** Build 360 used plain XML; Ethan subsequently requested fixed XML
+section colours again. The installed host's actual lexer confirms that a blank
+line after the opening context tag ends its raw-HTML block and permits inline math.
+**Validation boundary:** Test complete production messages with the outer envelope.
+Passing isolated KaTeX expressions remains insufficient, and parser success is not
+a physical paste/queued-row rendering receipt.
+
+## 2026-09-27 — Current pointer location as queued mouse-event geometry — REJECTED
+
+**Mechanism:** Sample `NSEvent.mouseLocation` in both global mouse-edge handlers.
+**Failure condition:** If dispatch is delayed until the pointer stops, a real drag
+can have identical sampled endpoints and be rejected as a click.
+**Attempted correction, now rejected:** Event geometry and recipient were used in
+build 358. The recipient caused the regression above. Synchronous pointer sampling
+is restored without the extra queued actor hop; it still cannot recover a mouse-down
+whose original AppKit delivery was delayed. Do not add idle AX polling.
+**Reconsider event geometry only if:** A live trace proves it independently of the
+rejected recipient field, across displays and delayed delivery.
+
+## 2026-09-27 — Holding captured text until optional chat labels finish — REJECTED
+
+**Mechanism:** Await source-label log scans before appending an already-read highlight.
+**Failure condition:** A new mouse-down cancels the task during that await and loses
+valid text; synchronous label scans also block the main actor's mouse/HUD work.
+**Correction:** Commit text and chronology first, then enrich only its source labels
+by capture identity from a serial background worker. Omit uncertain labels.
+**Reconsider only if:** An alternative proves cancellation cannot discard captured
+text or reorder it behind newer speech, and log work never blocks main-thread input.
+
+## 2026-09-27 — Treating Telegram message text as an exposed AX selection — INCONCLUSIVE
+
+**Mechanism:** Read native Telegram highlighted messages through the standard
+Accessibility selection chain, or infer the highlight from a whole-text label.
+**Evidence:** The inspected 12.10/282987 tree exposed no message-selection control;
+upstream custom TextView keeps its selected range internally and exposes whole text
+as its label. A Computer Use selection drag returned `AXError.notImplemented`, not
+a successful live highlight. Older composer-delivery evidence is unrelated.
+**Boundary:** Keep exact-text-only capture; Ethan explicitly chose screenshots and
+declined approximate OCR. Do not use clipboard Copy as an unnoticed fallback.
+**Follow-up evidence:** The cited public source predates the installed release.
+Read-only arm64 method-table/disassembly inspection of installed 12.10/282987
+confirmed the base view's nil accessibility parent and false accessibility-element
+flag; TextView and SelectManager expose no selected-text accessor. A separate
+Computer Use double-click also returned `AXError.notImplemented`. Menus can be
+inspected, but neither action established a real highlighted-message test.
+**Reconsider only if:** A Telegram version exposes a verifiable read-only exact
+selected-text API or bridge with a real message-highlight test, or Ethan explicitly
+chooses a separate exact route such as Telegram Web in Chrome or user-initiated
+Copy capture. Neither alternate route is implemented or verified by this audit;
+do not silently replace his client or add clipboard capture.
+
+## 2026-09-27 — Recognizing reserved chords in every shared listener — REJECTED
+
+**Mechanism:** Handle both Command keys in `ShortcutMonitor` even when that
+instance has no typing-toggle callback, then consume the completing press.
+**Failure:** Start works with the main monitor, but opening the HUD inserts the
+panel monitor ahead of it. That non-owner consumes Finish and calls nothing.
+The direct handler test passes because it bypasses this event-routing boundary.
+**Accepted correction:** Require an installed owner callback before recognizing
+or consuming the chord; replay events through the recording, panel and Mode
+listeners in their real order, including releases and a second session.
+**Reconsider only if:** A replacement central dispatcher proves single ownership
+and passes complete multi-listener Start/Finish sequences; a reducer or action
+callback test on its own remains insufficient.
+
+## 2026-09-27 — Scaling the recorder through ancestor AppKit bounds — REJECTED
+
+**Mechanism:** Keep the physical recorder window small but enlarge its parent
+NSView bounds to map full-size SwiftUI content into that window.
+**Failure:** A Mini native click fixture rendered correctly but its SwiftUI action
+count stayed zero at 0.5 and 0.85, versus one at full scale. Overriding only
+`acceptsFirstMouse` did not repair the coordinates. Ethan reported all HUD controls
+unclickable in build 354; the app's main thread was not blocked.
+**Accepted correction:** Keep AppKit frame and bounds equal and apply scale inside
+SwiftUI with explicit source and physical frames. Require actual mouse-event tests
+for production controls, plus installed physical acceptance.
+**Reconsider only if:** A future hosting implementation proves transformed mouse,
+text-editor, accessibility and layout coordinates at every supported scale; visual
+geometry or AXPress alone is insufficient.
+
+## 2026-09-27 — Replacing a protocol witness with a defaulted timestamp overload — REJECTED
+
+**Mechanism:** Replace `RecordingSession.updateTypedInput(_:)` with
+`updateTypedInput(_:at:)`, giving the timestamp a default value.
+**Failure:** The recorder protocol still requires the one-argument signature, so HUD
+callers select its compatibility no-op and lose typed edits. The Mini release gate
+reproduced the loss before installation; concrete timed calls did not expose it.
+**Accepted correction:** Keep the exact one-argument forwarding witness and verify
+both text retention and grouped timing through `any RecorderStateProvider`, including
+the production pipeline's typed-only completion test.
+**Reconsider only if:** The protocol and all conformers/callers deliberately move to a
+new signature together, and the production-interface typing regressions still pass.
+
+## 2026-09-25 — Hard-coded Sparkle version-A helper signing — REJECTED
+
+**Mechanism:** Sign `Sparkle.framework/Versions/A/Autoupdate` only if that path exists, then
+sign nested bundles and the outer app and accept local deep/strict verification as readiness.
+**Failure:** The shipped Sparkle 2 framework used version B. The helper was silently skipped;
+Apple notarization rejected both architectures for invalid Developer ID signing and no secure timestamp.
+**Accepted correction:** Resolve `Versions/Current/Autoupdate`, require the helper, sign it first,
+and independently check its Developer ID team, runtime and timestamp. The repaired build-345
+artifact passed Apple notarization, stapling and Gatekeeper without rebuilding native code.
+**Reconsider only if:** A pinned framework layout has no Current alias and an explicitly verified
+replacement resolves and signs the actual helper. An enclosing framework signature alone is not proof.
+
+> **Mandatory negative evidence.** Read this file completely before changing mouse-button
+> routing, target capture, exact/background delivery, auto-send, focus restoration, the recorder
+> HUD, release installation, or live-test infrastructure. It records approaches that looked
+> plausible, compiled, passed unit tests, or even worked once, but failed the real VoiceInk++
+> contract. Do not retry an entry merely under a new name.
+
+This is the consolidated negative-evidence companion to [LEARNINGS.md](LEARNINGS.md).
+`LEARNINGS.md` is the dated positive evidence index; this file answers the equally important
+question: **what did we already try, why did it fail, and what would have to be different before it
+could be reconsidered?**
+
+The initial audit covered the complete 13–19 July 2026 VoiceInk++ task transcript: 207 user
+messages, 1,398 assistant messages, 115 compaction/handoff checkpoints, repository history, build
+and install records, live delivery traces, and Ethan's observed results. It intentionally excludes
+dictated text, clipboard contents, terminal buffers, credentials, and other private content.
+
+## How to use this ledger
+
+Every claim has one of these states:
+
+- **REJECTED** — real runtime evidence disproved the mechanism or release. Do not reintroduce it
+  without new evidence that directly changes the proven failure condition.
+- **SUPERSEDED** — it was a useful intermediate step or worked under a narrower contract, but a
+  later accepted design replaced it. Preserve the lesson, not the old implementation.
+- **INCONCLUSIVE** — source, mocks, static Accessibility inspection, or event-post acceptance did
+  not prove the user's real result. Do not present it as working and do not ship it merely because
+  the same shallow check passes again.
+- **PROCESS FAILURE** — the implementation may or may not have been sound, but the build, test,
+  installation, tracing, or handoff process made the result untrustworthy.
+- **ACCEPTED BOUNDARY** — a narrow condition that is currently proven. Do not generalize it to a
+  different route, app, app build, input, tab, window, or focus state.
+
+Evidence strength, from strongest to weakest:
+
+1. A real user-visible result correlated with a trace from the uniquely identified installed app.
+2. A real surface verifier, such as the exact composer clearing while the foreground stays put.
+3. A live trace proving route selection, mutation, focus boundaries, and one attempted action.
+4. Named tests that actually executed from the freshly built test bundle.
+5. Source inspection, offline bundle inspection, mocked Accessibility trees, or successful API
+   return codes.
+
+Levels 3–5 can prove that VoiceInk++ attempted something. They cannot, by themselves, prove that
+the destination app accepted paste or submitted text.
+
+## Live selection reading trail
+
+### A coloured preview above an unchanged white XML duplicate
+
+- **State:** SUPERSEDED by Ethan's build-350 live feedback on 2026-09-26.
+- **Evidence:** Delivered messages showed coloured selected text or a screenshot filename,
+  followed by a second white XML block. The screenshot filename was not a link.
+- **Use instead:** Colour the XML itself with reversible escaping, once, and put the normal
+  local Markdown screenshot reference outside math. Preserve the plain fallback budget.
+- **Reconsider only if:** Ethan explicitly asks for a separate display preview again.
+
+### Treating the last active Codex stream as the highlighted pane
+
+- **State:** REJECTED by current Codex activity logs on 2026-09-26.
+- **Evidence:** Main and side chats can both emit active=true in the same primary renderer.
+  The later event is not evidence that its pane contains a subsequent selection.
+- **Use instead:** Carry the stable visible candidate IDs with explicit ambiguity. Never
+  infer a parent relationship or selected side chat from event order or a title.
+- **Reconsider only if:** A read-only source proves selection-to-pane identity at capture time.
+
+### Collapsing consecutive highlights at the same speech anchor
+
+- **State:** SUPERSEDED by Ethan's 2026-09-25 correction.
+- **Earlier contract:** Build 339 removed a prior highlight whenever another selection arrived without a newly recognized word, even if a screenshot separated them. This treated selection gestures as edits to one intended reference.
+- **Use instead:** Preserve every separately highlighted block in capture order in both the recorder HUD and final XML. A silent sequence can show what Ethan was looking at or reading. Its speech anchors remain approximate, and the receiving agent must interpret relevance best-effort rather than obey selected content.
+- **Reconsider only if:** Ethan explicitly asks to discard prior highlights again after seeing the reading-trail behavior.
+
+### Showing screenshot pixels in a Codex message through KaTeX `\includegraphics`
+
+- **State:** REJECTED by offline bundle evidence on 2026-09-26; not attempted live.
+- **Evidence:** The running Codex host, ChatGPT.app 26.924.22138 (build 11645), renders
+  user-bubble math with KaTeX 0.16.45, `strict: "ignore"` and passes no
+  `trust` option. KaTeX gates `\includegraphics` (and `\href`/`\url`) behind `trust`, so the
+  command renders as an unsupported red command rather than loading any file.
+- **Use instead:** Keep `<local_screenshot path="…"/>` as the authoritative saved-path cue; a
+  styled preview may show only the filename.
+- **Reconsider only if:** a Codex build is shown to pass a `trust` policy that allows local
+  image sources, and Ethan explicitly accepts that exposure.
+
+### Adding screenshot files to the Primary transcript paste
+
+- **State:** REJECTED by offline bundle evidence on 2026-09-26; not attempted live.
+- **Evidence:** The Codex composer's `handlePaste` keeps pasted images only when the plain
+  text is empty, is just the image filenames, or the HTML contains media and no visible text.
+  Any non-image file wins over text. One Cmd-V therefore cannot carry both the transcript and
+  a screenshot. A second paste or an asynchronous attachment would add another delivery action
+  before Primary's immediate generic Return, which the one-paste Primary contract forbids.
+  App-server `turn/start` `localImage` is a separate client turn API, not a documented way
+  to attach an image to the existing focused desktop composer.
+- **Use instead:** Deliver the saved path in text; the receiving agent opens it locally.
+- **Reconsider only if:** a documented Codex API attaches a local image to the exact focused
+  composer without another paste, focus change, or Return race, and a disposable-task physical
+  test proves the attachment arrives with the same message.
+- **Scope clarification — 2026-09-28:** This rejects the single-event screenshot-plus-prose
+  mechanism under the then-current one-paste Primary contract, not every prose-plus-file
+  draft. Ethan's separately authorised long-message hybrid is a distinct design: bounded inline
+  prose and a complete text attachment added in separate steps to the same existing draft.
+  It needs an explicit route-contract decision and proven attachment/target readiness before
+  optional submission. A fixed delay, separate app-server turn, or private-IPC/Computer Use
+  bypass does not satisfy that gate. Source-level support for mixed drafts is not a physical
+  acceptance receipt.
+
+### Using plain-text paste to avoid Codex's long-paste conversion
+
+- **State:** REJECTED by the installed handler and an isolated Mini fixture on
+  2026-09-28; no live Codex composer was controlled.
+- **Evidence:** In ChatGPT.app 26.924.22138/build 11645, `handlePaste` emits
+  `pasted-text` at 5,000 UTF-16 units before its literal/plain-text insertion
+  branch. Both literal-paste and plain-mode fixtures still emitted the exact long
+  payload as a pasted-text event. The complete 16-test handler fixture passed.
+- **Use instead:** Keep the inline payload below the observed per-paste boundary,
+  or use an explicitly approved multi-part delivery design with complete retained
+  context and proven readiness. Do not silently truncate the authoritative text.
+- **Reconsider only if:** an inspected future host moves the literal branch before
+  the size check or exposes a documented setting, followed by a permitted live
+  acceptance check on that exact host.
+
+### Chaining independent clipboard sessions for one prose-plus-file draft
+
+- **State:** REJECTED by source inspection on 2026-09-28; not shipped or tested
+  against Ethan's live clipboard.
+- **Evidence:** `CursorPaster.performPasteSession` snapshots the current clipboard
+  before acquiring its foreground lease. A successful session holds later mutation
+  for 150 ms, but `scheduleClipboardRestore` waits at least 250 ms. An immediately
+  following independent session can therefore save the first payload as the
+  supposed original clipboard and later restore it, while invalidating the first
+  session's guarded restoration.
+- **Use instead:** For an explicitly approved multi-paste contract, design one
+  transaction with a single original snapshot, per-item ownership/target checks
+  and one final guarded restoration. Prove that the target consumed each item
+  and that its attachment is ready before optional submission.
+- **Reconsider only if:** the implementation owns the complete sequence as one
+  transaction and tests prove clipboard restoration, target/cancel boundaries and
+  readiness; repeated calls or a guessed sleep alone are insufficient.
+
+## Red-box warnings
+
+These are the highest-cost mistakes from the audited session.
+
+1. **Never identify a binary by `v2.0.<build>` alone.** Early build 203 was reused for materially
+   different binaries. Correlate the user's timestamped verdict with the immediately preceding
+   install, PID, CDHash or executable checksum, and delivery architecture.
+2. **Never equate “event posted,” `AXError.success`, or an accepted Accessibility setter with app
+   behavior.** Electron repeatedly accepted events/actions while ignoring paste or Return.
+3. **Never use process-targeted Command-V for exact background paste.** macOS can enqueue it while
+   Electron/VS Code ignores it.
+4. **Never use ordinary unauthenticated process-targeted Return as background submission.** It has
+   the same false-success failure.
+5. **Never treat `AXConfirm` as generic editor Return.** A text area accepting the action does not
+   mean its host submitted.
+6. **Never activate or raise a saved background app as a fallback.** Earlier versions stole Ethan's
+   foreground workspace and still failed to submit.
+7. **Never infer Send from an arbitrary unlabelled OpenAI square button.** The same position/state
+   can be Stop while an agent is running.
+8. **Never bypass a Computer Use refusal with repeated custom activation-state probes against
+   ChatGPT/Codex.** That destabilized keyboard focus and apparently restarted ChatGPT.
+9. **Never make broad delivery changes while fixing ordinary Primary dictation.** The accepted
+   uninterrupted Primary route is deliberately insulated from all Next/background experiments.
+10. **Never hide a failed or disabled destination by removing the recorder's second icon.** Keep
+    the slot and show the warning honestly.
+11. **Never restart VoiceInk++ while a recording may be active.** One restart destroyed a long
+    in-progress dictation. Inspect state, preserve recoverable audio/history, notify, wait five
+    seconds, and quit cooperatively.
+12. **Never call a release shipped because source changed or an app compiled.** It must have a new
+    build number, named tests, a signed installed artifact, a new verified PID/CDHash, and a real
+    route trace. `/Applications/VoiceInk.app` must remain untouched.
+13. **Never infer the active transcription provider from `CurrentTranscriptionModel` or the legacy
+    VoiceInk preference domain alone.** VoiceInk++ uses `com.ethansk.VoiceInkPlusPlus`, and each
+    `modeConfigurationsV2` entry can override the top-level model and real-time setting. On
+    2026-07-22 every active Mode selected Soniox V5 real-time even though the top-level value said
+    tuned Deepgram; Soniox reported exhausted organization balance and the fallback timed out.
+    Decode the active Mode records and correlate the provider's first live server error before
+    changing delivery code, downgrading the binary, or blaming general connectivity.
+
+## Equivalent Primary source failures
+
+### Waiting for an accidental second click before a fully idle start
+
+- **State:** SUPERSEDED by Ethan's 2026-09-04 correction, not a broken timer implementation.
+- **Earlier contract:** Build 305 intentionally delayed idle Start by 450 ms so an accidental second
+  click could prevent all recorder/audio/media startup. Build 320 overlapped reservation work with
+  that deadline, but the intentional wait still delayed the HUD Ethan wanted immediately.
+- **Use instead:** With no eligible pending transcription, reserve continuation and the tentative
+  Next input, then start without a click-decision timer. Preserve the separate recording/paused
+  gestures and the pending-transcription Won't paste decision; do not count Start as a stop click.
+- **Reconsider only if:** Ethan explicitly asks again for accidental idle double-click prevention
+  and accepts the resulting startup delay. Hardware duplicate coalescing is not such a request.
+
+### Restoring the legacy 500 ms Primary shortcut cooldown
+
+- **State:** REJECTED for the Primary toggle route.
+- **Attempt:** Treat the two near-simultaneous Shift-Control-Option chords produced by releasing
+  both Razer DPI buttons as an ordinary shortcut bounce and suppress every later Primary chord for
+  500 ms.
+- **Observed result:** VoiceInk++ deliberately bypasses that legacy cooldown for Primary toggle so
+  a second press can pause/resume and a third press can finish to the clipboard. Restoring it would
+  consume those accepted gestures together with the accidental duplicate.
+- **Do not retry:** Coalesce only the mechanically near-simultaneous second complete chord before
+  `PrimaryRecordingPressCoordinator`, using the event-tap timestamp and a window far below the
+  deliberate multi-click interval. Reconsider a longer cooldown only if the accepted double/triple
+  gestures are explicitly removed or the hardware transport preserves distinct source identity so
+  any suppression can be scoped to one source without hiding another Primary press.
+
+### Recovering raw F19/F21/F22 source identity after Karabiner's HID grab
+
+- **State:** REJECTED under the current shared mouse transport.
+- **Attempt:** Let VoiceInk++ open the Razer/Corsair HID source directly so it could distinguish
+  which physical button produced each final Primary activation.
+- **Observed result:** Karabiner's exclusive HID grab returned `0xe00002c5`; by the time VoiceInk++
+  receives the event-tap input, F19, F21, and F22 have all become the same
+  Shift-Control-Option chord and no originating-control identity remains.
+- **Do not retry:** Keep the final duplicate boundary inside VoiceInk++ and reason from accepted
+  complete-chord timestamps. Reconsider raw source attribution only if the shared transport later
+  emits distinct key codes/metadata or exposes a documented source-event bridge without competing
+  for the device grab.
+
+## Current accepted boundary at the end of the audit
+
+The installed app at the accepted checkpoint is VoiceInk++ v2.0.236. Commit `fb3ead7` is the
+verified implementation for ordinary uninterrupted Primary delivery:
+
+- Primary starts and stops in the same continuously keyboard-focused app.
+- A monotonic external-app activation generation and the start PID remain unchanged.
+- `focusedAtStop` uses the live caret, guarded ordinary Command-V, and one immediate HID Return.
+- It does not require exact AX capture, text read-back, focus restoration, semantic Send,
+  background preparation, retry, or a visible verification result.
+- Switching away, including switching away and back, rejects this compatibility path.
+- `recordingStart` and `focusedDuringTranscription` structurally cannot enter it.
+
+The live v2.0.236 trace contained:
+
+```text
+destination=focusedAtStop ... primaryContinuity=true
+paste: primary current-input compatibility selected ... exactCaptureRequired=false
+paste: primary current-input command completed result=commandPosted
+paste: primary current-input immediate HID auto-send issued=true verification=notRequired
+```
+
+Ethan observed the paste and submission working. This proves that narrow Primary case. It does **not**
+prove exact background paste/Send, Next-while-recording, second-chance background submission,
+Telegram, Claude Code, Chrome, Notion, or another OpenAI app/build.
+
+The three route contracts remain:
+
+| Physical action | Destination | Status |
+| --- | --- | --- |
+| Primary again while recording | `focusedAtStop`; uninterrupted same-app may use live-caret compatibility | Contract accepted; uninterrupted v236 path live-proven |
+| Next while recording | `recordingStart` | Contract accepted; universal background delivery unresolved |
+| Primary normal stop, then Next while newest result is transcribing | `focusedDuringTranscription` plus that target's complete Mode | Contract and atomic Mode fix accepted at `1eabb1b`; universal background delivery unresolved |
+
+The uncommitted v234–v236 SkyLight/authenticated-Return source in the candidate worktree is not an
+accepted background implementation. It must not be smuggled into policy merely because the same
+installed v236 binary contains it; the accepted v236 trace returned through the separate Primary
+compatibility branch before that experiment ran.
+
+### Post-audit v2.0.243 checkpoint: Primary accepted, latch rejected
+
+On 2026-07-20, session reconstruction identified v2.0.238 commit `bfef0e4` as the last user-accepted
+Codex background-delivery baseline. Commit `5475ef2` rebuilt that source in isolation as v2.0.243,
+adding only the audited `/Applications/ChatGPT.app` 26.715.52143 build-5591 tuple and tuple tests.
+Later Telegram, Terminal, and Claude delivery changes are absent.
+
+The signed build is a checkpoint because Ethan confirmed its normal Primary `focusedAtStop` route
+works. It is **not** an accepted latch build. A physical Codex `focusedDuringTranscription` attempt
+captured the exact composer, inserted into it while VS Code remained frontmost, resolved the bounded
+FooterActions Send control, and issued one targeted Send action. The post-action composer became
+unreadable and the visible message did not submit. This is another proof that action issuance plus
+unreadable verification cannot be promoted to success. Both Codex Next routes remain unresolved.
+
+The same checkpoint captured Telegram's foreground `AXTextArea`, but a second-chance run and a
+Next-while-recording run both failed before insertion with `Background exact-input preparation could
+not resolve the saved window`. Telegram is therefore the next isolated compatibility target. Do not
+change the accepted Primary path, fold later cross-app code into this checkpoint, or add a blind Send
+retry. Reconsider latch support only after a route-specific trace and explicit visible result agree.
+
+### Post-audit v2.0.245 Telegram boundary: both background Next routes accepted
+
+On 2026-07-21, signed v2.0.245 at `99a596b` preserved v2.0.244's pinned Telegram 12.9 build-282526
+visual-header identity and added only one Telegram-specific submission primitive. After a fresh
+exact-chat visual revalidation, it posts a HID-system modifier boundary, Return down/up, and live
+combined-session modifier restoration to Telegram's PID. This is not the rejected ordinary
+two-event process-targeted Return and is never a generic fallback.
+
+Two disposable Saved Messages traces now agree with Ethan's visible result:
+
+- Next while recording selected `recordingStart`, prepared `visualIdentity=true`, verified exact
+  background insertion, and finished with `route=telegramTargetedHIDReturn` and
+  `verification=verifiedCleared` while Terminal remained frontmost.
+- Primary stop followed by Next during transcription selected `focusedDuringTranscription` and
+  produced the same verified, non-activating result.
+
+This accepts those two routes only for the pinned Telegram tuple/layout with Screen Recording
+permission and a freshly matching visual identity. Foreground Primary and the wrong-chat digest-
+mismatch scenario remain physically untested. Any tuple/layout drift, missing permission, identity
+mismatch, focus theft, non-cleared composer, retry, or fallback rejects the route.
+
+## Version-by-version evidence map (13–19 July 2026)
+
+This chronology exists because “the working version” was repeatedly misidentified by build-number
+proximity. It is an evidence index, not a sequence of increasingly correct releases. Several builds
+were dirty, build 203 was reused, and later versions often regressed an earlier narrow success.
+
+| Phase / version | Mechanism or intent | Observed evidence and verdict |
+| --- | --- | --- |
+| Pre-session contract | `cba45ba`, then `1eabb1b`, established transcription-time retarget plus atomic input/Mode ownership | Accepted behavioral contract; preserve `secondChanceRetargetCarriesAutoSendUntilDeliveryResolvesIt` |
+| Rejected toggle | `671b4c7` made Next toggle destination ownership | Rejected and exactly reverted by `bed22b7`; never resurrect it |
+| Early background events | `b694eac` process-targeted Command-V; `744c2ce` process-targeted Return | Both were accepted by macOS and ignored by Electron/VS Code; proven failures |
+| v2.0.203–205 | Exact-location foundation, mirrored HUD, version UI, and multiple build-203 artifacts | Useful narrow ancestry, but artifacts were not consistently reproducible and build 203 is not an identity |
+| v2.0.206 | Native source `96e494e`; exact-location rollback floor later restored by `b2aeaa2` | Background Codex insertion/Return worked in a bounded observation, with false verification; not universal Send proof |
+| v2.0.207 | `86b50c2` plus a broad dirty delivery/focus/Terminal rewrite | Named tests passed, but latency, incomplete app proof, and overlapping installation made the release unacceptable; rejected wholesale |
+| v2.0.208 | Added Claude handling and surface-specific verification | ChatGPT exact paste could work, foreground Return could insert a newline, background Send was unavailable, and focus/latency regressed; rejected |
+| Rollback | `b2aeaa2` restored native source exactly to `96e494e`; main docs `413137d` recorded the rejection | Signed v206 restored and verified; accepted rollback boundary |
+| v2.0.209 | Removed required rendered echo, classified clear/newline/unreadable, removed unsafe retry | Some ChatGPT/Terminal runs appeared to work; Codex could submit with a false warning; Telegram failed re-resolution; mixed only |
+| v2.0.210 | One bounded background session, strict Telegram context, restricted semantic Send | Telegram attempts remained foreground and did not prove background delivery; latency remained; architecture lessons only |
+| v2.0.211 | Short Telegram anchors and capture refinements | G HUB's modifier chord exposed `AXGroup`/`AXWebArea`; exact target was lost and no verified sender was found; regression |
+| v2.0.212 | Larger capture/scope/focus/Telegram hardening | Signed/tested source existed, but no accepted installation/live result before work moved on; unverified |
+| v2.0.213 | Suppressed only the shortcut-completing modifier event and forwarded releases | Intended to repair v211; 46 tests passed, but physical G HUB proof was still pending; strong static evidence only |
+| v2.0.214 | Silence/proxy handling and current-input repair | First paste regression improved, but ChatGPT paste/Return reliability remained incomplete; mixed |
+| v2.0.215 | HID-state Command-down then V-down | Electron replaced/reparented the wrapper between events and the safety preflight cancelled; proven transport regression |
+| v2.0.216 | Restored the prior foreground Cmd-V event source with exact focus preflights | Foreground paste recovered; auto-send remained separate and unresolved; narrow mechanism boundary only |
+| v2.0.217 | Optimized selected-task/no-caret scan | Focused ChatGPT Primary paste worked, then the version was rolled back during broader work; do not extrapolate to background Send |
+| v2.0.218 | Expanded no-caret/background work | All 53 named tests passed while live Codex background submission still did not fire; physical Send failure |
+| v2.0.219 | Exact flag off; base VoiceInk current-focus compatibility; Next passes through | Ethan confirmed current-input Codex worked; accepted compatibility escape hatch only |
+| v2.0.220 | `13fb3a9` integration lineage | With exact off, no target was captured and the HUD showed warning; OpenAI tuples were stale and exact Send stayed unproven |
+| v2.0.221 | `744b7d1`; hid the locked slot in compatibility and audited newer tuples | Hidden slot was explicitly rejected; exact-on capture failed bounded fingerprinting; tuple evidence only |
+| v2.0.222 | `e9ed1f6`; separated ChatGPT host artifact from embedded Codex product | Product/host distinction is valid, but selected-task scope remained unresolved and exact delivery was not live-proven |
+| v2.0.223 | `f06399b`, docs `610752d`, UI lineage `3c44ebc` | Real trace logged `incomplete bounded context fingerprint`, `recordingStart targetCaptured=false`, then clipboard fallback; warning was genuine |
+| v2.0.224 | `3639f60`, docs `c10ad6c`; relaxed description/placeholder pairing | All 56 named tests passed; live trace repeated v223's fingerprint failure; hypothesis disproven and exact mode disabled again |
+| v2.0.225 | v206-based branch beginning `9da9fc5`, then focus-session work | Became the experiment base; no complete accepted exact background Send result; do not call the version successful as a whole |
+| v2.0.226 | Focus lifecycle around `c439317` | Correct Codex target captured, but legitimate inactive `focused element = absent` was treated as failure; regression |
+| v2.0.227 | Accepted explicit absent prior focus and kept cleanup safety | Paste worked, but semantic scans cost 1–3 seconds and accepted events did not submit; paste improvement, Send failure |
+| v2.0.228 | `2c33cf0`; fast exact-focus-guarded foreground HID Return | First test lacked a target; later evidence supports foreground transport only when the saved composer owns real keyboard focus |
+| v2.0.229 | `c2a05bc` lineage | Replaced/lost wrapper after Return became indeterminate instead of a visible failure; useful verification rule, not Send proof |
+| v2.0.230 | `76afaea`; recognized clear/placeholder/reset and unrelated status | Foreground trace looked non-failing without a preserved user verdict; background semantic Send still failed; mixed |
+| v2.0.231 | `9fef647`; traversed Chromium navigation-order children | Exact background insertion worked and foreground stayed unchanged; semantic Send remained unavailable; split result |
+| v2.0.232 | `be4f6ec`; bounded Send diagnostics | Trace showed `auditedUnlabelled=0`; diagnostic evidence only |
+| v2.0.233 | `6d93b36`; exact tuple plus audited unlabelled idle button | Background paste succeeded and `AXPress` returned success, but the composer stayed unchanged; proven action/result gap |
+| v2.0.234 | Uncommitted SkyLight-authenticated Return | One run failed before paste; another pasted then produced newline/non-empty `modifiedWithoutSubmit`; proven semantic failure |
+| v2.0.235 | Continued dirty SkyLight work plus a Primary compatibility fast path | Installed without a clean accepted background result; build does not identify a reproducible source snapshot |
+| v2.0.236 | `fb3ead7` implementation, `f9b13c4` docs, plus dirty v235/SkyLight source | Primary current-input compatibility traced and Ethan observed it working; both Next routes and the complete binary remain unproven/unreproducible |
+
+The table deliberately separates source, tests, installation, traces, and user-observed behavior.
+No row may be promoted merely because a later build reused part of it.
+
+## Terminology and route misunderstandings
+
+### Treating Next as a destination toggle
+
+- **State:** REJECTED.
+- **Attempt:** Commit `671b4c7` made Next Track toggle a paste destination on and off.
+- **Observed result:** It contradicted Ethan's timing-based workflow and made later agents interpret
+  the same physical button as multiple undocumented toggles.
+- **Resolution:** `bed22b7` reverted it. `TERMINOLOGY.md` now defines Next as one action whose route is
+  selected by lifecycle timing.
+- **Do not retry:** Do not add an on/off destination state. “Latch,” “retarget,” and “second chance”
+  do not mean toggle.
+
+### Passing Next Track through while the recorder bar is still visible
+
+- **State:** REJECTED.
+- **Attempt:** Pass Next Track to media as soon as no session remains eligible for a destination
+  change, even though a recorder/transcription bar is still visibly active.
+- **Observed result:** A press Ethan intended as a latch could become Next Song because delivery
+  crossed its internal cutoff or a session had already consumed its one latch. The visible bar still
+  told him that the physical control belonged to VoiceInk++.
+- **Resolution:** The visible recorder bar is now the strict ownership boundary. Eligible presses
+  perform their normal route; ineligible visible-bar presses are consumed no-ops. Media pass-through
+  resumes only after the bar is hidden.
+- **Do not retry:** Do not make internal eligibility or the exact-delivery feature flag leak a
+  visible-bar Next press to Music, Spotify, or another media app.
+
+### Merging recording-start and second-chance routes
+
+- **State:** REJECTED as a mental model; accepted fix at `1eabb1b`.
+- **Attempt:** Several iterations treated “Next” as one generic saved-input behavior and allowed the
+  locked target or Return Mode to be recomputed later.
+- **Observed result:** The icon could show the chosen app while delivery used a different app's
+  current Mode, or the target disappeared as transcription began.
+- **Cause:** Input identity and target Mode/auto-send were sourced at different times.
+- **Resolution:** `RecordingPasteTarget` owns the input and complete Mode atomically. The pipeline
+  freezes the newest eligible target before destination-dependent post-processing.
+- **Do not retry:** Never read formatting, enhancement, output, or auto-send solely from the global
+  current Mode after a destination has been chosen.
+
+### Falling back from Primary normal stop to the recording-start input
+
+- **State:** REJECTED.
+- **Attempt:** Use the older known recording-start target when stop-time capture/verification failed.
+- **Observed result:** A normal Primary stop could paste into an old input that Ethan did not invoke.
+- **Do not retry:** `focusedAtStop` never falls back to `recordingStart`. In the uninterrupted
+  v236 case it follows the live caret; after any app activation it uses only the exact stop-time
+  input or fails visibly and preserves the transcript.
+
+### Inferring hardware controls from “forward,” G5, Mouse Button 4, or Mouse Button 5
+
+- **State:** REJECTED.
+- **Attempt:** Treat conversational aliases or G HUB card IDs as proof of a physical control.
+- **Observed result:** Agents confused the Primary macro with the distinct Next Track assignment.
+- **Accepted evidence:** The G502 X LIGHTSPEED `Desktop: Default` profile maps the upper thumb
+  control's `speech to text` Shift-Control-Option macro to Primary and a separate explicitly labelled
+  `Next Track` control to Next.
+- **Do not retry:** Verify the active G HUB profile, software/onboard mode, resolved assignment
+  diagram, and VoiceInk++ shortcut. Raw G-numbers are not identities.
+
+## Target capture and identity failures
+
+### Focusing ChatGPT's main composer during tentative recording-start capture
+
+- **State:** REJECTED after the v2.0.281 Primary secondary-field regression report.
+- **Temptation:** When recording begins in an audited ChatGPT window with no exact caret exposed,
+  find the one proven lower main composer and set `AXFocused = true` so a possible later recording-
+  time Next press already has an exact target.
+- **Observed failure condition:** Recording-start capture runs before VoiceInk++ knows whether Ethan
+  will stop with Primary or Next. The focus setter could therefore move the keyboard caret away from
+  an annotation note or another secondary field to the main composer even though the eventual
+  Primary route correctly discarded all exact destination state and used ordinary Command-V.
+- **Use instead:** Keep tentative recording-start capture read-only. Preserve a genuinely focused
+  exact secondary editor through the passive pre-chord snapshot; when no caret exists, tentatively
+  identify one uniquely proven main composer without activation or any AX setter. Only a physical
+  Next route may later prepare and use that saved exact composer.
+- **Reconsider only if:** The focus mutation happens after the physical Next route has irrevocably
+  selected exact delivery and every same-app/different-input guard still proves Ethan's current
+  keyboard field will not be disturbed. Never restore it to tentative start capture.
+
+### Saving only an application instead of an exact input
+
+- **State:** REJECTED as a universal solution; bounded fallback only for the documented
+  recording-start Electron case.
+- **Attempt:** Remember a bundle/PID and later ask the app for whichever input is internally focused.
+- **Observed result:** It cannot distinguish two inputs in the same app, another tab, another task,
+  or a reused editor wrapper. The right app icon can therefore look correct while the destination is
+  not owned.
+- **Do not retry:** A saved app is not a saved composer. Promote any allowed app-only fallback to one
+  exact, replay-safe wrapper before mutation or fail closed.
+
+### Requiring an editable AX element for ordinary same-app Primary delivery
+
+- **State:** SUPERSEDED by `fb3ead7`.
+- **Attempt:** Make stop-time exact AX capture/read-back a prerequisite even when Ethan never left the
+  app and the live keyboard caret was correct.
+- **Observed result:** Electron transiently exposed `AXGroup` or no editable wrapper; ordinary
+  dictation copied to the clipboard, delayed Return, or showed false errors.
+- **Resolution:** The uninterrupted Primary compatibility path uses app continuity rather than input
+  identity. Exact capture remains mandatory for the routes that claim to preserve a saved input.
+- **Do not retry:** Do not pull the exact/background engine back into the uninterrupted Primary path.
+
+### Treating away-and-back as uninterrupted foreground use
+
+- **State:** REJECTED.
+- **Attempt:** Compare only the start and delivery PIDs.
+- **Failure:** Ethan could leave the app, change work, then return; matching final PID did not prove
+  the live caret remained the intended one for the whole recording.
+- **Resolution:** Use a monotonic external-app activation generation as well as PID and recheck it at
+  each irreversible boundary.
+- **Do not retry:** PID equality alone is insufficient continuity evidence.
+
+### Over-strict OpenAI context fingerprints in v2.0.223/v2.0.224
+
+- **State:** REJECTED.
+- **Attempt:** Require a complete bounded task/window/scope fingerprint before accepting the real
+  ChatGPT-hosted Codex composer. v224 relaxed description/placeholder matching but retained the rest
+  of the gate.
+- **Observed result:** Live traces captured the correct `AXTextArea` and app icon context, then logged
+  `Exact-input capture rejected incomplete bounded context fingerprint`; `recordingStart` was cleared
+  and delivery copied to the clipboard. All 56 named v224 tests still passed.
+- **Lesson:** Tests and offline ASAR strings did not model the live missing fingerprint field.
+- **Do not retry:** Do not claim a fingerprint fix until a real start trace proves
+  `targetCaptured=true`, exact insertion, one verified Send, and unchanged foreground.
+
+### Accepting a stable or UUID-shaped wrapper as task/tab identity
+
+- **State:** REJECTED.
+- **Attempt:** Treat renderer editor/window identifiers or wrapper equality as enough to survive tab,
+  task, or chat changes.
+- **Failure:** Chromium/Electron and Telegram can reuse wrappers across logical contexts.
+- **Do not retry:** Revalidate independent semantic context at capture and irreversible mutation/action
+  boundaries. Empty AX context is not identity. Telegram requires matching readable AX chat anchors
+  or the narrowly audited visual-header digest described below; wrapper shape and focus never suffice.
+
+### Conflating an absent prior focused element with an AX read failure in v2.0.226
+
+- **State:** REJECTED; corrected in the v2.0.227 candidate.
+- **Attempt:** Make every missing focused-element snapshot fail background focus preparation.
+- **Observed result:** v226 showed the correct locked app icon but refused delivery with “couldn't
+  focus the recording-start input.” Electron's explicit no-previous-element state was legitimate.
+- **Do not retry:** Model `value`, `absent`, and `AX read failure` separately. Absence can own a valid
+  cleanup path; read failure still fails closed.
+
+### Continuously polling or recapturing focus
+
+- **State:** REJECTED.
+- **Attempt:** Continuously chase the currently focused element rather than capture at the physical
+  route decision and freeze it per session.
+- **Failure:** It converts Ethan's later clicks into destination changes and makes diagnostics race
+  with normal computer use.
+- **Do not retry:** Capture at recording start, Primary stop, or eligible transcription-time Next.
+  Treat subsequent focus changes as user input, not noise to overwrite.
+
+## Paste transport failures
+
+### Stripping literal `&#x20;` in VoiceInk++ output
+
+- **State:** REJECTED by source and persisted-result evidence on 2026-08-24.
+- **Temptation:** Remove a trailing `&#x20;` in VoiceInk++ before paste, or repair it after Return,
+  because the entity appeared immediately after a VoiceInk++ paste and Codex auto-send attempt.
+- **Observed failure condition:** The correlated VoiceInk++ history row ended with ordinary text and
+  contained no entity, non-breaking space, or trailing space. `CursorPaster` also exposed only its
+  plain-string payload. The installed Codex renderer contains the Markdown boundary-space encoder,
+  and upstream Codex issues reproduce literal `&#x20;` during draft/history restoration without
+  VoiceInk++. A VoiceInk++ replacement would therefore operate before the mutation exists.
+- **Use instead:** Keep exact transcript bytes unchanged and fix/update the destination composer's
+  serialization/restoration boundary. Diagnose future cases by comparing the VoiceInk++ persisted
+  final with the destination draft before changing Primary paste or Return.
+- **Reconsider only if:** A correlated VoiceInk++ history row or owned pasteboard lease already
+  contains an entity that was absent from the provider final, with the destination editor excluded
+  as the mutating boundary. Any cleanup must then be provenance-aware so legitimate literal code is
+  never rewritten.
+
+### Clipboard-mutating selected-text capture during recording-context setup
+
+- **State:** REJECTED after a physical rapid-recording regression in v2.0.285.
+- **Attempt:** Let SelectedTextKit's `.menuAction` strategy snapshot the global pasteboard, issue
+  Copy, poll for a change, and restore its snapshot while VoiceInk++ independently finalized and
+  delivered older Primary transcripts.
+- **Observed result:** An older transcript's legitimate pasteboard write satisfied the selection
+  poll. The selection task then restored its stale snapshot during `CursorPaster`'s pre-paste delay,
+  and the unguarded Command-V pasted that stale value even though recording and transcription
+  lineage were correct.
+- **Resolution:** Recording-context selected-text capture is clipboard-free (`.accessibility` and
+  `.appleScript` only). Foreground paste owns a unique marker, text, and pasteboard generation,
+  revalidates that lease before Command-down and V-down, serializes every VoiceInk foreground paste,
+  and reacquires at most once before failing closed.
+- **Do not retry:** Do not restore `.menuAction`, `.shortcut`, or `.auto` to recording-context
+  capture unless the selection mechanism can prove it never mutates the global pasteboard. Generic
+  pasteboard restoration timing is not a substitute for transaction ownership.
+
+### `CGEvent.postToPid` Command-V (`b694eac`)
+
+- **State:** REJECTED.
+- **Attempt:** Paste to the saved background process without activating it by targeting Command-V at
+  the PID.
+- **Observed result:** macOS reported the event posted, but VS Code/Electron did not paste. Logs
+  falsely looked successful while the transcript never appeared.
+- **Do not retry:** Background exact text uses bounded Unicode/direct Accessibility only inside a
+  verified exact-input session. Foreground compatibility may use normal system Cmd-V because the
+  actual keyboard caret owns focus.
+
+### AppleScript/System Events as background paste
+
+- **State:** REJECTED.
+- **Attempt:** Run `System Events` Command-V while another app remained active.
+- **Failure:** System Events targets the system keyboard focus/frontmost surface, not an arbitrary
+  saved background input.
+- **Do not retry:** AppleScript is not an addressing primitive. It is legitimate only for a surface
+  that already owns real system keyboard focus and only when the route's safety gate proves that.
+
+### Synchronous System Events auto-send on MainActor
+
+- **State:** REJECTED for every foreground delivery route.
+- **Attempt:** Cache an `NSAppleScript` Return command and call `executeAndReturnError` directly from
+  the MainActor delivery path.
+- **Observed result:** In signed v2.0.303, the shared macOS System Events process was already wedged
+  behind an unrelated Accessibility script. GPT Live finalized and Command-V succeeded, but each
+  synchronous Return then blocked VoiceInk++ for roughly the full 120-second Apple Event timeout.
+  The HUD remained on Transcribing and the shortcut event tap was disabled. Restarting VoiceInk++
+  did not repair the shared System Events process.
+- **Do not retry:** Run System Events auto-send off MainActor through `BoundedAppleScriptRunner` with
+  the one-second deadline, terminate its helper at expiry, and treat timeout as an indeterminate
+  one-shot Return. Never retry through CGEvent or another transport after that timeout. This remains
+  a freeze-containment rule for exact foreground routes that still use System Events; it is not a
+  sufficient Primary isolation boundary.
+
+### A bounded `osascript` helper as Primary isolation from shared System Events
+
+- **State:** REJECTED for `primaryCurrentInput` auto-send; v2.0.304's one-second helper guard was a
+  useful freeze mitigation but did not isolate later Primary requests from the shared daemon.
+- **Attempt:** Keep Primary Return on System Events, run it off MainActor, and terminate the client
+  helper when its one-second deadline expires.
+- **Observed result:** An unrelated Codex task asked System Events for Rekordbox's `entire contents`.
+  The singleton daemon remained recursively wedged in an Accessibility traversal. Killing
+  VoiceInk++'s timed-out helper could not cancel the Apple Event already executing server-side, so
+  subsequent build-311 Primary Returns queued or failed even though paste continued to work.
+- **Do not retry:** Primary owns the current system keyboard focus, so after the fixed settlement
+  interval issue exactly one ordinary HID Return down/up directly. Do not put Primary back on System
+  Events, do not enumerate Accessibility, do not classify the app, and do not retry an indeterminate
+  Return. Keep exact Next routes surface-specific and separately guarded.
+
+### Setting an entire generic `AXValue`
+
+- **State:** REJECTED for generic/rich editors.
+- **Attempt:** Reconstruct the full current value plus transcript and set it directly.
+- **Risk/failure:** It can flatten rich text, damage Notion block semantics, overwrite concurrent
+  edits, or target a reused wrapper.
+- **Do not retry:** Use `AXSelectedText` only when settable and verified, or bounded targeted Unicode
+  within an exact session. Fail closed for rich/contenteditable surfaces without a proven insertion
+  primitive.
+
+### Long targeted Unicode after only one initial identity check
+
+- **State:** REJECTED.
+- **Attempt:** Prove the context once, then type an arbitrarily long transcript while Ethan remains
+  free to change tabs/tasks/chats.
+- **Failure:** The logical context can change mid-stream while PID/window/editor wrappers remain.
+- **Do not retry:** Run the expensive semantic resolver before, at bounded checkpoints, and after;
+  run cheap exact PID/window/editor/focus checks per chunk. Never log the content.
+
+### Mutating before opening the one bounded internal activation session
+
+- **State:** REJECTED, especially for Telegram.
+- **Attempt:** Strictly re-resolve a background app's hidden AX tree before preparing its bounded
+  internal activation state.
+- **Observed result:** Telegram v2.0.209 exposed zero background window children, so resolution failed
+  before the still-live exact editor could be assessed.
+- **Boundary:** Preparation cannot weaken chat identity. Telegram still requires independent matching
+  chat identity immediately before every mutation/action: readable AX anchors, or the exact audited
+  visual-header digest below when the app publishes no readable AX context.
+- **Do not retry:** Do not solve hidden trees by trusting internal focus or geometry alone.
+
+## Return and Send failures
+
+### PID-targeted Return (`744c2ce` and later variants)
+
+- **State:** REJECTED as a general mechanism.
+- **Attempt:** Address Return to the saved process after paste or after restoring another foreground
+  app.
+- **Observed result:** Electron/VS Code accepted the post at the macOS layer but ignored it. Logs said
+  “posted” while the composer remained unchanged.
+- **Do not retry:** Use a proven semantic action, a host-native exact session API, or ordinary HID
+  only when the intended input actually owns system keyboard focus. No success claim without the
+  surface verifier.
+
+### Global HID Return after forcing the target foreground
+
+- **State:** REJECTED as a background fallback; accepted only for the guarded current-foreground
+  compatibility route.
+- **Attempt:** Activate the saved app, restore the AX input, paste, wait, send a normal Return, then
+  restore Ethan's later app.
+- **Observed result:** Codex was dragged front and left there when restoration failed; Return could
+  still be ignored. The settle delay added visible disruption without reliability.
+- **Do not retry:** Never activate a background target. A normal HID key is valid only when the exact
+  route already proves real keyboard focus without taking it from Ethan.
+
+### `AXConfirm` on text areas
+
+- **State:** REJECTED.
+- **Attempt:** Invoke the Accessibility confirm action as a generic Return substitute.
+- **Observed result:** `AXError.success` was returned while Codex did nothing.
+- **Do not retry:** `AXConfirm` is not editor submission. Use only an app control whose semantics
+  explicitly define Confirm for that control and still verify the surface result.
+
+### System Events Return plus “humanized” CGEvent retries
+
+- **State:** REJECTED as a generic OpenAI fallback chain.
+- **Attempt:** Try System Events, then a delayed physical-looking key-down/up, then another Return if
+  the text looked unchanged.
+- **Observed result:** Different apps handled different steps; Electron sometimes inserted a newline,
+  sometimes ignored both, and retries created duplicate-submission risk. Terminal accepting the key
+  did not prove ChatGPT/Codex would.
+- **Do not retry:** One irreversible action per proven route. A readable unchanged OpenAI composer
+  may justify only the explicitly documented single retry while it still owns exact keyboard focus.
+  Unreadable state never justifies a retry.
+
+### Generic nearby semantic-Send traversal
+
+- **State:** REJECTED as a universal solution; bounded labelled actions remain legitimate.
+- **Attempt:** Traverse a large AX tree for a nearby button and invoke `AXPress`.
+- **Observed result:** Traversal added one-to-three seconds of latency. Electron could return AX
+  success without submitting. Candidates were unavailable when the tree exposed navigation-order
+  children differently, and permissive matching risked Stop or remote buttons.
+- **Do not retry:** Restrict discovery to a proven chat bundle and nearest shared composer container;
+  require explicit Send/Submit semantics, same PID/window, bounded geometry, enabled state, press
+  action, and a final boundary check. Verify composer clear/reset.
+
+### Treating an unlabelled OpenAI square as Send
+
+- **State:** REJECTED unless an exact audited app/version/build/Chromium tuple and idle state have
+  been independently proven at the irreversible boundary.
+- **Attempt:** Use uniqueness and geometry to infer that the only square beside the composer was Send.
+- **Observed result:** Running tasks expose Stop in the same slot. ChatGPT and Codex also share a
+  bundle identifier while differing in versions and UI structure.
+- **Do not retry:** Label-read failure is not an empty label. Stop must always be rejected. Static
+  ASAR evidence is a hypothesis, not live submission proof.
+
+### Requiring rendered-message echo after submission
+
+- **State:** REJECTED.
+- **Attempt:** Require the submitted text to appear elsewhere in the AX tree after the composer
+  changed or disappeared.
+- **Observed result:** Return actually submitted, but virtualization/replacement made the rendered
+  echo unreadable; VoiceInk++ played an error sound and showed a false warning.
+- **Resolution:** Exact composer clear/reset is the authoritative chat verifier. Rendered-message
+  echo is optional telemetry.
+- **Do not retry:** Never make a remote rendered copy a required success condition.
+
+### Treating unreadable post-state as failure
+
+- **State:** REJECTED.
+- **Attempt:** After one issued Return/press, interpret a missing/replaced AX wrapper as failed Send.
+- **Observed result:** ChatGPT/Codex often replaced the composer on successful submission, producing
+  a false red error and sound.
+- **Do not retry:** `unreadable` is indeterminate telemetry after one irreversible action. Do not
+  retry and do not show a false failure. A readable unchanged composer remains a real no-op; a
+  newline/non-empty mutation is `modifiedWithoutSubmit`.
+
+### Treating “changed” as “submitted”
+
+- **State:** REJECTED.
+- **Attempt:** Verify only that current text differed from previous text.
+- **Observed result:** A Return could insert a newline, or optional-string comparison could treat nil
+  as changed, and the verifier claimed success.
+- **Do not retry:** Chat submission requires clear/reset. Preserve explicit states for verified
+  clear, unchanged, modified without submit, and unreadable.
+
+### Counting transcript occurrences for repeated phrases
+
+- **State:** REJECTED as insertion or submission verification.
+- **Attempt:** Count matching copies of the transcript in a composer, terminal buffer, or surrounding
+  AX tree and infer success when the count increases.
+- **Failure:** Dictation can intentionally repeat a phrase; the same text may already exist in the
+  composer, scrollback, rendered message history, or a virtualized off-screen node. Wrapper
+  replacement can also change the searchable tree without proving that this invocation inserted or
+  submitted anything.
+- **Do not retry:** Compare the exact target's bounded before/after state and use its surface-specific
+  postcondition. Chat requires the exact composer to clear/reset; Terminal/iTerm require the bound
+  native session's inserted text plus prompt-tail transition. Repeated text elsewhere is telemetry.
+
+### SkyLight-authenticated PID Return in v2.0.234–v2.0.235
+
+- **State:** REJECTED for background ChatGPT submission; later dirty implementation remains
+  INCONCLUSIVE as a broader transport experiment.
+- **Attempt:** Recreate a narrow part of Computer Use's background-focus architecture: prepare an
+  internal activation session, attach a SkyLight authentication message to Return down/up, post to
+  the exact audited ChatGPT tuple, then verify clear/reset.
+- **Observed result:** A real v234 background attempt inserted into the intended composer, then the
+  authenticated Return produced a newline/non-empty mutation and explicit
+  `modifiedWithoutSubmit` instead of clear/reset. Other attempts failed before paste or had
+  unavailable authentication/transport. Later dirty v235/v236 code was never independently
+  accepted for the background route. The one accepted v236 test used the separate Primary
+  compatibility branch.
+- **Do not retry:** Do not describe this as a supported exception, commit the dirty experiment, or
+  generalize it to Codex, another build, Command-V, text insertion, or other keys. Reconsider only
+  with a disposable target and a trace proving exact insertion, one authenticated action, composer
+  clear/reset, unchanged system foreground, no latency regression, and no fallback/retry.
+
+## Focus and workspace failures
+
+### Activating/raising the destination and restoring later
+
+- **State:** REJECTED for background delivery.
+- **Attempt:** Use `NSRunningApplication.activate`, `NSWorkspace.openApplication`, `AXRaise`, and AX
+  focus setters to bring the saved target frontmost, then try to restore Ethan's app afterward.
+- **Observed result:** Visible focus theft, app jumping/spazzing, inability to click the current app,
+  failed restoration, and still-unhandled Return. A foreground-to-background race could reactivate
+  the target after Ethan had already moved on.
+- **Do not retry:** The user's current workspace is a hard boundary, not state to repair after the
+  fact. Background routes must remain non-activating or fail closed.
+
+### Rewriting app-internal focus for same-app/different-input delivery
+
+- **State:** REJECTED.
+- **Attempt:** Make latched input A internally focused while Ethan used input B in the same app, then
+  restore B.
+- **Failure:** The restoration cannot distinguish VoiceInk++'s focus from a newer user click and can
+  overwrite legitimate interaction.
+- **Do not retry:** Use direct verified insertion plus a proven semantic action only; never perform
+  an app-internal focus rewrite in this case.
+
+### Requiring Ethan's unrelated foreground PID to remain frozen
+
+- **State:** REJECTED.
+- **Attempt:** Abort background delivery whenever the app Ethan was using changed from A to B.
+- **Observed result:** It defeated the product's “keep moving” workflow even though the saved target
+  remained safely backgrounded.
+- **Do not retry:** Prove that the target did not become frontmost and that the exact target identity
+  remains valid. Ethan may switch among unrelated foreground apps during delivery.
+
+### Repeated private activation-state probes after Computer Use refusal
+
+- **State:** REJECTED and unsafe.
+- **Attempt:** Recreate blocked Computer Use inspection with custom AX/private activation events
+  against Ethan's live ChatGPT process.
+- **Observed result:** Keyboard focus destabilized and ChatGPT apparently restarted.
+- **Do not retry:** Treat tool refusal as a safety boundary. Use existing traces, offline bundle
+  inspection, or a truly disposable target. Never probe Ethan's active Codex/ChatGPT task this way.
+
+### Assuming Computer Use has a second independent macOS mouse/focus channel
+
+- **State:** REJECTED mental model.
+- **Attempt:** Infer from the visible agent cursor that the helper can type/click without macOS focus
+  constraints and therefore VoiceInk++ can copy one reusable API.
+- **Finding:** `VirtualCursor` is presentation/targeting state. `SyntheticAppFocusEnforcer` and
+  `SystemFocusStealPreventer` are OpenAI implementation types, not documented Apple APIs. The helper
+  combines AX, synthesized input, refetchable trees, PID/window addressing, private mechanisms, and a
+  trusted local service.
+- **Do not retry:** Public AXSwift/AXorcist wrappers do not supply the full architecture. Public CUA
+  projects are audit sources, not drop-in proof for delayed exact VoiceInk++ delivery.
+
+## App-specific negative evidence
+
+### ChatGPT.app and Codex.app identity
+
+- **State:** ACCEPTED BOUNDARY.
+- Both can report bundle identifier `com.openai.codex`.
+- Session failures were repeatedly attributed to “Codex” when the target executable was actually
+  `/Applications/ChatGPT.app`.
+- **Rule:** Persist/verify bundle URL or executable plus short version, build, and Chromium tuple.
+  Never allowlist or interpret a trace from bundle ID alone.
+
+### ChatGPT Option-Space floating composer
+
+- **State:** PARTIALLY PROVEN, not universal.
+- It can own real system keyboard focus while another app is still reported frontmost. Treating
+  `NSWorkspace.frontmostApplication` alone as truth rejects legitimate foreground-key delivery.
+- Background exact insertion and ordinary main-window submission results do not prove this
+  non-activating surface.
+- **Rule:** Prove its exact AXTextArea and real system keyboard focus; do not synthesize app
+  activation merely because the workspace frontmost app differs.
+
+### Telegram
+
+- **State:** PARTIALLY ACCEPTED for both background Next routes on the pinned Telegram 12.9 build
+  282526 Saved Messages surface in v2.0.245; generic mechanisms remain rejected.
+- Telegram can hide its background AX children and reuse an editor wrapper across chats.
+- v2.0.209 failed strict pre-preparation re-resolution. Relaxing to internal focus/geometry alone
+  could paste into the wrong chat.
+- `AXSelectedText` may be settable, but that proves mutation capability, not chat identity or Send.
+- **Rule:** Require independent matching chat identity immediately before every mutation/action.
+  Prefer readable AX anchors. Empty AX context may cross only the version-pinned visual-header gate
+  below; unavailable permission, blank/protected capture, tuple/layout drift, changed digest, or
+  mismatched anchors fails closed. Use the dedicated Telegram live-test procedure.
+
+#### v2.0.244 audited visual-header reconsideration
+
+- **State:** SUPERSEDED identity foundation. v2.0.245 retained this visual gate and replaced only
+  the unavailable semantic-Send assumption with the separately proven Telegram HID sequence.
+- **Changed evidence:** Telegram 12.9 build 282526 exposes a parentless exact `AXTextArea` and one
+  enclosing same-PID window, but no readable selected-chat title in that window's AX descendants.
+  The selected chat header remains visible in a fixed audited crop of that exact window.
+- **Narrow mechanism:** Capture two stable samples at the input-decision boundary, retain only their
+  SHA-256 digest and dimensions, and re-sample the same window before insertion and before one
+  irreversible Send action. Require the retained exact editor/window structure, Telegram's
+  own internal focus, unchanged background/no-focus-theft boundary, the audited app tuple/layout, and
+  Screen Recording permission. Never retain or log screenshots, OCR, chat titles, messages, or crop
+  bytes. `AXSelectedText` is one-shot; no error-triggered retry or generic background Return exists.
+- **Disposable/live result:** v2.0.245 passed both `recordingStart` and
+  `focusedDuringTranscription` in Saved Messages with composer clear/reset and unchanged foreground.
+  The second disposable-chat digest-mismatch test and foreground Primary regression remain pending;
+  v2.0.243 remains the rollback checkpoint.
+- **Abandon condition:** Any unaudited tuple/layout, missing capture permission, unstable/blank image,
+  digest mismatch, ambiguous window, focus theft, wrong-chat mutation, unverified Send, or Primary
+  regression rejects this candidate without broadening it into generic Telegram or visual delivery.
+
+#### Hashing Telegram's complete selected-chat header crop
+
+- **State:** REJECTED as the replay identity for the pinned visual route.
+- **Attempt:** Require one SHA-256 digest of the complete audited header crop, including Telegram's
+  avatar, primary chat title, and lower status/activity row.
+- **Observed result:** With the exact same window and dimensions, a privacy-safe probe observed eight
+  different full-header hashes in roughly one second because the lower status/activity row changes
+  independently of the selected chat. The same crop later became stable again, so a two-sample arm
+  could still accept a transiently quiet row and then falsely reject the unchanged chat at delivery.
+- **Resolution:** Keep the full crop digest only as drift telemetry. For the exact pinned Telegram
+  12.9/282526 layout, replay identity hashes only the audited avatar plus primary-title row and still
+  requires byte-for-byte equality, exact dimensions, the retained editor/window structure, Telegram
+  internal focus, and fresh revalidation before every mutation/action.
+- **Do not retry:** Do not widen the stable region back into status/activity pixels or replace the
+  exact digest with fuzzy image similarity. Reconsider only after a new Telegram tuple/layout audit
+  identifies a different stable semantic region and the wrong-chat fail-closed test passes.
+
+### Terminal, iTerm, and Claude Code
+
+- **State:** Surface-specific; do not infer from GUI chat apps.
+- Terminal accepting ordinary Enter proved only that Terminal accepted it; it did not validate
+  ChatGPT/Codex.
+- PID/AX text followed by a separately addressed native newline can cross sessions/tabs.
+- Apple Terminal has no proven exact-session paste-only API. iTerm can write with `newline false`.
+- **Rule:** Capture stable window ID plus TTY/session ID and bind transcript plus Return to the same
+  pair in one host-native operation. Verify prompt-tail transition. Mutable title and wrapper identity
+  are insufficient; TUI/scrollback rewrites can be indeterminate and never justify retry.
+
+### Claude Desktop versus Claude Code
+
+- **State:** Do not conflate them.
+- v2.0.209 logs suggested Claude Desktop exact background paste/Return worked in two attempts after
+  the composer was genuinely focused; that is not proof for Claude Code in Terminal/iTerm/Ghostty,
+  nor for another Claude Desktop build.
+- **Rule:** Record the host surface and exact session identity. A Claude bundle allowlist or unit test
+  without a live disposable trace remains unverified.
+
+### Google Chrome
+
+- **State:** Background exact paste not universally proven; auto-send normally disabled in Ethan's
+  setup.
+- Browser PID/window/editor identity does not prove a tab or site context. A reused renderer wrapper
+  can point at another tab.
+- **Rule:** Preserve a readable window/tab/document fingerprint. Do not enable Return merely to make
+  a test easier.
+
+### Notion
+
+- **State:** NOT LIVE-TESTED in the required selected-card/editor scenario during the audited work.
+- Generic `AXValue` mutation risks damaging rich block semantics and Ethan's real board.
+- **Rule:** Use a disposable page/card only. Prove the exact card/property/block and sibling safety;
+  otherwise report not tested and fail closed.
+
+## Playback and media failures
+
+### State-blind hardware play/pause for recording media
+
+- **State:** REJECTED by earlier live playback failures and preserved by the signed v2.0.302
+  built-in-speaker implementation.
+- **Temptation:** On recording start and stop, emit the hardware-equivalent Play/Pause media key.
+  It appears universal and avoids app-specific control.
+- **Why it fails:** Play/Pause is a toggle, not an owned pause or resume. If nothing was playing,
+  another app became current media, an earlier pause arrived late, or playback was already paused,
+  the stop-side toggle can start media or change the wrong source. Event acceptance also provides no
+  identity for the process or track VoiceInk++ actually paused.
+- **Use instead:** Snapshot the output device at recording start and reserve one exact playback
+  lease. For the MacBook built-in-speaker option, issue explicit Spotify pause/play only and retain
+  the exact Spotify PID plus track identity. Transfer that lease across rapid recordings, restore it
+  only when the final owner stops, and treat a reserved lease with no successfully paused source as
+  no action. Keep the existing explicit MediaRemote/app route for the separately enabled general
+  media setting; never add a HID-toggle fallback.
+- **Reconsider only if:** macOS exposes a documented, non-toggle pause and play API with stable source
+  identity that can prove the same owned source at both boundaries. A new generic hardware event is
+  not new evidence.
+
+## Voice-assistant listener-mute failures
+
+### Third-party loopback driver plus aggregate microphone
+
+- **State:** REJECTED before installation.
+- **Failure:** The proposed BlackHole transport was a third-party loopback driver. Ethan explicitly
+  rejected that architecture because prior system-audio loopback software audibly changed his
+  output and he requires this feature to have no speaker/output role at all. The installer was
+  closed before authorization; no driver file or package receipt was installed, the experimental
+  VoiceInk++ source was removed, and the Scarlett 18i8 remained the 48 kHz default input, output,
+  and system output.
+- **Rule:** Never bundle, install, or silently revive BlackHole or another third-party loopback for
+  VoiceInk++ listener suppression. Audio MIDI Setup aggregate devices only combine existing Core
+  Audio devices; they do not create a software-fed microphone or insert a per-app silence gate.
+- **Reconsider only if:** Ethan explicitly reverses the third-party-driver decision. A separate
+  VoiceInk++-owned Apple Core Audio input device may be investigated, but it must expose no usable
+  speaker/system-output route, preserve the physical source format where possible, and be physically
+  proven not to change the default or rendered output before it is installed or advertised.
+
+### ChatGPT Voice Accessibility polling and pointer fallback
+
+- **State:** REJECTED.
+- **Failure:** `AXPress` could report success against the ChatGPT Voice mute control without changing
+  its state. The attempted pointer fallback then moved and clicked Ethan's real mouse, interrupting
+  his work. No documented non-activating listener API was found, and the experimental consumer was
+  never installed in the accepted VoiceInk++ or YouTube-helper artifacts.
+- **Rule:** Keep assistant-listener suppression disconnected from RecordingActivityNotifier and the
+  YouTube playback bridge. Never poll ChatGPT Accessibility, synthesize pointer movement/clicks, or
+  globally mute macOS input; global input mute would silence VoiceInk++ itself.
+- **Reconsider only if:** The exact assistant exposes a documented background API that controls only
+  its own listener, the API is proven without focus or pointer theft on a disposable surface, and
+  Ethan explicitly asks to revive the integration. The combined policy would then be
+  `voiceInkRecordingActive || youtubeVideoPlaying`, but that policy is not an implementation.
+
+### Bare `launchctl submit` for a delayed ChatGPT relaunch
+
+- **State:** PROCESS FAILURE.
+- **Failure:** Three one-shot restart attempts submitted `sleep 3|4; open -a
+  /Applications/ChatGPT.app` as launchd jobs. Launchd inferred `KeepAlive`; when the originating turn
+  aborted before cleanup, each job repeatedly activated ChatGPT about every ten seconds and amassed
+  roughly 1,645 runs.
+- **Rule:** Never use bare `launchctl submit` for a one-shot GUI relaunch. Use one bounded awaited
+  delay followed by one launch when possible. If detachment is genuinely required, cleanup must be
+  explicit and the exact label must be proven absent afterward; preflight future restarts for stale
+  `com.ethansk.chatgpt-relaunch*` labels.
+- **Reconsider only if:** A tested wrapper provably self-removes before exit and an independent
+  postcondition confirms no submitted label or relaunch process remains after success, failure, or
+  task interruption.
+
+### VAD, playback state, music labels, or polished-text style as the sole intended-speaker gate
+
+- **State:** REJECTED as standalone hard gates.
+- **Failure:** VAD answers whether audio is speech, so it accepts a YouTube presenter. A music label
+  does not reject a spoken podcast or news clip and can conflict with Ethan speaking over music.
+  YouTube/media-playing state cannot distinguish simultaneous Ethan speech. A polished transcript
+  style is content evidence after the damage, not source or speaker identity, and Ethan may
+  intentionally dictate polished prose.
+- **Rule:** Never delete or withhold recording audio solely because one of these signals fires. Keep
+  the raw WAV and use them only as auxiliary scores around a proven digital playback reference/AEC
+  and explicit local target-speaker enrollment. Uncertain regions fail open until a labelled
+  physical corpus proves a stricter policy safe.
+- **Reconsider only if:** A replacement signal independently proves either the exact reproduced
+  playback source or Ethan's enrolled speaker identity, and overlap tests demonstrate that Ethan's
+  concurrent speech is retained.
+
+## Shortcut settings failures
+
+### Clearing persistent shortcut storage for capture without a transaction
+
+- **State:** REJECTED after physical v2.0.275 verification.
+- **Attempt:** `ShortcutRecorder` removed the existing stored shortcut before opening its local key
+  monitor so the old global binding could not fire while the user recorded a replacement.
+- **Observed failure condition:** Escape, another recorder starting, view disappearance, validation
+  failure, or model teardown canceled only the local capture. The earlier binding stayed deleted and
+  the cleared tombstone remained; Cancel Recording then silently appeared to have been reset to its
+  default Escape behavior.
+- **Use instead:** Snapshot the exact unset/cleared/stored persistence state, temporarily clear the
+  live binding, commit only a validated replacement, and restore the snapshot on every abandoned
+  path while the capture still owns the cleared state. Do not overwrite a newer import/settings
+  write, and do not re-validate a value that was already accepted before capture.
+- **Reconsider only if:** shortcut monitoring gains a proven non-persistent suspension API that
+  prevents the old global binding from firing during capture without mutating stored preferences.
+
+## Recorder HUD and feedback regressions
+
+### Assuming 3,000 characters fill every recorder display
+
+- **State:** REJECTED as a sizing assumption; removed from build 366 source (installed build 365 still had it at diagnosis).
+- **Failure:** `transcriptHeight` and `typingHeight` jump straight to their maximum above 3,000 characters. A Mini AppKit probe at the production 18pt font and 656pt preview width measured 919pt on both sides of the threshold, while the current branch jumped from 919pt to a 1450pt cap at 3,001 characters. Ethan's long-dictation screenshot shows the resulting excess space.
+- **Rule:** Preserve content-driven, screen-bounded growth without a count-based discontinuity. Cover speech and typing, scale and display bounds, and bounded measurement work; do not restore the rejected fixed-height layout.
+- **Reconsider only if:** the shortcut is gated by a proven actual-layout bound for the current width/font/scale, so crossing it cannot enlarge the panel beyond the measured content or introduce a jump.
+
+### Appending selection preview below speech inside one auto-scrolling live transcript
+
+- **State:** REJECTED in installed build 331 after Ethan selected text in Codex while recording.
+- **Failure:** The mini/notch HUD appended a potentially long selection as a permanent tail after speech. Every speech update scrolled to that tail, making live recognition appear absent even when provider partials arrived.
+- **Rule:** Never append an unbounded selection as a fixed tail. Keep selected excerpts compact and in their capture-time position between speech segments; scroll to the newest composed content on either speech or selection updates. Keep provisional words HUD-only. The original 56-point envelope was a build-333 constraint; Ethan explicitly replaced it with screen-bounded vertical growth on 2026-09-24.
+- **Reconsider only if:** a different layout proves the newest speech remains readable with long selections on both mini and notch panels during live updates.
+
+### Pinning only the latest selection above live speech
+
+- **State:** REJECTED in installed build 332 by Ethan's real recording with a second Codex highlight; the final pasted sequence was better but the black preview was not.
+- **Failure:** A separate 18-point top strip exposed only `latestSelectionPreview`. Each new highlight replaced the earlier one and appeared above speech rather than after what Ethan had said before selecting it. Passing ordering tests for final XML did not validate the HUD.
+- **Rule:** Publish the per-session reference list to the HUD and render bounded highlights in the same chronological flow as live speech. Re-scroll on both partial changes and newly captured selections; keep the final paste path independent. The original fixed-height requirement was superseded by Ethan's 2026-09-24 request for vertical growth.
+- **Reconsider only if:** Ethan explicitly requests a separate latest-selection summary in addition to, not instead of, the chronological preview.
+
+### Showing the HUD on only the activation monitor
+
+- **State:** REJECTED; multi-monitor mirroring accepted.
+- **Failure:** Ethan heard recording start but had to search another display for the bar.
+- **Rule:** Mini and notch panels mirror the same recording sessions on every connected `NSScreen`.
+  Per-screen notch geometry must remain local to each panel.
+
+### Routine “Recording” text above the waveform
+
+- **State:** REJECTED.
+- **Failure:** It added clutter and was mistaken for warning/status content.
+- **Rule:** Routine state belongs in waveform/icon affordances. Visible text above the bar is reserved
+  for real warnings/errors.
+
+### Hiding the locked destination when transcription begins
+
+- **State:** REJECTED.
+- **Cause:** Mini/notch views gated the icon on `.recording` even though the session still owned the
+  target during `.transcribing` and `.delivering`.
+- **Rule:** Keep the session's locked icon visible until success, failure, or cancellation; update it
+  immediately after a successful second-chance retarget.
+
+### Replacing a successful retarget icon change with a toast
+
+- **State:** REJECTED.
+- **Failure:** Text feedback was noisy and did not show which app the session now owned.
+- **Rule:** A successful retarget switches/pulses the locked icon. Use selectable warning text only
+  for a genuine failure.
+
+### Collapsing current focus and locked destination into one icon
+
+- **State:** REJECTED.
+- **Failure:** One icon cannot answer both “where am I working now?” and “where will this session
+  deliver?”
+- **Rule:** Mode is left of the waveform. On the right, current focus is first and locked destination
+  is second.
+
+### Removing the warning/second icon to make a regression look cleaner
+
+- **State:** REJECTED, observed around v2.0.222 compatibility work.
+- **Failure:** The UI stopped disclosing that exact delivery had no owned destination. Ethan asked for
+  the warning to be fixed, not hidden.
+- **Rule:** Keep both slots. Exact disabled or genuine capture failure shows the warning icon.
+
+### Treating the action pulse as persistent ownership
+
+- **State:** REJECTED.
+- **Rule:** The neon pulse is transient: Primary stop pulses current-focus; Next/latch pulses locked.
+  Persistent outline belongs only to a real frozen exact destination, never the live current icon or
+  an app-only preview.
+
+### Removing or obscuring the running version
+
+- **State:** REJECTED process/UI behavior.
+- **Rule:** The recorder displays `v<marketing>` on row one and `.<build>` on row two immediately left
+  of Stop. Every installed native binary receives a unique build number.
+
+## Recording and transcription concurrency failures
+
+### Accepting matching input format after an output-device round trip
+
+- **State:** REJECTED as sufficient prepared-capture validity or startup acceptance.
+- **Observed result:** During the build-321 incident, the Bose output disconnected immediately
+  before a fresh Scarlett 48 kHz setup. Repeated recordings then connected GPT Live but delivered
+  zero PCM; retained WAV metadata proved zero audio bytes. Restarting only VoiceInk++ restored
+  real partials and non-zero chunks. The output-switch script changes output, not microphone input.
+- **Rule:** Observe default input/output/system-output and device-list changes, force a fresh
+  capture generation after route changes, and require actual PCM after AUHAL start. Defer hardware
+  refresh during active/paused capture; never reset the shared audio system as an app workaround.
+  Reconsider format equality alone only with a documented lifecycle guarantee and a passing real
+  route-round-trip reproduction. A preparation log or unit-suite pass is not that evidence.
+
+### Treating AudioDeviceID plus availability as prepared-AUHAL validity
+
+- **State:** REJECTED for reusable capture preparation.
+- **Observed result:** Rekordbox changed the selected Scarlett 18i8 from 48 kHz to 44.1 kHz while
+  keeping the same device ID. VoiceInk++ reused its old prepared callback format, sent zero GPT Live
+  chunks, and retained only a 4096-byte WAV header. Returning the device to 48 kHz made the same
+  running app capture again, which isolated the stale-format boundary from provider and delivery.
+- **Rule:** Snapshot and re-read the selected AUHAL input stream format plus device nominal rate
+  before reuse. Treat a format notification as advisory, never write a preferred rate back to the
+  device, and never tear down AUHAL during active capture; rebuild while idle or immediately after
+  stop. Reconsider device-ID-only reuse only if Core Audio documents that a stable ID also freezes
+  the complete stream format for the lifetime of the prepared unit.
+
+### Streaming provisional text into destination-app ranges
+
+- **State:** SUPERSEDED by Ethan's corrected HUD-only real-time contract; never physically accepted.
+- **Attempt:** Commits `e19a123`, `459efb3`, and `2332296` added
+  `RealtimeInputDraftSession`, destination-owned draft ranges, live partial insertion/migration, and
+  cleanup so Soniox text could appear inside another app while Ethan was still speaking.
+- **Why it is rejected:** It creates a second mutable transcript inside a destination app, adds
+  focus/range/edit races to every streaming callback, and forces stop/destination changes to migrate
+  or remove provisional text before final delivery. Ethan explicitly corrected the earlier request:
+  partials belong only in VoiceInk++'s black recorder HUD, and stop performs one final paste plus
+  auto-send through the already-selected Primary or Next route. The draft commits were not installed
+  and physically accepted before that correction.
+- **Resolution:** Branch from the pre-experiment lineage, publish streaming partials only through
+  `RecordingSession.partialTranscript`, and keep exactly one `TranscriptionPipeline` final delivery.
+  Preserve `realtimeStreamingRemainsRecorderHUDOnlyUntilFinalDelivery`.
+- **Do not retry:** Do not restore the draft file, feature flag, destination ranges, migration, or
+  cleanup under another name. Reconsider only if Ethan explicitly reverses the HUD-only product
+  decision and a new proposal first proves disposable-app editing, route changes, cancellation,
+  overlapping recordings, and final-delivery deduplication without touching his active workspace.
+
+### Treating the retained queue tail as every in-flight job
+
+- **State:** REJECTED.
+- **Failure:** A serial queue that retains or cancels only its newest task does not prove that earlier
+  work has stopped. Reset could clear that tail while an older provider or model task was still
+  unwinding, then let a new generation reuse shared Whisper, FluidAudio, recorder, or streaming state.
+  Cancellation is cooperative, so clearing the reference is not a drain barrier.
+- **Resolution:** Retain every scheduled job until it exits, invalidate reset work with a monotonic
+  generation, and keep new-generation jobs behind a barrier that awaits all cancelled old-generation
+  tasks. Authorize delivery only when the immutable generation, queue sequence, recording-session ID,
+  transcription ID, and normalized audio URL still match the registry.
+- **Do not retry:** Never infer isolation from FIFO scheduling, one `tail` task, `Task.cancel()`, or an
+  emptied sessions array. Require a test where cancelled A remains suspended, B is enqueued after
+  reset, B cannot begin until A unwinds, and A can no longer authorize delivery.
+
+### Reading mutable global recording configuration inside delayed work
+
+- **State:** REJECTED.
+- **Failure:** A fast stop or delayed transcription task could read the later global Mode, model,
+  prompt, language, audio URL, recorder callback, or streaming session after another recording had
+  already changed it. Queue ordering alone cannot repair a job whose inputs were rebound before it
+  entered the queue.
+- **Resolution:** Reserve each start synchronously, freeze all request and streaming inputs into that
+  recording's job, and bind every stage to immutable lineage before any async boundary. A late
+  streaming `prepare` may install its callback only while the same recording still owns the recorder.
+- **Do not retry:** Do not let queued work reread `UserDefaults`, current Mode/model state, the current
+  recorder callback, or a mutable "latest" session to reconstruct earlier job state. Prove two
+  distinct jobs retain distinct identities, audio URLs, configurations, and injected results.
+
+### Preloading or cleaning shared models through another live session
+
+- **State:** REJECTED.
+- **Failure:** Serializing only stopped-recording pipelines was insufficient. B could speculatively
+  preload the process-wide Whisper/FluidAudio manager while A still transcribed, and A's completion
+  or B's failure/cancel path could tear that same manager down while the other session still owned it.
+- **Resolution:** Speculative preload is allowed only for the sole live session. Task-specific cleanup
+  requires both zero remaining sessions and current retiring lineage; an in-progress cleanup is a
+  start barrier. Full reset blocks new starts, cancels all jobs, awaits the reset-drain barrier, and
+  only then releases shared model resources.
+- **Do not retry:** Do not infer resource isolation from a serial pipeline if preload, failure, cancel,
+  or cleanup lives outside that queue. Require the shared-resource policy regression and an overlap
+  trace with no cleanup/preload crossing between A and B.
+
+### Replacing the recorder callback and draining startup audio from a separate array
+
+- **State:** REJECTED by concurrency analysis and focused interleaving tests on 2026-08-17.
+- **Temptation:** Let the recorder's first callback append PCM to an array, later replace that
+  callback with the live provider's sender, and copy or drain the array as a separate step.
+- **Why it fails:** Callback replacement and array drainage are not one atomic ordering boundary.
+  The audio thread can retain the old closure and append after the array was copied, losing that
+  chunk from realtime, or a new live callback can send a later chunk before the copied startup
+  chunks finish replaying. A lock around only the array does not serialize callback ownership.
+- **Use instead:** Keep one recording-owned `RecordingStartupAudioRouter` callback installed for
+  the whole recording. Its single lock owns both the bounded startup buffer and the live sink;
+  activation replays every older chunk while holding that boundary, then exposes the sink to newer
+  chunks. Any overflow rejects realtime and falls back to the complete saved WAV.
+- **Reconsider only if:** The recorder itself exposes one proven atomic operation that replaces the
+  callback and drains all earlier PCM in order, with concurrent tests for retained old closures and
+  replay/live overtaking. Do not recreate the two-step array design under another helper name.
+
+## Transcription provider configuration failures
+
+### Scoping recent-transcript context by resolving the saved destination
+
+- **State:** REJECTED by design on 2026-08-16, before implementation.
+- **Temptation:** Make the recent-dictation prompt context "exact" by asking which app,
+  window, chat, or document each earlier transcript was delivered into, so context never
+  crosses conversations.
+- **Why it fails:** Only the two Next routes own an exact input; Primary deliberately owns
+  neither an exact input nor a destination Mode. Reading a destination merely to narrow a
+  prompt would either invent a fourth source of destination state or push Primary through an
+  Accessibility resolver, breaking the Primary isolation boundary in `AGENTS.md`. Chromium,
+  Electron, Telegram, and Notion also reuse wrappers across logical contexts, so a resolved
+  wrapper would not have proven "same chat" even if it were allowed.
+- **Use instead:** Build 323 removes the former same-Mode/recency History fallback entirely;
+  neither boundary proves conversation identity. Build 315 introduced a stronger boundary for a frontmost Codex host only:
+  the current Codex process's primary selected-view event plus the exact matching local session
+  JSONL. This is app-owned conversation identity, not a paste destination. Say plainly in the
+  setting's help text that History is never sent and unknown task identity means no chat context. Keep the
+  whole feature opt-in and off by default. The context source must continue to reference no
+  destination, focus, paste, or `AXUIElement` symbol.
+- **Reconsider only if:** Ethan explicitly asks for stronger scoping *and* a non-destination,
+  non-Accessibility signal proves conversation identity. Never reuse `RecordingPasteTarget`,
+  `FocusLockService`, or any exact-input resolver for prompt scoping.
+
+### Inferring the active Codex task from recency, title, or shared Mode
+
+- **State:** REJECTED by implementation audit on 2026-09-01.
+- **Temptation:** Pick the newest Codex session file or database row, match a visible task title,
+  or assume recent VoiceInk dictations with the same Mode belong to the Codex task receiving the
+  next recording.
+- **Why it fails:** Codex tasks can run and update concurrently, titles are mutable and non-unique,
+  and one VoiceInk Mode intentionally spans apps and conversations. Any of those heuristics can
+  silently send unrelated conversation text to OpenAI as prompt context.
+- **Use instead:** Only while the verified Codex host is frontmost, read the newest `active=true`
+  event for the current Codex process's visible primary renderer. Require its valid thread UUID to
+  resolve to exactly one date-bounded native session file, then parse only bounded user/assistant
+  message text. A later primary `active=false`, missing/ambiguous file, unreadable tail, or any
+  identity failure must produce no Codex messages. Build 323 sends only static prompt plus
+  Vocabulary then; the earlier History fallback is retired, not an identity-recovery mechanism.
+  Never activate Codex, inspect its Accessibility tree, scrape the screen, or log thread/message
+  content for this feature.
+- **Reconsider only if:** Codex replaces the selected-view event/session format with a documented
+  local active-task API. Update the exact parser and fail-closed tests before accepting that API;
+  do not substitute a recency or title heuristic during migration.
+
+### Assuming final Codex replies always have a channel field
+
+- **State:** REJECTED by live build-323 follow-through on 2026-09-05.
+- **Attempt:** Exclude assistant progress by requiring `payload.channel == "final"`.
+- **Why it fails:** Current native rollout metadata uses `phase=final_answer` and
+  `phase=commentary`, with no `channel` field. Channel-only synthetic tests passed but
+  real final replies were excluded too; the app remained functional with user context only.
+- **Use instead:** Build 324 accepts explicit native `phase=final_answer`, or the legacy
+  `channel=final` only when phase is absent. Reject malformed, unknown and contradictory
+  metadata. Test fixtures must follow the observed producer schema, not a guessed API shape.
+- **Reconsider only if:** A verified new Codex producer changes that schema. Inspect metadata
+  keys/enum values without exposing chat text and update the exact parser plus fixtures.
+
+### Appending recent-transcript context to the shared provider prompt
+
+- **State:** REJECTED by design on 2026-08-16, before implementation.
+- **Temptation:** Compose the recent-dictation block straight into `TranscriptionPrompt`, or
+  into `TranscriptionRequestContext.prompt`, because every provider already reads that field.
+- **Why it fails:** `TranscriptionPrompt` is the single carrier for AssemblyAI, Soniox,
+  Deepgram, Speechmatics, Whisper, and OpenAI-compatible custom endpoints, and the custom
+  endpoint additionally encodes its `VOICEINK_CUSTOM_VOCABULARY` block there. Writing context
+  into it would silently change every provider's request bytes, re-enable contextual prompting
+  on providers deliberately left prompt-free, and interact with the custom vocabulary carrier.
+  `WhisperPrompt.init()` also rewrites an empty English `TranscriptionPrompt` on launch, so it
+  is not a safe place to store derived text.
+- **Use instead:** Keep `prompt` as the untouched legacy value and add a separate
+  `promptWithRecentContext` that only `model.provider == .openAI` reads. `nil` means "send the
+  legacy bytes", which is also what an over-cap or ineligible composition returns.
+- **Reconsider only if:** Another provider's contextual prompt is separately audited, capped,
+  and physically tested, and Ethan asks for it on that provider.
+
+### Treating an OpenAI transcription prompt as a numeral-format switch
+
+- **State:** REJECTED by a physical `gpt-live-transcribe` test on 2026-08-01.
+- **Temptation:** Put examples such as “one, two, three” to “1, 2, 3” in
+  `TranscriptionPrompt` and describe the result as an OpenAI number-formatting setting.
+- **Observed failure condition:** OpenAI accepted the real `prompt` field, but the live transcript
+  still returned written number words. The documented prompt is contextual guidance, not a
+  guaranteed formatter, and the transcription API exposes no numeral-normalization boolean.
+- **Use instead:** Leave provider settings unchanged unless context itself is useful. If Ethan
+  requests deterministic digit symbols, implement an explicit opt-in post-transcription formatter
+  with tests for lists, uninterrupted digit strings, ordinals, quantities, dates, times, versions,
+  currencies, and ambiguous prose before enabling it.
+- **Reconsider only if:** OpenAI documents a dedicated numeral-normalization control and a live API
+  test proves the exact spoken-number cases, or a bounded VoiceInk++ formatter is implemented and
+  physically accepted.
+
+### Opening GPT Live Transcribe as the Realtime session model
+
+- **State:** REJECTED by the live API on 2026-07-29.
+- **Temptation:** Connect to `wss://api.openai.com/v1/realtime?model=gpt-live-transcribe`
+  because the provider selected that model for live transcription.
+- **Observed failure condition:** The socket accepted authentication, but `session.update` failed:
+  `gpt-live-transcribe` is a transcription model and cannot be the Realtime session model.
+- **Do not substitute:** Opening the socket with `model=gpt-realtime-2.1` also fails because that
+  creates a realtime conversation session, which rejects a transcription-type session update.
+- **Use instead:** Connect to `wss://api.openai.com/v1/realtime?intent=transcription`; put
+  `gpt-live-transcribe` only in `audio.input.transcription.model`. Require the synthetic provider
+  probe to observe `session.updated`, at least one delta, and a non-empty completed event.
+- **Reconsider only if:** OpenAI's official protocol and a real API probe both prove a new connection
+  contract; changing only model availability or the in-session transcription payload is not enough.
+
+### Clearing only `TranscriptionPrompt` before relaunch
+
+- **State:** REJECTED.
+- **Temptation:** Write an empty `TranscriptionPrompt` preference before restarting VoiceInk++ so
+  AssemblyAI establishes a no-context baseline.
+- **Observed failure condition:** `WhisperPrompt.init()` always calls
+  `updateTranscriptionPrompt()`. For English, an empty value is replaced on launch by the inherited
+  stock greeting `Hello, how are you doing? Nice to meet you.`, so clearing only the derived
+  preference does not persist and silently enables irrelevant AssemblyAI contextual prompting.
+- **Use instead:** Back up preferences and store an explicit English custom prompt whose raw value
+  is non-empty whitespace. `WhisperPrompt` therefore selects it instead of the stock greeting,
+  while `AssemblyAIStreamingProvider` trims it to `nil` and omits the prompt. Verify the saved raw
+  prompt trims to zero characters. A future source fix may add a first-class explicit-empty state.
+- **Reconsider only if:** `WhisperPrompt` distinguishes an explicitly blank custom prompt from a
+  missing prompt, or AssemblyAI prompting is deliberately enabled with relevant reviewed context.
+
+### Running a saved-recording AssemblyAI comparison beside live dictation without contention recovery
+
+- **State:** REJECTED.
+- **Temptation:** Stream all saved recordings sequentially and assume closing each harness socket
+  is enough to avoid provider concurrency limits while Ethan continues using VoiceInk++.
+- **Observed failure condition:** The first 20-recording run reached sample 12, overlapped a real
+  VoiceInk++ AssemblyAI session, and failed with `Unauthorized Connection: Too many concurrent
+  sessions`; without resume it would have resent and recharged every prior recording.
+- **Use instead:** Await socket closure, yield with bounded backoff only for that exact transient
+  error, and resume successful row IDs from the same mode-0600 report. Live dictation always wins
+  contention; never stop or alter VoiceInk++ to make a benchmark finish.
+- **Reconsider only if:** The account's verified concurrency contract changes and repeated
+  simultaneous live-plus-harness sessions complete without rejection.
+
+### Copying Deepgram's `en-GB` locale into Soniox
+
+- **State:** REJECTED.
+- **Temptation:** Soniox V5 recognizes English, so using Deepgram's regional `en-GB` value appears
+  to be a way to configure Ethan's UK accent.
+- **Observed failure condition:** Soniox's official language-hints and supported-languages
+  documentation publishes ISO language codes and lists English only as `en`; it exposes no accent
+  or regional-English parameter. VoiceInk++'s `SonioxProvider.languageCodes` likewise contains
+  `en` but not `en-GB`, so model-language validation cannot preserve the regional value.
+- **Use instead:** Keep Soniox on strict `en`. The multilingual English model handles accents
+  internally. Soniox context may describe a domain, location, or audience, but arbitrary context
+  is not a documented accent selector and must not be presented as one.
+- **Reconsider only if:** Soniox officially documents a regional-English/accent parameter or a
+  supported `en-GB` code for both `stt-rt-v5` and `stt-async-v5`, and the pinned LLMkit adapter
+  transmits and verifies that exact setting.
+
+## Verification failures and false confidence
+
+### Unit tests passed, real app failed
+
+- **State:** REPEATED PROCESS FAILURE.
+- v2.0.208 passed 29/29 tests while ChatGPT paste succeeded and Send failed.
+- v2.0.224 passed 56 named tests while the live composer still failed capture with an incomplete
+  fingerprint.
+- Mocked AX actions proved guard logic, not Electron handling.
+- **Rule:** The required final evidence is a real disposable surface trace plus Ethan's observed
+  result. Keep test claims scoped to what the test actually proves.
+
+### Compilation mistaken for test execution
+
+- **State:** REPEATED PROCESS FAILURE.
+- Xcode's TestManager frequently built app/tests and then stalled without naming a test. XCTest can
+  also print a zero-test preamble before the Swift Testing cases execute.
+- Build 335's focused `-only-testing:VoiceInkTests/VoiceInkTests/testName` filters compiled but
+  selected zero Swift Testing cases. The same names with `testName()` executed and passed.
+- **Rule:** Canonical Xcode action first. If it stalls, preserve evidence and run the already-built
+  bundle directly with correct app/framework paths. Require every expected test name and a real pass
+  count. For this Swift Testing suite, include `()` in each focused test selector; reconsider that
+  spelling only if a later Xcode-discovered identifier proves a different form executes the case.
+
+### Reusing a stale direct-xctest bundle
+
+- **State:** REJECTED.
+- **Failure:** A passing old bundle can be reported against newer source.
+- **Rule:** Prove the bundle was freshly built from the exact candidate. Record source commit/tree,
+  derived-data path, and named output.
+
+### Logs treated as destination proof
+
+- **State:** REJECTED.
+- **Failure:** `commandPosted`, `AXError.success`, or `targetCaptured=true` was repeatedly reported as
+  working when the destination did nothing.
+- **Rule:** Logs establish route/attempt. Surface-specific verification and user observation establish
+  handling. Preserve `unreadable` as indeterminate.
+
+### User interaction treated as contradictory noise
+
+- **State:** REJECTED diagnostic behavior.
+- **Failure:** Ethan was actively using the Mac; agents interpreted legitimate focus changes as
+  inconsistent results or “repaired” them by stealing focus back.
+- **Rule:** Check current logs after each physical reproduction. Treat user input as real. Prefer
+  read-only evidence and announce any unavoidable focus-changing test.
+
+## Build, signing, installation, and rollback failures
+
+### Treating v2.0.207/v2.0.208 as an accepted cumulative rewrite
+
+- **State:** REJECTED and rolled back.
+- **Attempt:** Replace capture, focus, insertion, Terminal identity, semantic Send, verification, and
+  fallback behavior together, then infer release readiness from 27/29 named tests and successful
+  signing/install steps.
+- **Observed result:** Recorder start/stop latency regressed, background ChatGPT Send remained
+  unavailable, foreground Return could mutate rather than submit, repeated private focus probes
+  destabilized/restarted ChatGPT, and the app matrix was never physically proved.
+- **Resolution:** `b2aeaa2` restored native source exactly to the v2.0.206 `96e494e` baseline. Later
+  work may reuse an individual safety constraint only after it is independently re-proven.
+- **Do not retry:** Never resurrect the whole rewrite, cherry-pick it as a block, or cite its test
+  count as accepted behavior.
+
+### Editing source without replacing the running app
+
+- **State:** REPEATED PROCESS FAILURE.
+- **Failure:** UI changes appeared while delivery changes did not, or agents reasoned from source that
+  was not the installed binary. Ethan repeatedly had to ask whether he was on the new version.
+- **Rule:** Distinguish source, committed, built, signed, transferred, installed, launched, and
+  live-confirmed. Never collapse these states.
+
+### Reusing build 203
+
+- **State:** REJECTED.
+- **Failure:** `bf757cf` through `1eabb1b` and additional installed variants shared build 203 despite
+  materially different delivery behavior. Later rollback searches by “the working 203” were
+  ambiguous.
+- **Rule:** Increment `CURRENT_PROJECT_VERSION` for every different installed binary and verify the
+  visible badge plus checksum/CDHash.
+
+### Re-signing the outer app without Automation entitlement
+
+- **State:** REJECTED.
+- **Failure:** A generic outer signature could pass nested verification yet silently strip
+  `com.apple.security.automation.apple-events`, breaking Terminal/iTerm automation.
+- **Rule:** Reapply `VoiceInk/VoiceInk.local.entitlements`, then require deep/strict verification and
+  inspect the outer entitlement.
+
+### Installing a merely ad-hoc-signed Release bundle
+
+- **State:** PROCESS FAILURE, proven by build 336's first MacBook launch on 2026-09-24.
+- **Attempt:** Archive the Mini's ad-hoc `xcodebuild build` output after deep/strict signature and
+  outer-entitlement checks, then install it directly.
+- **Observed result:** `open -g` returned success, but no process survived. The crash report named
+  `DYLD Library missing` for `whisper.framework` because library validation rejected its signer
+  identity in the outer process.
+- **Rule:** On the Mini, sign the outer app and nested frameworks with the established stable
+  `VoiceInk Local Signing` identity, explicitly retaining local entitlements, before archiving.
+  Verify both authorities and an actual persistent MacBook PID after installation. Reconsider
+  ad-hoc distribution only with a disposable MacBook launch proving nested framework loading,
+  TCC persistence, and the same release boundary; deep/strict validity alone is insufficient.
+
+### Raw recursive app-bundle transfer
+
+- **State:** REJECTED.
+- **Risk:** Bundle metadata, symlinks, or signatures can be damaged.
+- **Rule:** Transfer a signed `.app` as an archive stream and verify version, signature, CDHash, and
+  entitlement after extraction.
+
+### Packaging the app from test-action DerivedData
+
+- **State:** REJECTED by build-315 release inspection on 2026-09-01.
+- **Failure:** The app host produced by `xcodebuild test` was deep/strict-signable but contained the
+  injected unit-test bundle plus XCTest/Testing frameworks and support dylibs. Passing tests and a
+  valid signature therefore did not make that host a clean install artifact.
+- **Rule:** Run a separate ordinary `xcodebuild build` in a fresh DerivedData directory for the
+  install candidate. Before signing or archiving it, fail if the app contains any `*.xctest` item
+  or XCTest-named payload. Never copy the app from a test action's Products directory into the
+  release merely because its executable and build number match.
+
+### Building on the live MacBook
+
+- **State:** REJECTED workflow.
+- **Rule:** Build/test on the Mac Mini. Use the MacBook only for signed install verification and safe
+  real-surface traces. Do not touch the Mini's dirty canonical checkout; use a disposable worktree.
+
+### Assuming a Mini/OpenClaw gateway meant task progress
+
+- **State:** PROCESS FAILURE.
+- **Failure:** The gateway could be running while the delegated VoiceInk task had failed, was waiting,
+  used the wrong model/thinking setting, or was not reporting to Telegram. Repeated scheduled checks
+  consumed time without establishing implementation progress.
+- **Rule:** Distinguish gateway health, agent reachability, active task state, candidate Git state,
+  monitor runs, and an authoritative MacBook commit. The Mini is appropriate for build/test, not as a
+  substitute for live Mac UI reproduction.
+
+### Restarting during an active recording
+
+- **State:** REJECTED and destructive.
+- **Observed result:** A long in-progress dictation disappeared when VoiceInk++ was restarted.
+- **Rule:** Before quit/install, inspect active recording/transcription state, preserve recoverable
+  audio/history, send the five-second native warning, wait, and quit cooperatively. If state is
+  uncertain, defer the restart.
+
+### Broad cleanup on a nearly full Mini
+
+- **State:** REJECTED.
+- **Failure/risk:** Many historical DerivedData directories filled the Mini, but they may belong to
+  other work. Broad deletion would violate preservation rules.
+- **Rule:** Remove only disposable artifacts created by the current run, with concrete paths and
+  evidence. Never clean the canonical dirty checkout.
+
+### Installing from a stale Mini sync
+
+- **State:** PROCESS FAILURE.
+- **Failure:** A candidate could compile from an earlier rsync while newer local fixes remained only on
+  the MacBook.
+- **Rule:** Pin the exact Git commit/tree or transfer a small Git bundle, then verify the Mini worktree
+  before building. A successful build of stale source is not validation.
+
+## Trace and diagnostic failures
+
+### Ad-hoc `log stream` children
+
+- **State:** SUPERSEDED.
+- **Failure:** Plain background/nohup streams were reaped when the bounded shell exited, silently
+  leaving a physical test untraced or creating orphan processes.
+- **Resolution:** Use `.agents/skills/learnings/scripts/live-delivery-trace.sh` with its launchd-owned
+  runner.
+
+### Logging content to make debugging easier
+
+- **State:** REJECTED.
+- **Rule:** Detailed does not mean invasive. Retain allowlisted routing metadata only. Never log the
+  transcript, prompt, clipboard, selected text, audio, terminal buffer, chat text, or URL. Daily trace
+  files self-prune after seven complete days and debug mode must be stopped when the investigation is
+  genuinely closed.
+
+### Changing mechanisms before reading the newest reproduction
+
+- **State:** REPEATED PROCESS FAILURE.
+- **Failure:** Several iterations fixed the previous theory while Ethan's newest trace showed a
+  different route, app executable, or failure stage.
+- **Rule:** At the start of an investigation and after every reported physical reproduction, inspect
+  installed version/build/PID and newest trace before another edit. Correlate button route, target,
+  Mode, focus boundary, paste, action, latency, verifier, and user result.
+
+## What succeeded and therefore must not be lost
+
+This file is mainly negative evidence, but the following accepted islands explain what superseded
+the failed attempts:
+
+- `cba45ba` established transcription-time target replacement.
+- `1eabb1b` made target input plus full Mode/auto-send atomic and was repeatedly live-confirmed for
+  the second-chance route.
+- `bed22b7` removed the incorrect Next-toggle interpretation.
+- Multi-monitor recorder mirroring, quiet routine UI, separate current/locked icons, persistent locked
+  ownership, action pulses, selectable errors, and visible unique build badge are product contracts.
+- `b2aeaa2` / native `96e494e` is the documented v2.0.206 rollback floor for exact-location paste,
+  not proof of universal background Return.
+- `fb3ead7` is the live-proven v2.0.236 uninterrupted Primary compatibility route.
+- `5475ef2` is the reproducible v2.0.243 checkpoint: Ethan confirmed normal Primary current-input
+  delivery works. Its Codex and Telegram latch routes are not accepted. Preserve its Primary path and
+  one-shot indeterminate-verification behavior while app-specific latch work continues.
+- `99a596b` is the signed v2.0.245 Telegram checkpoint: on the pinned 12.9/282526 Saved Messages
+  surface, both background Next routes verified exact insertion, one Telegram-only HID Return,
+  composer clear/reset, and no focus theft. Do not generalize it to another tuple, chat identity
+  mechanism, app, or ordinary process-targeted Return.
+- Privacy-bounded rolling traces and installed-build identity markers are accepted diagnostic
+  infrastructure.
+
+## Still unresolved or not broadly proven
+
+Future agents must state these gaps rather than extrapolate:
+
+- Reliable non-activating exact background Send for Codex/ChatGPT. v2.0.243 accepts only the normal
+  Primary route; its latest `focusedDuringTranscription` latch attempt inserted but did not submit.
+- The user-reported lag/load sensitivity of v2.0.243; require a matching failed trace before deciding
+  whether capture, overlap, host responsiveness, or another timing boundary is at fault.
+- Exact tab/task preservation when Chromium does not expose a readable semantic scope.
+- Telegram foreground Primary and wrong-chat fail-closed behavior on v2.0.245; both background Next
+  routes are accepted only for the pinned 12.9/282526 Saved Messages visual-identity boundary.
+- Claude Code across Terminal, iTerm, Ghostty, Warp, VS Code, and Cursor as distinct hosts.
+- Google Chrome exact tab/editor delivery beyond the specifically observed scenarios.
+- Notion selected card/property/block delivery without rich-content damage.
+- The v234–v236 authenticated SkyLight experiment.
+- Universal verification of a submitted action when a host immediately replaces an unreadable
+  composer. Indeterminate must remain honest and one-shot.
+
+## Gate for reconsidering a rejected mechanism
+
+A future agent may revisit a rejected mechanism only when all of these are written down first:
+
+1. Which exact ledger entry is being revisited.
+2. What new OS, app, app-build, API, or evidence changes the proven failure condition.
+3. The narrow route and surface; never “all Electron apps” or “all inputs.”
+4. The disposable target and how Ethan's active workspace will remain untouched.
+5. The one irreversible action and why no fallback can double-submit.
+6. The surface-specific verifier.
+7. The focus/no-theft boundary.
+8. The regression tests and exact live trace markers.
+9. The new unique VoiceInk++ build number and rollback identity.
+10. The criterion for abandoning the experiment without folding it into accepted docs.
+
+If those answers are absent, use the current accepted path or fail closed. Do not rediscover this
+week by iteration.

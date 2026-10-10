@@ -1,0 +1,195 @@
+import SwiftUI
+import AppKit
+
+struct AppNotificationView: View {
+    let title: String
+    let type: NotificationType
+    let duration: TimeInterval
+    let onClose: () -> Void
+    let onTap: (() -> Void)?
+    var actionButton: (label: String, action: () -> Void)? = nil
+    var secondaryActionButton: (label: String, action: () -> Void)? = nil
+    var copyText: String? = nil
+    
+    @State private var progress: Double = 1.0
+    @State private var timer: Timer?
+
+    enum NotificationType {
+        case error
+        case warning
+        case info
+        case success
+
+        var iconName: String {
+            switch self {
+            case .error: return "xmark.octagon.fill"
+            case .warning: return "exclamationmark.triangle.fill"
+            case .info: return "info.circle.fill"
+            case .success: return "checkmark.circle.fill"
+            }
+        }
+
+        var iconColor: Color {
+            switch self {
+            case .error: return AppTheme.Status.error
+            case .warning: return AppTheme.Status.warning
+            case .info: return AppTheme.Status.info
+            case .success: return AppTheme.Status.success
+            }
+        }
+    }
+
+    var body: some View {
+        ZStack {
+            HStack(alignment: .center, spacing: 12) {
+                // Type icon
+                Image(systemName: type.iconName)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(type.iconColor)
+                    .frame(width: 20, height: 20)
+
+                // Single message text
+                Text(title)
+                    .font(.system(size: 12))
+                    .fontWeight(.medium)
+                    .foregroundColor(.white)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    // Delivery errors often contain the exact failed route. Keep the
+                    // transient HUD useful as evidence: double-click/drag selection
+                    // and the context-menu copy action work without activating the
+                    // target app that VoiceInk++ deliberately left in the background.
+                    .textSelection(.enabled)
+                    .contextMenu {
+                        Button(String(localized: "Copy")) {
+                            // Match the visible Copy button: delivery recovery
+                            // copies the message; ordinary errors copy diagnostics.
+                            NotificationManager.makeCopyAction(title: title, copyText: copyText).action()
+                        }
+                    }
+                
+                Spacer()
+
+                if let secondaryActionButton {
+                    // Copy preserves both the diagnostic and the recovery action;
+                    // only Try again or Close consumes this failure notification.
+                    Button(secondaryActionButton.label, action: secondaryActionButton.action)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white.opacity(0.8))
+                        .buttonStyle(PlainButtonStyle())
+                }
+
+                if let actionButton {
+                    Button(action: {
+                        actionButton.action()
+                        onClose()
+                    }) {
+                        Text(actionButton.label)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.white.opacity(0.14))
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.white.opacity(0.6))
+                }
+                .buttonStyle(PlainButtonStyle())
+                .frame(width: 16, height: 16)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+        .frame(minWidth: 220, maxWidth: 750, minHeight: 44)
+        .background(
+            RoundedRectangle(cornerRadius: AppTheme.Radius.card, style: .continuous)
+                .fill(.clear)
+                .background(
+                    ZStack {
+                        // Base dark background
+                        Color.black.opacity(0.9)
+                        
+                        // Subtle gradient overlay
+                        LinearGradient(
+                            colors: [
+                                Color.black.opacity(0.95),
+                                Color(red: 0.15, green: 0.15, blue: 0.15).opacity(0.9)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        
+                        // Very subtle visual effect for depth
+                        VisualEffectView(material: .hudWindow, blendingMode: .withinWindow)
+                            .opacity(0.05)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.card, style: .continuous))
+                )
+        )
+        .overlay(
+            // Subtle inner border
+            RoundedRectangle(cornerRadius: AppTheme.Radius.card, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5)
+        )
+        .overlay(
+            VStack {
+                Spacer()
+                GeometryReader { geometry in
+                    Rectangle()
+                        .fill(type.iconColor.opacity(0.8))
+                        .frame(width: geometry.size.width * max(0, progress), height: 2)
+                        .animation(.linear(duration: 0.1), value: progress)
+                }
+                .frame(height: 2)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.card, style: .continuous))
+        )
+        .onAppear {
+            startProgressTimer()
+        }
+        .onDisappear {
+            timer?.invalidate()
+        }
+        // Do not install an inert parent tap recognizer for ordinary errors: it can
+        // swallow the double-click/drag gestures used by SwiftUI text selection.
+        .modifier(OptionalNotificationTapModifier(onTap: onTap, onClose: onClose))
+    }
+    
+    private func startProgressTimer() {
+        let updateInterval: TimeInterval = 0.1
+        let totalSteps = duration / updateInterval
+        let stepDecrement = 1.0 / totalSteps
+        
+        timer = Timer.scheduledTimer(withTimeInterval: updateInterval, repeats: true) { _ in
+            if progress > 0 {
+                progress = max(0, progress - stepDecrement)
+            } else {
+                timer?.invalidate()
+                timer = nil
+            }
+        }
+    }
+}
+
+private struct OptionalNotificationTapModifier: ViewModifier {
+    let onTap: (() -> Void)?
+    let onClose: () -> Void
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let onTap {
+            content.onTapGesture {
+                onTap()
+                onClose()
+            }
+        } else {
+            content
+        }
+    }
+}

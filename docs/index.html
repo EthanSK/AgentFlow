@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#e5eae8">
+  <meta name="description" content="Speech to text for Mac that pastes your words with the text you highlight and the paths of screenshots you take.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Agent Flow">
+  <meta property="og:description" content="Speech to text for Mac that pastes your words with the text you highlight and the paths of screenshots you take.">
+  <meta property="og:url" content="https://ethansk.github.io/AgentFlow/">
+  <meta property="og:image" content="https://ethansk.github.io/AgentFlow/assets/social-card.png?v=3">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Agent Flow recorder with spoken words, a cyan Codex selection, a purple screenshot reference, and a mint waveform">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://ethansk.github.io/AgentFlow/assets/social-card.png?v=3">
+  <link rel="canonical" href="https://ethansk.github.io/AgentFlow/">
+  <link rel="icon" href="assets/agentflow-icon.png">
+  <link rel="apple-touch-icon" href="assets/agentflow-icon-512.png">
+  <link rel="manifest" href="site.webmanifest">
+  <link rel="stylesheet" href="styles.css?v=379-typing-line">
+  <script>
+    // Pre-hide the demo before first paint so autoplay never flashes the finished
+    // example. If script.js hasn't taken over within 2.5 s, show everything.
+    (function (root) {
+      if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      root.classList.add("demo-armed");
+      window.setTimeout(function () {
+        if (!window.voiceInkDemoReady) root.classList.remove("demo-armed");
+      }, 2500);
+    }(document.documentElement));
+  </script>
+  <title>Agent Flow</title>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="wrap top">
+    <a class="brand" href="./" aria-label="Agent Flow home">
+      <img src="assets/agentflow-icon.png" width="34" height="34" alt="">
+      <span>Agent Flow</span>
+    </a>
+    <nav class="top-nav" aria-label="Site">
+      <a href="#download">Download</a>
+      <a href="#video">Video</a>
+      <a href="#setup">Setup</a>
+      <a href="#controls">Controls</a>
+      <a class="top-github" href="https://github.com/EthanSK/AgentFlow">GitHub <span aria-hidden="true">↗</span></a>
+    </nav>
+  </header>
+
+  <main id="main" tabindex="-1">
+    <!--
+      Real-time context demo. The finished example below is the complete, readable
+      content with or without JavaScript. script.js only hides and re-reveals these
+      existing parts in order (data-at is milliseconds from start); it holds no copy.
+      Example text is invented. Never put Ethan's real selections or screenshot paths here.
+      Serialized tags match LiveSelectionReference. This demo deliberately uses
+      a generic selection from TextEdit; Codex keeps its own task-aware tag.
+      The recorder's typing line shows "Click to type" until the typed name appears; the
+      same typed words close the Codex paste. It matches the promo video's example.
+    -->
+    <section class="hero" aria-labelledby="hero-title" data-demo-root data-stop-at="3050">
+      <div class="wrap">
+        <div class="hero-head">
+          <h1 id="hero-title">Speech to text, with your <span class="g-select">highlights</span> and <span class="g-shot">screenshots</span></h1>
+          <div class="hero-aside" id="download">
+            <p class="lede">Highlight text or take a screenshot while you talk. Agent Flow pastes your words with each reference near what you were saying, so your agent can see what you were looking at.</p>
+            <p class="actions"><a class="button" href="https://github.com/EthanSK/AgentFlow/releases/download/v2.0.366/AgentFlow-v2.0.366-mac-universal.zip">Download for Mac <span aria-hidden="true">↓</span></a></p>
+            <p class="release-note">v2.0.366 · macOS 14.4+ · Apple silicon and Intel<br>Developer ID signed and Apple notarized.</p>
+            <p class="source-link"><a href="#build">Build from source</a></p>
+          </div>
+        </div>
+
+        <figure class="demo" data-demo>
+          <div class="pane">
+            <!--
+              Abstract Mac screen, so the recorder reads as a floating macOS panel rather
+              than a web chat box. Everything except the HUD is decorative and hidden from
+              assistive technology: the HUD's own text already names the selection. The
+              window reuses promo/scene.html's invented Rows.swift example, and the menu-bar
+              clock matches the example screenshot's timestamp. Keep one HUD only; it stays
+              the page's only black object. The window is a picture, not a control: no
+              hover, focus or click behaviour. The HUD is bottom-centred above a decorative
+              Dock and overlaps only the document's blank lower page, never the highlighted
+              line. The wallpaper and Dock establish macOS, not extra app controls.
+              The cyan wash is the selection that
+              the HUD's Selected Text cue captures; its data-at reveals it just before
+              that cue, and it is fully drawn without JavaScript or with reduced motion.
+            -->
+            <div class="mac">
+              <div class="mac-menubar" aria-hidden="true">
+                <span class="mac-app">TextEdit</span>
+                <span>File</span>
+                <span>Edit</span>
+                <span class="mac-mid">Format</span>
+                <span class="mac-mid">View</span>
+                <span class="mac-wide">Window</span>
+                <span class="mac-wide">Help</span>
+                <span class="mac-status">
+                  <i class="mac-mic"></i>
+                  <svg class="mac-mid" viewBox="0 0 16 12" width="15" height="11"><path d="M1.6 4.6a9 9 0 0 1 12.8 0M3.8 6.8a6 6 0 0 1 8.4 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="8" cy="9.6" r="1.6" fill="currentColor"/></svg>
+                  <svg viewBox="0 0 25 12" width="22" height="11"><rect x="0.75" y="0.75" width="21" height="10.5" rx="3" fill="none" stroke="currentColor" stroke-opacity="0.45" stroke-width="1.5"/><rect x="2.6" y="2.6" width="14" height="6.8" rx="1.6" fill="currentColor"/><path d="M23.4 4.3v3.4" stroke="currentColor" stroke-opacity="0.45" stroke-width="1.6" stroke-linecap="round"/></svg>
+                  <span><span class="mac-date">Thu 24 Sep </span>10:41</span>
+                </span>
+              </div>
+              <div class="mac-screen">
+                <div class="mac-window" aria-hidden="true">
+                  <div class="mac-titlebar"><span class="mac-lights"><i></i><i></i><i></i></span>Rows.swift</div>
+                  <pre class="mac-doc">struct RowStore {
+&#9;let cache: Cache
+
+&#9;<span class="mac-select" data-at="600">func loadRows(from cache: Cache)</span> -&gt; [Row] {
+&#9;&#9;cache.rows.filter { !$0.isHidden }
+&#9;}
+}</pre>
+                </div>
+                <div class="hud">
+                  <p class="hud-text">
+                    <span class="step" data-at="250">Rename</span>
+                    <span class="step" data-at="400">this</span>
+                    <span class="step" data-at="550">function</span>
+                    <span class="step cue cue-select" data-at="900">Selected Text: TextEdit — “func loadRows(from cache: Cache)”</span>
+                    <span class="step" data-at="1200">and</span>
+                    <span class="step" data-at="1330">make</span>
+                    <span class="step" data-at="1460">the</span>
+                    <span class="step" data-at="1590">empty</span>
+                    <span class="step" data-at="1720">state</span>
+                    <span class="step" data-at="1850">look</span>
+                    <span class="step" data-at="1980">like</span>
+                    <span class="step" data-at="2110">this.</span>
+                    <span class="step cue cue-shot" data-at="2450">Screenshot: Screenshot 2026-09-24 at 10.41.12.png</span>
+                  </p>
+                  <p class="hud-type"><span class="step typed" data-at="2700">Call it fetchRows.</span><span class="hud-placeholder" aria-hidden="true">Click to type</span></p>
+                  <div class="hud-bar" aria-hidden="true">
+                    <span class="hud-stop"></span>
+                    <span class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+                  </div>
+                </div>
+                <div class="mac-dock" aria-hidden="true">
+                  <i class="dock-finder"></i><i class="dock-browser"></i><i class="dock-notes"></i><i class="dock-photos"></i><i class="dock-settings"></i><span class="dock-divider"></span><i class="dock-trash"></i>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="demo-step" aria-hidden="true">
+            <span>Stop</span>
+            <svg viewBox="0 0 24 24" width="22" height="22"><path d="M4 12h15m-6-6 6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+
+          <div class="pane">
+            <p class="pane-label">Pasted into Codex</p>
+            <div class="composer">
+              <p class="msg step" data-at="3300">Rename this function</p>
+              <pre class="msg-xml xml-select step" data-at="3550"><code><span class="t">&lt;app_selection</span> <span class="a">index="1" source="TextEdit" characters="32" middle_omitted="false" truncated="false" bundle_id="com.apple.TextEdit"</span><span class="t">&gt;</span>
+  <span class="t">&lt;text&gt;</span>func loadRows(from cache: Cache)<span class="t">&lt;/text&gt;</span>
+<span class="t">&lt;/app_selection&gt;</span></code></pre>
+              <p class="msg step" data-at="3800">and make the empty state look like this.</p>
+              <pre class="msg-xml xml-shot step" data-at="4050"><code><span class="t">&lt;local_screenshot</span> <span class="a">path="/Users/you/Desktop/Screenshot 2026-09-24 at 10.41.12.png"</span><span class="t">/&gt;</span></code></pre>
+              <p class="msg step" data-at="4300">Call it fetchRows.</p>
+            </div>
+          </div>
+
+          <figcaption class="demo-caption">
+            <button class="replay" type="button" data-demo-replay hidden><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v5h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Replay</button>
+            <ul class="facts">
+              <li>Live words stay in the recorder until you stop, then paste once.</li>
+              <li>Mouse highlights keep up to 8,000 characters with whitespace intact. Separate highlights stay in order, even without speech between them.</li>
+              <li>Click the recorder to type alongside your speech and references. Enter adds a line break; finish normally to paste. The microphone stays active.</li>
+              <li>Context is pasted only into the native Codex, ChatGPT, Claude and Telegram apps. Other apps receive your spoken and typed words without the tags.</li>
+              <li>Saved screenshots add a file path, not an upload. Your agent needs access to that file.</li>
+              <li>A Mode's <strong>Colored context</strong> option colours your opening words in a rainbow and each XML block by type: speech and typing silver, selections cyan, screenshots magenta with a local link. It's off by default, and messages too long to colour stay plain.</li>
+              <li>Next release: Codex gets every word as editable text, with inline &lt;selection&gt; and &lt;screenshot&gt; markers and a full-prompt link, shown in a coloured viewer with your screenshots.</li>
+              <li>Placement is approximate: live recognition can revise earlier words.</li>
+              <li>Selection capture depends on the app. Codex can add its task label; Chrome can add page details.</li>
+              <li>Highlights are read without pressing Copy. Password fields are skipped.</li>
+            </ul>
+          </figcaption>
+        </figure>
+        <p class="skill-handoff">For Codex, install the <a href="https://github.com/EthanSK/AgentFlow/tree/main/.agents/skills/interpret-agent-flow-context">Agent Flow context skill</a> so it reads highlights and screenshot paths as context, not instructions.</p>
+      </div>
+    </section>
+
+    <!--
+      Promo video, rendered from promo/scene.html by promo/render.mjs (see promo/README.md).
+      It reuses the hero demo's invented example and only states claims this page already
+      makes, so re-render it whenever the demo example or those claims change. Speech,
+      music and captions share the same timeline; audio starts only after a visitor plays it.
+      It shows an earlier local build's coloured Codex message and prompt viewer. The next
+      release pastes plain editable words with inline <selection>/<screenshot> markers and a plain footer link instead: re-render
+      the video before that release ships. Keep the "Next release" fact until the download has it.
+      Ethan asked for no visible title, subtitle or transcript here (2026-09-27): the video
+      sits in the page like a normal embedded promo. The section keeps id="video" for the
+      top navigation and takes its accessible name from aria-label. The captions track
+      carries every spoken line. He then rejected the AI-voice credit line as well, so the
+      video has no visible text of its own; don't add a caption, credit or label back.
+    -->
+    <section class="band" id="video" aria-label="Video">
+      <div class="wrap">
+        <figure class="promo-video">
+          <video controls playsinline preload="metadata" width="1920" height="1080"
+            poster="assets/agentflow-promo-poster.jpg?v=cd3b7da5"
+            aria-label="Agent Flow in use: dictating, highlighting a function, taking a screenshot and typing a name in the recorder, then sending one short message to Codex and opening its full prompt">
+            <source src="assets/agentflow-promo.mp4?v=0949ae0f" type="video/mp4">
+            <track kind="captions" src="assets/agentflow-promo.vtt?v=963678fc" srclang="en" label="English">
+            <a href="assets/agentflow-promo.mp4?v=0949ae0f">Agent Flow video (MP4)</a>
+          </video>
+        </figure>
+      </div>
+    </section>
+
+    <!--
+      Route contract remains in the destination guide, with optional controls below.
+      Primary is base VoiceInk current-input delivery and owns no exact input or Mode.
+      Only the two Next routes own an exact input plus its Mode/auto-send, and they fail
+      closed. Never merge these into one "toggle" or describe Next as toggling a destination.
+    -->
+    <section class="band" id="setup" aria-labelledby="setup-title">
+      <div class="wrap split">
+        <div class="band-head">
+          <h2 id="setup-title">Setup</h2>
+          <p>No Agent Flow account or subscription. Bring your own OpenAI API key for live words.</p>
+        </div>
+        <div class="band-body">
+          <ol class="setup-steps">
+            <li>Download, unzip, and move Agent Flow to Applications.</li>
+            <li>Allow Microphone and Accessibility when asked.</li>
+            <li>Add an <a href="https://platform.openai.com/api-keys">OpenAI API key</a> with API billing for GPT Live transcription. Your ChatGPT subscription doesn't include API credit.</li>
+            <li>Finish setup, which also downloads a local model for transcription without a key.</li>
+          </ol>
+          <p class="note">Auto-send presses Return after pasting. It starts off; enable it per app in Modes if you want it. For Codex CLI or Claude Code, configure the terminal or editor it runs in.</p>
+          <p class="note">Updates aren't automatic yet. New versions are on <a href="https://github.com/EthanSK/AgentFlow/releases">GitHub releases</a>.</p>
+          <details class="optional" id="pieces">
+            <summary>Optional extras</summary>
+            <dl class="pieces">
+              <div><dt>Codex skill</dt><dd>Ask Codex: “Install interpret-agent-flow-context from EthanSK/AgentFlow/.agents/skills/interpret-agent-flow-context.”</dd></div>
+              <div><dt>YouTube Bridge</dt><dd>Pauses the playing YouTube video in Chrome when recording starts, then resumes only that video. Its helper and login LaunchAgent need a source checkout; you load the Chrome extension once.</dd></div>
+              <div><dt>Chrome details</dt><dd>For page titles and addresses with highlights, enable Chrome's View → Developer → Allow JavaScript from Apple Events, then grant Agent Flow Automation access if asked.</dd></div>
+              <div><dt>Mouse controls</dt><dd>Map a mouse button to your recording shortcut if you want. <a href="https://ethansk.github.io/agentic-mouse/">Agentic Mouse</a> is separate and isn't required.</dd></div>
+              <div><dt>VS Code</dt><dd>The <a href="https://marketplace.visualstudio.com/items?itemName=EthanSK.better-git-vscode">Better Git</a> bridge reads highlights in local code editors. Terminals and chat panels aren't covered.</dd></div>
+            </dl>
+          </details>
+          <p class="note"><a href="https://github.com/EthanSK/AgentFlow/blob/main/SETUP.md">Setup guide and app support</a></p>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="controls" aria-labelledby="controls-title">
+      <div class="wrap split">
+        <div class="band-head">
+          <h2 id="controls-title">Controls</h2>
+          <p>Use your keyboard shortcut or a mapped mouse button.</p>
+        </div>
+        <div class="band-body">
+          <ul class="setup-steps">
+            <li>Press once to start, then again to stop and paste.</li>
+            <li>Press both Command and both Option keys together to type with the microphone off, then again to paste.</li>
+            <li>Press twice while recording to finish without pasting. The text stays on your clipboard and in History.</li>
+            <li>Press three times while recording to pause, then once to resume.</li>
+            <li>Start another recording while the last one is still transcribing.</li>
+          </ul>
+          <details class="optional" id="routes">
+            <summary>Next Track and saved inputs</summary>
+            <p class="note">While the recorder is visible, Next Track won't skip music. During recording, it stops and sends the text to the input where you started. After a normal stop, while transcription is still running, it can instead choose the input focused now.</p>
+            <p class="note">These saved-input actions use that app's settings and show an error if the target can't be verified. A normal stop simply pastes into the input focused when the result arrives.</p>
+            <p class="note"><a href="https://github.com/EthanSK/AgentFlow/blob/main/RECORDING_DESTINATIONS.md">Destination guide</a></p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="build" aria-labelledby="build-title">
+      <div class="wrap split">
+        <div class="band-head">
+          <h2 id="build-title">Build from source</h2>
+          <p>Needs macOS 14.4 or later, Xcode and Git.</p>
+        </div>
+        <div class="band-body">
+          <div class="commands">
+            <pre tabindex="0" aria-label="Build commands"><code data-copy-source>git clone https://github.com/EthanSK/AgentFlow.git
+cd AgentFlow
+./scripts/install-first-use.sh</code></pre>
+            <div class="commands-bar" data-copy-bar hidden>
+              <button class="copy" type="button" data-copy>Copy commands</button>
+              <span class="sr-only" role="status" data-copy-status></span>
+            </div>
+          </div>
+          <ul class="build-notes">
+            <li>Builds Agent Flow, installs it in <code>~/Applications</code> and opens it. It won't replace an existing installation.</li>
+            <li>Use <code>--all</code> to also install the Codex context skill and YouTube helper. Chrome still needs its unpacked extension loaded manually.</li>
+            <li>The upstream <code>voiceink</code> Homebrew cask installs VoiceInk, not Agent Flow.</li>
+          </ul>
+          <p class="actions">
+            <a class="button" href="https://github.com/EthanSK/AgentFlow/blob/main/SETUP.md">Full setup guide <span aria-hidden="true">↗</span></a>
+            <a href="https://github.com/EthanSK/AgentFlow/blob/main/BUILDING.md">Build details <span aria-hidden="true">↗</span></a>
+            <a href="https://github.com/EthanSK/AgentFlow">GitHub <span aria-hidden="true">↗</span></a>
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <p class="wrap companion-link"><a href="https://ethansk.github.io/ethan-setup/">Ethan's setup</a> shows his hardware, mouse mappings and companion apps.</p>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap foot-inner">
+      <p>Agent Flow is Ethan SK's fork of <a href="https://github.com/Beingpax/VoiceInk">VoiceInk by Beingpax</a>, licensed under <a href="https://github.com/EthanSK/AgentFlow/blob/main/LICENSE">GPL-3.0</a>. No Pro purchase, trial or license check; paid transcription and AI providers bill you directly.</p>
+      <nav class="foot-nav" aria-label="Documentation">
+        <a href="https://github.com/EthanSK/AgentFlow">GitHub</a>
+        <a href="https://github.com/EthanSK/AgentFlow/blob/main/BUILDING.md">Build guide</a>
+        <a href="https://github.com/EthanSK/AgentFlow/blob/main/SETUP.md">Full setup</a>
+        <a href="https://github.com/EthanSK/AgentFlow/releases">Releases</a>
+        <a href="https://github.com/EthanSK/AgentFlow/blob/main/RECORDING_DESTINATIONS.md">Destination guide</a>
+        <a href="https://github.com/EthanSK/AgentFlow/tree/main/.agents/skills/interpret-agent-flow-context">Context skill</a>
+        <a href="https://ethansk.github.io/ethan-setup/">Ethan's setup</a>
+        <a href="https://ethansk.github.io/agentic-mouse/">Agentic Mouse</a>
+      </nav>
+    </div>
+  </footer>
+
+  <script src="script.js?v=379-typing-line"></script>
+</body>
+</html>

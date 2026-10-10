@@ -1,0 +1,455 @@
+# Recording destination controls (VoiceInk++)
+
+VoiceInk++ keeps normal dictation as simple as base VoiceInk while the Next button adds optional
+exact-input latching. A Primary stop follows whichever keyboard input is current when delivery
+happens. Next can instead preserve the recording-start input or select a second-chance input while
+transcription is still loading.
+
+On the source-tagged mouse transport, only fully idle Start moves to physical button-down.
+Its matching release does nothing. Every non-idle action still enters the existing Primary
+gesture classifier on release; a down while recording or paused does not stop, finalize, or
+change a destination. Source-specific press cycles, stable recording-start identity, and native
+session generations reject duplicate/orphan releases and events from a closed receiver lifetime.
+This transport adds no destination route and does not alter the independent keyboard shortcut.
+
+## Real-time transcription stays in the recorder
+
+After the normal both-Command/both-Option keyboard finish, a standalone Shift
+tap may choose Won't paste for that exact stopped result while transcription is
+still pending and completion policy has not frozen. Capture the stopped session
+ID before asynchronous finalization, accept either Shift key only on release,
+and reject capital-letter/modifier-chord use, newer active captures, stale results
+and alternate/reset boundaries. This reuses the existing formatted clipboard and
+History route; it adds no destination and never undoes a completed delivery.
+
+When a provider such as Soniox streams partial words during recording, VoiceInk++ displays those
+partials only in the black recorder bar. It never writes, migrates, or removes provisional text in
+another app while Ethan is speaking. On stop, the provider finalizes the transcript and the existing
+Primary or Next route performs one final paste plus that route's configured auto-send. This keeps
+real-time latency without creating a second mutable draft inside the destination app.
+
+The two Next-button latch routes are unchanged by real-time transcription: Next while recording
+still owns `recordingStart`, and the post-Primary second chance still owns
+`focusedDuringTranscription`.
+
+If recording B begins while normal Primary recording A is still finalizing, A may finish its
+provider/formatting work and paste immediately into the system-focused input while B is recording.
+A must not press Return: the live capture reservation is continuation intent, so B remains the only
+eligible cohort member that may later auto-send. FIFO still governs all paste order. Exact Next
+destinations, commands, responses, assistant work, raw/skip output, and every non-cohort side effect
+remain mutually exclusive with active capture and wait until B stops or cancels.
+
+A start request reserves the newer capture immediately. If A already owns a short Primary paste
+lease, B's microphone handshake waits for that paste to finish, but its reservation is visible at
+A's final Return boundary and suppresses Return. If B owns the microphone first, A's Primary paste
+may cross that capture boundary while retaining the same suppression. Clipboard-only completion
+and session-local cancellation do not wait for an unrelated active recording.
+
+## Rapid Primary recordings paste as one FIFO cohort
+
+When several consecutive normal **Primary** recordings overlap, VoiceInk++ keeps every transcript
+and pastes them in recording order, but gives the configured auto-send key only to the newest queued
+Primary paste. For A/B, A pastes without Return and B pastes then sends once. For A/B/C, A and B paste
+without Return and C performs the one configured Enter, Shift-Enter, or Command-Enter. A single
+recording is unchanged, and a tail whose Mode disables auto-send remains paste-only.
+
+This is intentionally narrower than every item retained by the transcription scheduler. An exact
+Next-button route, second-chance retarget, clipboard-only/recovery exit, cancellation, raw/skip
+delivery, assistant follow-up, response, or custom command breaks the Primary cohort. Those actions
+may target another input or may not paste at all, so they must never suppress an unrelated Return.
+The decision is made inside the final delivery lease from the complete immutable job registry, not
+from the scheduler's single tail task.
+
+If a newer Primary job fails only after an earlier transcript has already pasted without Return,
+VoiceInk++ leaves that earlier text safely unsent. It never posts a delayed compensating Return:
+Primary deliberately owns no exact input, so the input may no longer be the one that received the
+text. This is the fail-safe outcome; the text remains available for manual submission, and a quiet
+warning explains that the predicted queue tail did not complete a normal Primary paste.
+
+## Pause without finalizing
+
+While a recording is active, press the **Primary button** three times as one continuous gesture to
+pause microphone capture. The first-to-second interval uses the shorter of the macOS double-click
+interval and 0.45 seconds; after click two cancels the pending normal stop, click three uses the full
+macOS multi-click interval. Its arrival cancels the pending clipboard-only finish and pauses instead.
+VoiceInk++ stops AUHAL itself while leaving the same WAV and realtime provider session open, so no
+paused audio is written or streamed. Media playback and the paired YouTube helper are left
+untouched; Ethan controls playback himself while paused. Press Primary once to restart capture into
+that same session after the short second-press decision window without changing playback. Press it
+twice inside that window to show the same recoverable clipboard-only “Won’t paste” choice used by
+a recording-time double-click. If no third press arrives through the full macOS multi-click
+interval, finish to the clipboard; a timely third press clears that choice and resumes the same
+capture. VoiceInk++ may unmute system output while
+capture is paused and restore its optional output mute when capture resumes, but only recording
+start and final stop/cancel send the normal media/YouTube-helper pause and resume lifecycle.
+
+Click three also keeps one full macOS multi-click continuation open. A fourth press in that same
+continuous recording-time gesture finalizes the paused session through ordinary Primary
+`primaryCurrentInput` delivery, restores playback owned by that recording, and forces only that
+session's auto-send key to `.none`. Normal formatting/enhancement and paste remain intact; the
+override does not become a new destination, exact-input route, raw/skip mode, or global setting. A
+fifth press inside the already consumed gesture is ignored. Once the continuation expires, the
+triple remains Pause and a later press starts the normal paused-state single/double/triple classifier.
+
+A single Primary press while recording retains normal base-VoiceInk stop behavior after the short
+double-click decision window expires. The delay is necessary because the first press
+cannot be known to be single until the second-press window closes. Pause/resume never finalizes,
+pastes, changes Mode, or changes the tentative recording-start destination. The live-text HUD stays
+visible with its last partial frozen, and a pause symbol replaces the moving waveform on every
+mirrored recorder panel.
+
+The Corsair F19 release and Razer F21/F22 releases currently enter this same Primary path through
+Karabiner. Releasing both Razer DPI buttons together may emit two complete identical chords, so
+VoiceInk++ filters only a second chord less than 90 ms after the last accepted one. The filter runs
+before `.starting` can reinterpret that duplicate as cancellation and before a recording-time
+duplicate can reinterpret it as the double-click finish. It never extends its own window or alters the
+0.45-second double-click or full-system-interval triple/quadruple classifiers. A 500 ms Primary cooldown
+is deliberately not used because it would make the accepted pause and clipboard gestures
+impossible.
+
+A second consecutive Primary press inside the first decision window selects **finish to clipboard**.
+VoiceInk++ waits through the remaining third-press interval before committing it, because a third
+press means Pause. The accepted second press immediately replaces the waveform/status with a red
+**Won’t paste** indicator on every mirrored recorder panel. If click three arrives, VoiceInk++ clears
+that state before showing Pause. If no third press arrives, the red state remains visible while it
+stops and transcribes the same session, immediately saves the original WAV plus the last realtime HUD
+transcript/translation as a local `recoverableDraft`, and leaves the final processed result on the clipboard. It does
+not paste, Return, cancel/discard, run the Mode's command/response, or resolve a saved input. It also
+restores only media/YouTube playback that VoiceInk++ paused when this recording began. The red recorder
+state is the only expected-route feedback; clipboard-only completion does not open a separate
+notification banner or play the error sound. Genuine transcription/provider failures remain visible.
+
+An explicit cancel remains different from the double-click clipboard finish. Cancel during active microphone capture
+leaves the active UI without delivery but saves the finalized WAV and any realtime HUD text in
+History. Cancel while transcription/finalization is already in flight forbids paste and auto-send,
+but preserves a completed provider result—or the last realtime HUD partial if that is all that
+exists—in both clipboard and history as `canceledWithResult`. If neither exists, VoiceInk++ saves
+the ordinary empty canceled record and does not overwrite the clipboard. These recovery records are
+excluded from automatic audio/transcription cleanup; permanent deletion requires the separate
+confirmed History action.
+
+After a normal stop, Primary double-click also selects **Won’t paste** while that result is still
+transcribing and no newer recording owns the microphone. Click one identifies the newest pending
+result; click two cancels the prospective new recording and changes only that result to clipboard-only.
+A single click still starts a new dictation after that pending-result decision window. Fully idle
+starts have no such wait. If the identified result has
+already finished transcription, do not select an older card or claim that an issued paste can be undone.
+The policy freezes before post-processing/Mode effects. Provider errors remain quiet for this deliberate
+no-paste route, and no extra playback command is sent because the earlier stop already restored owned media.
+
+If clicks three and four continue inside the full macOS multi-click interval, keep the whole sequence
+bound to the click-one session and never start another recording. Click three is an intermediate no-op;
+click four atomically restores normal completion and suppresses only that session's configured
+auto-send. The pipeline waits for this bounded decision before freezing completion policy, so a provider
+result cannot commit the intermediate clipboard-only choice while a valid fourth press is still
+possible. With no eligible pending transcription, one idle click starts immediately after reservation;
+do not invent an idle quadruple action or restore the superseded startup debounce.
+
+The normal single-stop decision still uses the shorter of the macOS double-click interval and 0.45
+seconds, so ordinary dictation stays responsive. After click two has already canceled that pending
+stop, its clipboard finish waits for click three through the full macOS multi-click interval (verified
+as 0.8 seconds on 2026-08-02). Click three pauses and opens the same full interval for click four;
+click four finishes with normal paste and no auto-send. A later click cannot inherit the finished
+double, triple, or quadruple sequence.
+
+## Delivery engine switch
+
+VoiceInk++ temporarily defaults **Exact Saved-Input Delivery** to off while its background Codex
+compatibility is being repaired and physically re-tested. The switch is in **Settings → Pasting**:
+
+- **Off — base VoiceInk compatibility:** the Primary button records normally, the finished text
+  pastes into whichever input owns keyboard focus at delivery, and the current Mode owns
+  post-processing, output, and optional Return. Next Track performs no destination action: it is
+  consumed while the recorder bar is visible and passes through to media only after the bar hides.
+  The latency-sensitive start/stop path performs no saved-input Accessibility capture and no saved
+  app is activated or internally focused. The second destination slot stays visible as a warning
+  so the recorder never pretends that compatibility mode owns an exact app/input.
+- **On — VoiceInk++ latch delivery:** Primary remains the same base current-input route. The two
+  Next-button exact routes below are enabled. The second slot becomes the captured app icon when a
+  Next route proves one exact target; a genuine capture failure remains a visible warning.
+
+The underlying UserDefaults feature flag is `VIPPExactInputDeliveryEnabled`. It is evaluated at each
+delivery/Next-button decision, so the Settings toggle does not require a rebuild. This is a delivery
+engine switch, not a fourth destination route: never merge or reinterpret the three routes below.
+
+## Terminology
+
+The **primary button** is Ethan's normal/thumb/toggle recording button: while fully idle, one press starts immediately after reservation, without a startup debounce. Only a real pending transcription retains a short decision window so double-click can select Won't paste for that existing result. Once recording begins, pressing that same button again performs the existing normal stop. **Next button** is the preferred name for the separate forward/secondary/latch/retarget button. It emits the standard macOS **Next Track** media event, which is why implementation code and system configuration use “Next Track.” These aliases do not name extra modes. “Second chance” refers only to a Next-button retarget after a primary-button normal stop while transcription is still loading.
+
+Read [VoiceInk++ terminology](TERMINOLOGY.md) for the complete alias map, timing table, and history of the deliberately reverted Next-toggle experiment.
+Before changing capture, paste, focus, Return, semantic Send, or verification, also read
+[the failed-approaches ledger](FAILED_APPROACHES.md); successful API return codes and passing mocked
+tests repeatedly failed on the real destination apps.
+
+## Controls
+
+| Stop action | Paste destination |
+| --- | --- |
+| Primary/thumb/toggle button once while recording | After the double-click interval, normal stop: base VoiceInk pastes into whichever system keyboard input is focused at delivery and uses that current Mode; it never invokes a saved input |
+| Primary/thumb/toggle button twice while recording | After the third-press interval expires, finish the same session to the clipboard only, with no paste/Return, then resume only playback VoiceInk++ paused for that recording |
+| Primary/thumb/toggle button three times in one genuine gesture | Pause capture without changing media playback, finalizing, or choosing a delivery route |
+| Primary/thumb/toggle button once while paused | Resume capture after the short second-press decision window without changing media playback |
+| Primary/thumb/toggle button twice while paused | Show “Won’t paste”; if no third press arrives through the full continuation, finish to clipboard/history only with no paste/Return |
+| Primary/thumb/toggle button three times while paused | Clear “Won’t paste” and resume the same capture without finalizing or pasting |
+| **Next button** while recording or paused | The exact text input focused when you started recording, or that application when macOS hides the editor element |
+| **Next button** while the newest transcription is still loading | Second chance after a normal stop: replace that pending session's destination and auto-send behavior with the text input/app focused now |
+| **Next button** while the recorder bar is visible but no route is still eligible | VoiceInk++ consumes the press without changing the saved destination; it never advances media |
+| **Next button** after the recorder bar is hidden | Its Next Track event passes through normally to Spotify, Music, and other media apps |
+
+The Mode emoji/symbol sits immediately left of the waveform. Two app icons sit to its right: the
+first is the app focused now; the second is the exact destination owned by a Next route. While
+recording, the second icon previews where a Next stop would paste. A Primary stop intentionally owns
+no exact input, so its second slot becomes an unoutlined warning until delivery or until a successful
+second-chance Next press replaces it with a locked app icon. A Next stop or successful second chance
+keeps that exact icon visible for the session until delivery succeeds or visibly fails. The same
+destination icon remains on a compact transcription chip if a newer recording starts. Hover over
+either icon to distinguish current focus from the exact pending app/input. If Electron/Chromium
+exposes only an app-level container while the shortcut is down, VoiceInk++ may save the owning
+application for the recording-time **Next** route only. A warning appears when an exact Next target
+cannot be captured. Disabling exact delivery never collapses the two-icon layout.
+
+The icon for the action just taken confirms the route with a brief neon pulse on every monitor. A
+primary-button normal stop pulses the first/current-focus icon. Next while recording pulses the
+second/locked icon, as does a successful Next second-chance retarget while transcription is loading.
+A failed retarget or an ordinary pass-through Next Track media press does not pulse. With macOS
+Reduce Motion enabled, the same confirmation uses a light fade without the scale beats.
+
+That flash confirms the action; a persistent cyan outline confirms **exact Next ownership**. As soon
+as a Next route freezes a real exact input, the stable second/locked icon remains outlined while that
+session is transcribing or delivering, including on a compact background chip. The outline follows a
+successful second-chance replacement and clears only when delivery resolves, visibly fails, or is
+cancelled. Primary's warning slot, the recording-time preview, a missing target, and an app-only
+no-caret fallback remain unoutlined. The first/current-focus icon never stays outlined because it can
+change before Primary's eventual delivery or after a Next destination decision.
+
+“Recording start” means the moment the recording command begins, before asynchronous microphone
+setup can allow another app or field to replace the intended input. It does not mean the later
+transcription phase that starts after recording stops.
+
+## Examples
+
+### Let the current input decide, like base VoiceInk
+
+1. Focus an input in Codex and start recording with the normal recording shortcut.
+2. Move to a VS Code editor while speaking.
+3. Stop with the normal recording shortcut.
+4. You may keep VS Code focused or move again while transcription runs.
+5. VoiceInk++ pastes into whichever keyboard input is focused when delivery posts Command-V, then
+   uses that input app's current Mode for generic auto-send. No Codex, VS Code, Telegram, or other
+   app-specific exact resolver runs.
+
+### Send the transcript back where recording began
+
+1. Focus an input in Codex and start recording with the normal recording shortcut.
+2. Move to a VS Code editor while speaking.
+3. Stop with the **Next button**.
+4. If Codex is in the background and its exact current surface exposes a proven non-activating
+   insertion and Send path, VoiceInk++ restores and verifies that exact original composer internally,
+   types and submits there, and leaves the current app frontmost. Otherwise it fails closed and
+   preserves the transcript instead of activating Codex or guessing at Return.
+
+### Keep normal media controls outside recording
+
+1. Wait until VoiceInk++ is idle and the recorder/transcription bar has closed, then press the **Next button**.
+2. VoiceInk++ does not consume the key, so the current media app advances normally.
+
+### Change your mind while transcription is loading
+
+1. Stop a recording normally and let transcription begin. No exact destination is owned yet.
+2. While it is still transcribing or enhancing, focus a different text input.
+3. Press the **Next button**.
+4. The locked destination icon switches to that app. VoiceInk++ replaces both the exact input and
+   its configured auto-send key for the newest not-yet-delivered transcription.
+5. You may immediately move to another app. When the result finishes, VoiceInk++ delivers into the
+   second-chance input and performs that input app's configured Return without displacing your newer
+   workspace when an exact background target is available.
+
+This is deliberately separate from pressing Next Track while recording. During recording, Next
+Track stops and chooses the recording-start input. After a normal stop has already started
+transcription, Next Track is a one-click second chance to choose a new input. It replaces the pending
+target once; it does not toggle or release it.
+
+Primary has no stop-time capture or exact-input verification to fail. If ordinary system-focused
+paste cannot be posted, VoiceInk++ preserves the transcript on the clipboard and reports that generic
+paste failure. It must never fall back to the recording-start input; that input is invoked only by
+Next while recording.
+
+This exact second-chance route was live-confirmed repeatedly on 2026-07-13 after commit `1eabb1b`:
+the trace recorded `focusedDuringTranscription`, `targetAutoSend=enter`, and verified successful
+OpenAI composer submission after Ethan moved between apps. Treat that commit and the root
+`AGENTS.md` contract as the regression baseline.
+
+The change is accepted until delivery resolves its target immediately before paste. After that
+cutoff, or when no pending transcription exists, a visible recorder bar still owns and consumes
+Next Track as a no-op. The key passes through to the media system only after the bar is hidden. If
+no editable text input is focused during an eligible retarget, VoiceInk++ consumes the intentional
+press, keeps the existing destination, and asks you to focus an input and try again.
+
+## Mouse setup
+
+This feature listens for the standard macOS **Next Track** media event. A mouse button can emit that
+event through its existing vendor software, such as Logitech G HUB. No VoiceInk-specific Logitech
+macro and no Karabiner configuration are required.
+
+Keep the ordinary mouse button assigned to the existing VoiceInk++ recording shortcut. A normal
+single fully idle press begins recording immediately after reservation, with no start-debounce
+window. A still-transcribing result keeps its short new-recording versus Won't paste decision. A normal single stop
+still resolves after the separate at-most-0.45-second multi-click decision window; a recording-time
+double press finishes to clipboard if no third press arrives, and a triple press pauses. While
+paused, one press resumes after the short decision window, two finish to the clipboard if no third
+arrives through the full continuation, and a timely third resumes the same capture. None chooses an
+exact delivery destination. Assign the
+alternative **Next button** to **Next Track**. VoiceInk++ intercepts that button for the entire time
+any recorder/transcription bar is visible; eligible recording and transcription states perform
+their normal destination action, while an ineligible visible-bar press is consumed as a safe no-op.
+
+Ethan's verified G502 X LIGHTSPEED setup uses an upper side thumb control with a `speech to text`
+Shift-Control-Option macro for the primary button and a different control explicitly labeled **Next Track**
+for the Next button. G HUB's separate **Mouse Button 4** and **Mouse Button 5** controls are unrelated to
+that Next Track route. The spoken alias “forward button” must therefore not be treated as a request to
+listen for raw Mouse Button 5.
+
+## Codex and Claude Code destinations
+
+Codex desktop owns its composer directly, so VoiceInk++ can restore that exact input and use a
+bounded Send action only when the current Codex surface proves one. It must fail closed when it
+cannot distinguish Send from Stop or verify submission. Codex CLI and Claude Code do not own
+separate macOS windows: their terminal or editor host owns the editable input. VoiceInk++ therefore
+saves the exact Terminal, iTerm, Ghostty, VS Code, Cursor, or other host input and uses that host
+app's configured `autoSendKey` only through a proven host-specific route.
+
+The current and locked recorder icons show the host application for CLI agents by design. Configure a Mode for the host app and enable Return only where automatic submission is safe. The normal-stop, recording-start, and second-chance routes remain identical; no agent-specific toggle, shell hook, or plugin is involved.
+
+## How Next Track is consumed
+
+VoiceInk++ installs a macOS `CGEvent` tap at the head of the session event stream and watches the
+system-defined `NX_KEYTYPE_NEXT` event. While the recorder bar is visible, its event-tap callback
+returns no event for both key-down and key-up, so Spotify and other media apps never receive that
+press. An eligible state performs the recording-start or second-chance action; an ineligible state
+consumes the press as a no-op. Only after the bar is hidden does the callback return an otherwise
+unowned event unchanged so macOS can route it to the normal media destination. The behavior is
+global and is not Spotify-specific.
+
+## Accessibility and safe failure behavior
+
+Exact-input routing uses the macOS Accessibility API, which VoiceInk++ already needs for pasting.
+The focused Accessibility element is stored on the individual recording session, so overlapping
+background transcriptions cannot exchange destinations. The selected app's auto-send key is stored
+on that same per-session target; it is not re-read from whichever app happens to be current when the
+transcription service returns.
+
+Editable Accessibility roles such as text areas, text fields, search fields, and combo boxes are
+saved as exact destinations. Some apps briefly expose only a container such as `AXWebArea` or
+`AXGroup` while a modifier shortcut is being handled. For the recording-start/Next Track route,
+VoiceInk++ then saves the owning application as a fallback. It uses the same app fallback if Electron
+replaces the saved editor's Accessibility wrapper before delivery. Normal stop-time and
+transcription-time retargets still require an exact editable input, so an incidental non-editable
+control cannot silently replace their destination.
+
+The G HUB Primary macro completes Shift, Control, and Option sequentially. On Codex/ChatGPT,
+Electron can expose the exact `AXTextArea` during the earlier forwarded modifiers but only its
+`AXGroup` or `AXWebArea` ancestor when the final modifier completes the shortcut. VoiceInk++
+therefore takes one passive, short-lived exact-input snapshot during that forwarded partial chord.
+It may recover the snapshot at recording start only when the completed-chord container belongs to
+the same process, the exact editor is still a replay-safe descendant of that container, and the
+saved identity re-resolves immediately. The snapshot never focuses or activates the app, never
+changes which modifier events are forwarded, and never enters Primary delivery; any stale process,
+task, ancestry, or identity mismatch falls back to the ordinary capture result or fails closed.
+If the exact audited ChatGPT build is already frontmost at recording start but no editor owns the
+caret, VoiceInk++ may passively identify and tentatively save exactly one lower-window main composer
+for a later recording-time **Next** route. It revalidates the original fallback control, app, window,
+build tuple, and exact composer at that read-only capture boundary. It never activates ChatGPT, sets
+`AXFocused`, moves the caret, or replaces a genuinely focused secondary editor such as an annotation
+note with the main composer. Primary therefore remains ordinary system-focused delivery; only the
+later physical Next route may prepare and use the saved exact composer.
+
+For an exact saved input whose app is currently backgrounded, VoiceInk++:
+
+1. Uniquely resolves the saved Accessibility window and editor. Structural identity plus nearby
+   content anchors fail closed if a stale wrapper could match a different document or tab.
+2. Reproduces Electron's inactive-to-active internal notification sequence without making the app
+   macOS-frontmost, restores the exact internal window/editor, and verifies both.
+3. Types Unicode directly into that process in bounded chunks. It never uses background Command–V.
+4. Verifies that the exact editor changed, the intended transcript appeared, and the app that Ethan
+   was using remained frontmost.
+5. If auto-send is enabled, uses only a proven semantic Send control or a host-native exact-session
+   API. An ordinary HID Return is allowed only while the exact saved input already owns real system
+   keyboard focus. Chat verifies the exact composer clearing/resetting; rendered-message echo is
+   optional telemetry and never required proof.
+6. Restores the target app's previous internal window/editor state. A pre-mutation/action failure
+   copies the transcript to the clipboard and shows a visible error rather than guessing. After one
+   irreversible Send attempt, an unreadable/replaced wrapper is indeterminate telemetry: do not
+   retry, claim success, or show a false failure.
+
+ChatGPT 26.727.51351 build 6119 has one narrower preparation exception: it can make a correctly
+captured Codex composer wrapper unreadable only after the app becomes backgrounded. If ordinary
+strict resolution fails, VoiceInk++ may open one build-pinned targeted-input activation session
+before resolving. It then requires the same capture-time task/window/editor identity, nonempty
+content anchors, ChatGPT-internal window/editor focus, and a still-unrelated macOS foreground. This
+path writes no Accessibility focus pointer or boolean, never activates ChatGPT, and closes the one
+session without restoration mutation. Any tuple, identity, focus, or context mismatch fails closed.
+
+Telegram's parentless composer is a narrow identity exception, not an app-only fallback. Prefer
+readable matching AX chat anchors. For the exact audited Telegram 12.9 build 282526 layout only, when
+the selected chat is not exposed through AX, VoiceInk++ may retain a SHA-256 digest of the fixed
+avatar plus primary-title row and re-sample that same window immediately before insertion and Send.
+The independently changing lower status/activity row is excluded because hashing the complete header
+caused false rejection of the unchanged chat. The route still requires the exact editor/window
+structure, Telegram's own internal focus, and proof the app
+remained backgrounded. Screen Recording permission is required; no screenshot, OCR, title, message,
+or crop bytes are retained or logged. Missing permission, an app/layout update, blank/protected
+capture, or any digest mismatch fails closed. After v2.0.245 verifies insertion and revalidates that
+same identity at the action boundary, Telegram alone may receive one HID-system modifier boundary,
+Return down/up, and live modifier-state restoration addressed to its PID. The composer must clear;
+there is no retry or generic fallback.
+
+There is no generic process-targeted Return exception. Ordinary two-event PID posting was accepted
+by macOS while Electron and Telegram ignored it. The later v2.0.233 audited-unlabelled `AXPress`
+returned success while the composer stayed unchanged, and the v2.0.234 SkyLight-authenticated Return
+produced `modifiedWithoutSubmit` instead of a cleared composer. The pinned Telegram sequence above
+is accepted only because both background Next routes physically proved exact identity, insertion,
+composer clear/reset, and no focus theft. Authentication or event acceptance alone still does not
+establish application Send semantics. `AXConfirm` is likewise not a generic editor Return. See
+[FAILED_APPROACHES.md](FAILED_APPROACHES.md) before proposing another targeted-event variant.
+
+When the exact saved input already owns system keyboard focus, VoiceInk++ uses the foreground route:
+it re-verifies that same app/window/input at the irreversible boundary, sends ordinary Command–V,
+and performs only the surface's bounded semantic or ordinary-HID auto-send. It never activates or
+internally refocuses a delivery target. If Ethan moves before Command–V, the key is cancelled and the
+same frozen target may continue through the non-activating exact-input route; otherwise delivery
+fails visibly. Recording-start capture is deliberately different: before the physical stop route is
+known it may only passively identify a uniquely proven main composer for a possible later Next press.
+It must not set Accessibility focus, move the caret, or replace a genuinely focused secondary field;
+any exact preparation belongs only to the later physical Next route.
+
+If the app closed, the input disappeared, or focus cannot be verified, VoiceInk++ copies the
+transcription to the clipboard instead of risking a paste into the wrong place.
+
+## Diagnostic logs
+
+The logs record the physical route, selected destination, app process, Accessibility role, element
+identity, activation timing, and final focus verification. Recent routing events can be inspected with:
+
+```sh
+log show --last 10m --info --style compact \
+  --predicate 'process == "VoiceInkPlusPlus"' | \
+  grep -E 'Recording shortcut|Next Track|Captured focused input|paste: BEGIN|background exact|auto-send finished'
+```
+
+The important destination values are:
+
+- `primaryCurrentInput` — normal Primary stop; system keyboard focus and current Mode at delivery.
+- `recordingStart` — Next Track stop.
+- `focusedDuringTranscription` — Next Track retarget while a result is still loading.
+
+## Implementation map
+
+- `VoiceInk/Shortcuts/ShortcutMonitor.swift` detects and conditionally consumes the system media key.
+- `VoiceInk/Shortcuts/RecordingShortcutManager.swift` selects the stop destination.
+- `VoiceInk/Transcription/Engine/VoiceInkEngine.swift` captures the tentative recording-start input
+  for Next and deliberately creates no saved input for Primary stop.
+- `VoiceInk/Transcription/Engine/RecordingSession.swift` owns the target for that recording.
+- `VoiceInk/Modes/FocusLockService.swift` captures, re-resolves, internally focuses, and verifies exact inputs.
+- `VoiceInk/Paste/CursorPaster.swift` implements bounded targeted Unicode/key events and foreground fallbacks.
+- `VoiceInk/Transcription/Engine/TranscriptionDelivery.swift` isolates base current-input Primary
+  delivery from app-specific foreground/background exact delivery used only by Next routes.

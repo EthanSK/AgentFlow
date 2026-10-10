@@ -1,0 +1,237 @@
+import SwiftUI
+
+struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
+    @ObservedObject var stateProvider: S
+    let liveTranscriptHeight: CGFloat
+    var liveTranscriptWidth: CGFloat = MiniRecorderLayoutMetrics.liveTranscriptWidth
+    var maximumContextHeight: CGFloat = MiniRecorderLayoutMetrics.assistantPanelHeight
+    let recorder: Recorder
+    @ObservedObject var assistantSession: AssistantSession
+    let onRecordButtonTapped: () -> Void
+    let onCloseTapped: () -> Void
+    // Exit ("X"): stop without paste, save captured audio/HUD draft in History, and
+    // resume paused media. Permanent deletion is a separate History action.
+    let onCancelTapped: () -> Void
+    let onAssistantFollowUp: (String) -> Void
+
+    // MARK: - Layout Constants
+
+    private let compactWidth: CGFloat = 228
+    private var expandedWidth: CGFloat { liveTranscriptWidth }
+    private let assistantWidth: CGFloat = 520
+    private let compactCornerRadius: CGFloat = 20
+    private let expandedCornerRadius: CGFloat = 14
+
+    private var shouldShowPasteDestinationIndicator: Bool {
+        switch stateProvider.recordingState {
+        case .starting, .recording, .paused, .transcribing, .enhancing:
+            return true
+        case .idle, .busy:
+            return false
+        }
+    }
+
+    private var capsuleWidth: CGFloat {
+        if hasAssistantResponse { return assistantWidth }
+        if hasLiveTranscript { return expandedWidth }
+        // Leave room for the explicit Pause/Play control; do not squeeze the
+        // waveform or either destination slot on compact (non-realtime) sessions.
+        if stateProvider.recordingState.isRecordingOrPaused { return 350 }
+        return shouldShowPasteDestinationIndicator ? 280 : compactWidth
+    }
+
+    // Realtime mode owns this panel immediately. LiveTranscriptView renders the
+    // empty-state ellipsis, which never becomes speech or final delivery text.
+    private var hasLiveTranscript: Bool {
+        (stateProvider.recordingState.isRecordingOrPaused || stateProvider.canTypeInHUD)
+            && (stateProvider.showsRealtimeTranscriptHUD
+                || stateProvider.canTypeInHUD
+                || !stateProvider.liveSelectionReferences.isEmpty)
+    }
+
+    private var hasAssistantResponse: Bool {
+        assistantSession.isVisible
+    }
+
+    private var shouldShowCloseButton: Bool {
+        hasAssistantResponse &&
+            stateProvider.recordingState == .idle &&
+            !assistantSession.isBusy
+    }
+
+    // The cancel ("X") button is reachable whenever there is something to abort:
+    // while RECORDING (save a local draft) AND while a transcription is IN-FLIGHT
+    // (.transcribing/.enhancing — stop delivery before it pastes) and during the
+    // brief .starting handshake. Hidden at .idle/.busy where there's nothing to
+    // cancel (the assistant close-button affordance covers idle dismissal instead).
+    private var shouldShowCancelButton: Bool {
+        switch stateProvider.recordingState {
+        case .starting, .recording, .paused, .transcribing, .enhancing:
+            return true
+        case .idle, .busy:
+            return false
+        }
+    }
+
+    private var liveAssistantFollowUpText: String {
+        guard stateProvider.recordingState.isRecordingOrPaused else { return "" }
+        return stateProvider.partialTranscript
+    }
+
+    // VIPP (skip-mode-processing feature): a Binding that reads/writes the OBSERVED
+    // session's one-shot `skipPostProcessing` flag. The skip-processing toggle button uses
+    // it to flip the flag in place. Because `stateProvider` is @ObservedObject (the live
+    // RecordingSession), the get re-evaluates and the button's amber/subdued state updates
+    // the instant it changes. Per-session + one-shot: see RecordingSession.skipPostProcessing.
+    private var skipPostProcessingBinding: Binding<Bool> {
+        Binding(
+            get: { stateProvider.skipPostProcessing },
+            set: { stateProvider.skipPostProcessing = $0 }
+        )
+    }
+
+    private var controlBar: some View {
+        HStack(spacing: 0) {
+            HStack(spacing: 6) {
+                // Every shipped build increments CFBundleVersion. Keeping this
+                // immediately left of Stop makes the running release obvious.
+                RecorderVersionLabel()
+
+                Group {
+                    if shouldShowCloseButton {
+                        RecorderCloseButton(action: onCloseTapped)
+                    } else {
+                        RecorderRecordButton(
+                            recordingState: stateProvider.recordingState,
+                            action: onRecordButtonTapped
+                        )
+                    }
+                }
+
+                // Cancel ("X") sits immediately to the RIGHT of the Stop/record control
+                // so an abort is one glance + one tap away from Stop. Only shown while a
+                // recording or in-flight transcription is cancellable (see
+                // shouldShowCancelButton); collapses out otherwise so idle bars are unchanged.
+                if shouldShowCancelButton {
+                    RecorderCancelButton(action: onCancelTapped)
+                        .transition(.opacity)
+
+                    // VIPP (skip-mode-processing feature): the one-shot raw-transcript toggle
+                    // sits immediately to the RIGHT of Cancel. Reuses the SAME visibility
+                    // condition (shouldShowCancelButton) so it's available throughout the
+                    // recording/in-flight window — the user can engage it DURING recording —
+                    // and collapses out at idle/busy along with Cancel. Bound directly to the
+                    // observed session's skipPostProcessing flag (no closure threading needed).
+                    RecorderSkipProcessingButton(isEngaged: skipPostProcessingBinding)
+                        .transition(.opacity)
+                    if stateProvider.recordingState.isRecordingOrPaused {
+                        RecorderPauseButton(stateProvider: stateProvider)
+                    }
+                    if stateProvider.canTypeInHUD {
+                        RecorderMicrophoneButton(stateProvider: stateProvider)
+                    }
+                }
+            }
+            .padding(.leading, 10)
+            .animation(.easeInOut(duration: 0.2), value: shouldShowCancelButton)
+
+            Spacer(minLength: 0)
+                .frame(maxHeight: .infinity)
+                .background(RecorderPanelDragSurface())
+
+            HStack(spacing: 6) {
+                // Mode belongs immediately to the LEFT of the waveform. The slot it
+                // previously occupied on the right now shows the currently focused app.
+                RecorderModeButton(
+                    buttonSize: 22,
+                    padding: EdgeInsets()
+                )
+
+                RecorderStatusDisplay(
+                    currentState: stateProvider.recordingState,
+                    completionDisposition: stateProvider.completionDisposition,
+                    recorder: recorder
+                )
+                .background(RecorderPanelDragSurface())
+            }
+
+            Spacer(minLength: 0)
+                .frame(maxHeight: .infinity)
+                .background(RecorderPanelDragSurface())
+
+            HStack(spacing: 6) {
+                CurrentFocusApplicationIndicator(
+                    actionPulseID: stateProvider.currentFocusIconActionPulseID
+                )
+
+                if shouldShowPasteDestinationIndicator {
+                    PasteDestinationIndicator(
+                        target: stateProvider.pasteDestinationIndicatorTarget,
+                        context: stateProvider.recordingState == .starting || stateProvider.recordingState.isRecordingOrPaused ? .nextTrackStop : .pendingPaste,
+                        actionPulseID: stateProvider.lockedDestinationIconActionPulseID
+                    ) // Do not hide this at stop: the same per-session icon confirms VoiceInk still owns the target while transcription is loading, and updates if Next Track retargets it.
+                        .transition(.opacity)
+                }
+            }
+            .padding(.trailing, 12)
+        }
+        .frame(height: MiniRecorderLayoutMetrics.controlBarHeight)
+    }
+
+    private var transcriptSection: some View {
+        VStack(spacing: 0) {
+            if hasLiveTranscript {
+                LiveTranscriptView(
+                    text: stateProvider.partialTranscript,
+                    potentialTTSActive: stateProvider.potentialTTSActive,
+                    selectionReferences: stateProvider.liveContextPreviewReferences,
+                    cachedPreviewParts: stateProvider.liveContextPreviewParts,
+                    height: liveTranscriptHeight,
+                    typedInput: stateProvider.canTypeInHUD ? Binding(
+                        get: { stateProvider.typedInput },
+                        set: { stateProvider.updateTypedInput($0) }
+                    ) : nil,
+                    onEndTyping: { stateProvider.endTypingRun() },
+                    onSubmitTyping: { stateProvider.submitTypedInput() },
+                    typingFocus: stateProvider.typingFocusController,
+                    width: liveTranscriptWidth,
+                    dragsWindow: true
+                )
+                Divider().background(Color.white.opacity(0.15))
+            }
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if hasAssistantResponse {
+                AssistantPanelView(
+                    session: assistantSession,
+                    liveFollowUpText: liveAssistantFollowUpText,
+                    onSend: onAssistantFollowUp,
+                    height: min(MiniRecorderLayoutMetrics.assistantPanelHeight, maximumContextHeight)
+                )
+                Divider().background(Color.white.opacity(0.15))
+            } else {
+                transcriptSection
+            }
+            controlBar
+        }
+        .frame(width: capsuleWidth)
+        .background {
+            if hasLiveTranscript && liveTranscriptHeight > 100 {
+                LinearGradient(
+                    colors: [.black.opacity(0.55), .black.opacity(0.82), .black],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            } else {
+                Color.black
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: hasLiveTranscript || hasAssistantResponse ? expandedCornerRadius : compactCornerRadius, style: .continuous))
+        .animation(.easeInOut(duration: 0.3), value: hasLiveTranscript)
+        .animation(.easeInOut(duration: 0.3), value: hasAssistantResponse)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+    }
+}

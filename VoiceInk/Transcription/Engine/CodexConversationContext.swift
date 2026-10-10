@@ -1,0 +1,502 @@
+import AppKit
+import Foundation
+import os
+
+enum CodexConversationContextRole: String, Equatable {
+    case user
+    case assistant
+}
+
+struct CodexConversationContextMessage: Equatable {
+    let role: CodexConversationContextRole
+    let text: String
+}
+
+struct CodexActiveThreadEvent: Equatable {
+    let timestamp: String
+    let threadID: String?
+}
+
+struct CodexContextComposition: Equatable {
+    let prompt: String?
+    let includedMessages: Int
+    let contextCharacters: Int
+}
+
+/// Pure parsing and prompt policy for the optional active-Codex-task context.
+///
+/// This is intentionally independent of paste destinations and Accessibility. A recording
+/// in Codex may use Codex's own selected-view log event to identify one opaque thread ID,
+/// then read only bounded user/assistant text from that thread's native local session. If
+/// any boundary is missing or ambiguous, no Codex text leaves the Mac.
+enum CodexConversationContextPolicy {
+    /// Side chats and their main chat can both be active in the same renderer.
+    /// Activity proves visibility, not which pane contains a mouse selection.
+    /// Keep all currently active IDs; never promote the latest event to a source
+    /// identity when another chat is also visible. No selected text is needed.
+    static func visibleSelectionThreadIDs(from logText: String) -> [String] {
+        var active: [String: Set<String>] = [:]
+        let events = logText.split(separator: "\n").filter {
+            $0.contains("thread_stream_view_activity_changed")
+        }.map(String.init).sorted()
+        for line in events {
+            guard (line.contains("rendererWindowAppearance=primary")
+                    || line.contains("rendererWindowAppearance=hotkeyWindowThread")),
+                  let window = token(after: "rendererWindowId=", in: line),
+                  let id = token(after: "conversationId=", in: line),
+                  UUID(uuidString: id) != nil else { continue }
+            if line.contains("active=true"), line.contains("rendererWindowVisible=true") {
+                active[window, default: []].insert(id.lowercased())
+            } else {
+                active[window, default: []].remove(id.lowercased())
+            }
+        }
+        // Window focus at an old activity event is not current mouse ownership.
+        // Keep candidates across primary windows rather than guessing the last.
+        let ids = active.values.reduce(into: Set<String>()) { $0.formUnion($1) }
+        guard ids.count <= 4 else {
+            return []
+        }
+        return ids.sorted()
+    }
+
+    // These limits are app choices, not an OpenAI-recommended conversation size. Proven
+    // task identity does not prove every excerpt is relevant to the next spoken sentence.
+    // Keep guidance small; never fill the cap or add instructions merely because they fit.
+    // Research: .agents/skills/learnings/references/openai-transcription-quality.md.
+    static let bundleIdentifier = "com.openai.codex"
+    static let maximumMessages = 2
+    static let maximumMessageCharacters = 160
+    static let minimumMessageCharacters = 2
+    static let maximumContextCharacters = 400
+    static let maximumLogTailBytes = 2 * 1_024 * 1_024
+    static let maximumLogFiles = 4
+    static let maximumRolloutTailBytes = 4 * 1_024 * 1_024
+
+    // A short topic label plus quoted excerpts is enough framing. No XML, role-heavy
+    // objects, or extra transcription instructions. The 400-character budget is a local
+    // conservative choice, not a measured optimum or an invitation to fill empty space.
+    static let contextDescription = "Recent Codex conversation:"
+
+    private static let ignoredMessagePrefixes = [
+        "<environment_context>",
+        "<recommended_plugins>",
+        "<codex_delegation>",
+        "<app-context>",
+        "<permissions instructions>"
+    ]
+
+    static func sanitizedMessageText(_ text: String) -> String? {
+        let collapsed = text
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard collapsed.count >= minimumMessageCharacters,
+              !ignoredMessagePrefixes.contains(where: { collapsed.hasPrefix($0) }) else {
+            return nil
+        }
+        guard collapsed.count > maximumMessageCharacters else { return collapsed }
+
+        let provisionalEnd = collapsed.index(
+            collapsed.startIndex,
+            offsetBy: maximumMessageCharacters,
+            limitedBy: collapsed.endIndex
+        ) ?? collapsed.endIndex
+        var prefix = collapsed[..<provisionalEnd]
+        if provisionalEnd < collapsed.endIndex,
+           !collapsed[provisionalEnd].isWhitespace,
+           let lastWhitespace = prefix.lastIndex(where: { $0.isWhitespace }) {
+            prefix = prefix[..<lastWhitespace]
+        } else if provisionalEnd < collapsed.endIndex,
+                  !collapsed[provisionalEnd].isWhitespace,
+                  !prefix.contains(where: { $0.isWhitespace }) {
+            // A sliced identifier is worse spelling guidance than no excerpt.
+            return nil
+        }
+        let bounded = String(prefix).trimmingCharacters(in: .whitespacesAndNewlines)
+        return bounded.count >= minimumMessageCharacters ? bounded : nil
+    }
+
+    /// The newest selected-view event is authoritative. A later `active=false` means the
+    /// main renderer is at Home or between routes, so an older task must not be reused.
+    static func newestActiveThreadEvent(from logText: String) -> CodexActiveThreadEvent? {
+        for rawLine in logText.split(separator: "\n", omittingEmptySubsequences: true).reversed() {
+            let line = String(rawLine)
+            guard line.contains("thread_stream_view_activity_changed"),
+                  line.contains("rendererWindowAppearance=primary"),
+                  line.contains("rendererWindowVisible=true") else {
+                continue
+            }
+
+            let timestamp = line.split(separator: " ", maxSplits: 1).first.map(String.init) ?? ""
+            guard line.contains("active=true") else {
+                return CodexActiveThreadEvent(timestamp: timestamp, threadID: nil)
+            }
+            guard let threadID = token(after: "conversationId=", in: line),
+                  UUID(uuidString: threadID) != nil else {
+                return CodexActiveThreadEvent(timestamp: timestamp, threadID: nil)
+            }
+            return CodexActiveThreadEvent(timestamp: timestamp, threadID: threadID.lowercased())
+        }
+        return nil
+    }
+
+    static func message(fromRolloutLine line: String) -> CodexConversationContextMessage? {
+        // Role filtering alone admitted progress chatter in build 322. Current native Codex
+        // rollouts use phase=final_answer, not channel=final (the older message shape).
+        // Require explicit final metadata; absent, unknown, or conflicting values fail
+        // closed. Even these two excerpts need identical-audio evaluation before claiming
+        // better recognition or expanding their budget/source scope.
+        guard line.contains("\"type\":\"response_item\""),
+              line.contains("\"type\":\"message\""),
+              let data = line.data(using: .utf8),
+              let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              root["type"] as? String == "response_item",
+              let payload = root["payload"] as? [String: Any],
+              payload["type"] as? String == "message",
+              let rawRole = payload["role"] as? String,
+              let role = CodexConversationContextRole(rawValue: rawRole),
+              let content = payload["content"] as? [[String: Any]] else {
+            return nil
+        }
+
+        if role == .assistant {
+            let channel = payload["channel"] as? String
+            if let rawPhase = payload["phase"] {
+                guard let phase = rawPhase as? String,
+                      phase == "final_answer",
+                      payload["channel"] == nil || channel == "final" else { return nil }
+            } else {
+                guard channel == "final" else { return nil }
+            }
+        }
+
+        let acceptedContentType = role == .user ? "input_text" : "output_text"
+        let text = content.compactMap { item -> String? in
+            guard item["type"] as? String == acceptedContentType else { return nil }
+            return item["text"] as? String
+        }.joined(separator: " ")
+
+        guard let sanitized = sanitizedMessageText(text) else { return nil }
+        return CodexConversationContextMessage(role: role, text: sanitized)
+    }
+
+    /// Input lines are newest first, matching the bounded reverse-tail reader.
+    static func selectedMessages(fromNewestRolloutLines lines: [String]) -> [CodexConversationContextMessage] {
+        var newestFirst: [CodexConversationContextMessage] = []
+        var seen = Set<String>()
+
+        for line in lines {
+            guard let message = message(fromRolloutLine: line) else { continue }
+            // Repeated quoted text adds no signal even when the other role repeats it.
+            let identity = message.text.lowercased()
+            guard seen.insert(identity).inserted else { continue }
+            newestFirst.append(message)
+            if newestFirst.count == maximumMessages { break }
+        }
+        return Array(newestFirst.reversed())
+    }
+
+    static func composedPrompt(
+        staticPrompt: String?,
+        messages: [CodexConversationContextMessage],
+        characterLimit: Int = OpenAITranscriptionConfiguration.promptCharacterLimit
+    ) -> String? {
+        composition(staticPrompt: staticPrompt, messages: messages, characterLimit: characterLimit).prompt
+    }
+
+    static func composition(
+        staticPrompt: String?,
+        messages: [CodexConversationContextMessage],
+        characterLimit: Int = OpenAITranscriptionConfiguration.promptCharacterLimit
+    ) -> CodexContextComposition {
+        let empty = CodexContextComposition(prompt: nil, includedMessages: 0, contextCharacters: 0)
+        let base = OpenAITranscriptionConfiguration.normalizedPrompt(staticPrompt) ?? ""
+        let prefix = base.isEmpty ? "" : base + "\n\n"
+        let limit = min(characterLimit, OpenAITranscriptionConfiguration.promptCharacterLimit)
+        guard prefix.count < limit else { return empty }
+
+        var seen = Set<String>()
+        var accepted = Array(messages.reversed().compactMap { message -> CodexConversationContextMessage? in
+            guard let text = sanitizedMessageText(message.text),
+                  seen.insert(text.lowercased()).inserted else { return nil }
+            return CodexConversationContextMessage(role: message.role, text: text)
+        }.prefix(maximumMessages).reversed())
+        while !accepted.isEmpty {
+            guard let block = encodedContextBlock(messages: accepted) else { return empty }
+            if block.count <= maximumContextCharacters,
+               prefix.count + block.count <= limit {
+                return CodexContextComposition(
+                    prompt: prefix + block,
+                    includedMessages: accepted.count,
+                    contextCharacters: block.count
+                )
+            }
+            // Budget pressure removes the oldest whole excerpt, never the static prompt,
+            // a partial JSON string, or a Vocabulary keyword (which has its own field).
+            accepted.removeFirst()
+        }
+        return empty
+    }
+
+    static func encodedContextBlock(messages: [CodexConversationContextMessage]) -> String? {
+        // Escaping protects quoted structure, not model instruction priority. A quoted
+        // instruction can still bias recognition; more warning prose is not a proven cure.
+        let values = messages.compactMap { sanitizedMessageText($0.text) }
+        guard !values.isEmpty,
+              JSONSerialization.isValidJSONObject(values),
+              let data = try? JSONSerialization.data(
+                withJSONObject: values,
+                options: [.sortedKeys]
+              ),
+              var json = String(data: data, encoding: .utf8) else {
+            return nil
+        }
+
+        json = json
+            .replacingOccurrences(of: "<", with: "\\u003C")
+            .replacingOccurrences(of: ">", with: "\\u003E")
+            .replacingOccurrences(of: "&", with: "\\u0026")
+
+        return [contextDescription, json]
+            .joined(separator: "\n")
+    }
+
+    static func sessionDates(for threadID: String, calendar: Calendar = .current) -> [Date] {
+        let prefix = String(threadID.prefix(13)).replacingOccurrences(of: "-", with: "")
+        guard prefix.count == 12,
+              let milliseconds = UInt64(prefix, radix: 16) else {
+            return []
+        }
+        let date = Date(timeIntervalSince1970: TimeInterval(milliseconds) / 1_000)
+        return [-1, 0, 1].compactMap { calendar.date(byAdding: .day, value: $0, to: date) }
+    }
+
+    private static func token(after marker: String, in line: String) -> String? {
+        guard let markerRange = line.range(of: marker) else { return nil }
+        let suffix = line[markerRange.upperBound...]
+        let token = suffix.prefix { !$0.isWhitespace }
+        return token.isEmpty ? nil : String(token)
+    }
+}
+
+/// Read-only bridge from the frontmost Codex app to its one proven local task session.
+/// Nothing here activates Codex, reads its Accessibility hierarchy, inspects a composer,
+/// or participates in VoiceInk++ destination/delivery selection.
+@MainActor
+enum CodexConversationContextReader {
+    /// Optional labels must not block mouse dispatch or the recorder HUD.
+    /// A serial worker bounds concurrent scans without any idle polling/cache.
+    nonisolated static func selectionThreadIDs(processIdentifier: pid_t) async -> [String] {
+        await CodexSelectionLogWorker.shared.read(processIdentifier: processIdentifier)
+    }
+
+    nonisolated static func readSelectionThreadIDs(processIdentifier: pid_t) -> [String] {
+        let logs = codexLogURLs(processIdentifier: processIdentifier, fileManager: .default)
+            .prefix(CodexConversationContextPolicy.maximumLogFiles)
+            .compactMap { tailString(at: $0, maximumBytes: CodexConversationContextPolicy.maximumLogTailBytes) }
+        return CodexConversationContextPolicy.visibleSelectionThreadIDs(from: logs.joined(separator: "\n"))
+    }
+    static func visibleSelectionThreadIDsIfFrontmost(
+        frontmostApplication: NSRunningApplication?,
+        fileManager: FileManager = .default
+    ) -> [String] {
+        guard let app = frontmostApplication,
+              isSupportedCodexApplication(app, fileManager: fileManager) else { return [] }
+        let logs = codexLogURLs(processIdentifier: app.processIdentifier, fileManager: fileManager)
+            .prefix(CodexConversationContextPolicy.maximumLogFiles)
+            .compactMap { tailString(at: $0,
+                maximumBytes: CodexConversationContextPolicy.maximumLogTailBytes) }
+        return CodexConversationContextPolicy.visibleSelectionThreadIDs(
+            from: logs.joined(separator: "\n")
+        )
+    }
+
+    private static let logger = Logger(
+        subsystem: "com.ethansk.VoiceInkPlusPlus",
+        category: "CodexConversationContext"
+    )
+
+    static func recentMessagesIfFrontmost(
+        frontmostApplication: NSRunningApplication? = NSWorkspace.shared.frontmostApplication,
+        fileManager: FileManager = .default
+    ) -> [CodexConversationContextMessage] {
+        guard let threadID = activeThreadIDIfFrontmost(
+            frontmostApplication: frontmostApplication,
+            fileManager: fileManager
+        ),
+              let rolloutURL = rolloutURL(for: threadID, fileManager: fileManager),
+              let rolloutTail = tailString(
+                at: rolloutURL,
+                maximumBytes: CodexConversationContextPolicy.maximumRolloutTailBytes
+              ) else {
+            logger.info("Codex context unavailable after exact frontmost-app check")
+            return []
+        }
+
+        let messages = CodexConversationContextPolicy.selectedMessages(
+            fromNewestRolloutLines: rolloutTail
+                .split(separator: "\n", omittingEmptySubsequences: true)
+                .reversed()
+                .map(String.init)
+        )
+        logger.info("Codex context captured messages=\(messages.count, privacy: .public)")
+        return messages
+    }
+
+    /// Reuse the same app-owned task boundary for selection labels. A title or a
+    /// recent session is never an identity source; missing exact scope simply
+    /// leaves the selection's optional task attributes out of its XML.
+    static func activeThreadIDIfFrontmost(
+        frontmostApplication: NSRunningApplication? = NSWorkspace.shared.frontmostApplication,
+        fileManager: FileManager = .default
+    ) -> String? {
+        guard let app = frontmostApplication,
+              isSupportedCodexApplication(app, fileManager: fileManager) else {
+            return nil
+        }
+
+        let events = codexLogURLs(
+            processIdentifier: app.processIdentifier,
+            fileManager: fileManager
+        )
+        .prefix(CodexConversationContextPolicy.maximumLogFiles)
+        .compactMap { url -> CodexActiveThreadEvent? in
+            guard let tail = tailString(
+                at: url,
+                maximumBytes: CodexConversationContextPolicy.maximumLogTailBytes
+            ) else {
+                return nil
+            }
+            return CodexConversationContextPolicy.newestActiveThreadEvent(from: tail)
+        }
+
+        guard let newestEvent = events.max(by: { $0.timestamp < $1.timestamp }),
+              let threadID = newestEvent.threadID,
+              rolloutURL(for: threadID, fileManager: fileManager) != nil else {
+            return nil
+        }
+        return threadID
+    }
+
+    static func isSupportedCodexApplication(
+        _ app: NSRunningApplication,
+        fileManager: FileManager
+    ) -> Bool {
+        guard app.bundleIdentifier == CodexConversationContextPolicy.bundleIdentifier,
+              let bundleURL = app.bundleURL else {
+            return false
+        }
+        let codexBinary = bundleURL
+            .appendingPathComponent("Contents")
+            .appendingPathComponent("Resources")
+            .appendingPathComponent("codex")
+        return fileManager.isExecutableFile(atPath: codexBinary.path)
+    }
+
+    nonisolated private static func codexLogURLs(
+        processIdentifier: pid_t,
+        fileManager: FileManager,
+        now: Date = Date()
+    ) -> [URL] {
+        let baseURL = fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/com.openai.codex", isDirectory: true)
+        let calendar = Calendar.current
+        let directoryURLs = (0...2).compactMap { offset -> URL? in
+            guard let date = calendar.date(byAdding: .day, value: -offset, to: now) else {
+                return nil
+            }
+            let components = calendar.dateComponents([.year, .month, .day], from: date)
+            guard let year = components.year,
+                  let month = components.month,
+                  let day = components.day else {
+                return nil
+            }
+            return baseURL
+                .appendingPathComponent(String(format: "%04d", year), isDirectory: true)
+                .appendingPathComponent(String(format: "%02d", month), isDirectory: true)
+                .appendingPathComponent(String(format: "%02d", day), isDirectory: true)
+        }
+
+        let pidMarker = "-\(processIdentifier)-"
+        let candidateURLs = directoryURLs.flatMap { directoryURL in
+            (try? fileManager.contentsOfDirectory(
+                at: directoryURL,
+                includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
+                options: [.skipsHiddenFiles]
+            )) ?? []
+        }
+
+        let matchingURLs = candidateURLs.filter {
+            $0.pathExtension == "log" && $0.lastPathComponent.contains(pidMarker)
+        }.filter {
+            ((try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) > 0
+        }
+
+        return matchingURLs.sorted {
+            let left = try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+            let right = try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+            let leftDate = left ?? Date.distantPast
+            let rightDate = right ?? Date.distantPast
+            return leftDate > rightDate
+        }
+    }
+
+    private static func rolloutURL(
+        for threadID: String,
+        fileManager: FileManager
+    ) -> URL? {
+        let sessionsURL = fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/sessions", isDirectory: true)
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+
+        var matches: [URL] = []
+        for date in CodexConversationContextPolicy.sessionDates(for: threadID) {
+            formatter.dateFormat = "yyyy/MM/dd"
+            let directoryURL = sessionsURL
+                .appendingPathComponent(formatter.string(from: date), isDirectory: true)
+            let candidates = (try? fileManager.contentsOfDirectory(
+                at: directoryURL,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            )) ?? []
+            matches.append(contentsOf: candidates.filter {
+                $0.pathExtension == "jsonl"
+                    && $0.lastPathComponent.hasSuffix("-\(threadID).jsonl")
+            })
+        }
+        return matches.count == 1 ? matches[0] : nil
+    }
+
+    nonisolated private static func tailString(at url: URL, maximumBytes: Int) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+
+        guard let endOffset = try? handle.seekToEnd() else { return nil }
+        let maximum = UInt64(maximumBytes)
+        let startOffset = endOffset > maximum ? endOffset - maximum : 0
+        do {
+            try handle.seek(toOffset: startOffset)
+            guard var data = try handle.readToEnd(), !data.isEmpty else { return nil }
+            if startOffset > 0,
+               let firstNewline = data.firstIndex(of: 0x0A) {
+                data.removeSubrange(data.startIndex...firstNewline)
+            }
+            return String(decoding: data, as: UTF8.self)
+        } catch {
+            return nil
+        }
+    }
+}
+
+private actor CodexSelectionLogWorker {
+    static let shared = CodexSelectionLogWorker()
+    func read(processIdentifier: pid_t) -> [String] {
+        guard !Task.isCancelled else { return [] }
+        return CodexConversationContextReader.readSelectionThreadIDs(processIdentifier: processIdentifier)
+    }
+}

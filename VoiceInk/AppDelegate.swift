@@ -1,0 +1,85 @@
+import Cocoa
+import SwiftUI
+import UniformTypeIdentifiers
+
+class AppDelegate: NSObject, NSApplicationDelegate {
+    weak var menuBarManager: MenuBarManager?
+    weak var voiceInkEngine: VoiceInkEngine?
+
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Inactive launches can receive sessionDidResignActive before did-finish.
+        // Subscribe early; a socket command is never evidence of an unlocked Mac.
+        PrimaryMouseSessionGate.shared.startObserving()
+    }
+    
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        menuBarManager?.applyActivationPolicy()
+        // Remember selection gestures from launch, not from recording start, so a
+        // highlight made just before or during recorder start-up is not missed.
+        // It records only pointer edges; text is read only during a recording.
+        SelectionGestureWatcher.shared.start()
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag, let menuBarManager = menuBarManager, !menuBarManager.isMenuBarOnly {
+            if WindowManager.shared.showMainWindow() != nil {
+                return false
+            }
+        }
+        return true
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return false
+    }
+
+    static func shouldBlockTermination(hasInFlightSessions: Bool, hasHistoryRetries: Bool = false) -> Bool {
+        hasInFlightSessions || hasHistoryRetries
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let hasInFlightSessions = voiceInkEngine?.sessions.isEmpty == false
+        guard Self.shouldBlockTermination(
+            hasInFlightSessions: hasInFlightSessions,
+            hasHistoryRetries: !HistoryAudioRetryState.shared.activeIDs.isEmpty
+        ) else {
+            return .terminateNow
+        }
+
+        // A normal quit/release swap must never discard live microphone audio or an
+        // in-flight transcription, including file-only History retries which do not
+        // own a recorder session. Returning terminateCancel also makes the external
+        // installer abort before it renames the bundle. Force-kill/crash recovery is a
+        // separate boundary; this guard protects every cooperative app replacement.
+        NotificationManager.shared.showNotification(
+            title: String(localized: "Agent Flow is still recording or transcribing — finish or cancel it before quitting"),
+            type: .error,
+            duration: 12
+        )
+        return .terminateCancel
+    }
+
+    // Stash URL when app cold-starts to avoid spawning a new window/tab
+    var pendingOpenFileURL: URL?
+    
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let url = urls.first(where: { SupportedMedia.isSupported(url: $0) }) else {
+            return
+        }
+        
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        
+        if WindowManager.shared.currentMainWindow() == nil {
+            // Cold start: do NOT create a window here to avoid extra window/tab.
+            // Defer to SwiftUI’s WindowGroup-created ContentView and let it process this later.
+            pendingOpenFileURL = url
+        } else {
+            // Running: focus current window and route in-place to Transcribe Audio
+            menuBarManager?.focusMainWindow()
+            NotificationCenter.default.post(name: .navigateToDestination, object: nil, userInfo: ["destination": "Transcribe Audio"])
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .openFileForTranscription, object: nil, userInfo: ["url": url])
+            }
+        }
+    }
+}

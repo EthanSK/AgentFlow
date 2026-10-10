@@ -1,0 +1,1376 @@
+/*
+  Agent Flow site
+
+  The page is a quiet light desk; the only black object is the recorder HUD.
+  Its two signal colours are copied from the real HUD: cyan marks selected
+  text, violet marks a screenshot. Nothing else on the page uses them.
+
+  The hero sets that HUD on an abstract Mac screen (wallpaper, menu bar, one
+  TextEdit window) so visitors can see it is a floating macOS panel, not a web
+  widget. The scene stays quieter than the HUD: its only macOS system colours
+  are the window's traffic lights and the orange microphone-in-use dot.
+
+  Type roles
+    display  Avenir Next Condensed: headings only
+    body     Seravek (humanist) with portable fallbacks
+    system   the macOS UI face, used only inside the recorder and Mac screen mocks
+    mono     XML, shell commands and the mock TextEdit document only
+*/
+
+:root {
+  --desk: #e5eae8;
+  --sheet: #ffffff;
+  --ink: #111615;
+  --graphite: #4a5452;
+  --rule: #c7d0cc;
+  --hud: #0a0b0b;
+  --mint: #3fe0b5;
+  --mint-ink: #066b55;
+  --cyan: #6ccff6;
+  --cyan-ink: #006f8e;
+  --cyan-wash: #ade6f8;
+  --cyan-tint: #e8f6fb;
+  --violet: #bf5af2;
+  --violet-ink: #7e2bae;
+  --violet-tint: #f4ebf9;
+  /* Mac screen mock: a cooler, deeper tone of the desk so the screen reads as its
+     own surface while the black HUD stays the strongest object on it. */
+  --wall-light: #d4ded9;
+  --wall-deep: #b3c3bd;
+
+  --display: "Avenir Next Condensed", "Avenir Next", "Arial Narrow", "Roboto Condensed", system-ui, sans-serif;
+  --body: Seravek, "Gill Sans Nova", Ubuntu, Calibri, "DejaVu Sans", "Source Sans Pro", system-ui, sans-serif;
+  --system: system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+  --wrap: 72rem;
+  --gutter: clamp(1.25rem, 4vw, 2.5rem);
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  scroll-padding-top: 1.5rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: var(--desk);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 1.0625rem;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+img {
+  height: auto;
+}
+
+a {
+  color: var(--mint-ink);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+}
+
+a:hover {
+  text-decoration-thickness: 2px;
+}
+
+:focus-visible {
+  outline: 3px solid var(--mint-ink);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+::selection {
+  background: var(--cyan-wash);
+  color: var(--ink);
+}
+
+code,
+pre {
+  font-family: var(--mono);
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-family: var(--display);
+  font-weight: 700;
+  line-height: 1.02;
+  letter-spacing: -0.005em;
+  text-wrap: balance;
+}
+
+p {
+  margin: 0;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  top: 0.75rem;
+  left: 0.75rem;
+  z-index: 10;
+  padding: 0.55rem 0.9rem;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--sheet);
+  font-weight: 600;
+  text-decoration: none;
+  transform: translateY(-160%);
+}
+
+.skip-link:focus {
+  transform: none;
+}
+
+main:focus {
+  outline: none;
+}
+
+.wrap {
+  width: min(var(--wrap), 100% - 2 * var(--gutter));
+  margin-inline: auto;
+}
+
+/* Header */
+
+.top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1.5rem;
+  padding-block: 1.25rem;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+}
+
+.brand img {
+  border-radius: 8px;
+}
+
+.top-nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 1.35rem;
+  font-size: 0.975rem;
+}
+
+.top-nav a {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.top-nav a:hover {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+}
+
+.top-nav .top-github {
+  padding: 0.3rem 0.8rem 0.35rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--sheet);
+}
+
+.top-nav .top-github:hover {
+  border-color: var(--ink);
+  text-decoration: none;
+}
+
+/* Hero */
+
+.hero {
+  padding-block: clamp(2rem, 6vw, 4.5rem) clamp(3.5rem, 8vw, 6rem);
+}
+
+.hero-head {
+  display: grid;
+  gap: 1.25rem 4rem;
+  align-items: end;
+  margin-bottom: clamp(2.25rem, 5vw, 3.75rem);
+}
+
+.hero h1 {
+  max-width: 19ch;
+  font-size: clamp(2.65rem, 5.9vw, 4.8rem);
+  /* Leave room for the screenshot marquee above each line's cap height. */
+  line-height: 1.14;
+  letter-spacing: -0.012em;
+}
+
+.hero-aside {
+  max-width: 33rem;
+}
+
+.lede {
+  font-size: clamp(1.1rem, 1.7vw, 1.3rem);
+  line-height: 1.5;
+}
+
+/* Release requirements sit beside the verified download, above the fold.
+   Keep the caveat style for older source-only landing pages. */
+.release-note {
+  margin-top: 0.85rem;
+  color: var(--graphite);
+  font-size: 0.9rem;
+}
+
+.source-link { margin-top: 0.7rem; }
+
+.caveat {
+  margin-top: 1rem;
+  padding-left: 0.85rem;
+  border-left: 2px solid var(--ink);
+  color: var(--graphite);
+  font-size: 0.95rem;
+}
+
+.caveat strong {
+  color: var(--ink);
+}
+
+@media (min-width: 64rem) {
+  .hero-head {
+    grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr);
+  }
+
+  .hero-aside {
+    padding-bottom: 0.45rem;
+  }
+}
+
+/* Headline gestures: a text selection and a screenshot marquee. */
+
+.g-select {
+  margin-inline: -0.06em;
+  padding-inline: 0.06em;
+  border-radius: 0.06em;
+  background: linear-gradient(var(--cyan-wash), var(--cyan-wash)) left 58% / 100% 84% no-repeat;
+  white-space: nowrap;
+  transition: background-size 0.5s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.g-shot {
+  position: relative;
+  isolation: isolate;
+  white-space: nowrap;
+}
+
+.g-shot::before,
+.g-shot::after {
+  position: absolute;
+  z-index: -1;
+  content: "";
+  transition: opacity 0.25s ease, transform 0.35s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.g-shot::before {
+  inset: 0.1em -0.12em -0.04em;
+  border: max(2px, 0.028em) dashed var(--violet-ink);
+  background: rgba(191, 90, 242, 0.08);
+}
+
+/* Four corner handles, centred on the marquee corners. */
+.g-shot::after {
+  --h: max(7px, 0.09em);
+  inset: calc(0.1em - var(--h) / 2) calc(-0.12em - var(--h) / 2) calc(-0.04em - var(--h) / 2);
+  background:
+    linear-gradient(var(--violet-ink), var(--violet-ink)) 0 0 / var(--h) var(--h) no-repeat,
+    linear-gradient(var(--violet-ink), var(--violet-ink)) 100% 0 / var(--h) var(--h) no-repeat,
+    linear-gradient(var(--violet-ink), var(--violet-ink)) 0 100% / var(--h) var(--h) no-repeat,
+    linear-gradient(var(--violet-ink), var(--violet-ink)) 100% 100% / var(--h) var(--h) no-repeat;
+}
+
+/* Demo */
+
+.demo {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+}
+
+.pane {
+  min-width: 0;
+}
+
+.pane-label {
+  margin-bottom: 0.6rem;
+  color: var(--graphite);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+/*
+  Mac screen mock. Its layout follows the screen's own width (container queries),
+  not the viewport, because the same scene fills a ~38rem column beside the Codex
+  output on wide screens and the full width of a phone. Narrow screens drop menu
+  items and tighten the window/HUD spacing instead of scaling the picture down:
+  HUD text never drops below 0.9rem, and the highlighted line still fits on one
+  line at a 320px viewport. Everything stays in normal flow, so nothing is
+  clipped; the HUD's negative top margin is the only overlap.
+*/
+
+.mac {
+  container: mac / inline-size;
+  border: 1px solid rgba(17, 22, 21, 0.14);
+  border-radius: 14px;
+  /* Quiet, abstract macOS-style wallpaper: broad curved ridges, not a flat app
+     card. It is CSS-only, static, and never competes with the black recorder. */
+  background:
+    radial-gradient(ellipse 110% 78% at 110% 108%, #355e89 0 43%, #729fbe 44% 51%, transparent 52%),
+    radial-gradient(ellipse 108% 110% at -18% -20%, #dfeef0 0 49%, #abc9da 50% 60%, transparent 61%),
+    linear-gradient(145deg, #90b5cf 14%, #e1cad4 53%, #efc6aa 77%, #c9b0c3);
+  box-shadow: 0 30px 60px -42px rgba(8, 22, 18, 0.55);
+}
+
+.mac-menubar {
+  display: flex;
+  align-items: center;
+  gap: 0.95em;
+  height: 1.6rem;
+  padding-inline: 0.8rem;
+  border-bottom: 1px solid rgba(17, 22, 21, 0.07);
+  border-radius: 13px 13px 0 0;
+  background: rgba(255, 255, 255, 0.5);
+  color: var(--ink);
+  font-family: var(--system);
+  font-size: 0.72rem;
+  line-height: 1;
+  white-space: nowrap;
+  /* Safety net only: the container queries size the items to fit, but an unusually
+     wide fallback font must clip this decorative bar, never widen the page. */
+  overflow: hidden;
+}
+
+.mac-app {
+  font-weight: 700;
+}
+
+.mac-status {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* macOS's own microphone-in-use dot, shown whenever any app is recording. */
+.mac-mic {
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 50%;
+  background: #ff9f0a;
+}
+
+/* Menu items and status details that only appear once the screen is wide
+   enough to hold them without clipping; see the container queries below. */
+.mac-mid,
+.mac-wide,
+.mac-date {
+  display: none;
+}
+
+.mac-screen {
+  padding: 0.8rem 0.7rem 0.55rem;
+}
+
+.mac-window {
+  border: 1px solid rgba(17, 22, 21, 0.12);
+  border-radius: 10px;
+  background: var(--sheet);
+  box-shadow:
+    0 1px 2px rgba(8, 22, 18, 0.06),
+    0 16px 34px -22px rgba(8, 22, 18, 0.4);
+}
+
+.mac-titlebar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.7rem;
+  border-bottom: 1px solid #e3e8e6;
+  border-radius: 9px 9px 0 0;
+  background: #f6f8f7;
+  color: #6b7472;
+  font-family: var(--system);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.mac-lights {
+  position: absolute;
+  top: 50%;
+  left: 0.6rem;
+  display: flex;
+  gap: 0.35rem;
+  transform: translateY(-50%);
+}
+
+.mac-lights i {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: #ff5f57;
+}
+
+.mac-lights i:nth-child(2) { background: #febc2e; }
+.mac-lights i:nth-child(3) { background: #28c840; }
+
+/* TextEdit wraps plain text to its window, so a narrow screen wraps a long line
+   instead of clipping it. The tall bottom padding is the document's blank page,
+   the only area the HUD may cover; keep it taller than the HUD's overlap. */
+.mac-doc {
+  margin: 0;
+  padding: 0.7rem 0.6rem 3.6rem;
+  color: #1d2322;
+  font-size: 0.7rem;
+  line-height: 1.65;
+  tab-size: 2;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+/* The captured selection, drawn as the same cyan wash as the headline gesture. */
+.mac-select {
+  padding-block: 0.12em;
+  background: linear-gradient(var(--cyan-wash), var(--cyan-wash)) left center / 100% 100% no-repeat;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  transition: background-size 0.3s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* The recorder is bottom-centred like the real panel. Keep equal side margins
+   at every breakpoint, and overlap only the document's blank page. */
+.hud {
+  position: relative;
+  z-index: 1;
+  width: 94%;
+  margin: -3.2rem auto 0;
+  padding: 0.85rem 0.95rem 0.75rem;
+  border-radius: 18px;
+  background: var(--hud);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 2px 6px rgba(8, 22, 18, 0.2),
+    0 28px 50px -22px rgba(8, 22, 18, 0.62);
+  color: rgba(255, 255, 255, 0.84);
+  font-family: var(--system);
+}
+
+.hud-text {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* Decorative Dock: subdued, inert icons establish the desktop context without
+   suggesting that the website is a functional macOS simulator. */
+.mac-dock {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  width: fit-content;
+  margin: 0.95rem auto 0;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 11px;
+  background: rgba(231, 240, 248, 0.42);
+  box-shadow: 0 3px 9px rgba(29, 49, 74, 0.13);
+}
+
+.mac-dock i {
+  position: relative;
+  display: block;
+  width: 1.45rem;
+  height: 1.45rem;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+}
+
+.dock-finder { background: linear-gradient(90deg, #64b9ec 50%, #d3eafa 50%); }
+.dock-finder::after {
+  position: absolute;
+  inset: 25% 25% 24%;
+  border-bottom: 1px solid #295476;
+  border-radius: 0 0 45% 45%;
+  content: "";
+}
+.dock-browser { background: radial-gradient(circle, #5ca9dc 52%, #e9f3f8 55% 66%, #a0c7dd 69%); }
+.dock-browser::after {
+  position: absolute;
+  inset: 21% 43%;
+  background: linear-gradient(#e4776e 50%, #f7fbff 50%);
+  transform: rotate(35deg);
+  content: "";
+}
+.dock-notes { background: linear-gradient(#e4bd60 0 28%, #f6f2e5 29% 100%); }
+.dock-notes::after {
+  position: absolute;
+  inset: 44% 22% 22%;
+  background: repeating-linear-gradient(transparent 0 3px, #c5c8c8 3px 4px);
+  content: "";
+}
+.dock-photos { background: conic-gradient(#e6a876, #e3cb77, #83b9a5, #7ea8d1, #b599c9, #da9cac, #e6a876); }
+.dock-settings { background: radial-gradient(circle, #87939d 0 18%, #d7dfe4 20% 34%, #8f9da8 36% 49%, #d2dce3 51%); }
+.dock-divider { width: 1px; height: 1.3rem; margin-inline: 0.05rem; background: rgba(58, 82, 103, 0.2); }
+.mac-dock .dock-trash { width: 1.05rem; margin-inline: 0.1rem; border-radius: 3px 3px 5px 5px; background: repeating-linear-gradient(90deg, #cedae3 0 3px, #e7edf2 3px 5px); }
+
+@container mac (min-width: 26rem) {
+  .mac-mid {
+    display: block;
+  }
+
+  .mac-screen {
+    padding: 1.1rem 1rem 0.65rem;
+  }
+
+  .mac-window {
+    width: 88%;
+  }
+
+  .mac-doc {
+    padding: 0.8rem 0.85rem 4rem;
+    font-size: 0.75rem;
+    tab-size: 4;
+  }
+
+  .hud {
+    width: 86%;
+    margin-top: -3.6rem;
+    padding: 1rem 1.1rem 0.85rem;
+  }
+
+  .hud-text {
+    font-size: 0.95rem;
+  }
+}
+
+@container mac (min-width: 36rem) {
+  .mac-wide {
+    display: block;
+  }
+
+  .mac-date {
+    display: inline;
+  }
+
+  .mac-screen {
+    padding: 1.35rem 1.25rem 0.75rem;
+  }
+
+  .mac-window {
+    width: 76%;
+  }
+
+  .mac-doc {
+    padding-bottom: 4.6rem;
+    font-size: 0.8rem;
+  }
+
+  .hud {
+    width: 72%;
+    margin-top: -4.2rem;
+  }
+}
+
+.cue {
+  margin-inline: 0.3em;
+}
+
+.cue-select {
+  color: var(--cyan);
+}
+
+.cue-shot {
+  color: var(--violet);
+}
+
+/* The recorder's typing line. It reads "Click to type" until the typed name appears,
+   and keeps the typed words when the demo is complete, static or motion-reduced. */
+.hud-type {
+  margin-top: 0.4rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.9);
+  overflow-wrap: anywhere;
+}
+
+.hud-placeholder {
+  display: none;
+  color: rgba(255, 255, 255, 0.36);
+}
+
+.demo-armed .typed,
+.is-playing .typed:not(.is-shown) {
+  display: none;
+}
+
+.demo-armed .hud-placeholder,
+.is-playing .typed:not(.is-shown) + .hud-placeholder {
+  display: inline;
+}
+
+@container mac (min-width: 26rem) {
+  .hud-type {
+    font-size: 0.95rem;
+  }
+}
+
+.hud-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  margin-top: 0.85rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.hud-stop {
+  position: relative;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.hud-stop::after {
+  position: absolute;
+  inset: 9px;
+  border-radius: 2px;
+  background: #fff;
+  content: "";
+}
+
+.wave {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 3px;
+  min-width: 0;
+  height: 28px;
+  overflow: hidden;
+}
+
+.wave i {
+  flex: 1 1 0;
+  min-width: 2px;
+  max-width: 5px;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--mint);
+  transform: scaleY(var(--s, 0.4));
+}
+
+.wave i:nth-child(7n + 1) { --s: 0.34; }
+.wave i:nth-child(7n + 2) { --s: 0.7; }
+.wave i:nth-child(7n + 3) { --s: 0.5; }
+.wave i:nth-child(7n + 4) { --s: 0.94; }
+.wave i:nth-child(7n + 5) { --s: 0.28; }
+.wave i:nth-child(7n + 6) { --s: 0.62; }
+.wave i:nth-child(7n + 7) { --s: 0.82; }
+
+.demo-step {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  color: var(--graphite);
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: color 0.3s ease;
+}
+
+.demo-step svg {
+  transform: rotate(90deg);
+}
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 1.1rem 1.2rem 1.2rem;
+  border: 1px solid var(--rule);
+  border-radius: 18px;
+  background: var(--sheet);
+  box-shadow: 0 20px 44px -30px rgba(8, 22, 18, 0.4);
+  font-size: 0.975rem;
+}
+
+.msg-xml {
+  margin: 0;
+  padding: 0.55rem 0.75rem;
+  border-left: 3px solid;
+  border-radius: 4px 8px 8px 4px;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.msg-xml .a {
+  color: var(--graphite);
+}
+
+.xml-select {
+  border-color: var(--cyan-ink);
+  background: var(--cyan-tint);
+}
+
+.xml-select .t {
+  color: var(--cyan-ink);
+}
+
+.xml-shot {
+  border-color: var(--violet-ink);
+  background: var(--violet-tint);
+}
+
+.xml-shot .t {
+  color: var(--violet-ink);
+}
+
+.demo-caption {
+  display: grid;
+  gap: 1.1rem 2.5rem;
+  margin-top: 1.5rem;
+}
+
+.skill-handoff {
+  max-width: 45rem;
+  margin: 1.6rem 0 0;
+  padding: 0.85rem 1rem;
+  border-left: 3px solid var(--mint-ink);
+  background: rgba(255, 255, 255, 0.48);
+  color: var(--graphite);
+  font-size: 0.95rem;
+}
+
+/* Four real workflow stages, not a provider catalogue. */
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+  margin-bottom: 1.2rem;
+}
+
+.feature-card {
+  min-width: 0;
+  padding: 1.15rem 1.2rem 1.3rem;
+  border: 1px solid var(--rule);
+  border-radius: 15px;
+  background: var(--sheet);
+}
+
+.feature-index {
+  display: block;
+  margin-bottom: 1rem;
+  color: var(--mint-ink);
+  font-family: var(--mono);
+  font-size: 0.73rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.feature-card h3 {
+  margin-bottom: 0.5rem;
+  font-size: clamp(1.45rem, 2vw, 2rem);
+}
+
+.feature-card p {
+  color: var(--graphite);
+  font-size: 0.93rem;
+}
+
+@media (max-width: 36rem) {
+  .feature-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.replay {
+  display: inline-flex;
+  justify-self: start;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.9rem 0.45rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--sheet);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.replay:hover {
+  border-color: var(--ink);
+}
+
+.replay[hidden] {
+  display: none;
+}
+
+.facts {
+  display: grid;
+  gap: 0.45rem 2rem;
+  margin: 0;
+  padding: 0;
+  color: var(--graphite);
+  font-size: 0.95rem;
+  list-style: none;
+}
+
+.facts li {
+  position: relative;
+  padding-left: 1rem;
+}
+
+.facts li::before {
+  position: absolute;
+  top: 0.72em;
+  left: 0;
+  width: 0.45rem;
+  height: 2px;
+  background: currentColor;
+  content: "";
+}
+
+@media (min-width: 40rem) {
+  .facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 60rem) {
+  /* The Mac screen needs more room than the bare HUD did, so the scene reads as a
+     desktop with the recorder floating on it; the Codex output stays beside it. */
+  .demo {
+    grid-template-columns: minmax(0, 1.3fr) auto minmax(0, 1fr);
+    align-items: center;
+    column-gap: 1.25rem;
+  }
+
+  .demo-step {
+    flex-direction: column;
+    padding-top: 1.5rem;
+  }
+
+  .demo-step svg {
+    transform: none;
+  }
+
+  .demo-caption {
+    grid-column: 1 / -1;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .demo-caption .facts {
+    grid-column: 2;
+  }
+}
+
+/*
+  Playback. .demo-armed (set in <head> before first paint) and .is-playing
+  (set by script.js) hide the parts that have not been revealed yet. Without
+  JavaScript, with reduced motion, or after playback, every part is visible
+  and fully decorated.
+*/
+
+.demo-armed .step,
+.is-playing .step {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.is-playing .step.is-shown {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.22s ease;
+}
+
+.demo-armed .g-select,
+.is-playing .g-select:not(.is-shown) {
+  background-size: 0% 84%;
+  transition: none;
+}
+
+/* The TextEdit selection is a data-at part but not a .step: its code stays
+   visible and only the cyan wash is withheld until it is revealed. */
+.demo-armed .mac-select,
+.is-playing .mac-select:not(.is-shown) {
+  background-size: 0% 100%;
+  transition: none;
+}
+
+.demo-armed .g-shot::before,
+.demo-armed .g-shot::after,
+.is-playing .g-shot:not(.is-shown)::before,
+.is-playing .g-shot:not(.is-shown)::after {
+  opacity: 0;
+  transform: scale(1.12);
+  transition: none;
+}
+
+.is-recording .wave i {
+  animation: talk 0.7s ease-in-out infinite alternate;
+}
+
+.is-recording .wave i:nth-child(3n) {
+  animation-duration: 0.55s;
+}
+
+.is-recording .wave i:nth-child(3n + 1) {
+  animation-duration: 0.85s;
+  animation-delay: -0.3s;
+}
+
+.is-recording .wave i:nth-child(4n) {
+  animation-delay: -0.45s;
+}
+
+.is-stopped .demo-step {
+  color: var(--mint-ink);
+}
+
+@keyframes talk {
+  from {
+    transform: scaleY(0.14);
+  }
+
+  to {
+    transform: scaleY(var(--s, 0.4));
+  }
+}
+
+/* Content bands */
+
+.band {
+  padding-block: clamp(3.25rem, 7vw, 5.5rem);
+  border-top: 1px solid var(--rule);
+}
+
+.split {
+  display: grid;
+  gap: 1.75rem 4rem;
+}
+
+@media (min-width: 56rem) {
+  .split {
+    grid-template-columns: minmax(0, 19rem) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+.band-head h2 {
+  font-size: clamp(2rem, 3.6vw, 2.75rem);
+}
+
+.band-head p {
+  margin-top: 0.9rem;
+  color: var(--graphite);
+}
+
+.band-body {
+  min-width: 0;
+}
+
+/* Promo video: full content width with no text of its own (Ethan asked for no visible
+   title, subtitle, transcript or credit). 16:9 is reserved up front so the poster never
+   shifts the page while the video's metadata loads. */
+.promo-video {
+  margin: 0;
+}
+
+.promo-video video {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--rule);
+  border-radius: 18px;
+  background: var(--desk);
+  box-shadow: 0 26px 60px -34px rgba(8, 22, 18, 0.45);
+}
+
+.setup-steps {
+  display: grid;
+  gap: 0.85rem;
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.optional {
+  margin-top: 1.65rem;
+  padding-block: 1rem;
+  border-block: 1px solid var(--rule);
+}
+
+.optional summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.optional[open] summary { margin-bottom: 1rem; }
+.optional .pieces div:first-child { border-top: 0; }
+.companion-link { padding-bottom: 3rem; color: var(--graphite); }
+
+/* Routes */
+
+.routes {
+  margin: 0;
+  border: 1px solid var(--rule);
+  border-radius: 18px;
+  background: var(--sheet);
+}
+
+.route {
+  display: grid;
+  gap: 0.35rem 2rem;
+  padding: 1.05rem 1.35rem 1.15rem;
+}
+
+.route + .route {
+  border-top: 1px solid var(--rule);
+}
+
+.route dt {
+  font-weight: 600;
+}
+
+.route dd {
+  margin: 0;
+}
+
+@media (min-width: 40rem) {
+  .route {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+  }
+}
+
+kbd {
+  display: inline-block;
+  margin-right: 0.2em;
+  padding: 0.04em 0.55em 0.1em;
+  border: 1px solid #b6c0bc;
+  border-bottom-width: 2px;
+  border-radius: 7px;
+  background: var(--sheet);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 0.9em;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.note {
+  max-width: 44rem;
+  margin-top: 1rem;
+  color: var(--graphite);
+}
+
+/* Setup */
+
+.setup-intro {
+  max-width: 42rem;
+  margin-bottom: 1.6rem;
+}
+
+.spec {
+  display: grid;
+  gap: 1.25rem 2.5rem;
+  margin: 0;
+}
+
+.spec div {
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--rule);
+}
+
+.spec dt {
+  color: var(--graphite);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.spec dd {
+  margin: 0.2rem 0 0;
+}
+
+@media (min-width: 40rem) {
+  .spec {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.also-title {
+  margin-top: 2.75rem;
+  font-size: 1.5rem;
+}
+
+.also {
+  display: grid;
+  gap: 0.5rem 2.5rem;
+  margin: 0.9rem 0 0;
+  padding-left: 1.15rem;
+}
+
+@media (min-width: 40rem) {
+  .also {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Build */
+
+.pieces {
+  margin: 0;
+}
+
+.pieces div {
+  display: grid;
+  gap: 0.25rem 1.5rem;
+  padding: 0.9rem 0;
+  border-top: 1px solid var(--rule);
+}
+
+.pieces dt {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.pieces dd {
+  margin: 0;
+  color: var(--graphite);
+}
+
+@media (min-width: 40rem) {
+  .pieces div {
+    grid-template-columns: 9.5rem minmax(0, 1fr);
+  }
+}
+
+.commands {
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  background: var(--sheet);
+}
+
+.commands pre {
+  margin: 0;
+  padding: 1.1rem 1.3rem;
+  overflow-x: auto;
+  font-size: 0.9rem;
+  line-height: 1.75;
+}
+
+.commands-bar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.55rem 0.65rem;
+  border-top: 1px solid var(--rule);
+}
+
+.commands-bar[hidden] {
+  display: none;
+}
+
+.copy {
+  padding: 0.4rem 0.9rem 0.45rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--desk);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.copy:hover {
+  border-color: var(--ink);
+}
+
+.build-notes {
+  display: grid;
+  gap: 0.45rem;
+  margin: 1.4rem 0 0;
+  padding-left: 1.15rem;
+}
+
+.build-notes code,
+.note code {
+  font-size: 0.88em;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.5rem;
+  margin-top: 1.75rem;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.7rem 1.2rem 0.75rem;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--sheet);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.button:hover {
+  background: var(--mint-ink);
+}
+
+/* Footer */
+
+.foot {
+  padding-block: 2.5rem 3rem;
+  border-top: 1px solid var(--rule);
+  color: var(--graphite);
+  font-size: 0.925rem;
+}
+
+.foot-inner {
+  display: grid;
+  gap: 1rem 3rem;
+}
+
+.foot-inner p {
+  max-width: 40rem;
+}
+
+.foot-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.25rem;
+}
+
+@media (min-width: 56rem) {
+  .foot-inner {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+  }
+
+  .foot-nav {
+    justify-content: flex-end;
+    max-width: 24rem;
+  }
+}
+
+/* 404 */
+
+.notfound {
+  display: grid;
+  min-height: 100vh;
+  place-content: center;
+  justify-items: center;
+  gap: 1rem;
+  padding: 2rem var(--gutter);
+  text-align: center;
+}
+
+.notfound img {
+  border-radius: 16px;
+}
+
+.notfound h1 {
+  font-size: clamp(2.5rem, 7vw, 4rem);
+}
+
+.notfound p {
+  color: var(--graphite);
+}
+
+/* Narrow phones: fewer waveform bars so the HUD row never overflows. */
+@media (max-width: 30rem) {
+  .wave i:nth-child(n + 29) {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+@media (forced-colors: active) {
+  .g-select,
+  .mac-select {
+    background: none;
+    text-decoration: underline;
+  }
+
+  .mac,
+  .mac-window,
+  .hud,
+  .composer,
+  .routes,
+  .commands {
+    border: 1px solid CanvasText;
+  }
+}

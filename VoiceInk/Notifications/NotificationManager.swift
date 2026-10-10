@@ -1,0 +1,244 @@
+import SwiftUI
+import AppKit
+
+/// A dismissed/replaced notification must never run an old action or close its
+/// successor. In particular, Try again can synchronously present another error.
+struct NotificationPresentationIdentity {
+    private(set) var current: UUID?
+
+    mutating func begin() -> UUID {
+        let id = UUID()
+        current = id
+        return id
+    }
+
+    mutating func consume(_ id: UUID) -> Bool {
+        guard current == id else { return false }
+        current = nil
+        return true
+    }
+}
+
+@MainActor
+protocol NotificationRecorderPlacementProviding: AnyObject {
+    func notificationBottomReservedHeight(on screen: NSScreen) -> CGFloat?
+}
+
+class NotificationManager {
+    static let shared = NotificationManager()
+
+    private var notificationWindow: NSPanel?
+    private var dismissTimer: Timer?
+    private var presentationIdentity = NotificationPresentationIdentity()
+    private weak var recorderPlacementProvider: NotificationRecorderPlacementProviding?
+
+    private init() {}
+
+    @MainActor
+    func setRecorderPlacementProvider(
+        _ provider: NotificationRecorderPlacementProviding
+    ) {
+        recorderPlacementProvider = provider
+    }
+
+    @MainActor
+    func isNotificationWindow(_ window: NSWindow) -> Bool {
+        notificationWindow === window
+    }
+
+    @MainActor
+    func showNotification(
+        title: String,
+        type: AppNotificationView.NotificationType,
+        duration: TimeInterval = 3.0,
+        playSound: Bool = true,
+        onTap: (() -> Void)? = nil,
+        actionButton: (label: String, action: () -> Void)? = nil,
+        preservesErrorCopyAction: Bool = false,
+        copyText: String? = nil
+    ) {
+        dismissTimer?.invalidate()
+        dismissTimer = nil
+
+        if let existingWindow = notificationWindow {
+            existingWindow.close()
+            notificationWindow = nil
+        }
+        let presentationID = presentationIdentity.begin()
+        
+        // Errors remain audible by default. Callers may suppress only the sound when
+        // a warning is intentionally advisory while preserving the visible evidence.
+        if type == .error && playSound {
+            SoundManager.shared.playEscSound()
+        }
+
+        // Errors are diagnostic evidence, not momentary success feedback. Leave them
+        // visible long enough to select and copy, and provide a one-click fallback for
+        // nonactivating panels where the user's current app may still own Command-C.
+        let effectiveDuration = type == .error ? max(duration, 12.0) : duration
+        let copyAction = Self.makeCopyAction(title: title, copyText: copyText)
+        let effectiveActionButton: (label: String, action: () -> Void)?
+        if let actionButton {
+            effectiveActionButton = actionButton
+        } else if type == .error {
+            effectiveActionButton = copyAction
+        } else {
+            effectiveActionButton = nil
+        }
+        
+        let notificationView = AppNotificationView(
+            title: title,
+            type: type,
+            duration: effectiveDuration,
+            onClose: { [weak self] in
+                Task { @MainActor in
+                    self?.dismissNotification(presentationID: presentationID)
+                }
+            },
+            onTap: onTap.map { action in
+                { [weak self] in
+                    guard self?.dismissNotification(presentationID: presentationID) == true else { return }
+                    action()
+                }
+            },
+            actionButton: effectiveActionButton.map { button in
+                (label: button.label, action: { [weak self] in
+                    guard self?.dismissNotification(presentationID: presentationID) == true else { return }
+                    button.action()
+                })
+            },
+            secondaryActionButton: type == .error && actionButton != nil && preservesErrorCopyAction
+                ? (label: copyAction.label, action: { [weak self] in
+                    guard self?.presentationIdentity.current == presentationID else { return }
+                    copyAction.action()
+                })
+                : nil,
+            copyText: copyText
+        )
+        let hostingController = NSHostingController(rootView: notificationView)
+        let size = hostingController.view.fittingSize
+
+        let panel = NSPanel(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        
+        panel.contentView = hostingController.view
+        panel.isFloatingPanel = true
+        panel.level = NSWindow.Level.mainMenu
+        panel.backgroundColor = NSColor.clear
+        panel.hasShadow = false
+        panel.isMovableByWindowBackground = false
+        
+        // Display teardown/wake can briefly leave AppKit with no NSScreen. Error
+        // reporting must never crash precisely while diagnosing that state. The caller
+        // keeps the report armed so a later presentation attempt can show the message.
+        guard positionWindow(panel) else { return }
+        panel.alphaValue = 0
+        // This is deliberately a nonactivating diagnostic surface. Making the panel
+        // key is both unnecessary and rejected by AppKit; order it above other apps
+        // without changing Ethan's keyboard focus.
+        panel.orderFrontRegardless()
+        
+        self.notificationWindow = panel
+        
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.3
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().alphaValue = 1
+        })
+        
+        // Schedule a new timer to dismiss the new notification.
+        dismissTimer = Timer.scheduledTimer(
+            withTimeInterval: effectiveDuration,
+            repeats: false
+        ) { [weak self] _ in
+            self?.dismissNotification(presentationID: presentationID)
+        }
+    }
+
+    /// Capture the failed session's complete payload, not a later mutable History
+    /// selection or the diagnostic title. Explicit Copy is a user clipboard write,
+    /// so any pending automatic restore must lose its old pasteboard lease.
+    @MainActor
+    static func makeCopyAction(
+        title: String, copyText: String?, on pasteboard: NSPasteboard = .general
+    ) -> (label: String, action: () -> Void) {
+        let contents = copyText ?? title
+        return (String(localized: "Copy"), {
+            _ = ClipboardManager.setClipboard(contents, on: pasteboard)
+        })
+    }
+
+    @MainActor
+    private func positionWindow(_ window: NSWindow) -> Bool {
+        guard let activeScreen = NSApp.keyWindow?.screen
+            ?? NSScreen.main
+            ?? NSScreen.screens.first else {
+            return false
+        }
+        let screenRect = activeScreen.visibleFrame
+        let notificationRect = window.frame
+
+        // When the mini recorder is visible, clear its real rendered envelope—not
+        // the old fixed 34pt estimate. Realtime text and stacked recordings make
+        // that envelope taller. If no mini recorder owns the bottom edge, retain
+        // the historical ordinary-notification position.
+        let defaultBottomReservedHeight: CGFloat = 24 + 34
+        let bottomReservedHeight =
+            recorderPlacementProvider?.notificationBottomReservedHeight(on: activeScreen)
+            ?? defaultBottomReservedHeight
+
+        window.setFrameOrigin(
+            Self.notificationOrigin(
+                screenRect: screenRect,
+                notificationSize: notificationRect.size,
+                bottomReservedHeight: bottomReservedHeight
+            )
+        )
+        return true
+    }
+
+    static func notificationOrigin(
+        screenRect: NSRect,
+        notificationSize: NSSize,
+        bottomReservedHeight: CGFloat
+    ) -> NSPoint {
+        let spacing: CGFloat = 16
+        let x = screenRect.midX - (notificationSize.width / 2)
+        let proposedY = screenRect.minY + bottomReservedHeight + spacing
+        let maximumY = screenRect.maxY - notificationSize.height - spacing
+        let y = max(screenRect.minY + spacing, min(proposedY, maximumY))
+        return NSPoint(x: x, y: y)
+    }
+
+    @MainActor
+    func dismissNotification() {
+        guard let id = presentationIdentity.current else { return }
+        dismissNotification(presentationID: id)
+    }
+
+    @MainActor
+    @discardableResult
+    private func dismissNotification(presentationID: UUID) -> Bool {
+        guard presentationIdentity.consume(presentationID) else { return false }
+        guard let window = notificationWindow else { return true }
+        
+        notificationWindow = nil
+        
+        dismissTimer?.invalidate()
+        dismissTimer = nil
+        
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.2
+            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            window.animator().alphaValue = 0
+        }, completionHandler: {
+            window.close()
+
+        })
+        return true
+    }
+}
