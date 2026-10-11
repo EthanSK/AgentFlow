@@ -312,6 +312,9 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     @Published private(set) var typedInput = ""
     private var typedRunStartedAt: Date?
     private var typedRunLatestEditAt: Date?
+    private var undoneTypedRuns: [(index: Int, reference: LiveSelectionReference)] = []
+    lazy var typingUndo = RecorderTypingUndoController(session: self)
+    var typingUndoController: RecorderTypingUndoController? { typingUndo }
     // Set only while one commit boundary seals the focused HUD editor, whose end
     // callback synchronously re-enters `endTypingRun()` and must reuse that
     // boundary's placement instead of a later live partial.
@@ -444,6 +447,7 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         // A seal/flush republishes the editor's unchanged text. That is not an
         // edit, so it must not move the run's latest-edit time to the commit.
         guard canTypeInHUD, value != typedInput else { return }
+        if !typingUndo.isReplaying { undoneTypedRuns.removeAll() }
         typedInput = value
         if typedRunStartedAt == nil { typedRunStartedAt = date }
         typedRunLatestEditAt = date
@@ -454,6 +458,24 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     /// callbacks find no active run and do nothing, so every word lands once.
     func endTypingRun() {
         commitTypingRun(typedRunCommitPlacement ?? .after(partialTranscript))
+    }
+
+    // Enter/context capture seals an editable run, not the user's ability to
+    // undo unsent typing. Remove/restore only that exact typed reference at its
+    // original timeline slot; selections, screenshots, speech and their timing
+    // remain unchanged. Never undo a finished/pending delivery or restore words
+    // into both the editor and transcript, which would duplicate final output.
+    @discardableResult func undoCommittedTyping() -> Bool {
+        guard canTypeInHUD,
+              let index = liveSelectionReferences.lastIndex(where: \.isTypedText) else { return false }
+        undoneTypedRuns.append((index, liveSelectionReferences.remove(at: index)))
+        return true
+    }
+
+    @discardableResult func redoCommittedTyping() -> Bool {
+        guard canTypeInHUD, let run = undoneTypedRuns.popLast() else { return false }
+        liveSelectionReferences.insert(run.reference, at: min(run.index, liveSelectionReferences.count))
+        return true
     }
 
     private func commitTypingRun(_ placement: TypedRunPlacement) {

@@ -6,6 +6,140 @@ import Testing
 @testable import VoiceInkPlusPlus
 
 struct RecorderTypedInputTests {
+    @Test @MainActor func committedTypingUndoPreservesContextAndRedoOrder() {
+        let session = RecordingSession()
+        session.updateTypedInput("first run")
+        session.endTypingRun()
+        let first = session.liveSelectionReferences
+        let context = LiveSelectionReference("selection remains unchanged")!
+        session.recordLiveSelection(context)
+        let firstAndContext = session.liveSelectionReferences
+        let preservedContext = Array(firstAndContext.dropFirst(first.count))
+        session.partialTranscript = "spoken words stay untouched"
+        session.updateTypedInput("second run")
+        session.endTypingRun()
+        let both = session.liveSelectionReferences
+        #expect(session.undoCommittedTyping())
+        #expect(session.liveSelectionReferences == firstAndContext)
+        #expect(session.undoCommittedTyping())
+        #expect(session.liveSelectionReferences == preservedContext)
+        #expect(session.redoCommittedTyping())
+        #expect(session.liveSelectionReferences == firstAndContext)
+        #expect(session.redoCommittedTyping())
+        #expect(session.liveSelectionReferences == both)
+        #expect(session.partialTranscript == "spoken words stay untouched")
+        #expect(session.undoCommittedTyping())
+        session.updateTypedInput("new edit invalidates redo")
+        #expect(!session.redoCommittedTyping())
+        #expect(session.liveSelectionReferences == firstAndContext)
+        session.phase = .transcribing
+        #expect(!session.undoCommittedTyping())
+    }
+
+    @Test @MainActor func hostedHUDUndoSurvivesLiveBindingAndNativeEventDispatch() async throws {
+        struct HostedDraft: View {
+            @ObservedObject var session: RecordingSession
+            let recorder: Recorder
+            @ObservedObject var assistant: AssistantSession
+            var body: some View {
+                let height = MiniRecorderLayoutMetrics.contextHeight(
+                    parts: session.liveContextPreviewParts, typedText: session.typedInput,
+                    width: 640, maxHeight: 300)
+                MiniRecorderView(stateProvider: session, liveTranscriptHeight: height,
+                    liveTranscriptWidth: 640, maximumContextHeight: 300, recorder: recorder,
+                    assistantSession: assistant, onRecordButtonTapped: {}, onCloseTapped: {},
+                    onCancelTapped: {}, onAssistantFollowUp: { _ in })
+                    .background(RecorderPanelHeightSync(desiredHeight: height + 41,
+                        edge: .bottom, scale: 0.85))
+            }
+        }
+        func findEditor(_ view: NSView) -> RecorderTypingTextView? {
+            if let editor = view as? RecorderTypingTextView { return editor }
+            return view.subviews.lazy.compactMap(findEditor).first
+        }
+        let session = RecordingSession()
+        let panel = MiniRecorderPanel(contentRect: NSRect(x: 100, y: 100, width: 544, height: 102))
+        let host = ScaledRecorderHostingView(rootView: AnyView(HostedDraft(session: session,
+            recorder: Recorder(), assistant: AssistantSession())), scale: 0.85)
+        panel.contentView = host
+        panel.orderFrontRegardless()
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        let editor = try #require(findEditor(host))
+        panel.makeKey()
+        panel.makeFirstResponder(editor)
+        defer { panel.orderOut(nil); panel.close() }
+        func key(_ value: String, flags: NSEvent.ModifierFlags = [], code: UInt16 = 0) throws -> NSEvent {
+            try #require(NSEvent.keyEvent(with: .keyDown, location: .zero,
+                modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: panel.windowNumber, context: nil, characters: value,
+                charactersIgnoringModifiers: value.lowercased(), isARepeat: false, keyCode: code))
+        }
+        let typed = String(repeating: "hello world ", count: 12)
+        for letter in typed {
+            NSApp.sendEvent(try key(String(letter)))
+            try await Task.sleep(for: .milliseconds(15))
+        }
+        #expect(session.typedInput == typed)
+        #expect(findEditor(host) === editor)
+        #expect(panel.firstResponder === editor && panel.isKeyWindow)
+        #expect(editor.undoManager?.canUndo == true)
+        session.partialTranscript = "speech updates must not discard typed history"
+        try await Task.sleep(for: .milliseconds(50))
+        let before = editor.string
+        NSApp.sendEvent(try key("z", flags: .command, code: 6))
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(editor.string != before)
+        #expect(session.typedInput == editor.string)
+        NSApp.sendEvent(try key("Z", flags: [.command, .shift], code: 6))
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(editor.string == before && session.typedInput == before)
+        // Bare Enter commits at this point, but remains undoable until delivery.
+        NSApp.sendEvent(try key("\r", code: 36))
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(editor.string.isEmpty && session.typedInput.isEmpty)
+        let committed = session.liveSelectionReferences
+        #expect(committed.filter(\.isTypedText).count == 1)
+        NSApp.sendEvent(try key("z", flags: .command, code: 6))
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(session.liveSelectionReferences.filter(\.isTypedText).isEmpty)
+        NSApp.sendEvent(try key("Z", flags: [.command, .shift], code: 6))
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(session.liveSelectionReferences == committed)
+        #expect(editor.string.isEmpty && session.typedInput.isEmpty)
+    }
+
+    @Test @MainActor func floatingPanelsRouteUndoBeforeHostingKeyEquivalents() throws {
+        final class ShortcutEatingHost: NSView {
+            var calls = 0
+            override func performKeyEquivalent(with event: NSEvent) -> Bool {
+                calls += 1
+                return true
+            }
+        }
+        for panel: NSPanel in [MiniRecorderPanel(contentRect: NSRect(x: 100, y: 100, width: 400, height: 100)),
+                              NotchRecorderPanel(contentRect: NSRect(x: 100, y: 100, width: 400, height: 100))] {
+            let host = ShortcutEatingHost(frame: panel.contentView!.bounds)
+            let editor = RecorderTypingTextView(frame: host.bounds)
+            editor.allowsUndo = true
+            host.addSubview(editor)
+            panel.contentView = host
+            panel.orderFrontRegardless()
+            panel.makeKey()
+            panel.makeFirstResponder(editor)
+            defer { panel.orderOut(nil); panel.close() }
+            editor.undoManager?.groupsByEvent = false
+            editor.undoManager?.beginUndoGrouping()
+            editor.insertText("one owned edit", replacementRange: editor.selectedRange())
+            editor.undoManager?.endUndoGrouping()
+            let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero,
+                modifierFlags: .command, timestamp: 1, windowNumber: panel.windowNumber,
+                context: nil, characters: "z", charactersIgnoringModifiers: "z", isARepeat: false, keyCode: 6))
+            #expect(panel.performKeyEquivalent(with: event))
+            #expect(editor.string.isEmpty && host.calls == 0)
+        }
+    }
+
     @Test @MainActor func focusedHUDUndoRedoUsesNativeTypingGroupsAndUpdatesDraft() throws {
         let session = RecordingSession()
         let input = RecorderTypedInput(text: Binding(

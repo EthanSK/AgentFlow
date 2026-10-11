@@ -1,5 +1,26 @@
 # Learnings
 
+## 2026-10-11 — HUD undo must also reach unsent committed typing
+
+Ethan physically rejected build 420's Undo and clarified that it fails both
+while typing and after Enter/highlighting. Its passing native editor tests do
+not reproduce that report. A full MiniRecorderView hosted at 0.85 scale, with
+live binding/height updates and NSApplication key dispatch, also passed before
+the repair; that test host could not install the global event tap, so it is not
+physical keyboard acceptance or proof of the still-typing failure's cause.
+
+The clear-at-seal rule below remains necessary for the native editor (otherwise
+old words can reappear in both editor and transcript), but draft-only Undo was
+an omitted requirement. Keep a session-owned stack for removing/restoring only
+committed typed references, without changing speech, selections, screenshots,
+or their metadata. Native TextKit groups remain first for the active draft;
+redo restores older committed runs before a later undone draft. New typing
+invalidates committed redo; finished/transcribing sessions cannot mutate.
+Dispatch owned Command-Z/Shift-Command-Z at the key floating panel before the
+hosting route, never globally or in another field. Counts-only shortcut logs
+can distinguish a received shortcut from absent native history without recording
+authored text. This is a repair candidate until installed physical acceptance.
+
 ## 2026-10-11 — Floating typing owns its native undo history
 
 The HUD's currently editable typed run needs Command-Z and Shift-Command-Z
@@ -8,8 +29,9 @@ its own UndoManager, retain TextKit's normal edit coalescing, and consume these
 exact shortcuts only when that editor is the key panel's first responder.
 Consume an empty stack too, so it cannot undo unrelated main-window work.
 Native undo/redo must notify the shared draft binding, not change committed
-speech, selections, or a previously sealed typed run. Keep the existing clear
-at Enter/model replacement; preserve IME composition and other modifiers.
+speech or selections. Keep the existing native clear at Enter/model replacement;
+the subsequent clarified contract above adds session-owned undo of unsent typed
+runs. Preserve IME composition and other modifiers.
 
 The Mini's native editor tests cover grouped insertion, replacement, deletion,
 redo invalidation, mirrored editor isolation, actual NSApplication key dispatch,
@@ -19,6 +41,16 @@ groups. `breakUndoCoalescing()` closes the TextKit edit, not the UndoManager's
 event group; manually ending an automatic event group mid-event leaves the
 next native insertion invalid. Do not alter production grouping to suit the
 fixture. Installed physical keyboard acceptance is separate from these tests.
+
+Build 420 exact snapshot `711754946fcb4500d2e9df3037d0bf4a6d127463`
+passed all 608 tests in 21 suites through the canonical Mini Xcode action.
+The universal Release was stable-signed and installed at `/Applications/AgentFlow.app`,
+CDHash `3ebbbdd67cc98d70382a79b64210908f6eacd81d`. Deep/strict signing,
+outer Automation/audio-input entitlements and unchanged surfer icon verified.
+The installer refused its first restart boundary when a recorder appeared during
+the warning, then waited for idle acknowledgement and a fresh five-second warning
+before cooperative quit. Signed 419 remains in its verified rollback ZIP; official
+VoiceInk was unchanged. These receipts do not claim physical HUD key acceptance.
 
 ## 2026-10-11 — Codex selection markers can exist without readable plain range text
 

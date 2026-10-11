@@ -189,6 +189,10 @@ struct RecorderPanelHeightSync: NSViewRepresentable {
 }
 
 class MiniRecorderPanel: NSPanel {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        RecorderTypingTextView.handleOwnedShortcut(event, in: self)
+            || super.performKeyEquivalent(with: event)
+    }
     var wasDraggedByUser = false
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }

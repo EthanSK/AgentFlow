@@ -518,6 +518,7 @@ struct LiveTranscriptView: View {
     var onEndTyping: () -> Void = {}
     var onSubmitTyping: (() -> Void)? = nil
     var typingFocus: RecorderTypingFocus? = nil
+    var typingUndo: RecorderTypingUndoController? = nil
     var width: CGFloat = MiniRecorderLayoutMetrics.liveTranscriptWidth
     var dragsWindow = false
     @State private var typingFocusRequest = UUID()
@@ -628,6 +629,7 @@ struct LiveTranscriptView: View {
                 }
                 RecorderTypedInput(text: typedInput, focusRequest: typingFocusRequest,
                                    onEndEditing: onEndTyping, typingFocus: typingFocus,
+                                   typingUndo: typingUndo,
                                    onSubmit: onSubmitTyping)
             }
             // The removed Unfocus control used a reserved gutter. The editor

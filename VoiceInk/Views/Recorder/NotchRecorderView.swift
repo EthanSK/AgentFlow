@@ -293,6 +293,7 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                     onEndTyping: { stateProvider.endTypingRun() },
                     onSubmitTyping: { stateProvider.submitTypedInput() },
                     typingFocus: stateProvider.typingFocusController,
+                    typingUndo: stateProvider.typingUndoController,
                     width: notchWidth + transcriptSideExpansion * 2 - 16
                 )
                     .padding(.horizontal, 8)

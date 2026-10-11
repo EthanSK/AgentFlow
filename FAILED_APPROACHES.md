@@ -1,5 +1,20 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-10-11 — Native draft-only Undo proves the whole HUD works — SUPERSEDED
+
+**Failure condition:** Build 420's tests passed, but Ethan reported that physical
+Undo fails both before and after Enter/highlighting. Clearing editor history at
+seal with no session-owned committed undo necessarily omits the latter case.
+The full hosted HUD's synthetic NSApplication dispatch also passes; its event-tap
+setup fails, so it does not explain the still-typing physical failure.
+**Use instead:** Keep TextKit history local, add unsent typed-reference undo/redo
+at the session boundary, route exact owned shortcuts before hosting, and obtain
+an installed physical receipt. Preserve every non-typed context reference and
+never resurrect a sealed run in both the editor and timeline.
+**Reconsider only if:** Ethan explicitly narrows Undo to the current draft, or
+new physical event-path evidence identifies a different still-typing cause.
+Passing a native-only or hosted fixture is not that evidence.
+
 ## 2026-10-10 — First-keystroke anchor for later committed typing — SUPERSEDED
 
 **Failure condition:** Typing starts before subsequent speech or selections, but

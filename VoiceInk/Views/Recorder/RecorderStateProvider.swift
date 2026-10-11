@@ -12,6 +12,7 @@ protocol RecorderStateProvider: AnyObject {
     var canTypeInHUD: Bool { get }
     var typedInput: String { get }
     var typingFocusController: RecorderTypingFocus? { get }
+    var typingUndoController: RecorderTypingUndoController? { get }
     var microphoneOff: Bool { get }
     var potentialTTSActive: Bool { get }
     var microphoneTransitionPending: Bool { get }
@@ -55,6 +56,7 @@ extension RecorderStateProvider {
     var canTypeInHUD: Bool { false }
     var typedInput: String { "" }
     var typingFocusController: RecorderTypingFocus? { nil }
+    var typingUndoController: RecorderTypingUndoController? { nil }
     var microphoneOff: Bool { recordingState == .paused }
     var potentialTTSActive: Bool { false }
     var microphoneTransitionPending: Bool { false }

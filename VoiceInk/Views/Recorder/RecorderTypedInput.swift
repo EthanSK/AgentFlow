@@ -12,6 +12,7 @@ struct RecorderTypedInput: NSViewRepresentable {
     let focusRequest: UUID
     let onEndEditing: () -> Void
     var typingFocus: RecorderTypingFocus? = nil
+    var typingUndo: RecorderTypingUndoController? = nil
     var onSubmit: (() -> Void)? = nil
 
     final class Coordinator: NSObject, NSTextViewDelegate {
@@ -61,6 +62,7 @@ struct RecorderTypedInput: NSViewRepresentable {
         editor.onEndEditing = onEndEditing
         editor.onSubmit = onSubmit
         editor.typingFocus = typingFocus
+        editor.typingUndo = typingUndo
         scroll.documentView = editor
         return scroll
     }
@@ -71,6 +73,7 @@ struct RecorderTypedInput: NSViewRepresentable {
         editor.onEndEditing = onEndEditing
         editor.onSubmit = onSubmit
         editor.typingFocus = typingFocus
+        editor.typingUndo = typingUndo
         typingFocus?.register(editor)
         if editor.string != text {
             // Model changes seal a run or mirror another screen. Never let Undo
@@ -95,10 +98,12 @@ final class RecorderTypingTextView: NSTextView {
     // SwiftUI Edit menu to route shortcuts. TextKit still creates/coalesces
     // the native typing, deletion, replacement and paste undo operations.
     private let typingUndoManager = UndoManager()
+    private static let undoLog = Logger(subsystem: "com.ethansk.VoiceInkPlusPlus", category: "TypedUndo")
     override var undoManager: UndoManager? { typingUndoManager }
     var onEndEditing: (() -> Void)?
     var onSubmit: (() -> Void)?
     weak var typingFocus: RecorderTypingFocus?
+    weak var typingUndo: RecorderTypingUndoController?
     private var windowResignedObserver: NSObjectProtocol?
     // True only while `releaseKeyboardBeforeFinish()` resigns this editor. Capture
     // end, not this blur, commits the run, so it can follow every final word.
@@ -168,6 +173,15 @@ final class RecorderTypingTextView: NSTextView {
         undoOrRedoIfOwned(event) || submitIfOwned(event) || super.performKeyEquivalent(with: event)
     }
 
+    /// The floating window dispatches its focused editor's shortcuts before the
+    /// SwiftUI hosting/menu route. This is window-local, never a global monitor:
+    /// another app or another field keeps its ordinary Undo and Return behaviour.
+    static func handleOwnedShortcut(_ event: NSEvent, in window: NSWindow) -> Bool {
+        guard window.isKeyWindow,
+              let editor = window.firstResponder as? RecorderTypingTextView else { return false }
+        return editor.undoOrRedoIfOwned(event) || editor.submitIfOwned(event)
+    }
+
     private func undoOrRedoIfOwned(_ event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
         guard event.type == .keyDown, event.charactersIgnoringModifiers?.lowercased() == "z",
@@ -178,11 +192,19 @@ final class RecorderTypingTextView: NSTextView {
         // History/main-window work. End TextKit's current typing group before
         // the native undo; its didChangeText callback updates the shared draft.
         breakUndoCoalescing()
-        if modifiers.contains(.shift) {
+        let beforeCount = string.count
+        let nativeUndo = typingUndoManager.canUndo
+        let nativeRedo = typingUndoManager.canRedo
+        if let typingUndo {
+            typingUndo.perform(manager: typingUndoManager, redo: modifiers.contains(.shift))
+        } else if modifiers.contains(.shift) {
             if typingUndoManager.canRedo { typingUndoManager.redo() }
         } else if typingUndoManager.canUndo {
             typingUndoManager.undo()
         }
+        // Shortcut-only, counts-only evidence: never log authored characters or
+        // observe keys in another app. A native fixture is not physical acceptance.
+        Self.undoLog.notice("HUD typing undo accepted redo=\(modifiers.contains(.shift), privacy: .public) nativeUndo=\(nativeUndo, privacy: .public) nativeRedo=\(nativeRedo, privacy: .public) beforeCount=\(beforeCount, privacy: .public) afterCount=\(self.string.count, privacy: .public) sessionController=\(self.typingUndo != nil, privacy: .public)")
         return true
     }
 
@@ -259,6 +281,27 @@ final class RecorderTypingTextView: NSTextView {
         defer { editor.isReleasingForCaptureEnd = false }
         window.makeFirstResponder(nil)
         window.resignKey()
+    }
+}
+
+/// One session's committed typing survives editor blur and mirrored panels;
+/// TextKit still owns the active editor's native groups and selection/caret.
+@MainActor final class RecorderTypingUndoController {
+    private weak var session: RecordingSession?
+    private(set) var isReplaying = false
+    init(session: RecordingSession) { self.session = session }
+
+    func perform(manager: UndoManager, redo: Bool) {
+        isReplaying = true
+        defer { isReplaying = false }
+        if redo {
+            // Earlier sealed runs return before the newer undone active draft.
+            if session?.redoCommittedTyping() != true, manager.canRedo { manager.redo() }
+        } else if manager.canUndo {
+            manager.undo()
+        } else {
+            session?.undoCommittedTyping()
+        }
     }
 }
 

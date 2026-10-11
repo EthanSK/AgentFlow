@@ -2,6 +2,10 @@ import SwiftUI
 import AppKit
 
 class KeyablePanel: NSPanel {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        RecorderTypingTextView.handleOwnedShortcut(event, in: self)
+            || super.performKeyEquivalent(with: event)
+    }
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 }
