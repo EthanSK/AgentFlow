@@ -90,6 +90,12 @@ struct RecorderTypedInput: NSViewRepresentable {
 }
 
 final class RecorderTypingTextView: NSTextView {
+    // Each mirrored editor owns only its editable run. A floating non-main
+    // panel must not borrow the main window's undo history or depend on its
+    // SwiftUI Edit menu to route shortcuts. TextKit still creates/coalesces
+    // the native typing, deletion, replacement and paste undo operations.
+    private let typingUndoManager = UndoManager()
+    override var undoManager: UndoManager? { typingUndoManager }
     var onEndEditing: (() -> Void)?
     var onSubmit: (() -> Void)?
     weak var typingFocus: RecorderTypingFocus?
@@ -159,7 +165,25 @@ final class RecorderTypingTextView: NSTextView {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        submitIfOwned(event) || super.performKeyEquivalent(with: event)
+        undoOrRedoIfOwned(event) || submitIfOwned(event) || super.performKeyEquivalent(with: event)
+    }
+
+    private func undoOrRedoIfOwned(_ event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+        guard event.type == .keyDown, event.charactersIgnoringModifiers?.lowercased() == "z",
+              modifiers == .command || modifiers == [.command, .shift],
+              let window, window.isKeyWindow, window.firstResponder === self,
+              !hasMarkedText() else { return false }
+        // Consume even an empty stack: falling through could undo unrelated
+        // History/main-window work. End TextKit's current typing group before
+        // the native undo; its didChangeText callback updates the shared draft.
+        breakUndoCoalescing()
+        if modifiers.contains(.shift) {
+            if typingUndoManager.canRedo { typingUndoManager.redo() }
+        } else if typingUndoManager.canUndo {
+            typingUndoManager.undo()
+        }
+        return true
     }
 
     /// Bare Return/Enter commits the current prose run into the speech/context
@@ -193,7 +217,7 @@ final class RecorderTypingTextView: NSTextView {
     }
 
     override func keyDown(with event: NSEvent) {
-        if submitIfOwned(event) || handleReturn(event) { return }
+        if undoOrRedoIfOwned(event) || submitIfOwned(event) || handleReturn(event) { return }
         super.keyDown(with: event)
     }
 

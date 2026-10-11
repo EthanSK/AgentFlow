@@ -1,5 +1,25 @@
 # Learnings
 
+## 2026-10-11 — Floating typing owns its native undo history
+
+The HUD's currently editable typed run needs Command-Z and Shift-Command-Z
+without relying on the main window's SwiftUI Edit menu. Give each native editor
+its own UndoManager, retain TextKit's normal edit coalescing, and consume these
+exact shortcuts only when that editor is the key panel's first responder.
+Consume an empty stack too, so it cannot undo unrelated main-window work.
+Native undo/redo must notify the shared draft binding, not change committed
+speech, selections, or a previously sealed typed run. Keep the existing clear
+at Enter/model replacement; preserve IME composition and other modifiers.
+
+The Mini's native editor tests cover grouped insertion, replacement, deletion,
+redo invalidation, mirrored editor isolation, actual NSApplication key dispatch,
+and Enter's history boundary. Synchronous Swift Testing edits share one AppKit
+event: use explicitly balanced fixture event groups to test separated typing
+groups. `breakUndoCoalescing()` closes the TextKit edit, not the UndoManager's
+event group; manually ending an automatic event group mid-event leaves the
+next native insertion invalid. Do not alter production grouping to suit the
+fixture. Installed physical keyboard acceptance is separate from these tests.
+
 ## 2026-10-11 — Codex selection markers can exist without readable plain range text
 
 **Observed:** On ChatGPT.app 26.1007.30912/build 20156 with AgentFlow 418,
@@ -16,6 +36,29 @@ Pure tests must cover plain success short-circuit, exact attributed fallback and
 missing/empty/wrong-type refusal. This is compatibility hardening, not physical
 acceptance: a host with no selected range still yields nothing. Require an installed
 Codex highlight and retained capture receipt before claiming this regression fixed.
+
+Snapshot `4f3fe906d84b8d7f03ab6d4ed1e07c43646216a4`, build 419, passed 62
+focused tests and all 606 tests in 21 suites through canonical Mini Xcode actions.
+The three new exact-read tests and Primary/Next/HUD-only guards executed. Its
+ordinary universal Release was stable-signed, transferred with matching ZIP
+SHA-256 `9d031162420f1a0b2d03d26597fbc5da8072ab2852cc5fbee4585a83b1cc987c`,
+then installed at `/Applications/AgentFlow.app`, PID 28322, CDHash
+`daedd93b29e0b58e0836797f5277a1fde4c2413c`. Deep/strict signing, outer
+Automation/audio-input entitlements, unchanged surfer icon and untouched official
+VoiceInk verified. Fresh no-HUD/no-writable-audio checks, the installed app's
+idle acknowledgement, delivered five-second notification and cooperative quit
+preceded replacement. Signed 418 remains in its verified rollback ZIP. No actual
+post-install Codex highlight receipt existed at installation: this did not prove host recovery.
+
+Ethan subsequently reported another Codex chat works. The installed 419 trace at
+13:14:18 and 13:15:47–48 BST records real `emitted-to-session` captures from
+pointer selected-text/marker and focused selected-text paths (43–60 ms read,
+44–61 ms finished for the latter two). This proves capture operates in those
+gestures, not that the attributed fallback caused recovery or that the originally
+failing chat is fixed. Counts-only logs do not identify the chat or prove precise
+glyph coverage. Keep host/chat-state causation and full precision acceptance open.
+Build 419 also round-trip verified its own rollback ZIP; the retired 418 bundle
+was moved recoverably to Trash and unregistered at its actual Trash path.
 
 
 ## 2026-10-10 — Typed sections belong at their commit boundary

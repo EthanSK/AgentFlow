@@ -6,6 +6,127 @@ import Testing
 @testable import VoiceInkPlusPlus
 
 struct RecorderTypedInputTests {
+    @Test @MainActor func focusedHUDUndoRedoUsesNativeTypingGroupsAndUpdatesDraft() throws {
+        let session = RecordingSession()
+        let input = RecorderTypedInput(text: Binding(
+            get: { session.typedInput }, set: { session.updateTypedInput($0) }),
+            focusRequest: UUID(), onEndEditing: { session.endTypingRun() })
+        let coordinator = input.makeCoordinator()
+        let panel = MiniRecorderPanel(contentRect: NSRect(x: 100, y: 100, width: 400, height: 80))
+        let editor = RecorderTypingTextView(frame: panel.contentView!.bounds)
+        editor.isRichText = false
+        editor.allowsUndo = true
+        editor.delegate = coordinator
+        editor.onEndEditing = input.onEndEditing
+        var submits = 0
+        editor.onSubmit = { submits += 1 }
+        panel.contentView = editor
+        panel.orderFrontRegardless()
+        panel.makeKey()
+        panel.makeFirstResponder(editor)
+        defer { panel.orderOut(nil); panel.close(); _ = coordinator }
+        func key(_ flags: NSEvent.ModifierFlags) throws -> NSEvent {
+            try #require(NSEvent.keyEvent(with: .keyDown, location: .zero,
+                modifierFlags: flags, timestamp: 1, windowNumber: panel.windowNumber,
+                context: nil, characters: flags.contains(.shift) ? "Z" : "z",
+                charactersIgnoringModifiers: "z", isARepeat: false, keyCode: 6))
+        }
+        let undo = try key(.command)
+        let redo = try key([.command, .shift])
+        let manager = try #require(editor.undoManager)
+        // Swift Testing keeps this synchronous fixture in one AppKit event.
+        // Supply deterministic event groups here; TextKit still coalesces the
+        // individual insertions and registers every real editing operation.
+        manager.groupsByEvent = false
+        func editGroup(_ edit: () -> Void) {
+            manager.beginUndoGrouping()
+            edit()
+            manager.endUndoGrouping()
+        }
+        // Native typing coalescing: multiple character edits undo together, not
+        // one custom snapshot per keystroke. A separated next word is another
+        // edit group, as when moving the caret or using an editing command.
+        editGroup {
+            for character in "first" { editor.insertText(String(character), replacementRange: editor.selectedRange()) }
+        }
+        editor.breakUndoCoalescing()
+        editGroup {
+            for character in " second" { editor.insertText(String(character), replacementRange: editor.selectedRange()) }
+        }
+        #expect(session.typedInput == "first second")
+        #expect(editor.performKeyEquivalent(with: undo))
+        #expect(editor.string == "first")
+        #expect(session.typedInput == "first")
+        editor.keyDown(with: undo) // direct editor dispatch also uses the same route
+        #expect(editor.string.isEmpty && session.typedInput.isEmpty)
+        #expect(editor.performKeyEquivalent(with: redo))
+        #expect(editor.string == "first" && session.typedInput == "first")
+        #expect(editor.performKeyEquivalent(with: redo))
+        #expect(editor.string == "first second" && session.typedInput == "first second")
+        // Also exercise AppKit's real window/key-equivalent dispatch, not just
+        // calling the editor hook directly.
+        NSApp.sendEvent(undo)
+        #expect(editor.string == "first" && session.typedInput == "first")
+        NSApp.sendEvent(redo)
+        #expect(editor.string == "first second" && session.typedInput == "first second")
+        // Selection replacement and deletion must use native ranges/caret too.
+        editor.breakUndoCoalescing()
+        editor.setSelectedRange(NSRange(location: 6, length: 6))
+        editGroup { editor.insertText("changed", replacementRange: editor.selectedRange()) }
+        #expect(editor.performKeyEquivalent(with: undo))
+        #expect(editor.string == "first second" && session.typedInput == "first second")
+        #expect(editor.performKeyEquivalent(with: redo))
+        #expect(editor.string == "first changed")
+        editor.breakUndoCoalescing()
+        editGroup { editor.deleteBackward(nil) }
+        #expect(editor.performKeyEquivalent(with: undo))
+        #expect(editor.string == "first changed")
+        // A new edit after Undo invalidates Redo, like a standard macOS editor.
+        editGroup { editor.insertText("!", replacementRange: editor.selectedRange()) }
+        let edited = editor.string
+        #expect(editor.performKeyEquivalent(with: redo) && editor.string == edited)
+        #expect(submits == 0 && session.liveSelectionReferences.isEmpty)
+        #expect(session.phase == .recording && panel.firstResponder === editor)
+        let mirror = RecorderTypingTextView()
+        #expect(mirror.undoManager !== editor.undoManager)
+        #expect(mirror.undoManager?.canUndo == false)
+        #expect(!mirror.performKeyEquivalent(with: undo))
+        for flags: NSEvent.ModifierFlags in [.option, [.command, .option], [.command, .control]] {
+            #expect(!editor.performKeyEquivalent(with: try key(flags)))
+        }
+    }
+
+    @Test @MainActor func committedHUDRunCannotBeResurrectedByUndoOrRedo() throws {
+        let session = RecordingSession()
+        let input = RecorderTypedInput(text: Binding(
+            get: { session.typedInput }, set: { session.updateTypedInput($0) }),
+            focusRequest: UUID(), onEndEditing: { session.endTypingRun() })
+        let coordinator = input.makeCoordinator()
+        let panel = MiniRecorderPanel(contentRect: NSRect(x: 100, y: 100, width: 400, height: 80))
+        let editor = RecorderTypingTextView(frame: panel.contentView!.bounds)
+        editor.isRichText = false
+        editor.allowsUndo = true
+        editor.delegate = coordinator
+        editor.onEndEditing = input.onEndEditing
+        panel.contentView = editor
+        panel.orderFrontRegardless()
+        panel.makeKey()
+        panel.makeFirstResponder(editor)
+        defer { panel.orderOut(nil); panel.close(); _ = coordinator }
+        editor.insertText("committed once", replacementRange: editor.selectedRange())
+        let enter = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero,
+            modifierFlags: [], timestamp: 1, windowNumber: panel.windowNumber,
+            context: nil, characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36))
+        editor.keyDown(with: enter)
+        #expect(session.liveSelectionReferences.filter(\.isTypedText).count == 1)
+        #expect(editor.undoManager?.canUndo == false && editor.undoManager?.canRedo == false)
+        editor.insertText("new draft", replacementRange: editor.selectedRange())
+        editor.breakUndoCoalescing()
+        editor.undoManager?.undo()
+        #expect(editor.string.isEmpty && session.typedInput.isEmpty)
+        #expect(session.liveSelectionReferences.filter(\.isTypedText).count == 1)
+    }
+
     @Test @MainActor func transcriptDragMovesPanelWithoutBreakingClickOrScroll() throws {
         @MainActor func dragView(in view: NSView) -> RecorderPanelDragView? {
             if let drag = view as? RecorderPanelDragView { return drag }
