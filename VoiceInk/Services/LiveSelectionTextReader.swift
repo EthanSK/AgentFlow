@@ -62,6 +62,21 @@ enum LiveSelectionTextSource: String, Equatable, Sendable {
     case textMarkers
 }
 
+/// Resolve the host's own selected range, never surrounding AXValue text or
+/// inferred glyphs. Some web accessibility providers expose only an attributed
+/// substring for the same token. Read that representation only after the plain
+/// accessor fails; keep its original whitespace and the original token's bounds.
+enum LiveSelectionRangeTextReader {
+    static func read(plain: () -> Any?, attributed: () -> Any?) -> String? {
+        if let text = plain() as? String, text.contains(where: { !$0.isWhitespace }) {
+            return text
+        }
+        guard let value = attributed() as? NSAttributedString,
+              value.string.contains(where: { !$0.isWhitespace }) else { return nil }
+        return value.string
+    }
+}
+
 /// Whether a selection's on-screen bounds tie it to the gesture just made.
 enum LiveSelectionBoundsEvidence: String, Equatable, Sendable {
     /// The selection rect (plus tolerance) contains a gesture endpoint.
@@ -599,6 +614,7 @@ final class LiveAccessibilitySelectionProbe: LiveSelectionAccessibilityProbe {
     // beyond the app answering an Accessibility query.
     private static let selectedTextMarkerRange = "AXSelectedTextMarkerRange"
     private static let stringForTextMarkerRange = "AXStringForTextMarkerRange"
+    private static let attributedStringForTextMarkerRange = "AXAttributedStringForTextMarkerRange"
     private static let boundsForTextMarkerRange = "AXBoundsForTextMarkerRange"
 
     private let application: AXUIElement
@@ -666,8 +682,12 @@ final class LiveAccessibilitySelectionProbe: LiveSelectionAccessibilityProbe {
         switch source {
         case .selectedRange:
             guard let range = selectedRange(of: element),
-                  let text = parameterized(kAXStringForRangeParameterizedAttribute, of: element,
-                                           parameter: range) as? String else { return nil }
+                  let text = LiveSelectionRangeTextReader.read(
+                    plain: { self.parameterized(kAXStringForRangeParameterizedAttribute,
+                                                of: element, parameter: range) },
+                    attributed: { self.parameterized(kAXAttributedStringForRangeParameterizedAttribute,
+                                                     of: element, parameter: range) }
+                  ) else { return nil }
             return LiveSelectionSnapshot(text: text, bounds: Self.rect(parameterized(
                 kAXBoundsForRangeParameterizedAttribute, of: element, parameter: range)))
         case .textMarkers:
@@ -676,9 +696,12 @@ final class LiveAccessibilitySelectionProbe: LiveSelectionAccessibilityProbe {
                 missingMarkerRanges += 1
                 return nil
             }
-            guard let text = parameterized(Self.stringForTextMarkerRange, of: element,
-                                           parameter: markers) as? String,
-                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            guard let text = LiveSelectionRangeTextReader.read(
+                plain: { self.parameterized(Self.stringForTextMarkerRange,
+                                            of: element, parameter: markers) },
+                attributed: { self.parameterized(Self.attributedStringForTextMarkerRange,
+                                                 of: element, parameter: markers) }
+            ) else {
                 unavailableMarkerText += 1
                 return nil
             }

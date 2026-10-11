@@ -1,5 +1,55 @@
 # Learnings
 
+## 2026-10-11 — Codex selection markers can exist without readable plain range text
+
+**Observed:** On ChatGPT.app 26.1007.30912/build 20156 with AgentFlow 418,
+retained live selection notices show trusted gesture reads, missing markers and
+markers whose plain text accessor yields nothing. A VS Code bridge selection
+succeeded in the same session. This proves a source-specific read failure, not
+a version allowlist rejection, missing global permission, or exact host root cause.
+
+**Repair candidate:** Resolve the same selected integer/marker token through its
+attributed-string accessor only after the plain accessor fails. Preserve its text
+and whitespace plus the original token's bounds; retain the existing budget,
+secure-field/source-window checks and no-copy/no-focus/no-document-scan boundary.
+Pure tests must cover plain success short-circuit, exact attributed fallback and
+missing/empty/wrong-type refusal. This is compatibility hardening, not physical
+acceptance: a host with no selected range still yields nothing. Require an installed
+Codex highlight and retained capture receipt before claiming this regression fixed.
+
+
+## 2026-10-10 — Typed sections belong at their commit boundary
+
+Ethan superseded the first-keystroke placement rule: bare Enter commits the HUD's
+current typed run after the speech observed at that moment, without ending capture.
+Shift+Enter keeps a newline; Command+Enter retains finish/send/steer. First and
+latest edit timestamps remain metadata, not placement anchors. Accepted context
+uses its frozen gesture anchor; blur seals once. An open run at capture end or in
+recovery follows all final speech, including words the provider had not streamed.
+This is observed-word placement, not exact audio-word timing.
+
+Keep provisional editor text outside committed references, but include it in
+recovery and startup-failure retention. Clear committed state before publishing
+to survive reentrant mirrored-editor callbacks. Capture-end keyboard release
+flushes composed/latest input without a blur commit, allowing the subsequent
+capture-end boundary to place the run after final speech. IME Return belongs to
+composition first; unchanged editor flushes must not move the latest-edit time.
+
+Exact snapshot `ccfaef02846a5d2f305d70c3e45a9cc026985ad1`, build 418, passed
+87 focused tests and all 603 tests in 21 suites through canonical Xcode actions
+on the Mini. Native key/IME/mirror tests and the real pipeline/archive fixture
+cover ordered, nonduplicated typing, actual edit times, and unstreamed final tails.
+Primary, realtime HUD-only, and second-chance delivery guards also passed.
+Physical mixed voice/typing acceptance is separate; installation is recorded below.
+
+The same universal signed build 418 was installed at `/Applications/AgentFlow.app`,
+PID 24173, CDHash `d985f2f0eadecb0b061db124f3e07241d266c97b`. Fresh idle capture
+acknowledgement, no recorder/writable audio, the delivered five-second warning,
+and cooperative quit permitted replacement. Deep/strict verification and outer
+Automation/audio-input entitlements passed. The surfer icon and official VoiceInk
+were unchanged. Signed 417 remains in its verified rollback ZIP; the retired
+417 app was moved to recoverable Trash rather than left as a launchable duplicate.
+
 ## 2026-10-10 — Codex pane selection does not identify its cached composer
 
 Ethan's supplied screenshot shows a thin outline around the main chat content,

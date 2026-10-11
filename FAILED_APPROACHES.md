@@ -1,5 +1,18 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-10-10 — First-keystroke anchor for later committed typing — SUPERSEDED
+
+**Failure condition:** Typing starts before subsequent speech or selections, but
+Enter/finish occurs afterward. Retaining the first edit's speech anchor incorrectly
+places the completed run before those intervening words. Blur during capture-end
+keyboard release also commits too early when final speech has not streamed yet.
+**Use instead:** Preserve first/latest edit timestamps independently; anchor a
+committed run to speech observed at Enter or its accepted context boundary. Flush
+without sealing during capture-end release and append any still-open run after all
+final speech. Keep that run in recovery while it is outside committed references.
+**Reconsider only if:** Ethan explicitly requests edit-start ordering again; exact
+audio-word placement separately requires a provider's verified alignment data.
+
 ## 2026-10-10 — Fake delivery alone proves typed-error recovery — REJECTED
 
 **Failure condition:** A pipeline fake accepts a failed record while production

@@ -65,6 +65,33 @@ private final class FakeSelectionProbe: LiveSelectionAccessibilityProbe {
 }
 
 struct LiveSelectionFallbackTests {
+    @Test func selectedRangeAttributedFallbackPreservesExactTextAndWhitespace() {
+        let text = "  selected \\textsf{symbol} 👨🏽‍💻\n"
+        var attributedCalls = 0
+        #expect(LiveSelectionRangeTextReader.read(plain: { nil }, attributed: {
+            attributedCalls += 1
+            return NSAttributedString(string: text)
+        }) == text)
+        #expect(attributedCalls == 1)
+        #expect(LiveSelectionRangeTextReader.read(plain: { " \n" }, attributed: {
+            NSAttributedString(string: "fresh selection")
+        }) == "fresh selection")
+    }
+
+    @Test func selectedRangePlainSuccessNeverQueriesAttributedOrWholeDocument() {
+        #expect(LiveSelectionRangeTextReader.read(plain: { "exact selection" }, attributed: {
+            Issue.record("Plain success must not request a second representation")
+            return NSAttributedString(string: "different range")
+        }) == "exact selection")
+    }
+
+    @Test func selectedRangeFallbackRefusesMissingEmptyAndWrongTypes() {
+        let values: [Any?] = [nil, "not an attributed range", NSAttributedString(string: " \n")]
+        for value in values {
+            #expect(LiveSelectionRangeTextReader.read(plain: { nil }, attributed: { value }) == nil)
+        }
+    }
+
     @Test func provenAncestorBeatsNearerBoundlessPointerFragment() {
         let probe = FakeSelectionProbe()
         let g = gesture(CGPoint(x: 100, y: 100), CGPoint(x: 200, y: 100))
