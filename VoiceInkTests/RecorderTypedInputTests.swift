@@ -6,6 +6,95 @@ import Testing
 @testable import VoiceInkPlusPlus
 
 struct RecorderTypedInputTests {
+    @Test @MainActor func contextColorsWaitForRecognizedSpeechNotTypingOrCaptureIntent() throws {
+        let session = RecordingSession()
+        session.showsRealtimeTranscriptHUD = true
+        #expect(session.dimsContextUntilSpeechArrives)
+        session.liveRecordingState = .starting
+        #expect(session.dimsContextUntilSpeechArrives)
+        session.liveRecordingState = .recording
+        session.recordLiveSelection(try #require(LiveSelectionReference("Selected context is not speech")))
+        session.recordLiveSelection(try #require(LiveSelectionReference(
+            screenshotURL: URL(fileURLWithPath: "/tmp/Screenshot-test.png"))))
+        session.updateTypedInput("Typed context is not speech")
+        session.endTypingRun()
+        session.partialTranscript = " \n\t "
+        #expect(session.dimsContextUntilSpeechArrives)
+        let preserved = session.liveSelectionReferences
+        session.partialTranscript = "Recognized speech has arrived"
+        #expect(!session.dimsContextUntilSpeechArrives)
+        #expect(session.liveSelectionReferences == preserved)
+        // A disabled/incomplete realtime stream cannot claim live health from
+        // words retained before the complete-WAV fallback took over.
+        session.showsRealtimeTranscriptHUD = false
+        #expect(session.dimsContextUntilSpeechArrives)
+    }
+
+    @Test @MainActor func contextDimmingIsSessionLocalAndDoesNotDimTypingOnlyOrFinishedCards() {
+        let waiting = RecordingSession()
+        waiting.showsRealtimeTranscriptHUD = true
+        let recognized = RecordingSession()
+        recognized.showsRealtimeTranscriptHUD = true
+        recognized.partialTranscript = "Words from this session only"
+        #expect(waiting.dimsContextUntilSpeechArrives)
+        #expect(!recognized.dimsContextUntilSpeechArrives)
+        waiting.microphoneOff = true
+        #expect(!waiting.dimsContextUntilSpeechArrives)
+        waiting.microphoneOff = false
+        #expect(waiting.dimsContextUntilSpeechArrives)
+        for state in [RecordingState.paused, .transcribing, .enhancing, .busy, .idle] {
+            waiting.liveRecordingState = state
+            #expect(!waiting.dimsContextUntilSpeechArrives)
+        }
+    }
+
+    @Test @MainActor func bothFloatingLayoutsUseSessionRecognitionContextColors() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        for name in ["MiniRecorderView", "NotchRecorderView"] {
+            let source = try String(contentsOf: root.appendingPathComponent("VoiceInk/Views/Recorder/\(name).swift"), encoding: .utf8)
+            #expect(source.contains("dimsContextUntilSpeechArrives: stateProvider.dimsContextUntilSpeechArrives"))
+        }
+    }
+
+    @Test @MainActor func renderedContextChangesFromDimGrayToCyanAndPinkWithoutChangingText() throws {
+        let parts: [LiveSelectionReference.PreviewPart] = [
+            .selection("ChatGPT — selected context"), .screenshot("Screenshot-test.png")
+        ]
+        let directory = URL(fileURLWithPath: "/tmp/AgentFlow-422-context-colors", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        for waiting in [true, false] {
+            let host = NSHostingView(rootView: LiveTranscriptView(text: "",
+                dimsContextUntilSpeechArrives: waiting, selectionReferences: [],
+                cachedPreviewParts: parts, height: 90, width: 640)
+                .frame(width: 640, height: 90).background(Color.black))
+            host.frame = NSRect(x: 0, y: 0, width: 640, height: 90)
+            host.layoutSubtreeIfNeeded()
+            let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            var colored = 0
+            var visible = 0
+            var maximumBrightness: CGFloat = 0
+            for y in 0..<bitmap.pixelsHigh {
+                for x in 0..<bitmap.pixelsWide {
+                    guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+                    let channels = [color.redComponent, color.greenComponent, color.blueComponent]
+                    let high = channels.max()!, low = channels.min()!
+                    if high > 0.15 { visible += 1; maximumBrightness = max(maximumBrightness, high) }
+                    if high - low > 0.2 { colored += 1 }
+                }
+            }
+            #expect(visible > 100)
+            if waiting {
+                #expect(colored == 0)
+                #expect(maximumBrightness < 0.7)
+            } else {
+                #expect(colored > 100)
+            }
+            let image = try #require(bitmap.representation(using: .png, properties: [:]))
+            try image.write(to: directory.appendingPathComponent(waiting ? "waiting.png" : "recognized.png"))
+        }
+    }
+
     @Test @MainActor func committedTypingUndoPreservesContextAndRedoOrder() {
         let session = RecordingSession()
         session.updateTypedInput("first run")

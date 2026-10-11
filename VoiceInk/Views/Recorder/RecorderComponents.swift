@@ -511,6 +511,7 @@ struct RecorderModeButton: View {
 struct LiveTranscriptView: View {
     let text: String
     var potentialTTSActive = false
+    var dimsContextUntilSpeechArrives = false
     let selectionReferences: [LiveSelectionReference]
     var cachedPreviewParts: [LiveSelectionReference.PreviewPart]? = nil
     let height: CGFloat
@@ -536,6 +537,9 @@ struct LiveTranscriptView: View {
 
     private func previewText(_ parts: [LiveSelectionReference.PreviewPart]) -> Text {
         let amber = Color(red: 251.0/255, green: 191.0/255, blue: 36.0/255)
+        // Keep waiting context readable but achromatic for peripheral feedback.
+        // Only recolor the bounded display, never rewrite/crop its source refs.
+        let waitingContext = Color.white.opacity(0.45)
         guard !parts.isEmpty else {
             return potentialTTSActive ? Text("Potential ignore").foregroundColor(amber) : Text("…")
         }
@@ -558,10 +562,10 @@ struct LiveTranscriptView: View {
                     .foregroundColor(amber)
             case .selection(let preview):
                 part = Text("\(String(localized: "Selected Text")): \(preview)")
-                    .foregroundColor(.cyan.opacity(0.8))
+                    .foregroundColor(dimsContextUntilSpeechArrives ? waitingContext : .cyan.opacity(0.8))
             case .screenshot(let filename):
                 part = Text("\(String(localized: "Screenshot")): \(filename)")
-                    .foregroundColor(.purple.opacity(0.95))
+                    .foregroundColor(dimsContextUntilSpeechArrives ? waitingContext : .purple.opacity(0.95))
             }
             return result + (entry.offset == 0 ? Text("") : Text("  ")) + part
         }

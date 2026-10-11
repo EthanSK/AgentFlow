@@ -46,6 +46,18 @@ protocol RecorderStateProvider: AnyObject {
 }
 
 extension RecorderStateProvider {
+    // Context colors acknowledge provider words, not microphone intent, a moving
+    // meter, typing, or captured selections. This is only HUD presentation: batch
+    // capture/realtime fallback stays unconfirmed until stop, and saved context
+    // plus the single Primary/Next delivery remain unchanged. Typing-only and
+    // retained/transcribing cards are not waiting for live microphone recognition.
+    var dimsContextUntilSpeechArrives: Bool {
+        guard !microphoneOff,
+              recordingState == .starting || recordingState == .recording else { return false }
+        return !showsRealtimeTranscriptHUD
+            || !partialTranscript.contains(where: { !$0.isWhitespace })
+    }
+
     var showsRealtimeTranscriptHUD: Bool { false }
     var completionDisposition: RecordingCompletionDisposition { .normalDelivery }
     var liveSelectionReferences: [LiveSelectionReference] { [] }

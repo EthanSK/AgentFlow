@@ -883,7 +883,9 @@ struct VoiceInkTests {
         #expect(stacks.components(separatedBy: "let _ = layoutTick").count == 3)
         #expect(stacks.contains("RecorderPanelHeightSync("))
         let components = try repositorySource("VoiceInk/Views/Recorder/RecorderComponents.swift")
-        #expect(components.contains(".foregroundColor(.purple.opacity(0.95))"))
+        // Screenshot color now acknowledges live recognition; preserve its
+        // normal purple/pink style without requiring it before provider words.
+        #expect(components.contains(".foregroundColor(dimsContextUntilSpeechArrives ? waitingContext : .purple.opacity(0.95))"))
         #expect(components.contains(".font(.system(size: MiniRecorderLayoutMetrics.liveTranscriptFontSize))"))
     }
 

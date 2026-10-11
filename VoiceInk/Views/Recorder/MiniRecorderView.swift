@@ -184,6 +184,7 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                 LiveTranscriptView(
                     text: stateProvider.partialTranscript,
                     potentialTTSActive: stateProvider.potentialTTSActive,
+                    dimsContextUntilSpeechArrives: stateProvider.dimsContextUntilSpeechArrives,
                     selectionReferences: stateProvider.liveContextPreviewReferences,
                     cachedPreviewParts: stateProvider.liveContextPreviewParts,
                     height: liveTranscriptHeight,

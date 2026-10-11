@@ -1,5 +1,24 @@
 # Learnings
 
+## 2026-10-11 — HUD context color acknowledges live recognition, not capture intent
+
+Selection and screenshot colors are presentation-only recognition feedback. Both
+Mini and Notch pass the same session-local readiness policy to LiveTranscriptView:
+voice startup/recording with no non-whitespace provider partial uses readable dim
+gray; live recognized words restore cyan/pink. Typed words, selections, the audio
+meter, and microphone startup must not prove recognition. Typing-only, deliberate
+Pause and retained/transcribing cards preserve their existing colors; a disabled
+realtime stream or complete-WAV fallback remains recognition-unconfirmed during
+capture. Gray does not prove the microphone is off, and color is not a continuing
+network-health watchdog. Do not dim merely because a person pauses between words.
+
+The policy is per session and reads provider partials without changing context
+references, chronological ordering, saved prompts, or Primary/Next delivery.
+Named Mini regression coverage checks blank partials, typing/context-only input,
+session isolation, both layout wires, and actual rendered pixels (achromatic dim
+gray before recognition, cyan/pink afterward). Rendered synthetic fixtures are not
+physical microphone/provider acceptance.
+
 ## 2026-10-11 — HUD undo must also reach unsent committed typing
 
 Ethan physically rejected build 420's Undo and clarified that it fails both
@@ -20,6 +39,18 @@ Dispatch owned Command-Z/Shift-Command-Z at the key floating panel before the
 hosting route, never globally or in another field. Counts-only shortcut logs
 can distinguish a received shortcut from absent native history without recording
 authored text. This is a repair candidate until installed physical acceptance.
+
+Build 421 snapshot `f745bea3adce3253723256a92d38df9dfe85a1b2` passed 91 focused
+tests and all 611 tests in 21 suites through the canonical Mini Xcode action.
+Its ordinary universal Release was stable-signed and installed at the canonical
+AgentFlow path, PID 1208, CDHash `794c2564cf04da2ec951af9e9e546e44f5497c60`.
+ZIP SHA-256 `754b08de64a36ac3fd1131f83026f837b1cd717b3c789a176027476bf3225ae0`
+matched after transfer. Deep/strict signing, outer Automation/audio-input,
+unchanged icon and official VoiceInk checksum verified. The app acknowledged
+idle before and after the delivered five-second warning, then quit cooperatively.
+Signed 420 remains in a checksum/round-trip verified rollback ZIP; the obsolete
+unpacked bundle was retired to Trash. No physical shortcut receipt has yet been
+observed on the installed repair; synthetic/hosted coverage is not acceptance.
 
 ## 2026-10-11 — Floating typing owns its native undo history
 
