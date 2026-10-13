@@ -1012,7 +1012,7 @@ struct RecorderTypedInputTests {
                     outputConfiguration: { .init(mode: mode, outputMode: outputMode, autoSendKey: .enter, customCommand: nil) },
                     completionPolicy: { .init(completionDisposition: .normalDelivery, autoSendDisposition: .commandEnterOnce) },
                     onStateChange: { _ in }, shouldCancel: { false }, isDeliveryAuthorized: { true },
-                    onCancel: {}, onDismiss: {}, onTranscriptionFailure: { Issue.record($0) })
+                    onCancel: {}, onDismiss: {}, onTranscriptionFailure: { Issue.record("Unexpected failure: \($0)") })
                 #expect(triggers == 0 && enhancement.inputs.isEmpty)
                 #expect(output.messages == [expected] && output.keys == [.none])
                 #expect(output.outputModes == [.paste] && output.skipFlags == [true])
