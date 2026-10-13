@@ -949,6 +949,79 @@ struct RecorderTypedInputTests {
             if raw { #expect(record.text == text) }
         }
     }
+    @Test func personalNotePrefixIsAnchoredAndToleratesBoundedVariants() {
+        for text in ["Note to self: remember this", "  NOTE-TO-SELF, next time", "Not to self remember",
+                     "Notes two self", "Note too cell", "Note to myself", "Note to slef",
+                     "Note to sefl", "Noat to shelf", "note2self: draft", "notetoself draft"] {
+            #expect(NoteToSelfPrefix.matches(text))
+        }
+        for text in ["", "note", "note to", "I said note to self", "Please note to self",
+                     "Note to seller", "Note to send", "Note to selfish people", "Note for self",
+                     "Not to tell anyone", "This selection says note to self", "notetomyselfish"] {
+            #expect(!NoteToSelfPrefix.matches(text))
+        }
+    }
+
+    @Test @MainActor func personalNoteProductionPipelineUsesRawNoSendAcrossRoutesAndModes() async throws {
+        for destination in [RecordingPasteDestination.primaryCurrentInput, .recordingStart, .focusedDuringTranscription] {
+            for outputMode in [ModeOutputMode.paste, .respond, .customCommand] {
+                let schema = Schema([Transcription.self, WordReplacement.self, SessionMetric.self])
+                let container = try ModelContainer(for: schema,
+                    configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true))
+                let context = ModelContext(container)
+                let registry = TranscriptionServiceRegistry(modelProvider: TypingTestModelProvider(),
+                    modelsDirectory: URL(fileURLWithPath: "/tmp"), modelContext: context)
+                let output = TypingTestDelivery()
+                let enhancement = TypingTestEnhancement(modelContext: context, result: "must never replace the note")
+                let audio = TypingTestAudioSession()
+                let speech = "Note to self: keep this draft.\nDo not send it."
+                audio.completedText = speech
+                let mode = ModeConfig(name: "Note fixture", isAIEnhancementEnabled: true,
+                    isTextFormattingEnabled: true, outputMode: outputMode, autoSendKey: .enter,
+                    isStyledContextEnabled: true)
+                let typed = try #require(LiveSelectionReference(typedText: "Additional typed words"))
+                    .anchored(after: speech)
+                let references = [try #require(LiveSelectionReference("Selected context must not be pasted")), typed,
+                    try #require(LiveSelectionReference(screenshotURL: URL(fileURLWithPath: "/tmp/note-fixture.png")))]
+                let expected = LiveSelectionReference.interleaving([typed], with: speech,
+                    includeTiming: false, includeReadablePreview: false)
+                var archived: [String] = [], triggers = 0
+                let pipeline = TranscriptionPipeline(modelContext: context, serviceRegistry: registry,
+                    enhancementService: enhancement, delivery: output, archivePrompt: { text, _ in
+                        archived.append(text); return URL(fileURLWithPath: "/tmp/note-test.md")
+                    }, currentPromptRecipient: {
+                        .init(bundleID: "com.openai.codex", bundleURL: URL(fileURLWithPath: "/Applications/Codex.app"))
+                    })
+                let record = Transcription(text: "", duration: 0)
+                context.insert(record)
+                let url = URL(fileURLWithPath: "/tmp/note-\(UUID()).wav")
+                let model = NativeAppleModel(name: "unused", displayName: "Test", description: "Fixture",
+                    isMultilingualModel: false, supportedLanguages: [:])
+                await pipeline.run(transcription: record, audioURL: url,
+                    transcriptionConfiguration: .init(mode: mode, model: model, language: "en",
+                        isRealtimeEnabled: false, requestContext: .init(language: "en", prompt: nil)),
+                    jobIdentity: .init(generation: 1, enqueueSequence: 1, recordingSessionID: UUID(),
+                        transcriptionID: record.id, audioURL: url),
+                    formattingConfiguration: { .init(mode: mode, isTextFormattingEnabled: true) },
+                    session: audio, triggerWordModeSelection: { _ in triggers += 1; return "must not run" },
+                    enhancementConfiguration: { .init(mode: mode, isEnabled: true, prompt: nil,
+                        provider: nil, modelName: nil, useClipboardContext: false,
+                        useSelectedTextContext: false, useScreenCaptureContext: false) },
+                    liveSelectionReferences: { references },
+                    pasteTarget: { .init(destination: destination, focusedInput: nil, mode: mode) },
+                    outputConfiguration: { .init(mode: mode, outputMode: outputMode, autoSendKey: .enter, customCommand: nil) },
+                    completionPolicy: { .init(completionDisposition: .normalDelivery, autoSendDisposition: .commandEnterOnce) },
+                    onStateChange: { _ in }, shouldCancel: { false }, isDeliveryAuthorized: { true },
+                    onCancel: {}, onDismiss: {}, onTranscriptionFailure: { Issue.record($0) })
+                #expect(triggers == 0 && enhancement.inputs.isEmpty)
+                #expect(output.messages == [expected] && output.keys == [.none])
+                #expect(output.outputModes == [.paste] && output.skipFlags == [true])
+                #expect(output.routes == [destination])
+                #expect(record.text == expected && record.enhancedText == nil && archived == [expected])
+            }
+        }
+    }
+
     @Test @MainActor func productionPipelineArchivesTypedRunsWhereTheyWereCommitted() async throws {
         let t = Date(timeIntervalSince1970: 1_800_000_000)
         let recording = RecordingSession()
@@ -2667,10 +2740,14 @@ struct RecorderTypedInputTests {
     var messages: [String] = []
     var routes: [RecordingPasteDestination] = []
     var keys: [AutoSendKey] = []
+    var outputModes: [ModeOutputMode] = []
+    var skipFlags: [Bool] = []
     func deliver(_ request: TranscriptionDelivery.Request, actions: TranscriptionDelivery.Actions) async {
         if let text = request.text { messages.append(text) }
         routes.append(request.pasteTarget.destination)
         keys.append(request.output.autoSendKey)
+        outputModes.append(request.output.outputMode)
+        skipFlags.append(request.skipPostProcessing)
     }
 }
 

@@ -3,6 +3,27 @@ import AppKit
 import SwiftData
 import os
 
+/// A spoken personal-note prefix selects the existing raw/skip policy, never a
+/// destination. Only the start of provider speech is eligible: quoted selections,
+/// typed context and a later mention must not suppress another message's Send.
+enum NoteToSelfPrefix {
+    static func matches(_ speech: String) -> Bool {
+        let words = speech.prefix(96)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive],
+                     locale: Locale(identifier: "en_US_POSIX"))
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .prefix(3).map(String.init)
+        guard let first = words.first else { return false }
+        if ["notetoself", "note2self"].contains(first) { return true }
+        guard words.count == 3 else { return false }
+        // Bounded common recognizer/typing variants, not unrestricted fuzzy
+        // matching: “note to seller/send” and embedded mentions remain ordinary.
+        return ["note", "notes", "not", "noat"].contains(first)
+            && ["to", "too", "two", "2"].contains(words[1])
+            && ["self", "myself", "sell", "cell", "shelf", "sel", "slef", "sefl"].contains(words[2])
+    }
+}
+
 /// Chooses whether an explicit in-flight cancellation has useful text to retain.
 /// Candidates are ordered from strongest (a finished provider/enhancement result)
 /// to weakest (the last realtime HUD partial). Keeping this reducer pure makes the
@@ -230,7 +251,10 @@ class TranscriptionPipeline {
         // "the script still runs when skip is engaged": even if the outputConfiguration
         // closure's rewrite were ever lost downstream, this explicit flag forces the
         // raw-paste branch at delivery.
-        let skipPostProcessingNow = skipPostProcessing()
+        // The explicit button resolves once here; a recognized speech prefix can
+        // additionally enable this same per-job policy before any Mode mutation.
+        // It is never written to shared settings or inherited by the next job.
+        var skipPostProcessingNow = skipPostProcessing()
         var completionDispositionNow = RecordingCompletionDisposition.normalDelivery
         var autoSendDispositionNow = RecordingAutoSendDisposition.configured
         let recoverablePartialTranscriptNow = recoverablePartialTranscript()
@@ -478,6 +502,16 @@ class TranscriptionPipeline {
             }
 
             text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if hasCapturedAudio, !assistant.isFollowUp, NoteToSelfPrefix.matches(text) {
+                // A note is for the input, not the agent. Preserve every spoken
+                // word (including the prefix), exclude source/XML/link formatting,
+                // bypass triggers/enhancement/scripts and force no Return even for
+                // a Next-owned Mode or a Command-Enter completion. Reuse raw/skip
+                // end-to-end so automatic paste and later clipboard copy agree.
+                skipPostProcessingNow = true
+                vippLog.info("pipeline: personal-note prefix → raw paste without auto-send")
+            }
 
             // ── VIPP (skip-mode-processing feature) — trigger-word bypass ──
             // Trigger-word mode-selection can REWRITE the text (strip the trigger word) and
