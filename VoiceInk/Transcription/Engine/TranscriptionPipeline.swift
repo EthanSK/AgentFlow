@@ -179,6 +179,7 @@ class TranscriptionPipeline {
         // short-circuit in TranscriptionDelivery.deliver and the resolve site in
         // VoiceInkEngine.runPipeline.
         skipPostProcessing: @escaping () -> Bool = { false },
+        onPersonalNoteDetected: @escaping () -> Void = {},
         completionPolicy: @escaping () async -> RecordingCompletionPolicy = {
             .normal
         },
@@ -510,6 +511,7 @@ class TranscriptionPipeline {
                 // a Next-owned Mode or a Command-Enter completion. Reuse raw/skip
                 // end-to-end so automatic paste and later clipboard copy agree.
                 skipPostProcessingNow = true
+                onPersonalNoteDetected()
                 vippLog.info("pipeline: personal-note prefix → raw paste without auto-send")
             }
 

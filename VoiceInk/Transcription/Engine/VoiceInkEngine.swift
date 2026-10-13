@@ -2030,6 +2030,13 @@ class VoiceInkEngine: NSObject, ObservableObject {
             skipPostProcessing: { [weak session] in
                 session?.skipPostProcessing == true
             },
+            onPersonalNoteDetected: { [weak session] in
+                // The spoken note joins the existing per-session raw/skip policy.
+                // Queue-tail eligibility must see it too: a personal note is not
+                // an ordinary Primary successor that may eventually press Return.
+                // Never mutate the global Mode or the next recording's defaults.
+                session?.skipPostProcessing = true
+            },
             completionPolicy: { [weak session] in
                 await session?.freezeCompletionPolicy() ?? .normal
             },

@@ -985,7 +985,7 @@ struct RecorderTypedInputTests {
                     try #require(LiveSelectionReference(screenshotURL: URL(fileURLWithPath: "/tmp/note-fixture.png")))]
                 let expected = LiveSelectionReference.interleaving([typed], with: speech,
                     includeTiming: false, includeReadablePreview: false)
-                var archived: [String] = [], triggers = 0
+                var archived: [String] = [], triggers = 0, noteDetections = 0
                 let pipeline = TranscriptionPipeline(modelContext: context, serviceRegistry: registry,
                     enhancementService: enhancement, delivery: output, archivePrompt: { text, _ in
                         archived.append(text); return URL(fileURLWithPath: "/tmp/note-test.md")
@@ -1010,10 +1010,12 @@ struct RecorderTypedInputTests {
                     liveSelectionReferences: { references },
                     pasteTarget: { .init(destination: destination, focusedInput: nil, mode: mode) },
                     outputConfiguration: { .init(mode: mode, outputMode: outputMode, autoSendKey: .enter, customCommand: nil) },
+                    onPersonalNoteDetected: { noteDetections += 1 },
                     completionPolicy: { .init(completionDisposition: .normalDelivery, autoSendDisposition: .commandEnterOnce) },
                     onStateChange: { _ in }, shouldCancel: { false }, isDeliveryAuthorized: { true },
                     onCancel: {}, onDismiss: {}, onTranscriptionFailure: { Issue.record("Unexpected failure: \($0)") })
                 #expect(triggers == 0 && enhancement.inputs.isEmpty)
+                #expect(noteDetections == 1)
                 #expect(output.messages == [expected] && output.keys == [.none])
                 #expect(output.outputModes == [.paste] && output.skipFlags == [true])
                 #expect(output.routes == [destination])
