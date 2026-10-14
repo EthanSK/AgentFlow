@@ -1,5 +1,86 @@
 # Learnings
 
+## 2026-10-14 — Explicit selection triggers need matching editor provenance
+
+The working native repair freezes Shift at mouse-down, accepts a stationary
+Shift-click, and reads that caret-anchored range without invented drag geometry.
+Existing Shift-drags retain their pointer/window safeguards; only stationary
+extensions use the new focused-only path.
+One existing text-free monitor now recognizes Command-A and Shift-navigation;
+only an attached capture retains keyboard intent. Key release, same source,
+bounded age, new-input cancellation and recorder exclusion remain required.
+Shift-navigation commits after Shift release, not between arrow presses, so the
+existing automatic HUD focus return cannot cut that selection gesture short.
+
+In the real VS Code 1.139.1 editor, Option-Shift-Right produced a selection event
+with no public kind even though the focused active range correctly changed. A
+blanket Mouse/Keyboard-only gate loses that range. Conversely, the disposable
+programmatic selection produced Command kind 3 and was rejected. The bridge
+therefore keeps command hunk changes excluded; unclassified extension additionally
+requires an unchanged anchor and a fresh native keyboard-extension request with
+matching forward/backward direction. Select All command events require the whole
+document and an explicit Command-A request. Old clients remain mouse-only.
+
+TypeScript compilation, scoped ESLint and five focused protocol tests passed.
+One disposable MacBook VS Code window, with unrelated extensions disabled only
+there, passed eight positive window-targeted bridge checks: plain-editor Select
+All, Shift-arrow, word extension, line extension and Shift-click; modified diff
+Select All, Shift-arrow and Shift-click. Exact synthetic fixture bytes matched.
+Stale and programmatic mouse pulls returned no text. The window was closed and
+the pre-existing windows retained. No full E2E, native build or native test ran
+on the MacBook. These are bridge/controller checks, not physical native HUD
+acceptance. Mini-only native qualification, publication and installation remain
+pending; build 423 was not restarted or replaced.
+
+## 2026-10-14 — Shift-click and keyboard selections have separate trigger gaps
+
+Source inspection after Ethan reported Shift-click block selections missing in
+VS Code confirms that `SelectionGestureWatcher` observes only left-button edges
+and retains no Shift state. `LiveSelectionCapture.isSelectionGesture` accepts
+multi-clicks or at least four points of movement; an ordinary stationary
+Shift-click is therefore rejected before the selected-text reader is asked.
+Do not treat successful mouse-drag capture as evidence of Shift-click support.
+
+Command-A and Shift-navigation also need an explicit keyboard trigger. The actual
+installed Better Git 1.2.122 bundle still records only public Mouse selection
+events in its Agent Flow bridge, so a native-only keyboard trigger cannot establish
+VS Code keyboard support. Keep a matching user-input-kind/freshness boundary on
+both sides rather than accepting programmatic Git hunk selection, inventing mouse
+geometry, copying text, enabling screen-reader mode, or polling editors while idle.
+Require physical Shift-click, Command-A and Shift-navigation in plain and diff
+editors plus stale/programmatic/wrong-source rejection before claiming coverage.
+
+This is verified source and installed-extension evidence, not an implemented or
+installed repair. Native build 423 and the running VS Code extension are unchanged.
+
+## 2026-10-13 — Spoken note-to-self prefixes reuse raw per-session delivery
+
+An anchored spoken `note to self` prefix (including bounded normalization and
+explicit aliases, not unrestricted fuzzy matching) opts only that audio session
+into the existing skip-post-processing path. Detect after successful transcription
+but before trigger-word Mode changes; set both the pipeline's local skip decision
+and the owning session flag so queue-tail eligibility cannot treat the result as
+ordinary Primary output. Never change the global Mode or add a destination route.
+Keep every authored speech/typing word, including the prefix; exclude selections,
+screenshots, XML styling and prompt links from the delivered raw draft. Force paste
+with no send key even when the selected Mode is Respond/custom-command or the user
+completed with Command-Enter. Keep clipboard-only/cancellation ownership separate.
+Typing-only sessions, assistant follow-ups and later mentions do not enable it.
+
+Build 423 snapshot f6797b2 (based on the exact installed-422 b75316d snapshot)
+passed 97 focused tests, then all 617 native tests in 21 suites on the Mini's
+canonical runner. The unfiltered action's separate UI automation runner timed out
+starting; the same compiled native target succeeded through test-without-building.
+Production pipeline tests cover three routes by three Mode types, no enhancement,
+no send, authored typing retained, optional context excluded, and archive/History.
+Physical spoken-prefix acceptance remains unverified; native spies are not a live
+Codex acceptance test. Signed universal Release CDHash
+0220b0fbe8b907a18dff15a636a35c248a1f918b installed at the canonical AgentFlow path
+after the real five-second warning and cooperative quit; Automation/audio input,
+unchanged icon, Scarlett custom-input preference and untouched official VoiceInk
+verified. Build 422 remains in a round-trip verified rollback ZIP, not a launchable
+duplicate in Applications.
+
 ## 2026-10-11 — HUD context color acknowledges live recognition, not capture intent
 
 Selection and screenshot colors are presentation-only recognition feedback. Both
@@ -18,6 +99,13 @@ Named Mini regression coverage checks blank partials, typing/context-only input,
 session isolation, both layout wires, and actual rendered pixels (achromatic dim
 gray before recognition, cyan/pink afterward). Rendered synthetic fixtures are not
 physical microphone/provider acceptance.
+
+Build 422's exact native snapshot passed 96 named focused tests and all 615 tests
+in 21 suites on the canonical Mini Xcode action. The signed universal Release was
+installed after idle acknowledgement on both sides of the real five-second
+warning and a cooperative quit, with Automation/audio-input entitlements, deep
+signature validity, unchanged icon and official VoiceInk preserved. Live physical
+microphone/provider acceptance remains separate from the rendered fixture checks.
 
 ## 2026-10-11 — HUD undo must also reach unsent committed typing
 

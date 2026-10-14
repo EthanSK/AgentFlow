@@ -7,6 +7,82 @@ import Testing
 /// reading before pressing start, or during microphone start-up) were missed
 /// because each recording owned its own mouse monitor from its start onward.
 struct SelectionGestureWatcherTests {
+    @Test @MainActor func shiftClickRetainsDownModifierWithoutInventingADrag() {
+        let watcher = SelectionGestureWatcher()
+        let now = Date()
+        var down = edge(.leftMouseDown, 100, at: now)
+        down.extendsSelection = true
+        watcher.handle(down, frontmostPID: 7)
+        // Shift can be released before mouse-up; its selection intent is frozen.
+        watcher.handle(edge(.leftMouseUp, 100, at: now.addingTimeInterval(0.1)), frontmostPID: 7)
+        #expect(watcher.lastSelectionGesture?.extendsSelection == true)
+        #expect(watcher.lastSelectionGesture?.start == watcher.lastSelectionGesture?.end)
+        #expect(LiveSelectionCapture.selectionGestureDisposition(startPoint: .zero, endPoint: .zero,
+            clickCount: 1, sourcePID: 7, ownPID: 42, extendsSelection: true) == "read")
+        #expect(LiveSelectionCapture.selectionGestureDisposition(startPoint: .zero, endPoint: .zero,
+            clickCount: 1, sourcePID: 42, ownPID: 42, extendsSelection: true) == "no-source")
+        #expect(!LiveSelectionCapture.usesPointerGeometry(from: .zero, to: .zero,
+            clickCount: 1, extendsSelection: true))
+        #expect(LiveSelectionCapture.usesPointerGeometry(from: .zero, to: NSPoint(x: 20, y: 0),
+            clickCount: 1, extendsSelection: true))
+    }
+
+    @Test @MainActor func keyboardSelectionWaitsForReleaseAndRejectsTypingAndSourceChanges() {
+        var sequence = SelectionGestureWatcher.KeyboardSequence()
+        let now = Date(timeIntervalSince1970: 1000)
+        #expect(sequence.handle(type: .keyDown, keyCode: 0, modifiers: .command, at: now, sourcePID: 7) == nil)
+        let all = sequence.handle(type: .keyUp, keyCode: 0, modifiers: [],
+            at: now.addingTimeInterval(0.1), sourcePID: 7)
+        #expect(all?.inputKind == .selectAll && all?.startedAt == now && all?.inputDirection == nil)
+        for flags in [NSEvent.ModifierFlags.shift, [.shift, .option], [.shift, .command]] {
+            #expect(sequence.handle(type: .keyDown, keyCode: 124, modifiers: flags, at: now, sourcePID: 7) == nil)
+            #expect(sequence.handle(type: .keyUp, keyCode: 124, modifiers: [],
+                at: now.addingTimeInterval(0.2), sourcePID: 7)?.inputKind == .keyboard)
+        }
+        _ = sequence.handle(type: .keyDown, keyCode: 124, modifiers: .shift, at: now, sourcePID: 7)
+        #expect(sequence.handle(type: .keyUp, keyCode: 124, modifiers: [],
+            at: now.addingTimeInterval(0.2), sourcePID: 8) == nil)
+        _ = sequence.handle(type: .keyDown, keyCode: 124, modifiers: .shift, at: now, sourcePID: 7)
+        _ = sequence.handle(type: .keyDown, keyCode: 2, modifiers: [], at: now, sourcePID: 7)
+        #expect(sequence.handle(type: .keyUp, keyCode: 124, modifiers: [], at: now, sourcePID: 7) == nil)
+        #expect(SelectionGestureWatcher.KeyboardSequence.selectionKind(keyCode: 0, modifiers: [.command, .shift]) == nil)
+        #expect(SelectionGestureWatcher.KeyboardSequence.selectionKind(keyCode: 124, modifiers: [.control, .shift]) == nil)
+        #expect(SelectionGestureWatcher.KeyboardSequence.selectionKind(keyCode: 124, modifiers: [.command, .option, .shift]) == nil)
+        #expect(SelectionGestureWatcher.KeyboardSequence.direction(keyCode: 124) == "right")
+        #expect(SelectionGestureWatcher.KeyboardSequence.direction(keyCode: 126) == "up")
+    }
+
+    @Test @MainActor func keyboardRepeatsUseOneBoundedGestureAndNeverBorrowStaleIntent() {
+        var sequence = SelectionGestureWatcher.KeyboardSequence()
+        let now = Date(timeIntervalSince1970: 1000)
+        _ = sequence.handle(type: .keyDown, keyCode: 124, modifiers: .shift, at: now, sourcePID: 7)
+        _ = sequence.handle(type: .keyDown, keyCode: 124, modifiers: .shift,
+            at: now.addingTimeInterval(0.5), sourcePID: 7)
+        #expect(sequence.handle(type: .keyUp, keyCode: 124, modifiers: [],
+            at: now.addingTimeInterval(1), sourcePID: 7)?.startedAt == now)
+        #expect(sequence.handle(type: .keyUp, keyCode: 124, modifiers: [], at: now, sourcePID: 7) == nil)
+        _ = sequence.handle(type: .keyDown, keyCode: 0, modifiers: .command, at: now, sourcePID: 7)
+        #expect(sequence.handle(type: .keyUp, keyCode: 0, modifiers: [],
+            at: now.addingTimeInterval(11), sourcePID: 7) == nil)
+    }
+
+    @Test @MainActor func shiftNavigationCommitsOnlyWhenTheSelectionModifierIsReleased() {
+        var sequence = SelectionGestureWatcher.KeyboardSequence()
+        let now = Date(timeIntervalSince1970: 1000)
+        _ = sequence.handle(type: .keyDown, keyCode: 124, modifiers: .shift, at: now, sourcePID: 7)
+        #expect(sequence.handle(type: .keyUp, keyCode: 124, modifiers: .shift,
+            at: now.addingTimeInterval(0.1), sourcePID: 7) == nil)
+        _ = sequence.handle(type: .keyDown, keyCode: 125, modifiers: .shift,
+            at: now.addingTimeInterval(0.2), sourcePID: 7)
+        #expect(sequence.handle(type: .keyUp, keyCode: 125, modifiers: .shift,
+            at: now.addingTimeInterval(0.3), sourcePID: 7) == nil)
+        let completed = sequence.handle(type: .flagsChanged, keyCode: 56, modifiers: [],
+            at: now.addingTimeInterval(0.4), sourcePID: 7)
+        #expect(completed?.startedAt == now && completed?.inputDirection == "down")
+        #expect(completed?.endedAt == now.addingTimeInterval(0.4))
+        #expect(sequence.handle(type: .flagsChanged, keyCode: 56, modifiers: [], at: now, sourcePID: 7) == nil)
+    }
+
     @Test @MainActor func freshAndPriorGesturesRetainBothCallbackLagsAndClickUnits() throws {
         let watcher = SelectionGestureWatcher()
         let now = Date()

@@ -1,7 +1,7 @@
 import AppKit
 import Foundation
 
-/// App-lifetime watcher for left-mouse selection *gestures* in other apps.
+/// App-lifetime, text-free watcher for selection *gestures* in other apps.
 ///
 /// Why it always runs: a recording's `LiveSelectionCapture` historically started
 /// only after the microphone handshake. It now attaches at committed start. Before build 349 it
@@ -12,12 +12,13 @@ import Foundation
 /// so a starting recording can adopt both.
 ///
 /// Privacy and cost boundary: while idle it records only pointer coordinates,
-/// timestamps, click counts and the frontmost app's process identity. It never
+/// timestamps, click counts, Shift intent and the frontmost app's process identity. It never
 /// reads selected text, the pasteboard or Accessibility, and holds one gesture at
 /// most. Text is read only by an attached recording's `LiveSelectionCapture`, with
 /// the same read-only fallback chain and stable-source checks as before. One
-/// global monitor for mouse-button edges is installed once for the app's lifetime
-/// and never duplicated; there is no timer or polling.
+/// global monitor is installed once and never duplicated. Keyboard intent is
+/// retained only while a recording capture is attached, and only its released
+/// selection gesture is forwarded; there is no text feed, timer or polling.
 @MainActor
 final class SelectionGestureWatcher {
     static let shared = SelectionGestureWatcher()
@@ -41,12 +42,14 @@ final class SelectionGestureWatcher {
         let location: NSPoint
         let occurredAt: Date
         var callbackLagMilliseconds: Int? = nil
+        var extendsSelection = false
     }
 
     struct MouseDown: Equatable {
         let location: NSPoint
         let occurredAt: Date
         var callbackLagMilliseconds: Int? = nil
+        var extendsSelection = false
     }
 
     /// A finished selection-shaped gesture. `processIdentifier` is the app that was
@@ -59,9 +62,86 @@ final class SelectionGestureWatcher {
         let processIdentifier: pid_t
         var clickCount = 1
         var callbackLagMilliseconds: Int? = nil
+        var extendsSelection = false
+    }
+
+    enum KeyboardInputKind: String, Equatable { case keyboard, selectAll }
+
+    struct KeyboardGesture: Equatable {
+        let startedAt: Date
+        let endedAt: Date
+        let processIdentifier: pid_t
+        let inputKind: KeyboardInputKind
+        var inputDirection: String? = nil
+    }
+
+    /// Text-free reducer. Read only after the initiating key is released in the
+    /// same app; ordinary typing cancels pending intent instead of borrowing its
+    /// newer range. Repeats keep one gesture, and no characters are inspected.
+    struct KeyboardSequence {
+        private var pending: (key: UInt16, start: Date, pid: pid_t, kind: KeyboardInputKind, released: Bool)?
+
+        mutating func handle(type: NSEvent.EventType, keyCode: UInt16,
+                             modifiers: NSEvent.ModifierFlags, at time: Date,
+                             sourcePID: pid_t?) -> KeyboardGesture? {
+            guard let sourcePID, sourcePID > 0 else { pending = nil; return nil }
+            if type == .keyDown {
+                guard let kind = Self.selectionKind(keyCode: keyCode, modifiers: modifiers) else {
+                    pending = nil
+                    return nil
+                }
+                let start = pending.flatMap { $0.pid == sourcePID && $0.kind == kind ? $0.start : nil } ?? time
+                pending = (keyCode, start, sourcePID, kind, false)
+            } else if type == .keyUp, let previous = pending, previous.key == keyCode {
+                pending?.released = true
+                // Holding Shift defines one extension gesture. Do not return
+                // typing focus to the HUD between its successive arrow presses.
+                if previous.kind == .keyboard && modifiers.contains(.shift) { return nil }
+                return finish(at: time, sourcePID: sourcePID)
+            } else if type == .flagsChanged, !modifiers.contains(.shift),
+                      pending?.kind == .keyboard, pending?.released == true {
+                return finish(at: time, sourcePID: sourcePID)
+            }
+            return nil
+        }
+
+        private mutating func finish(at time: Date, sourcePID: pid_t) -> KeyboardGesture? {
+            if let previous = pending {
+                pending = nil
+                guard previous.pid == sourcePID, time >= previous.start,
+                      time.timeIntervalSince(previous.start) <= 10 else { return nil }
+                return KeyboardGesture(startedAt: previous.start, endedAt: time,
+                                       processIdentifier: sourcePID, inputKind: previous.kind,
+                                       inputDirection: Self.direction(keyCode: previous.key))
+            }
+            return nil
+        }
+
+        static func selectionKind(keyCode: UInt16, modifiers: NSEvent.ModifierFlags) -> KeyboardInputKind? {
+            guard !modifiers.contains(.control) else { return nil }
+            guard !(modifiers.contains(.command) && modifiers.contains(.option)) else { return nil }
+            if keyCode == 0, modifiers.contains(.command),
+               !modifiers.contains(.shift), !modifiers.contains(.option) { return .selectAll }
+            // Arrows, Home/End and Page Up/Down, including word/line extension.
+            if modifiers.contains(.shift), [115, 116, 119, 121, 123, 124, 125, 126].contains(keyCode) {
+                return .keyboard
+            }
+            return nil
+        }
+
+        static func direction(keyCode: UInt16) -> String? {
+            switch keyCode {
+            case 115, 123: return "left"
+            case 119, 124: return "right"
+            case 116, 126: return "up"
+            case 121, 125: return "down"
+            default: return nil
+            }
+        }
     }
 
     private var monitor: Any?
+    private var keyboardSequence = KeyboardSequence()
     private(set) var pendingMouseDown: MouseDown?
     private(set) var lastSelectionGesture: CompletedGesture?
 
@@ -73,16 +153,30 @@ final class SelectionGestureWatcher {
     func start() {
         guard monitor == nil else { return }
         monitor = NSEvent.addGlobalMonitorForEvents(
-            matching: [.leftMouseDown, .leftMouseUp]
+            matching: [.leftMouseDown, .leftMouseUp, .keyDown, .keyUp, .flagsChanged]
         ) { event in
-            let edge = Self.edge(from: event, mouseLocation: NSEvent.mouseLocation)
-            // Sample the frontmost app at the edge, as the live capture always did.
-            let frontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
             // AppKit guarantees event-monitor callbacks on the main thread.
             // Avoid a queued hop that can reorder an edge with capture attachment
             // or sample another frontmost app after the user's first highlight.
             MainActor.assumeIsolated {
-                SelectionGestureWatcher.shared.handle(edge, frontmostPID: frontmostPID)
+                let watcher = SelectionGestureWatcher.shared
+                if event.type == .keyDown || event.type == .keyUp || event.type == .flagsChanged {
+                    // Keyboard intent exists only during an attached session.
+                    // Idle monitoring retains neither typed keys nor selected text.
+                    guard let listener = watcher.listener else { watcher.resetKeyboardGesture(); return }
+                    let frontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+                    if event.type == .keyDown { listener.selectionWillChange() }
+                    let sourcePID = Self.sourcePID(frontmostPID: frontmostPID,
+                        ownPID: ProcessInfo.processInfo.processIdentifier)
+                    if let gesture = watcher.keyboardSequence.handle(type: event.type, keyCode: event.keyCode,
+                        modifiers: event.modifierFlags, at: Self.occurredAt(event), sourcePID: sourcePID) {
+                        listener.handle(gesture)
+                    }
+                } else {
+                    let frontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+                    let edge = Self.edge(from: event, mouseLocation: NSEvent.mouseLocation)
+                    watcher.handle(edge, frontmostPID: frontmostPID)
+                }
             }
         }
     }
@@ -91,11 +185,18 @@ final class SelectionGestureWatcher {
         // Restore the pre-358 global-monitor geometry. Keep the event timestamp
         // for chronology, but never derive routing from a reconstructed CGEvent.
         let now = Date()
-        let occurredAt = now.addingTimeInterval(event.timestamp - ProcessInfo.processInfo.systemUptime)
+        let occurredAt = Self.occurredAt(event)
         return MouseEdge(type: event.type, clickCount: event.clickCount, location: mouseLocation,
             occurredAt: occurredAt,
-            callbackLagMilliseconds: callbackLagMilliseconds(occurredAt: occurredAt, now: now))
+            callbackLagMilliseconds: callbackLagMilliseconds(occurredAt: occurredAt, now: now),
+            extendsSelection: event.modifierFlags.contains(.shift))
     }
+
+    private static func occurredAt(_ event: NSEvent) -> Date {
+        Date().addingTimeInterval(event.timestamp - ProcessInfo.processInfo.systemUptime)
+    }
+
+    func resetKeyboardGesture() { keyboardSequence = KeyboardSequence() }
 
     nonisolated static func callbackLagMilliseconds(occurredAt: Date, now: Date) -> Int {
         let elapsed = now.timeIntervalSince(occurredAt)
@@ -116,20 +217,24 @@ final class SelectionGestureWatcher {
                                        ownPID: ProcessInfo.processInfo.processIdentifier)
         switch edge.type {
         case .leftMouseDown:
+            resetKeyboardGesture()
             pendingMouseDown = MouseDown(location: edge.location, occurredAt: edge.occurredAt,
-                                        callbackLagMilliseconds: edge.callbackLagMilliseconds)
+                                        callbackLagMilliseconds: edge.callbackLagMilliseconds,
+                                        extendsSelection: edge.extendsSelection)
         case .leftMouseUp:
             if let down = pendingMouseDown,
                let sourcePID,
                LiveSelectionCapture.isSelectionGesture(
-                   from: down.location, to: edge.location, clickCount: edge.clickCount
+                   from: down.location, to: edge.location, clickCount: edge.clickCount,
+                   extendsSelection: down.extendsSelection
                ) {
                 lastSelectionGesture = CompletedGesture(
                     start: down.location, end: edge.location,
                     startedAt: down.occurredAt, endedAt: edge.occurredAt,
                     processIdentifier: sourcePID, clickCount: edge.clickCount,
                     callbackLagMilliseconds: Self.combinedCallbackLag(
-                        down.callbackLagMilliseconds, edge.callbackLagMilliseconds)
+                        down.callbackLagMilliseconds, edge.callbackLagMilliseconds),
+                    extendsSelection: down.extendsSelection
                 )
             }
             pendingMouseDown = nil

@@ -1,5 +1,18 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-10-14 — Treat every keyboard extension as a labelled editor event — REJECTED
+
+**Failure condition:** In the disposable VS Code 1.139.1 editor, a window-targeted
+Option-Shift-Right selected the correct five synthetic characters but its public
+selection event omitted the kind. Requiring Mouse/Keyboard rejected that range.
+**Correction:** Keep general Command changes excluded. An unclassified extension
+must additionally retain its prior anchor and match a fresh native keyboard
+gesture's direction, source, editor/version and time. Do not accept unknown
+events on their own or loosen mouse/idle reads to make the example pass.
+**Reconsider only if:** The supported real hosts reliably label every requested
+physical word/line extension, with native installed acceptance rather than only
+an API fixture. Current bridge/controller checks pass; native acceptance is pending.
+
 ## 2026-10-11 — Native draft-only Undo proves the whole HUD works — SUPERSEDED
 
 **Failure condition:** Build 420's tests passed, but Ethan reported that physical

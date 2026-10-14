@@ -1159,6 +1159,7 @@ final class LiveSelectionCapture {
     private var mouseDownPoint: NSPoint?
     private var mouseDownDate: Date?
     private var mouseDownCallbackLag: Int?
+    private var mouseDownExtendsSelection = false
     private var captureTask: Task<Void, Never>?
     private var screenshotSource: DispatchSourceFileSystemObject?
     private var screenshotDirectory: URL?
@@ -1180,6 +1181,7 @@ final class LiveSelectionCapture {
         attachedAt = Date()
         let watcher = SelectionGestureWatcher.shared
         watcher.start()
+        watcher.resetKeyboardGesture()
         // A drag that began before capture attached (during microphone start-up,
         // or just before the start press) finishes normally during recording.
         // Before build 349 its mouse-down was never seen, so the gesture failed.
@@ -1190,6 +1192,7 @@ final class LiveSelectionCapture {
             mouseDownPoint = down.location
             mouseDownDate = down.occurredAt
             mouseDownCallbackLag = down.callbackLagMilliseconds
+            mouseDownExtendsSelection = down.extendsSelection
         }
         watcher.listener = self
         startScreenshotWatch(activationTime: activationTime)
@@ -1204,6 +1207,7 @@ final class LiveSelectionCapture {
     func stop() {
         if SelectionGestureWatcher.shared.listener === self {
             SelectionGestureWatcher.shared.listener = nil
+            SelectionGestureWatcher.shared.resetKeyboardGesture()
         }
         isAttached = false
         attachedAt = .distantFuture
@@ -1212,6 +1216,7 @@ final class LiveSelectionCapture {
         mouseDownPoint = nil
         mouseDownDate = nil
         mouseDownCallbackLag = nil
+        mouseDownExtendsSelection = false
         screenshotScanTask?.cancel()
         screenshotScanTask = nil
         screenshotSource?.cancel()
@@ -1341,7 +1346,22 @@ final class LiveSelectionCapture {
         return (value as? NSNumber)?.boolValue == true
     }
 
-    /// Called by `SelectionGestureWatcher` for every mouse edge while attached.
+    /// A fresh key-down cancels a pending older read before it can borrow the
+    /// range changed by typing or another keyboard selection.
+    func selectionWillChange() {
+        captureTask?.cancel()
+    }
+
+    func handle(_ gesture: SelectionGestureWatcher.KeyboardGesture) {
+        guard isAttached, Self.isFrontmost(gesture.processIdentifier),
+              let app = NSRunningApplication(processIdentifier: gesture.processIdentifier) else { return }
+        // Keyboard selection has no pointer endpoints. Read only the focused
+        // public range, never fabricate a drag from the idle mouse position.
+        beginSelectionRead(from: .zero, to: .zero, gestureStartedAt: gesture.startedAt,
+            selectedAt: gesture.endedAt, app: app, precedesSpeech: false, hasGesture: false,
+            bridgeInputKind: gesture.inputKind.rawValue, bridgeInputDirection: gesture.inputDirection)
+    }
+
     func handle(_ edge: MouseEdge, sourcePID: pid_t?) {
         guard isAttached else { return }
         switch edge.type {
@@ -1352,18 +1372,22 @@ final class LiveSelectionCapture {
             mouseDownPoint = edge.location
             mouseDownDate = edge.occurredAt
             mouseDownCallbackLag = edge.callbackLagMilliseconds
+            mouseDownExtendsSelection = edge.extendsSelection
         case .leftMouseUp:
             let endPoint = edge.location
             let startPoint = mouseDownPoint
             let gestureStartedAt = mouseDownDate ?? edge.occurredAt
             let callbackLag = SelectionGestureWatcher.combinedCallbackLag(
                 mouseDownCallbackLag, edge.callbackLagMilliseconds)
+            let extendsSelection = mouseDownExtendsSelection
             mouseDownPoint = nil
             mouseDownDate = nil
             mouseDownCallbackLag = nil
+            mouseDownExtendsSelection = false
             let disposition = Self.selectionGestureDisposition(
                 startPoint: startPoint, endPoint: endPoint, clickCount: edge.clickCount,
-                sourcePID: sourcePID, ownPID: ProcessInfo.processInfo.processIdentifier
+                sourcePID: sourcePID, ownPID: ProcessInfo.processInfo.processIdentifier,
+                extendsSelection: extendsSelection
             )
             LiveSelectionDiagnostics.gesture(
                 outcome: disposition, clickCount: edge.clickCount,
@@ -1378,7 +1402,10 @@ final class LiveSelectionCapture {
             beginSelectionRead(
                 from: startPoint, to: endPoint, gestureStartedAt: gestureStartedAt, selectedAt: edge.occurredAt,
                 app: app, precedesSpeech: false, clickCount: edge.clickCount,
-                callbackLagMilliseconds: callbackLag
+                callbackLagMilliseconds: callbackLag,
+                hasGesture: Self.usesPointerGeometry(from: startPoint, to: endPoint,
+                    clickCount: edge.clickCount, extendsSelection: extendsSelection),
+                bridgeInputKind: extendsSelection ? "mouse" : nil
             )
         default:
             break
@@ -1401,7 +1428,10 @@ final class LiveSelectionCapture {
             beginSelectionRead(
                 from: gesture.start, to: gesture.end, gestureStartedAt: gesture.startedAt, selectedAt: gesture.endedAt,
                 app: app, precedesSpeech: true, clickCount: gesture.clickCount,
-                callbackLagMilliseconds: gesture.callbackLagMilliseconds
+                callbackLagMilliseconds: gesture.callbackLagMilliseconds,
+                hasGesture: Self.usesPointerGeometry(from: gesture.start, to: gesture.end,
+                    clickCount: gesture.clickCount, extendsSelection: gesture.extendsSelection),
+                bridgeInputKind: gesture.extendsSelection ? "mouse" : nil
             )
         } else {
             // A keyboard highlight or one predating the watcher has no mouse
@@ -1425,9 +1455,11 @@ final class LiveSelectionCapture {
         selectedAt: Date,
         app: NSRunningApplication,
         precedesSpeech: Bool,
-        hasGesture: Bool = true,
         clickCount: Int = 1,
-        callbackLagMilliseconds: Int? = nil
+        callbackLagMilliseconds: Int? = nil,
+        hasGesture: Bool = true,
+        bridgeInputKind: String? = nil,
+        bridgeInputDirection: String? = nil
     ) {
         // A drag can activate an app that was backgrounded at mouse-down.
         // Bind to the frontmost app sampled synchronously at mouse-up and its
@@ -1494,6 +1526,8 @@ final class LiveSelectionCapture {
                     bundleID: bundleID,
                     gesture: gesture,
                     gestureStartedAt: gestureStartedAt,
+                    bridgeInputKind: bridgeInputKind,
+                    bridgeInputDirection: bridgeInputDirection,
                     startedAt: startedAt
                 )
             }
@@ -1562,14 +1596,22 @@ final class LiveSelectionCapture {
         bundleID: String?,
         gesture: LiveSelectionGesture?,
         gestureStartedAt: Date,
+        bridgeInputKind: String?,
+        bridgeInputDirection: String?,
         startedAt: UInt64
     ) async -> String? {
         // VS Code's default Monaco editor intentionally exposes no AX text.
-        // Better Git can prove a fresh mouse selection in the focused editor;
+        // Better Git proves a matching mouse, keyboard-extension or Select All
+        // selection in the focused editor. A stationary Shift-click's range
+        // starts at the prior caret, so it uses focused-only reading. Real
+        // Shift-drags keep the existing window and range-geometry safeguards;
         // ask only during capture, never enable screen-reader mode or copy.
         if isFrontmost(sourcePID), VSCodeSelectionBridge.supports(bundleID),
-           gesture?.touchesWindow(ownedBy: sourcePID, in: LiveSelectionWindow.onScreen()) == true,
-           let text = await VSCodeSelectionBridge.read(sourcePID: sourcePID, gestureStartedAt: gestureStartedAt) {
+           (gesture == nil ? bridgeInputKind != nil :
+               gesture?.touchesWindow(ownedBy: sourcePID, in: LiveSelectionWindow.onScreen()) == true),
+           let text = await VSCodeSelectionBridge.read(sourcePID: sourcePID,
+               gestureStartedAt: gestureStartedAt, inputKind: bridgeInputKind,
+               inputDirection: bridgeInputDirection) {
             LiveSelectionDiagnostics.captured(
                 tier: .vscodeBridge, source: nil, evidence: .atGesture, attempt: 1,
                 bundleID: bundleID, startedAt: startedAt
@@ -1641,14 +1683,15 @@ final class LiveSelectionCapture {
                          windows: LiveSelectionWindow.onScreen())
     }
 
-    /// Counts-only reason for rejecting an attached recording's mouse-up before
-    /// any Accessibility read. Keep the accepted gesture threshold unchanged.
+    /// Counts-only rejection before any Accessibility read. Preserve the drag
+    /// threshold; frozen Shift adds the stationary caret-to-click extension.
     static func selectionGestureDisposition(
         startPoint: NSPoint?, endPoint: NSPoint, clickCount: Int,
-        sourcePID: pid_t?, ownPID: pid_t
+        sourcePID: pid_t?, ownPID: pid_t, extendsSelection: Bool = false
     ) -> String {
         guard let startPoint else { return "no-mouse-down" }
-        guard isSelectionGesture(from: startPoint, to: endPoint, clickCount: clickCount) else {
+        guard isSelectionGesture(from: startPoint, to: endPoint, clickCount: clickCount,
+                                 extendsSelection: extendsSelection) else {
             return "not-selection-shaped"
         }
         guard let sourcePID, sourcePID > 0, sourcePID != ownPID else { return "no-source" }
@@ -1658,11 +1701,19 @@ final class LiveSelectionCapture {
     static func isSelectionGesture(
         from start: NSPoint,
         to end: NSPoint,
-        clickCount: Int
+        clickCount: Int,
+        extendsSelection: Bool = false
     ) -> Bool {
         let dx = end.x - start.x
         let dy = end.y - start.y
-        return clickCount >= 2 || dx * dx + dy * dy >= 16
+        return extendsSelection || clickCount >= 2 || dx * dx + dy * dy >= 16
+    }
+
+    static func usesPointerGeometry(from start: NSPoint, to end: NSPoint,
+                                    clickCount: Int, extendsSelection: Bool) -> Bool {
+        // Only the new stationary extension lacks mouse-range evidence. Do not
+        // remove established pointer/window checks from an existing Shift-drag.
+        !extendsSelection || isSelectionGesture(from: start, to: end, clickCount: clickCount)
     }
 
     static func hasStableSource(expectedPID: pid_t?, currentPID: pid_t?) -> Bool {
