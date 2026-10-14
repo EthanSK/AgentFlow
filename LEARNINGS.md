@@ -1,5 +1,40 @@
 # Learnings
 
+## 2026-10-14 — Selection build 424 qualified and installed after home-LAN recovery
+
+The existing direct home-LAN SSH route worked after Ethan returned home; no VPN,
+Tailscale authentication, network permission or Mini reset was needed. Build 424
+is frozen at snapshot `d3c80e816eece4529decf629bec98fde2ca93d1e`, based on installed
+423's `f6797b2`, with the three selection services, their tests and build number
+as the only native changes. The shared MacBook index and inherited work were preserved.
+
+Two canonical focused actions stalled after compilation without naming tests.
+After canceling only those runners and verifying no other Xcode job was active,
+restarting the Mini user's existing `com.apple.testmanagerd` LaunchAgent let the
+same compiled snapshot pass 161 focused tests through normal test-without-building.
+The one final native release gate passed all 622 tests in 21 suites, naming every
+new keyboard/Shift-click case and the mandatory Primary/Next, Mode and HUD guards.
+No direct focused xctest fallback, Developer Mode change or full UI E2E was used.
+
+A separate universal Release build was stable-signed inside-out on the Mini.
+ZIP SHA-256 `61735046f4b519c646aab1d9f9946819ce429b733735d63fc21774e71ffc7004`
+matched after transfer. Installed CDHash is `d1f8a9ff611df2a4946cd39eb9cf8fce1b80099e`;
+deep/strict signature, matching designated requirement, Automation/audio-input,
+unchanged icon and official VoiceInk, retained custom input UID and persistent PID
+verify. The installer waited through active capture, delivered the real five-second
+warning and used the all-session cooperative quit veto without forced termination.
+Build 423 remains in a round-trip verified rollback ZIP; its retired bundle is
+recoverable from Trash. Unregistering the bundle directly inside Trash returned
+`-10814`; moving that exact retired copy briefly to task staging, unregistering
+there, then returning it to Trash removed its exact registration without a global reset.
+Only this release's generated test/Release caches were removed; named logs remain.
+
+Better Git 1.2.123 passed its publisher/public Gallery/exact-package gate and normal
+Gallery installation; the live Running Extensions inspector showed 1.2.123.
+Earlier eight positive and two negative plain/diff checks are real bridge evidence,
+not an installed physical Agent Flow keyboard/HUD acceptance receipt. Physical
+Shift-click, Command-A and Shift-navigation acceptance still belongs to the user.
+
 ## 2026-10-14 — Explicit selection triggers need matching editor provenance
 
 The working native repair freezes Shift at mouse-down, accepts a stationary
