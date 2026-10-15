@@ -1651,8 +1651,21 @@ struct RecorderTypedInputTests {
         for mode in [ModeOutputMode.paste, .respond, .customCommand] {
             let result = try await clipboardPipelineFixture(
                 typed: "All typed words survive Esc", outputMode: mode, finishWithEscape: true)
+            let existingClipboardFinish = try await clipboardPipelineFixture(
+                typed: "All typed words survive Esc", outputMode: mode)
             #expect(result.archive.contains("All typed words survive Esc"))
-            #expect(result.message.contains(result.link) && !result.link.isEmpty)
+            // Esc must reuse the current Won't paste format, not invent a
+            // compact-link policy for Respond/custom-command Modes. Only paste
+            // Mode owns that preview; the other Modes retain the full context.
+            #expect(result.message.replacingOccurrences(of: result.link, with: "PROMPT")
+                == existingClipboardFinish.message.replacingOccurrences(
+                    of: existingClipboardFinish.link, with: "PROMPT"))
+            if mode == .paste {
+                #expect(result.message.contains(result.link) && !result.link.isEmpty)
+            } else {
+                #expect(result.message.contains("All typed words survive Esc"))
+                #expect(result.message.contains("Selected exact content &amp; metadata"))
+            }
             #expect(HistoryContextPresentation.document(result.history).plainText
                 .contains("All typed words survive Esc"))
         }
