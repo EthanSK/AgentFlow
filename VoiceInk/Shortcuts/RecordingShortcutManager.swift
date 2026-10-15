@@ -312,7 +312,8 @@ class RecordingShortcutManager: ObservableObject {
             )
             shortcutModeHandler.logPrimaryMouseReadiness(enabled)
         } catch {
-            logger.error("Primary mouse receiver unavailable; existing keyboard shortcut unchanged")
+            let reason = (error as? PrimaryMouseCommandReceiver.Failure)?.diagnostic ?? "filesystem"
+            logger.error("Primary mouse receiver unavailable reason=\(reason, privacy: .public); existing keyboard shortcut unchanged")
         }
     }
 

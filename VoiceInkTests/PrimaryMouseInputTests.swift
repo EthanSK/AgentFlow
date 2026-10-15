@@ -362,6 +362,44 @@ struct PrimaryMouseInputTests {
         #expect(try String(contentsOfFile: path, encoding: .utf8) == "preserve unrelated file")
     }
 
+    @Test func primaryMouseReceiverRecoversOnlyUnboundRecordedSocketAfterDeviceChange() throws {
+        for changedDevice in [false, true] {
+            let directory = "/private/tmp/vipp-rebind-\(UUID().uuidString.prefix(8))"
+            defer { try? FileManager.default.removeItem(atPath: directory) }
+            let path = directory + "/p.sock"
+            let fd = try makeRecordedSocketFixture(path: path, mismatch: changedDevice ? "device" : nil)
+            close(fd) // Simulate a crashed/restored endpoint, retaining its socket inode.
+            #expect(passiveTestConnect(to: path) == ECONNREFUSED)
+            let receiver = PrimaryMouseCommandReceiver(path: path)
+            try receiver.start { _ in Issue.record("A passive probe must not emit a recording command") }
+            #expect(passiveTestConnect(to: path) == 0)
+            receiver.stop()
+        }
+    }
+
+    @Test func primaryMouseReceiverPreservesLiveAndUnrelatedSocketIdentities() throws {
+        for scenario in ["live", "live-device", "inode", "owner"] {
+            let directory = "/private/tmp/vipp-rebind-\(UUID().uuidString.prefix(8))"
+            defer { try? FileManager.default.removeItem(atPath: directory) }
+            let path = directory + "/p.sock"
+            var fd = try makeRecordedSocketFixture(
+                path: path, mismatch: scenario == "live" ? nil :
+                    (scenario == "live-device" ? "device" : scenario)
+            )
+            defer { if fd >= 0 { close(fd) } }
+            let live = scenario.hasPrefix("live")
+            if !live { close(fd); fd = -1 }
+            var before = stat()
+            #expect(lstat(path, &before) == 0)
+            let receiver = PrimaryMouseCommandReceiver(path: path)
+            #expect(throws: (any Error).self) { try receiver.start { _ in } }
+            var after = stat()
+            #expect(lstat(path, &after) == 0)
+            #expect(before.st_dev == after.st_dev && before.st_ino == after.st_ino)
+            #expect(passiveTestConnect(to: path) == (live ? 0 : ECONNREFUSED))
+        }
+    }
+
     @Test func primaryMouseReceiverProtectsSocketAndRejectsSecondOwner() throws {
         let directory = "/private/tmp/vipp-mouse-\(UUID().uuidString.prefix(8))"
         defer { try? FileManager.default.removeItem(atPath: directory) }
@@ -418,6 +456,64 @@ struct PrimaryMouseInputTests {
         try await Task.sleep(for: .milliseconds(30))
         #expect(count == 0)
         receiver.stop()
+    }
+
+    private func makeRecordedSocketFixture(path: String, mismatch: String?) throws -> Int32 {
+        try FileManager.default.createDirectory(
+            atPath: URL(fileURLWithPath: path).deletingLastPathComponent().path,
+            withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700]
+        )
+        var address = sockaddr_un()
+        address.sun_family = sa_family_t(AF_UNIX)
+        address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
+        let capacity = MemoryLayout.size(ofValue: address.sun_path)
+        path.withCString { source in
+            withUnsafeMutablePointer(to: &address.sun_path) {
+                $0.withMemoryRebound(to: CChar.self, capacity: capacity) { _ = strncpy($0, source, capacity - 1) }
+            }
+        }
+        let fd = socket(AF_UNIX, SOCK_DGRAM, 0)
+        guard fd >= 0 else { throw POSIXError(.EIO) }
+        do {
+            let result = withUnsafePointer(to: &address) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    Darwin.bind(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+                }
+            }
+            guard result == 0, chmod(path, 0o600) == 0 else { throw POSIXError(.EIO) }
+            var info = stat()
+            guard lstat(path, &info) == 0 else { throw POSIXError(.EIO) }
+            var marker: [String: UInt64] = [
+                "device": UInt64(info.st_dev), "inode": UInt64(info.st_ino), "owner": UInt64(info.st_uid)
+            ]
+            if let mismatch { marker[mismatch, default: 0] += 1 }
+            let data = try JSONSerialization.data(withJSONObject: marker)
+            guard FileManager.default.createFile(
+                atPath: path + ".lock", contents: data, attributes: [.posixPermissions: 0o600]
+            ) else { throw POSIXError(.EIO) }
+            return fd
+        } catch { close(fd); throw error }
+    }
+
+    private func passiveTestConnect(to path: String) -> Int32 {
+        var address = sockaddr_un()
+        address.sun_family = sa_family_t(AF_UNIX)
+        address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
+        let capacity = MemoryLayout.size(ofValue: address.sun_path)
+        path.withCString { source in
+            withUnsafeMutablePointer(to: &address.sun_path) {
+                $0.withMemoryRebound(to: CChar.self, capacity: capacity) { _ = strncpy($0, source, capacity - 1) }
+            }
+        }
+        let fd = socket(AF_UNIX, SOCK_DGRAM, 0)
+        guard fd >= 0 else { return errno }
+        defer { close(fd) }
+        let result = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        return result == 0 ? 0 : errno
     }
 
     private func sendTestDatagram(to path: String, payload: Data? = nil) throws {
