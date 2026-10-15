@@ -45,19 +45,61 @@ struct PrimaryMouseInputTests {
     }
 
     @Test func wandProtocolAcceptsOnlyItsOwnBoundedDownUpMessages() {
-        for phase in [PrimaryMouseCommand.Phase.down, .up] {
+        for phase in [PrimaryMouseCommand.Phase.down, .up, .cancel] {
             let payload = "{\"version\":1,\"action\":\"primaryRecordingMouse\",\"source\":\"wand\",\"phase\":\"\(phase.rawValue)\"}"
             #expect(PrimaryMouseCommand.decode(Data(payload.utf8)) == command(phase, source: .wand))
             for rejected in [
                 payload.replacingOccurrences(of: "\"wand\"", with: "\"other-wand\""),
                 payload.replacingOccurrences(of: "\"version\":1", with: "\"version\":true"),
-                payload.replacingOccurrences(of: "\"phase\":\"\(phase.rawValue)\"", with: "\"phase\":\"cancel\""),
+                payload.replacingOccurrences(of: "\"phase\":\"\(phase.rawValue)\"", with: "\"phase\":\"repeat\""),
                 payload.dropLast() + ",\"repeat\":true}",
                 payload + String(repeating: " ", count: 256)
             ] {
                 #expect(PrimaryMouseCommand.decode(Data(rejected.utf8)) == nil)
             }
         }
+    }
+
+    @Test func wandCancelAllowsImmediateFreshPressWithoutAReleaseAction() {
+        for context in [
+            PrimaryMousePressCoordinator.Context.idle,
+            .capture(UUID()), .pending(UUID()), .unavailable
+        ] {
+            var presses = PrimaryMousePressCoordinator()
+            let expected: PrimaryMousePressCoordinator.Decision = context == .idle ? .startOnDown : .armed
+            #expect(presses.receive(command(.down, source: .wand), eventTime: 1, context: context) == expected)
+            #expect(presses.receive(command(.cancel, source: .wand), eventTime: 1.1, context: context) == .canceled)
+            #expect(presses.receive(command(.up, source: .wand), eventTime: 1.2, context: context) == .ignored)
+            #expect(presses.receive(command(.cancel, source: .wand), eventTime: 1.3, context: context) == .ignored)
+            #expect(presses.receive(command(.down, source: .wand), eventTime: 1.4, context: context) == expected)
+            let release: PrimaryMousePressCoordinator.Decision
+            switch context {
+            case .idle: release = .consumedStartRelease
+            case .capture, .pending: release = .primaryOnRelease
+            case .unavailable: release = .ignored
+            }
+            #expect(presses.receive(command(.up, source: .wand), eventTime: 1.5, context: context) == release)
+        }
+    }
+
+    @Test func wandCancelCannotClearMouseCyclesOrBypassIngressGuards() {
+        for source in [PrimaryMouseCommand.Source.corsair, .razer] {
+            let payload = "{\"version\":1,\"action\":\"primaryRecordingMouse\",\"source\":\"\(source.rawValue)\",\"phase\":\"cancel\"}"
+            #expect(PrimaryMouseCommand.decode(Data(payload.utf8)) == nil)
+            var presses = PrimaryMousePressCoordinator()
+            let context = PrimaryMousePressCoordinator.Context.capture(UUID())
+            #expect(presses.receive(command(.down, source: source), eventTime: 1, context: context) == .armed)
+            #expect(presses.receive(command(.down, source: .wand), eventTime: 1.1, context: context) == .armed)
+            #expect(presses.receive(command(.cancel, source: source), eventTime: 1.2, context: context) == .ignored)
+            #expect(presses.receive(command(.cancel, source: .wand), eventTime: .nan, context: context) == .ignored)
+            #expect(presses.receive(command(.cancel, source: .wand), eventTime: 1.15, context: context) == .ignored)
+            #expect(presses.receive(command(.cancel, source: .wand), eventTime: 1.3, context: context) == .canceled)
+            #expect(presses.receive(command(.up, source: source), eventTime: 1.4, context: context) == .primaryOnRelease)
+        }
+        let manager = try? String(contentsOf: URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("VoiceInk/Shortcuts/RecordingShortcutManager.swift"), encoding: .utf8)
+        #expect(manager?.contains("guard decision == .startOnDown || decision == .primaryOnRelease else { return }") == true)
     }
 
     @Test func wandStartHoldReleaseAndLaterGestureKeepPrimaryTiming() {
