@@ -44,6 +44,72 @@ struct PrimaryMouseInputTests {
         #expect(presses.receive(command(.up), eventTime: 10.3, context: .idle) == .ignored)
     }
 
+    @Test func wandProtocolAcceptsOnlyItsOwnBoundedDownUpMessages() {
+        for phase in [PrimaryMouseCommand.Phase.down, .up] {
+            let payload = "{\"version\":1,\"action\":\"primaryRecordingMouse\",\"source\":\"wand\",\"phase\":\"\(phase.rawValue)\"}"
+            #expect(PrimaryMouseCommand.decode(Data(payload.utf8)) == command(phase, source: .wand))
+            for rejected in [
+                payload.replacingOccurrences(of: "\"wand\"", with: "\"other-wand\""),
+                payload.replacingOccurrences(of: "\"version\":1", with: "\"version\":true"),
+                payload.replacingOccurrences(of: "\"phase\":\"\(phase.rawValue)\"", with: "\"phase\":\"cancel\""),
+                payload.dropLast() + ",\"repeat\":true}",
+                payload + String(repeating: " ", count: 256)
+            ] {
+                #expect(PrimaryMouseCommand.decode(Data(rejected.utf8)) == nil)
+            }
+        }
+    }
+
+    @Test func wandStartHoldReleaseAndLaterGestureKeepPrimaryTiming() {
+        var presses = PrimaryMousePressCoordinator()
+        let session = UUID()
+        #expect(presses.receive(command(.down, source: .wand), eventTime: 10, context: .idle) == .startOnDown)
+        #expect(presses.receive(command(.down, source: .wand), eventTime: 10.1, context: .capture(session)) == .ignored)
+        #expect(presses.receive(command(.up, source: .wand), eventTime: 12, context: .capture(session)) == .consumedStartRelease)
+        #expect(presses.receive(command(.down, source: .wand), eventTime: 13, context: .capture(session)) == .armed)
+        #expect(presses.receive(command(.up, source: .wand), eventTime: 13.4, context: .capture(session)) == .primaryOnRelease)
+    }
+
+    @Test func wandCyclesCannotCompleteMouseOrDifferentSessionGestures() {
+        for mouse in [PrimaryMouseCommand.Source.corsair, .razer] {
+            var presses = PrimaryMousePressCoordinator()
+            let session = UUID()
+            #expect(presses.receive(command(.down, source: mouse), eventTime: 1, context: .capture(session)) == .armed)
+            #expect(presses.receive(command(.up, source: .wand), eventTime: 1.1, context: .capture(session)) == .ignored)
+            #expect(presses.receive(command(.down, source: .wand), eventTime: 1.2, context: .capture(session)) == .armed)
+            #expect(presses.receive(command(.up, source: .wand), eventTime: 1.3, context: .capture(UUID())) == .ignored)
+            #expect(presses.receive(command(.up, source: mouse), eventTime: 1.4, context: .capture(session)) == .primaryOnRelease)
+        }
+        var presses = PrimaryMousePressCoordinator()
+        let context = PrimaryMousePressCoordinator.Context.pending(UUID())
+        #expect(presses.receive(command(.down, source: .wand), eventTime: 2, context: context) == .armed)
+        #expect(presses.receive(command(.up, source: .wand), eventTime: 63, context: context) == .ignored)
+        #expect(presses.receive(command(.down, source: .wand), eventTime: 64, context: context) == .armed)
+        presses.reset()
+        #expect(presses.receive(command(.up, source: .wand), eventTime: 64.1, context: context) == .ignored)
+    }
+
+    @Test func wandSocketUsesTheExistingReadinessAndGenerationBoundary() async throws {
+        let directory = "/private/tmp/vipp-wand-\(UUID().uuidString.prefix(8))"
+        defer { try? FileManager.default.removeItem(atPath: directory) }
+        let path = directory + "/p.sock"
+        let receiver = PrimaryMouseCommandReceiver(path: path)
+        var received: [PrimaryMouseCommandReceiver.Event] = []
+        try receiver.start { received.append($0) }
+        let payload = Data(#"{"version":1,"action":"primaryRecordingMouse","source":"wand","phase":"down"}"#.utf8)
+        try sendTestDatagram(to: path, payload: payload)
+        receiver.setEnabled(true) // Drain the pre-readiness command; it cannot unlock the gate.
+        try sendTestDatagram(to: path, payload: payload)
+        for _ in 0..<50 where received.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(received.count == 1)
+        let event = try #require(received.first)
+        #expect(event.command == command(.down, source: .wand))
+        #expect(receiver.isCurrent(event))
+        receiver.setEnabled(false)
+        #expect(!receiver.isCurrent(event))
+        receiver.stop()
+    }
+
     @Test func primaryMouseStartingReleaseCannotCancelSlowStartup() {
         var presses = PrimaryMousePressCoordinator()
         #expect(presses.receive(command(.down), eventTime: 10, context: .idle) == .startOnDown)

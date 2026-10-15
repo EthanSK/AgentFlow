@@ -20,10 +20,13 @@ final class PrimaryMouseDecisionBarrier {
     }
 }
 
-/// A deliberately closed Karabiner protocol, not a generic automation endpoint.
+/// A deliberately closed physical-control protocol, not a generic automation endpoint.
 /// Keyboard Primary still uses its existing balanced modifier shortcut.
 struct PrimaryMouseCommand: Equatable, Sendable {
-    enum Source: String, CaseIterable, Sendable { case corsair, razer }
+    // The wand uses its own cycle identity; impersonating a mouse could complete
+    // a different held control's pending gesture. All sources share the same
+    // readiness, stale-cycle, session and Primary-only delivery boundaries.
+    enum Source: String, CaseIterable, Sendable { case corsair, razer, wand }
     enum Phase: String, Sendable { case down, up }
     let source: Source
     let phase: Phase
