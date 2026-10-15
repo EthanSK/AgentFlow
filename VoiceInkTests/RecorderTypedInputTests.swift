@@ -499,6 +499,123 @@ struct RecorderTypedInputTests {
         #expect(submitted.count == 2)
     }
 
+    @Test @MainActor func escapeFinishesOnlyTheFocusedHUDEditorAndFlushesLatestTyping() throws {
+        let session = RecordingSession()
+        let provider: any RecorderStateProvider = session
+        let input = RecorderTypedInput(
+            text: Binding(get: { session.typedInput }, set: { session.updateTypedInput($0) }),
+            focusRequest: UUID(), onEndEditing: { session.endTypingRun() })
+        let coordinator = input.makeCoordinator()
+        let window = TypingFocusProbeWindow()
+        let editor = RecorderTypingTextView()
+        window.contentView = editor
+        editor.delegate = coordinator
+        editor.onFinishWithoutPasting = { provider.finishTypedInputWithoutPasting() }
+        var retained: [String] = []
+        session.onTypingFinishWithoutPasting = { retained.append(session.typedInput) }
+        session.onTypingSubmit = { Issue.record("Esc must never use Command-Enter submission") }
+        func key(_ code: UInt16 = 53, flags: NSEvent.ModifierFlags = [], repeatKey: Bool = false) throws -> NSEvent {
+            try #require(NSEvent.keyEvent(with: .keyDown, location: .zero,
+                modifierFlags: flags, timestamp: 1, windowNumber: window.windowNumber,
+                context: nil, characters: code == 49 ? " " : "\u{1b}",
+                charactersIgnoringModifiers: code == 49 ? " " : "\u{1b}",
+                isARepeat: repeatKey, keyCode: code))
+        }
+        editor.string = "Keep my last uncommitted words"
+        #expect(!RecorderTypingTextView.handleOwnedShortcut(try key(), in: window))
+        window.makeKey()
+        #expect(window.makeFirstResponder(editor))
+        #expect(RecorderTypingTextView.handleOwnedShortcut(try key(), in: window))
+        #expect(retained == ["Keep my last uncommitted words"])
+        #expect(session.completionDisposition == .clipboardOnly && !session.shouldCancel)
+        #expect(session.typingFinishWithoutPastingRequested)
+        #expect(editor.performKeyEquivalent(with: try key(repeatKey: true)))
+        editor.keyDown(with: try key())
+        #expect(retained.count == 1)
+        for flags: NSEvent.ModifierFlags in [.command, .option, .control, .shift] {
+            #expect(!RecorderTypingTextView.isFinishWithoutPastingGesture(try key(flags: flags)))
+        }
+        // The space bar remains ordinary typing; it is not the requested Esc.
+        #expect(!RecorderTypingTextView.isFinishWithoutPastingGesture(try key(49)))
+        #expect(!RecorderTypingTextView.handleOwnedShortcut(try key(49), in: window))
+        #expect(window.makeFirstResponder(NSTextView()))
+        #expect(!RecorderTypingTextView.handleOwnedShortcut(try key(), in: window))
+        #expect(retained.count == 1)
+    }
+
+    @Test @MainActor func escapeKeepsIMECompositionAndUnconfiguredEditorsUntouched() throws {
+        let window = TypingFocusProbeWindow()
+        let editor = RecorderTypingTextView()
+        editor.isRichText = false
+        window.contentView = editor
+        window.makeKey()
+        #expect(window.makeFirstResponder(editor))
+        let escape = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero,
+            modifierFlags: [], timestamp: 1, windowNumber: window.windowNumber,
+            context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}",
+            isARepeat: false, keyCode: 53))
+        var finishes = 0
+        editor.onFinishWithoutPasting = { finishes += 1 }
+        editor.setMarkedText("candidate", selectedRange: NSRange(location: 0, length: 9),
+            replacementRange: NSRange(location: NSNotFound, length: 0))
+        #expect(editor.hasMarkedText())
+        #expect(!RecorderTypingTextView.handleOwnedShortcut(escape, in: window))
+        #expect(finishes == 0) // Esc still belongs to the IME's candidate UI.
+        editor.unmarkText()
+        #expect(RecorderTypingTextView.handleOwnedShortcut(escape, in: window))
+        #expect(finishes == 1)
+        editor.onFinishWithoutPasting = nil
+        #expect(!RecorderTypingTextView.handleOwnedShortcut(escape, in: window))
+        #expect(finishes == 1)
+    }
+
+    @Test @MainActor func escapeClipboardFinishWaitsForStartupAndCannotRepeatOrCrossSessions() {
+        for state: RecordingState in [.starting, .recording, .paused] {
+            let session = RecordingSession()
+            session.microphoneOff = true
+            session.liveRecordingState = state
+            session.updateTypedInput("Preserve this run")
+            var finishes = 0
+            session.onTypingFinishWithoutPasting = { finishes += 1 }
+            session.onTypingSubmit = { Issue.record("Esc must not submit") }
+            let provider: any RecorderStateProvider = session
+            provider.finishTypedInputWithoutPasting()
+            provider.finishTypedInputWithoutPasting()
+            #expect(session.completionDisposition == .clipboardOnly)
+            #expect(!session.shouldCancel && session.typedInput == "Preserve this run")
+            #expect(finishes == (state == .starting ? 0 : 1))
+            session.liveRecordingState = .recording
+            session.dispatchPendingTypingSubmit()
+            session.dispatchPendingTypingSubmit()
+            provider.submitTypedInput()
+            #expect(finishes == 1)
+            let next = RecordingSession()
+            next.onTypingFinishWithoutPasting = { finishes += 1 }
+            next.dispatchPendingTypingSubmit()
+            #expect(!next.typingFinishWithoutPastingRequested && finishes == 1)
+        }
+        let cancelled = RecordingSession()
+        cancelled.microphoneOff = true
+        cancelled.liveRecordingState = .starting
+        cancelled.onTypingFinishWithoutPasting = { Issue.record("Canceled startup cannot finish later") }
+        cancelled.finishTypedInputWithoutPasting()
+        cancelled.shouldCancel = true
+        cancelled.liveRecordingState = .recording
+        cancelled.dispatchPendingTypingSubmit()
+    }
+
+    @Test @MainActor func bothFloatingLayoutsWireEscapeToTheSameSessionClipboardFinish() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        for name in ["MiniRecorderView", "NotchRecorderView"] {
+            let source = try String(contentsOf: root.appendingPathComponent("VoiceInk/Views/Recorder/\(name).swift"), encoding: .utf8)
+            #expect(source.contains("onFinishTypingWithoutPasting: { stateProvider.finishTypedInputWithoutPasting() }"))
+        }
+        let engine = try String(contentsOf: root.appendingPathComponent("VoiceInk/Transcription/Engine/VoiceInkEngine.swift"), encoding: .utf8)
+        #expect(engine.contains("activeRecordingSession === session"))
+        #expect(engine.contains("completionDisposition: withoutPasting ? .clipboardOnly : .normalDelivery"))
+        #expect(engine.contains("autoSendDisposition: withoutPasting ? .configured : .commandEnterOnce"))
+    }
+
     @Test @MainActor func typingSubmitWaitsForStartupAndCannotRepeatOrCrossSessions() {
         let session = RecordingSession()
         session.microphoneOff = true
@@ -1332,7 +1449,8 @@ struct RecorderTypedInputTests {
         recipientOverride: AgentFlowPromptPreview.Recipient? = nil, lateShift: Bool = false,
         lateShiftStage: String = "beforePolicy", providerFails: Bool = false,
         canceled: Bool = false, authorized: Bool = true, emptyProvider: Bool = false,
-        realRecoveryGate: Bool = false, hudRecovery: String = "", enhancementResult: String? = nil
+        realRecoveryGate: Bool = false, hudRecovery: String = "", enhancementResult: String? = nil,
+        finishWithEscape: Bool = false
     ) async throws -> ClipboardPipelineResult {
         let schema = Schema([Transcription.self, WordReplacement.self, SessionMetric.self])
         let container = try ModelContainer(for: schema,
@@ -1417,6 +1535,16 @@ struct RecorderTypedInputTests {
                 id == stoppedSession.id && stoppedSession.selectTypingClipboardOnlyCompletion()
             }, cancelRecording: {})
         defer { handler.reset() }
+        if finishWithEscape {
+            stoppedSession.onTypingFinishWithoutPasting = {
+                state = .idle
+                stoppedSession.phase = .transcribing
+            }
+            let provider: any RecorderStateProvider = stoppedSession
+            provider.finishTypedInputWithoutPasting()
+            #expect(stoppedSession.typingFinishWithoutPastingRequested)
+            #expect(stoppedSession.completionDisposition == .clipboardOnly)
+        }
         if lateShift {
             await handler.handleTypingToggle { _ in Issue.record("Finish must not start typing") }
             if lateShiftStage == "beforePolicy" { #expect(handler.handleTypingStopSecondChanceShift()) }
@@ -1443,6 +1571,7 @@ struct RecorderTypedInputTests {
             outputConfiguration: { outputReads += 1; return .init(mode: mode, outputMode: outputMode, autoSendKey: .enter, customCommand: nil) },
             skipPostProcessing: { raw },
             completionPolicy: {
+                if finishWithEscape { return await stoppedSession.freezeCompletionPolicy() }
                 if lateShift {
                     let policy = await stoppedSession.freezeCompletionPolicy()
                     if lateShiftStage == "afterPolicy" { #expect(handler.handleTypingStopSecondChanceShift()) }
@@ -1516,6 +1645,17 @@ struct RecorderTypedInputTests {
         }
         return .init(message: clipboardOnly ? (board.string(forType: .string) ?? "") : (output.messages.first ?? ""),
             history: record.enhancedText ?? record.text, archive: archived, link: link)
+    }
+
+    @Test @MainActor func escapeClipboardFinishKeepsFormattedPromptAndHistoryWithoutOutputEffects() async throws {
+        for mode in [ModeOutputMode.paste, .respond, .customCommand] {
+            let result = try await clipboardPipelineFixture(
+                typed: "All typed words survive Esc", outputMode: mode, finishWithEscape: true)
+            #expect(result.archive.contains("All typed words survive Esc"))
+            #expect(result.message.contains(result.link) && !result.link.isEmpty)
+            #expect(HistoryContextPresentation.document(result.history).plainText
+                .contains("All typed words survive Esc"))
+        }
     }
 
     @Test @MainActor func failedVoiceStillPastesTypedDraftWithoutSubmitOrModeEffects() async throws {

@@ -794,17 +794,19 @@ class VoiceInkEngine: NSObject, ObservableObject {
         return true
     }
 
-    /// The focused HUD editor's Command+Enter finishes through ordinary Primary
-    /// delivery. It does not capture a Codex composer, change Mode, or bypass the
-    /// FIFO delivery barrier; only the one-shot auto-send key differs.
-    private func finishTypedInput(_ session: RecordingSession) async {
+    /// The focused HUD editor keeps both finishes on existing session routes:
+    /// Command+Enter uses Primary with one-shot send/steer; Esc uses clipboard-only
+    /// recovery. Neither captures a composer, changes Mode or bypasses the barrier.
+    private func finishTypedInput(_ session: RecordingSession, withoutPasting: Bool = false) async {
         guard activeRecordingSession === session,
               session.liveRecordingState.isRecordingOrPaused,
               !session.shouldCancel else { return }
         await toggleRecord(
             stopPasteDestination: .primaryCurrentInput,
-            completionDisposition: .normalDelivery,
-            autoSendDisposition: .commandEnterOnce,
+            // Esc reuses clipboard/History finalization, including recovery and
+            // normal formatting. It must never become Cancel or paste-only Return.
+            completionDisposition: withoutPasting ? .clipboardOnly : .normalDelivery,
+            autoSendDisposition: withoutPasting ? .configured : .commandEnterOnce,
             stopPlaybackDisposition: .restoreOwnedPlayback
         )
     }
@@ -1211,6 +1213,10 @@ class VoiceInkEngine: NSObject, ObservableObject {
         session.onTypingSubmit = { [weak self, weak session] in
             guard let self, let session else { return }
             Task { @MainActor in await self.finishTypedInput(session) }
+        }
+        session.onTypingFinishWithoutPasting = { [weak self, weak session] in
+            guard let self, let session else { return }
+            Task { @MainActor in await self.finishTypedInput(session, withoutPasting: true) }
         }
         session.onMicrophoneToggle = { [weak self, weak session] in
             guard let self, let session else { return }

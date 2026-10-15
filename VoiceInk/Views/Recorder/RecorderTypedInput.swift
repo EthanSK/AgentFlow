@@ -14,6 +14,7 @@ struct RecorderTypedInput: NSViewRepresentable {
     var typingFocus: RecorderTypingFocus? = nil
     var typingUndo: RecorderTypingUndoController? = nil
     var onSubmit: (() -> Void)? = nil
+    var onFinishWithoutPasting: (() -> Void)? = nil
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: RecorderTypedInput
@@ -61,6 +62,7 @@ struct RecorderTypedInput: NSViewRepresentable {
         editor.delegate = context.coordinator
         editor.onEndEditing = onEndEditing
         editor.onSubmit = onSubmit
+        editor.onFinishWithoutPasting = onFinishWithoutPasting
         editor.typingFocus = typingFocus
         editor.typingUndo = typingUndo
         scroll.documentView = editor
@@ -72,6 +74,7 @@ struct RecorderTypedInput: NSViewRepresentable {
         guard let editor = scroll.documentView as? RecorderTypingTextView else { return }
         editor.onEndEditing = onEndEditing
         editor.onSubmit = onSubmit
+        editor.onFinishWithoutPasting = onFinishWithoutPasting
         editor.typingFocus = typingFocus
         editor.typingUndo = typingUndo
         typingFocus?.register(editor)
@@ -102,6 +105,7 @@ final class RecorderTypingTextView: NSTextView {
     override var undoManager: UndoManager? { typingUndoManager }
     var onEndEditing: (() -> Void)?
     var onSubmit: (() -> Void)?
+    var onFinishWithoutPasting: (() -> Void)?
     weak var typingFocus: RecorderTypingFocus?
     weak var typingUndo: RecorderTypingUndoController?
     private var windowResignedObserver: NSObjectProtocol?
@@ -170,16 +174,37 @@ final class RecorderTypingTextView: NSTextView {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        undoOrRedoIfOwned(event) || submitIfOwned(event) || super.performKeyEquivalent(with: event)
+        finishWithoutPastingIfOwned(event) || undoOrRedoIfOwned(event)
+            || submitIfOwned(event) || super.performKeyEquivalent(with: event)
+    }
+
+    static func isFinishWithoutPastingGesture(_ event: NSEvent) -> Bool {
+        event.type == .keyDown && event.keyCode == 53
+            && event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty
+    }
+
+    private func finishWithoutPastingIfOwned(_ event: NSEvent) -> Bool {
+        guard Self.isFinishWithoutPastingGesture(event), let window, window.isKeyWindow,
+              window.firstResponder === self, !hasMarkedText(),
+              let onFinishWithoutPasting else { return false }
+        // Esc belongs to this explicitly focused HUD editor only, never to a
+        // global recorder shortcut. Finish via the existing recoverable Won't
+        // paste policy, not Cancel; an IME keeps Esc to dismiss its candidate.
+        if !event.isARepeat {
+            didChangeText()
+            onFinishWithoutPasting()
+        }
+        return true
     }
 
     /// The floating window dispatches its focused editor's shortcuts before the
     /// SwiftUI hosting/menu route. This is window-local, never a global monitor:
-    /// another app or another field keeps its ordinary Undo and Return behaviour.
+    /// another app or another field keeps its ordinary Undo, Return and Esc behaviour.
     static func handleOwnedShortcut(_ event: NSEvent, in window: NSWindow) -> Bool {
         guard window.isKeyWindow,
               let editor = window.firstResponder as? RecorderTypingTextView else { return false }
-        return editor.undoOrRedoIfOwned(event) || editor.submitIfOwned(event)
+        return editor.finishWithoutPastingIfOwned(event)
+            || editor.undoOrRedoIfOwned(event) || editor.submitIfOwned(event)
     }
 
     private func undoOrRedoIfOwned(_ event: NSEvent) -> Bool {
@@ -239,7 +264,8 @@ final class RecorderTypingTextView: NSTextView {
     }
 
     override func keyDown(with event: NSEvent) {
-        if undoOrRedoIfOwned(event) || submitIfOwned(event) || handleReturn(event) { return }
+        if finishWithoutPastingIfOwned(event) || undoOrRedoIfOwned(event)
+            || submitIfOwned(event) || handleReturn(event) { return }
         super.keyDown(with: event)
     }
 

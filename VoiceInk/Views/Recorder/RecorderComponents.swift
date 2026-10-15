@@ -518,6 +518,7 @@ struct LiveTranscriptView: View {
     var typedInput: Binding<String>? = nil
     var onEndTyping: () -> Void = {}
     var onSubmitTyping: (() -> Void)? = nil
+    var onFinishTypingWithoutPasting: (() -> Void)? = nil
     var typingFocus: RecorderTypingFocus? = nil
     var typingUndo: RecorderTypingUndoController? = nil
     var width: CGFloat = MiniRecorderLayoutMetrics.liveTranscriptWidth
@@ -634,7 +635,8 @@ struct LiveTranscriptView: View {
                 RecorderTypedInput(text: typedInput, focusRequest: typingFocusRequest,
                                    onEndEditing: onEndTyping, typingFocus: typingFocus,
                                    typingUndo: typingUndo,
-                                   onSubmit: onSubmitTyping)
+                                   onSubmit: onSubmitTyping,
+                                   onFinishWithoutPasting: onFinishTypingWithoutPasting)
             }
             // The removed Unfocus control used a reserved gutter. The editor
             // now owns that width; measurement must use the same full width.

@@ -267,12 +267,24 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     }
 
     var onTypingSubmit: (() -> Void)?
+    var onTypingFinishWithoutPasting: (() -> Void)?
     private(set) var typingSubmitRequested = false
+    private(set) var typingFinishWithoutPastingRequested = false
     private var typingSubmitDispatched = false
 
     func submitTypedInput() {
+        requestTypingFinish(withoutPasting: false)
+    }
+
+    func finishTypedInputWithoutPasting() {
+        requestTypingFinish(withoutPasting: true)
+    }
+
+    private func requestTypingFinish(withoutPasting: Bool) {
         guard canTypeInHUD, !typingSubmitRequested else { return }
         typingSubmitRequested = true
+        typingFinishWithoutPastingRequested = withoutPasting
+        if withoutPasting { completionDisposition = .clipboardOnly }
         typingFocus.disable(releaseKeyboard: false)
         dispatchPendingTypingSubmit()
     }
@@ -281,11 +293,12 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         // Keyboard input is available during .starting. Normal toggle would
         // cancel startup, so retain this one session's finish intent until the
         // audio writer is ready. No timer, global flag, or later-session replay.
+        let finish = typingFinishWithoutPastingRequested ? onTypingFinishWithoutPasting : onTypingSubmit
         guard typingSubmitRequested, !typingSubmitDispatched,
               phase == .recording, liveRecordingState.isRecordingOrPaused,
-              !shouldCancel, let onTypingSubmit else { return }
+              !shouldCancel, let finish else { return }
         typingSubmitDispatched = true
-        onTypingSubmit()
+        finish()
     }
 
     // Live streaming partial (only meaningful while phase == .recording — only this

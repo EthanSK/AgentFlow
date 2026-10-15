@@ -21,6 +21,7 @@ protocol RecorderStateProvider: AnyObject {
     func updateTypedInput(_ value: String)
     func endTypingRun()
     func submitTypedInput()
+    func finishTypedInputWithoutPasting()
     // A realtime provider owns a live-text HUD from recording start, even before
     // its first partial arrives. This is presentation state only: the placeholder
     // never enters the transcript or either Primary/Next delivery route.
@@ -77,6 +78,7 @@ extension RecorderStateProvider {
     func updateTypedInput(_ value: String) {}
     func endTypingRun() {}
     func submitTypedInput() {}
+    func finishTypedInputWithoutPasting() {}
 
     var currentFocusIconActionPulseID: UUID? {
         guard let pulse = iconActionPulse, pulse.icon == .currentFocus else { return nil }

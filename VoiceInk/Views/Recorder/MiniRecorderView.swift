@@ -194,6 +194,7 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                     ) : nil,
                     onEndTyping: { stateProvider.endTypingRun() },
                     onSubmitTyping: { stateProvider.submitTypedInput() },
+                    onFinishTypingWithoutPasting: { stateProvider.finishTypedInputWithoutPasting() },
                     typingFocus: stateProvider.typingFocusController,
                     typingUndo: stateProvider.typingUndoController,
                     width: liveTranscriptWidth,
