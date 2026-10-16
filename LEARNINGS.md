@@ -1,5 +1,59 @@
 # Learnings
 
+## 2026-10-17 — Voice shortcut aliases need Primary lifecycle and clean release
+
+Ethan requested Shift–Option–Command for Agent Flow speech-to-text, alongside
+the existing Shift–Control–Option Primary. The added chord overlaps the prefix
+of both Command/Option keys plus Shift (typing/Won't paste). The configured
+secondary binding therefore opts into a recording-owned clean-release reducer:
+only a complete three-modifier tap fires, after all modifiers lift. An extra
+Command/Option, other modifier, key or modifier-click cancels that candidate.
+Partial modifiers and every release still pass through; panel/Mode listeners
+do not opt in. Tap recreation discards an old armed candidate.
+
+The accepted callback uses Primary's existing toggle lifecycle, not Secondary's
+independent hands-free latch. Otherwise a recording started by the mouse/typing
+control could need two alias taps to stop. Only enable this alias while both
+configured actions are toggles; hold modes keep their original semantics.
+The existing 90 ms duplicate-transport guard remains: an integration fixture's
+32 ms immediate re-press was correctly ignored, and the corrected fixture waits
+120 ms for a genuinely distinct press instead of weakening the runtime guard.
+
+Native snapshot `ee5c8c91bc0481f236c597545b0d1d22e2753fde`, build 433,
+passed 105 focused tests and all 653 tests in 22 suites through canonical Mini
+Xcode actions. Production monitor fixtures cover 288 left/right/order/release
+permutations, all 24 four-key orders, stale recovery, modifier-clicks and mixed
+start/stop controls. Primary/Next/HUD-only invariants passed. These synthetic
+event tests do not prove physical keyboard or open-context-menu acceptance.
+The universal Release was signed with the existing VoiceInk Local Signing identity
+and explicit local entitlements. Installed build 433 has CDHash
+`3c659f1828e2d181fad1c2018fd21bb94a660664` and executable SHA-256
+`da9b7049152abe2bf6d03e90d961a0021bab952a96f8b9643b4e40db4f20493b`.
+Deep/strict signature, outer Automation/audio-input entitlements, passive Primary
+socket connection and the new running PID verified after a delivered five-second
+warning and cooperative idle quit. Only the previously unset secondary shortcut
+preferences changed; Primary, selected audio input, icon and official VoiceInk
+checksum remained unchanged. Build 432 is retained in a verified ZIP and Trash.
+Physical keyboard/context-menu acceptance remains pending.
+
+## 2026-10-17 — Input-context scans can delay the early black startup shell
+
+A bounded live sample of installed build 432 caught the UI thread waiting in
+the pre-chord input capture's exact-identity/context-anchor Accessibility reads.
+The source places that partial-modifier capture ahead of the accepted shortcut
+handler, and the reservation also captures the Next-only target before committing
+and drawing the startup shell. The shell acknowledges before later session/audio
+setup, not before all earlier Accessibility work. Do not claim its presence or
+native bitmap test proves instant physical activation.
+
+Recent counts-only logs separately showed slow Codex selection reads (up to
+5.75 seconds in the inspected window), plus successful reads around 65–140 ms.
+A later idle CPU sample returned 0.0%; this does not rule out gesture-time UI
+waits. No Magic Wand causality was established and no unrelated high-CPU process
+was stopped. The shortcut-only 433 change does not fix this measured bottleneck.
+Keep command-time exact-target proof and the full semantic fingerprint when
+designing the responsiveness repair; removing them is not a safe speed fix.
+
 ## 2026-10-17 — History actions belong above full-width previews
 
 Ethan's screenshots showed Retry and both copy actions beside a two-line History
@@ -40,6 +94,38 @@ Custom audio-input settings, icon and official VoiceInk checksum stayed unchange
 the previous build is recoverable in a verified ZIP and Trash. Physical first-frame
 shortcut timing remains unverified; installation is not proof of zero latency or
 microphone readiness.
+
+## 2026-10-16 — Startup shell is presentation-only until native qualification
+
+Candidate snapshot `8a87b0600a1b6645307a461f6c51864cc5e24945` implements
+the early black startup shell in both Mini and Notch layouts. Its committed
+presentation identity is separate from reservations and real sessions: a stale
+clear/draw callback cannot affect a newer start, and handoff happens synchronously
+before the real session is appended. Do not create a fake session to paint pixels
+or reorder passive destination capture. Preserve older transcription cards and
+assistant content rather than replacing them with the empty-stack shell.
+
+The native draw callback captures its monotonic timestamp before posting back to
+the main queue, excludes offscreen bitmap rendering, and is one-shot per request.
+A bounded main-run-loop yield rechecks reservation ownership before slower setup;
+flushing only already-visible owned windows must not activate an app or claim
+microphone readiness. Notch `.starting` voice sessions need a real, disabled active
+card rather than falling through to the zero-height collapsed state.
+
+Eight regressions were added, but none has executed: only static diff checks and
+project-file plist validation passed on the MacBook. Native compilation, focused
+and final release tests, live first-frame qualification, signing and installation
+remain unfinished. Build 430 is still running; 431 is a source candidate only.
+
+Mini connectivity must not be inferred from cached peer `Online=true`. The existing
+MacBook userspace daemon's actual socket reports `BackendState=NeedsLogin` with
+`Self.KeyExpiry=2026-10-14T01:49:47Z`; its log records the expiry-timer transition
+from Running to NeedsLogin. Its cached Mini key also expired, but that is not a
+fresh read of the Mini's current credentials. The earlier successful recovery used
+direct home-LAN SSH without reauthentication; signing-certificate desktop approval
+was a different operation. Check the current route and the actual socket before
+asking for another login. No login, daemon, VPN, route or permission was changed
+during this investigation.
 
 ## 2026-10-16 — Ordered recorder windows are not a visible startup acknowledgement
 
