@@ -58,6 +58,13 @@ struct MainWindowPresentationTests {
             #expect(host.frame.size == MainWindowLayout.minimumSize)
             #expect(host.bounds.size == host.frame.size)
 
+            if let path = ProcessInfo.processInfo.environment["VIPP_TEST_HISTORY_COPY_SNAPSHOT"],
+               let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                try bitmap.representation(using: .png, properties: [:])?
+                    .write(to: URL(fileURLWithPath: path))
+            }
+
             // Real mouse events at the scaled Copy control, not its action or
             // AXPress. It must work before expansion, including a recovered draft.
             try click(window, identifier: "history-copy-\(row.id)")
@@ -236,9 +243,14 @@ struct MainWindowPresentationTests {
                let children = object.value(forKey: "accessibilityChildren") as? [NSObject] {
                 for child in children { if let match = find(child) { return match } }
             }
+            // NSWindow may omit ignored hosting containers from its AX children.
+            // Walk the fixture's actual NSView hosts too, not another process.
+            if let view = object as? NSView {
+                for child in view.subviews { if let match = find(child) { return match } }
+            }
             return nil
         }
-        let node = try #require(find(window), "Missing fixture control: \(identifier)")
+        let node = try #require(find(window) ?? window.contentView.flatMap(find), "Missing fixture control: \(identifier)")
         let value = try #require(node.value(forKey: "accessibilityFrame") as? NSValue)
         return value.rectValue
     }
