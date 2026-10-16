@@ -14,6 +14,24 @@ struct HistoryContextPresentationTests {
         #expect(!button.contains("title == nil ? 28 : 142"))
     }
 
+    @Test func historyPreviewsOwnAFullWidthRowBelowHeaderActions() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let card = try String(contentsOf: root.appendingPathComponent("VoiceInk/Views/History/InlineHistoryView.swift"), encoding: .utf8)
+        let header = try #require(card.range(of: "private var header: some View"))
+        let expanded = try #require(card.range(of: "// MARK: - Expanded Content", range: header.upperBound..<card.endIndex))
+        let headerBody = card[header.lowerBound..<expanded.lowerBound]
+        #expect(headerBody.contains("HistoryAudioRetryButton"))
+        #expect(headerBody.contains("HistoryCopyButtons"))
+        #expect(!headerBody.contains("listPreview("))
+        #expect(card.contains(".frame(maxWidth: .infinity, alignment: .leading)\n                        .contentShape(Rectangle())"))
+        let list = try String(contentsOf: root.appendingPathComponent("VoiceInk/Views/History/TranscriptionListItem.swift"), encoding: .utf8)
+        let actions = try #require(list.range(of: "HistoryCopyButtons"))
+        let preview = try #require(list.range(of: "Text(HistoryContextPresentation.listPreview"))
+        #expect(actions.lowerBound < preview.lowerBound)
+        #expect(list.contains("VStack(alignment: .leading, spacing: 4)"))
+        #expect(list.contains(".frame(maxWidth: .infinity, alignment: .leading)\n                .accessibilityIdentifier(\"history-list-preview-"))
+    }
+
     @Test func listPreviewRemovesOnlyPresentationAndDuplicateTimeline() {
         let source = #"\(\textsf{\color{#70fad8}Read}\) \(\textsf{\color{#70fafa}this}\)"#
             + "\n\n" + #"\(\textsf{\color{#94a3b8}\textit{<agent\_flow\_context\ preview="authored\_text\_above">}}\)"#
