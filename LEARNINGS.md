@@ -8,12 +8,16 @@ found two distinct gaps before the first recorder content. Primary's
 passive Next-only target capture before `toggleRecorderPanel` shows a window.
 Mini and Notch then order transparent panels, but their stack views render only
 real session cards or an assistant response. An empty start therefore has no
-painted black card until `startNewSession` appends one, after permission, an older
-delivery lease and any resource-cleanup wait.
+painted black card until `startNewSession` appends one, after the permission
+callback's task hop, an older delivery lease and any resource-cleanup wait. The
+current permission helper synchronously returns true; it is not evidence of a
+new macOS permission prompt on each start.
 
 `isVisible`, frame intersection and `displayIfNeeded` establish an ordered window,
 not nontransparent startup pixels or microphone readiness. Treat command receipt,
 first painted HUD, capture startup and first recognized speech as separate signals.
+The existing sequencer plays its start sound in `mediaSettled`, before calling
+`startHardware`; that sound alone is not proof that AUHAL capture is ready either.
 Keep the real reservation/destination/cancellation boundaries; do not insert a fake
 recording session or move command-time target capture merely to satisfy a visual
 check. Both window managers already reuse hosts when the display set is unchanged.
