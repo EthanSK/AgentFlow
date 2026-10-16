@@ -28,6 +28,7 @@ enum RecorderPanelStyle: String, CaseIterable, Identifiable {
 protocol RecorderPanelPresenting: AnyObject {
     func showTranscriptionRetryPanel()
     var isRecorderPanelVisible: Bool { get }
+    func flushStartupPresentation(requestID: UUID) async
     func dismissRecorderPanel() async
 }
 

@@ -151,7 +151,10 @@ struct RecorderResponsivenessTests {
 
     @Test func startupFrameFlushUsesOnlyOwnedVisibleWindowsWithoutFocusOrSleep() throws {
         let ui = try source("VoiceInk/Transcription/Engine/RecorderUIManager.swift")
-        let start = try #require(ui.range(of: "func flushStartupPresentation(requestID: UUID) async"))
+        let protocolStart = try #require(ui.range(of: "protocol RecorderPanelPresenting: AnyObject {"))
+        let protocolEnd = try #require(ui.range(of: "\n}", range: protocolStart.upperBound..<ui.endIndex))
+        #expect(ui[protocolStart.lowerBound..<protocolEnd.lowerBound].contains("func flushStartupPresentation(requestID: UUID) async"))
+        let start = try #require(ui.range(of: "func flushStartupPresentation(requestID: UUID) async {"))
         let end = try #require(ui.range(of: "func toggleRecorderPanel(", range: start.upperBound..<ui.endIndex))
         let flush = String(ui[start.lowerBound..<end.lowerBound])
         #expect(flush.contains("DispatchQueue.main.async"))
