@@ -1549,9 +1549,15 @@ struct VoiceInkTests {
         ]
         #expect(presentationGuardBody.contains("reason: \"recording start\""))
         #expect(presentationGuardBody.contains("rearmFailureNotification: true"))
+        // Presentation now resolves a reservation even when the caller did not
+        // supply one. Failure must release that exact resolved token, not only
+        // the optional incoming token, and success must forward the same value.
+        #expect(toggleBody.contains("guard let id = reservedStartRequestID ?? engine.reserveRecordingStart()"))
+        #expect(toggleBody.contains("startRequestID = id"))
         #expect(presentationGuardBody.contains(
-            "engine.cancelRecordingStartReservation(reservedStartRequestID)"
+            "if let startRequestID { engine.cancelRecordingStartReservation(startRequestID) }"
         ))
+        #expect(toggleBody[visibleClaim.upperBound...].contains("reservedStartRequestID: startRequestID"))
         #expect(presentationGuardBody.contains("return"))
         #expect(presentationGuard.lowerBound < visibleClaim.lowerBound)
 
