@@ -1,5 +1,202 @@
 # Learnings
 
+## 2026-10-16 — History needs distinct normal and LaTeX copy choices
+
+Ethan requested normal Copy plus a top-level `Copy with LaTeX` action. The old
+single Copy returned stored producer formulas even when the native History view
+showed readable text. Snapshot `0bd18cc2858f5c1366fd8690a90a960d2da8dcc9`, build 430,
+adds the shared pair to collapsed/expanded cards, the split-list layout, detail
+Original/Enhanced headers, Live draft at exit and recovered Codex headers.
+The normal copy icon unwraps only the known presentation grammar; it retains
+complete XML/context, whitespace and unknown user math rather than using a list
+preview. The function-symbol action is labelled `Copy with LaTeX` (icon-only with
+the same help in the compact list). It reuses stored formulas byte for byte, or
+formats a plain draft on demand. Neither choice changes saved History or delivers
+anything to another app, and formatting runs only at the click boundary.
+
+Native presentation's `hasFormatting` is not proof of stored LaTeX: legacy plain
+`potential_tts` XML is coloured natively too. Require an actual producer formula
+before choosing the byte-for-byte LaTeX reuse branch. The regression covers this
+alongside long complete payloads, malformed wrappers and literal user math.
+
+The exact snapshot passed 21 focused tests and all 640 tests in 22 suites through
+canonical Xcode on the Mini. Window-targeted mouse events prove both copy buttons
+in collapsed cards, compact list rows and exit/recovered headers without expanding,
+checking or selecting the row; tests restore the previous clipboard. A synthetic
+native fixture confirms the visible `f(x) Copy with LaTeX` control. These checks
+do not claim manual acceptance of Ethan's own History or a recipient's math renderer.
+
+Stable-signed universal build 430 (CDHash
+`050242e0813f539ca155be071f52dca7786bcda4`) was installed at
+`/Applications/AgentFlow.app` only after voice-busy checks cleared, a delivered
+five-second warning and the all-session cooperative quit. Persistent process,
+deep/strict outer/nested signing, Automation/audio-input entitlements and passive
+Primary-socket connect=0 verified. Custom audio input, app icon and official
+VoiceInk stayed unchanged; build 429 remains in its verified rollback ZIP.
+
+The retired bundle's exact-path unregister returned `-10814 from spotlight` in
+Trash and left one old registration. Moving only that verified retired app to
+its task-owned temporary path, unregistering there, then returning it to Trash
+left zero matching LaunchServices entries; the new app stayed running. No global
+database reset, other app cleanup or recording action was used.
+
+## 2026-10-15 — A socket file is not a bound Primary receiver
+
+Build 428's private p.sock remained from October 3, but passive AF_UNIX datagram
+connect returned ECONNREFUSED and the running process held no receiver descriptor.
+The lock was acquirable. Recorded inode and owner matched, while the recorded
+device number differed from current st_dev. Startup's full-identity guard rejected
+that restored endpoint as occupied. The earlier file-mode-only release check was
+insufficient; a valid signature and owner-only socket did not prove live transport.
+
+For immediate recovery, waited for idle, delivered the real five-second warning,
+obtained cooperative quit and quarantined only that exact unbound socket with a
+copy of its marker. Kept the canonical lock inode, relaunched unchanged 428 and
+verified connect=0 plus a descriptor owned by the new app process. No recording
+command, user recording, Agentic Mouse or wand-receiver restart was involved.
+
+Snapshot 9ed8d80197a301ba7e06cb354f74bca0bd960de1 / build 429 adds narrow automatic
+startup recovery under the private exclusive lock: an exact marker, or device-only
+change with matching inode/owner, must also return explicit ECONNREFUSED and retain
+its identity immediately before unlink. Live sockets and unrelated identities fail
+closed. Startup logs a bounded reason, not filesystem paths or captured content.
+Two regressions cover exact/device-only stale recovery and live/foreign rejection;
+29 focused tests and all 638 tests in 22 suites passed on the Mini. The signed
+ordinary universal 429 Release was installed after the real five-second warning
+and successful cooperative idle quit. Installed CDHash:
+1684367c19eb24df38fbb1178f9215a5664173e2; executable SHA-256:
+7b502c31ad6afa6843aa06f81cf3cb2fcc50e530e0c8ccca974c5c1eda673a6c.
+Deep/strict signature, outer Automation/audio-input entitlements, unchanged
+custom input, surfer icon and official VoiceInk verified. A persistent new PID
+held the bound socket and passive connect=0 verified after installation. No
+recording packet was sent as a readiness probe. Build 428 has a verified rollback
+ZIP; its retired bundle is recoverable from Trash and unregistered there. Only
+generated test caches were removed; named logs and xcresult evidence remain.
+
+After the live recovery, Ethan explicitly confirmed the middle-button speech
+works in the receiver chat, and counts-only receiver/app logs correlate genuine
+D2 edges. This accepts that observed 428 start/stop speech integration; it does
+not establish every multi-click, paused, lock-screen or subsequent 429 scenario.
+
+## 2026-10-15 — Restore the dedicated local signer without changing app identity
+
+The existing VoiceInk Local Signing certificate was still present and valid,
+but the Mini's user Code Signing trust entry and canonical signing helper were
+missing. With Ethan's explicit approval, restored Code Signing trust for the
+same certificate only (SHA-1 7326EA1F9A4B24AFDFBEFF2CCD960F32B2BBEBD7).
+No certificate replacement, global trust setting or TCC reset was needed.
+
+Unlocking the dedicated signing keychain in one SSH invocation and signing in
+a different invocation did not work. Restore the saved private signer, unlock
+and sign in the same process, and keep its file/directory owner-only. Do not
+print or copy its credential into source, logs or this document. The helper
+must sign Sparkle's bare Versions/Current/Autoupdate before nested code, then
+sign the outer app with VoiceInk.local.entitlements. The restored canonical
+~/Projects/VoiceInk-build/resign-local.sh successfully signed the ordinary 426
+Release; deep/strict verification and its unchanged designated requirement
+passed. Recheck the actual candidate after every signing operation.
+
+## 2026-10-15 — Give the wand its own Primary input source
+
+Snapshot c67b97f2f0d2113d7a0537dcd08aa04de418e751 / build 427 adds `wand`
+to PrimaryMouseCommand.Source, not a fourth destination or an imitation
+`corsair`/`razer` event. It retains the strict owner-only datagram schema and
+existing startup readiness, generation, per-source held-cycle and session
+boundaries. Four new tests prove the real source decodes, idle-down plus
+matching-up semantics, cross-source/session rejection and socket lifecycle.
+The exact snapshot passed 122 focused tests and the canonical full 634-test,
+22-suite Mini gate. These are native fixtures, not physical D2 acceptance.
+
+This remains a toggle, not push-to-talk. A receiver sends one real down/up pair
+per press and no held repeats. Before 428 there was no cancel phase: a dropped
+release could keep the wand cycle held until the existing 60-second timeout
+or a changed/reset session. That limitation is superseded by snapshot
+ee48f0047f4dae3d23f010ab7cc28dad633d7e77 / build 428: wand-only `cancel` clears
+only its unmatched cycle and returns a non-action decision. It must never
+finalize capture or change other source cycles. Mouse cancel is rejected in
+both decoding and the pure coordinator. A receiver discards any stale queued
+up and sends cancel only for its own unmatched D2 press on BLE loss. Two added
+regressions prove immediate reconnect, duplicate/orphan cancellation, existing
+time-order guards and mouse isolation; the exact candidate passed 124 focused
+tests and all 636 tests in 22 suites through canonical Xcode on the Mini.
+
+The ordinary universal build 428 was signed by the restored canonical helper.
+ZIP SHA-256: 03a02c95354ec259b007bdd8700bf5ed64fad0fa365ef76ba895f53409d0de70.
+Installed CDHash: ccd329abf92e4460c605c11a6fef2bf8ca27c1b3; executable SHA-256:
+396a0606d1336675b8fa0fb03300288771649a4e7c7f038b8bec687715a7b552.
+Deep/strict signature, outer Automation/audio-input entitlements, stable outer
+and whisper signer, unchanged icon and selected custom input all verified.
+Installation waited for idle, delivered the real five-second warning and used
+the app's successful cooperative quit; no forced exit was used. A persistent
+new PID verified. Build 425 remains in a round-trip-verified rollback ZIP;
+the retired launchable copy moved to recoverable Trash. Official VoiceInk was
+unchanged. Physical Esc and Bluetooth D2 acceptance were not performed here.
+
+## 2026-10-15 — Keep the requested Esc finish local to the typing editor
+
+Ethan requested Won't paste from Esc while typing in the floating HUD (his
+"espace" wording was explicitly interpreted as Escape, not the space bar).
+Candidate 426 at `7e9edf5481f1a59f456f12369b1090c25a0a00a6` wires the focused
+RecorderTypingTextView/window dispatch through RecorderStateProvider and the
+same per-session deferred-start finish used by Command-Enter. Esc chooses
+clipboardOnly recovery; Command-Enter keeps its commandEnterOnce disposition.
+Both mini and notch editors have the callback. No global Escape registration,
+Cancel action, saved-input capture or delivery transport change was added.
+
+The source guards require the key window and exact HUD first responder; an IME
+retains Escape while it has marked text, modified Escape is untouched, repeat
+events cannot finalize another session, and the space bar remains ordinary text.
+Five regression cases cover ownership/flush, IME, startup/lineage, both layout
+wires and the production formatted clipboard/History pipeline with no Mode output
+effects. The first focused run correctly exposed an overstrict new test: only
+Paste mode uses the compact prompt link, while Respond/custom-command modes
+retain canonical context for the existing Won't paste path. Corrected the test
+to compare Esc with that existing path for each mode, normalizing only its
+unique prompt URL; no production-format change was made to satisfy it.
+Qualified snapshot 2824eeeddcc58138498c395c68e913e64552e62e passed 102 focused
+and all 630 tests. The combined wand snapshot above passed 122 focused and all
+634 tests. The final 428 gate passed all 636 and the signed installation above
+contains the same Esc implementation. A physical focused-HUD Escape check
+remains separate from those passing native fixtures.
+
+## 2026-10-14 — Prioritize bounded capture startup, not the entire idle process
+
+Agent Flow already creates its MenuBarExtra and holds AppNapGuard's app-lifetime
+userInitiatedAllowingIdleSystemSleep assertion before heavy initialization.
+The meter already uses userInteractive; the hardware queue previously used
+userInitiated for both idle preparation and immediate Start/Resume. A menu-bar
+or Dock presentation change is not a CPU scheduling fix.
+
+Snapshot `93cc11e8736efcc41e789558fd23a9e2875b02ff` / build 425 requests
+userInteractive with enforceQoS only for initial voice/typing hardware startup
+and Resume, on the unchanged serial queue. Idle preparation retains its existing
+userInitiated class. No process-wide nice/realtime override, latencyCritical
+assertion, shortcut timer change, focus activation or microphone/media guard
+bypass was added. The native scheduler fixture observed QOS_CLASS_USER_INTERACTIVE
+and proved previous-stop → Start → later-maintenance FIFO order without a mic.
+That proves scheduling configuration, not zero latency or a measured improvement
+in a physically overloaded Mac's shortcut-to-HUD timing.
+
+The corrected exact-source Mini focused action named all 12 selected tests; the
+one canonical release gate passed all 625 native tests in 22 suites. The first
+test compile used the wrong module name and executed no tests; the established
+module is VoiceInkPlusPlus. An unchanged parameterized idle-start guard also
+needed its actual isRecorderVisible: identifier rather than an empty () filter.
+Both initial diagnostic logs remain; neither incomplete attempt counts as a pass.
+
+The ordinary universal Release app was stable-signed inside-out and transferred
+with ZIP SHA-256 e9f8c2cb2b8bd1341e9835b34d05f182fe0756adcdc75ca1b91b9768bacd9d18.
+Installed CDHash 90c03eaeb0a541ed343c0c1ba6b174566835631e and executable SHA-256
+45cabe7089a6f26ac14a8f89108aaf1afbf78e869a0f2e6dddb9c0b493215e78 verify;
+the real five-second warning preceded cooperative quit. The app remained running,
+inactive and unhidden with Automation/audio-input, icon and selected custom input
+preserved. Official VoiceInk stayed unchanged. Build 424's rollback ZIP passed
+round-trip signature/hash verification; its retired bundle is recoverable in Trash.
+Unregistering the unregistered task-staged retired bundle returned -10814; an exact
+LaunchServices dump proved no task/candidate/retired registration before and after
+retirement, so no global database reset was needed. Physical load/latency acceptance
+is still separate from the scheduler and installed-runtime receipts.
+
 ## 2026-10-14 — Selection build 424 qualified and installed after home-LAN recovery
 
 The existing direct home-LAN SSH route worked after Ethan returned home; no VPN,
