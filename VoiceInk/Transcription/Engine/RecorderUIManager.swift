@@ -74,6 +74,54 @@ enum RecorderPanelLifecyclePolicy {
     }
 }
 
+/// Presentation only: an accepted Start is not a microphone owner or a fake session.
+/// In particular, reserving during the pending-result double-click decision must
+/// never show this shell or change Primary/Next routing.
+struct RecorderStartupPresentation: Equatable {
+    private(set) var requestID: UUID?
+    private(set) var handoffID: UUID?
+    private var activationUptime: TimeInterval?
+    private var reportedFirstDraw = false
+
+    init() {}
+
+    mutating func commit(_ id: UUID, activationUptime: TimeInterval) {
+        guard requestID != id else { return }
+        requestID = id
+        handoffID = nil
+        self.activationUptime = activationUptime
+        reportedFirstDraw = false
+    }
+
+    mutating func clear(_ id: UUID) {
+        guard requestID == id || handoffID == id else { return }
+        self = Self()
+    }
+
+    mutating func handoff(_ id: UUID) {
+        guard requestID == id else { return }
+        requestID = nil
+        handoffID = id
+    }
+
+    mutating func firstDraw(_ id: UUID, uptime: TimeInterval) -> Int? {
+        guard requestID == id || handoffID == id,
+              !reportedFirstDraw, let activationUptime,
+              uptime.isFinite, uptime >= activationUptime else { return nil }
+        reportedFirstDraw = true
+        return Int(min((uptime - activationUptime) * 1_000, Double(Int32.max)))
+    }
+
+    func shouldShow(sessionCount: Int, assistantVisible: Bool) -> Bool {
+        requestID != nil && sessionCount == 0 && !assistantVisible
+    }
+
+    func isHandingOff(to startID: UUID?) -> Bool {
+        guard let handoffID, let startID else { return false }
+        return handoffID == startID
+    }
+}
+
 enum RecorderPanelPresentationIssueLevel: Int {
     case none
     case incomplete
@@ -166,7 +214,10 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
 
         let baseSession = engine.activeRecordingSession ?? engine.sessions.last
         let showsAssistant = engine.assistantSession.isVisible
-        guard showsAssistant || baseSession != nil else { return nil }
+        let showsStartup = engine.startupPresentation.shouldShow(
+            sessionCount: engine.sessions.count, assistantVisible: showsAssistant
+        )
+        guard showsAssistant || baseSession != nil || showsStartup else { return nil }
 
         let showsRealtimeTranscript =
             (baseSession?.liveRecordingState.isRecordingOrPaused == true
@@ -457,6 +508,29 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
         return engine?.reserveRecordingStart(microphoneOff: microphoneOff)
     }
 
+    /// Give the shell one main-run-loop presentation opportunity before Mode,
+    /// journal and audio setup. This is not a click-decision timer or readiness
+    /// signal; the exact reservation is checked again after this suspension.
+    func flushStartupPresentation(requestID: UUID) async {
+        guard let engine,
+              engine.startupPresentation.shouldShow(
+                sessionCount: engine.sessions.count,
+                assistantVisible: engine.assistantSession.isVisible
+              ) else { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.main.async { [weak self] in
+                defer { continuation.resume() }
+                guard let self,
+                      self.engine?.startupPresentation.requestID == requestID,
+                      self.isRecorderPanelVisible else { return }
+                switch self.recorderPanelStyle {
+                case .mini: self.miniWindowManager?.displayIfNeeded()
+                case .notch: self.notchWindowManager?.displayIfNeeded()
+                }
+            }
+        }
+    }
+
     func toggleRecorderPanel(
         modeId: UUID? = nil,
         stopPasteDestination: RecordingPasteDestination = .primaryCurrentInput,
@@ -580,19 +654,34 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
                 await dismissRecorderPanel()
             }
         } else {
+            // Reserve before showing a nonactivating shell: the passive Next-only
+            // input and selection timestamp must still describe command time.
+            // Failed presentation releases only this exact request, not an old job.
+            let startRequestID: UUID?
+            if engine.activeRecordingSession == nil {
+                guard let id = reservedStartRequestID ?? engine.reserveRecordingStart() else { return }
+                guard engine.commitRecordingStartPresentation(id) else {
+                    engine.cancelRecordingStartReservation(id)
+                    return
+                }
+                startRequestID = id
+            } else {
+                // A temporarily lost panel can coexist with a real capture.
+                // Restore its controls, then retain the existing stop/cancel path;
+                // never assert a new idle reservation over that microphone owner.
+                startRequestID = nil
+            }
             guard showRecorderPanel(
                 reason: "recording start",
                 rearmFailureNotification: true
             ) else {
-                if let reservedStartRequestID {
-                    engine.cancelRecordingStartReservation(reservedStartRequestID)
-                }
+                if let startRequestID { engine.cancelRecordingStartReservation(startRequestID) }
                 return
             }
             isRecorderPanelVisible = true
             await engine.toggleRecord(
                 modeId: modeId,
-                reservedStartRequestID: reservedStartRequestID
+                reservedStartRequestID: startRequestID
             )
         }
     }

@@ -245,6 +245,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
     private struct PreparedRecordingStart {
         let requestID: UUID
         let activationTime: Date
+        let activationUptime: TimeInterval
         let focusedInput: FocusLockService.Target?
     }
 
@@ -254,6 +255,27 @@ class VoiceInkEngine: NSObject, ObservableObject {
     private var recordingStartReservation = RecordingStartReservation()
     private var preparedRecordingStart: PreparedRecordingStart?
     private var typingFocusStartID: UUID?
+
+    // HUD acknowledgement is deliberately independent of recordingState and the
+    // reservation/barrier. It cannot own audio, a destination, Mode or delivery.
+    @Published private(set) var startupPresentation = RecorderStartupPresentation()
+
+    @discardableResult
+    func commitRecordingStartPresentation(_ requestID: UUID) -> Bool {
+        guard canCommitRecordingStartReservation(requestID),
+              let preparedRecordingStart else { return false }
+        if startupPresentation.requestID != requestID {
+            startupPresentation.commit(requestID, activationUptime: preparedRecordingStart.activationUptime)
+        }
+        return true
+    }
+
+    func recordStartupPlaceholderDraw(requestID: UUID, uptime: TimeInterval) {
+        guard let milliseconds = startupPresentation.firstDraw(requestID, uptime: uptime) else { return }
+        // Counts/timing only. A drawn shell proves acknowledgement, not PCM or
+        // provider health, and the compositor's physical display remains separate.
+        vippLog.info("record start: HUD placeholder drawn sinceReservationMs=\(milliseconds, privacy: .public) requestID=\(requestID.uuidString, privacy: .public)")
+    }
 
     /// Typing intent is keyed to an already-owned start; it cannot retarget or
     /// focus a newer session. A late Command in the same chord closes capture
@@ -629,6 +651,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
     /// Remove a finished/aborted session from the collection + recompute derived state.
     /// SwiftUI animates the card out (transition on the `sessions` array).
     private func removeSession(_ session: RecordingSession) {
+        startupPresentation.clear(session.startID)
         session.phase = .done
         session.endLiveSelectionCapture()
         session.clearContext()
@@ -847,12 +870,14 @@ class VoiceInkEngine: NSObject, ObservableObject {
         preparedRecordingStart = PreparedRecordingStart(
             requestID: requestID,
             activationTime: activationTime,
+            activationUptime: captureStartedAt,
             focusedInput: focusedInput
         )
         return requestID
     }
 
     func cancelRecordingStartReservation(_ requestID: UUID) {
+        startupPresentation.clear(requestID)
         if typingFocusStartID == requestID { typingFocusStartID = nil }
         guard recordingStartReservation.pendingID == requestID else { return }
         if preparedRecordingStart?.requestID == requestID {
@@ -1067,6 +1092,21 @@ class VoiceInkEngine: NSObject, ObservableObject {
                 vippLog.notice("toggleRecord: stale reserved START refused requestID=\(startRequestID.uuidString, privacy: .public)")
                 return
             }
+            // Commit only after the pending-result gesture decision has accepted
+            // Start. Render acknowledgement before costly setup, without faking
+            // .starting or moving the command-time Next-only input capture.
+            guard commitRecordingStartPresentation(startRequestID) else {
+                cancelRecordingStartReservation(startRequestID)
+                return
+            }
+            await recorderUIManager?.flushStartupPresentation(requestID: startRequestID)
+            // Rendering yields: reset, a disabled mouse gate or a stale callback
+            // must not resurrect a canceled request or consume a newer one.
+            guard canCommitRecordingStartReservation(startRequestID) else {
+                cancelRecordingStartReservation(startRequestID)
+                await recorderUIManager?.dismissRecorderPanel()
+                return
+            }
             self.preparedRecordingStart = nil
 
             let canContinueAssistantSession = isAssistantFollowUp && assistantSession.canSendFollowUp
@@ -1118,9 +1158,8 @@ class VoiceInkEngine: NSObject, ObservableObject {
                         )
                     } else {
                         recordingStartIdentityTask?.cancel()
-                        self.recordingStartReservation.cancel(startRequestID)
-                        self.activeRecordingDeliveryBarrier.endCapture(owner: startRequestID)
-                        self.reportUnresolvedPrimaryAutoSendIfQueueDrained()
+                        self.cancelRecordingStartReservation(startRequestID)
+                        await self.recorderUIManager?.dismissRecorderPanel()
                         self.logger.error("Recording permission denied")
                     }
                 }
@@ -1159,9 +1198,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
         }
         guard captureMayStart else {
             recordingStartIdentityTask?.cancel()
-            recordingStartReservation.cancel(startRequestID)
-            activeRecordingDeliveryBarrier.endCapture(owner: startRequestID)
-            reportUnresolvedPrimaryAutoSendIfQueueDrained()
+            cancelRecordingStartReservation(startRequestID)
             vippLog.notice("startNewSession: START reservation canceled while waiting for an older delivery requestID=\(startRequestID.uuidString, privacy: .public)")
             return
         }
@@ -1170,7 +1207,10 @@ class VoiceInkEngine: NSObject, ObservableObject {
         // reservation owned across that wait so no second start can overtake it, then
         // revalidate the token before creating a session or touching shared resources.
         if let resourceCleanupTask {
+            let cleanupWaitStarted = ProcessInfo.processInfo.systemUptime
             await resourceCleanupTask.value
+            let cleanupWaitMs = Int((ProcessInfo.processInfo.systemUptime - cleanupWaitStarted) * 1_000)
+            vippLog.info("record start: cleanup wait completed durationMs=\(cleanupWaitMs, privacy: .public) requestID=\(startRequestID.uuidString, privacy: .public)")
         }
 
         // Consume the exact reservation before creating the session. MainActor isolation
@@ -1178,6 +1218,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
         // events cannot append another mic owner.
         guard recordingStartReservation.consume(startRequestID),
               activeRecordingSession == nil else {
+            startupPresentation.clear(startRequestID)
             recordingStartIdentityTask?.cancel()
             activeRecordingDeliveryBarrier.endCapture(owner: startRequestID)
             reportUnresolvedPrimaryAutoSendIfQueueDrained()
@@ -1196,6 +1237,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
             from: startRequestID,
             to: session.id
         ) else {
+            startupPresentation.clear(startRequestID)
             recordingStartIdentityTask?.cancel()
             // Normally a failed transfer means reset already removed the reservation.
             // Defensively release it anyway: a duplicate destination owner must not
@@ -1228,6 +1270,9 @@ class VoiceInkEngine: NSObject, ObservableObject {
         }
 
         // Append to the collection so the card appears immediately (shows the .starting state).
+        // One synchronous handoff: the real card replaces acknowledgement without
+        // a fake session, empty frame or second entrance animation.
+        startupPresentation.handoff(startRequestID)
         sessions.append(session)
         recomputeDerivedState()
         // The user's composing session starts now, not after the microphone
@@ -2303,6 +2348,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
         // jobs still recheck generation after their previous tail returns, and a running
         // pipeline must pass isDeliveryAuthorized before it can paste completed text.
         preparedRecordingStart = nil
+        startupPresentation = RecorderStartupPresentation()
         recordingStartReservation.invalidate()
         activeRecordingDeliveryBarrier.reset()
         primaryQueuedAutoSendTracker.reset()

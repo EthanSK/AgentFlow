@@ -33,6 +33,11 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
         switch stateProvider.recordingState {
         case .starting where stateProvider.canTypeInHUD:
             return .liveText
+        case .starting:
+            // Keep the real starting card visible after the early black shell
+            // hands off. A zero-height collapsed pill would erase acknowledgement
+            // until the microphone handshake completes. Status remains static.
+            return .active
         case .recording, .paused:
             // Keep the realtime panel visible before the provider's first partial so
             // a slow Wi-Fi/WebSocket handshake cannot make streaming mode look off.

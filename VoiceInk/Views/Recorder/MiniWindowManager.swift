@@ -250,6 +250,14 @@ class MiniWindowManager {
         windows.forEach { $0.panel.orderOut(nil) }
     }
 
+    func displayIfNeeded() {
+        // Only our already-visible panels; never order, activate or make key.
+        for entry in windows where entry.panel.isVisible {
+            entry.host.layoutSubtreeIfNeeded()
+            entry.panel.displayIfNeeded()
+        }
+    }
+
     private func refreshScale() {
         guard !windows.isEmpty else { return }
         let screens = NSScreen.screens

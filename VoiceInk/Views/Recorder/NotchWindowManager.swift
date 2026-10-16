@@ -93,6 +93,13 @@ class NotchWindowManager {
         windows.forEach { $0.panel.orderOut(nil) }
     }
 
+    func displayIfNeeded() {
+        for entry in windows where entry.panel.isVisible {
+            entry.host.layoutSubtreeIfNeeded()
+            entry.panel.displayIfNeeded()
+        }
+    }
+
     private func refreshScale() {
         guard !windows.isEmpty else { return }
         let screens = NSScreen.screens

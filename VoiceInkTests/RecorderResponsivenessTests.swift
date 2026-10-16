@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import Testing
+import AppKit
 @testable import VoiceInkPlusPlus
 
 @Suite(.serialized)
@@ -41,6 +42,160 @@ struct RecorderResponsivenessTests {
         let preparation = try #require(source.range(of: "private func schedulePrepareForCurrentDevice(reason: String)"))
         let preparationTail = String(source[preparation.lowerBound...])
         #expect(!preparationTail.contains("qos: RecorderWorkPriority.captureInteraction"))
+    }
+
+    @Test func startupPlaceholderDoesNotAppearForAnUncommittedReservation() throws {
+        var reservation = RecordingStartReservation()
+        var presentation = RecorderStartupPresentation()
+        let id = try #require(reservation.reserve())
+        #expect(presentation.requestID == nil)
+        #expect(!presentation.shouldShow(sessionCount: 0, assistantVisible: false))
+        presentation.commit(id, activationUptime: 100)
+        #expect(presentation.requestID == id)
+        #expect(presentation.shouldShow(sessionCount: 0, assistantVisible: false))
+        // A second commit for the same token cannot reset the measured start.
+        presentation.commit(id, activationUptime: 500)
+        #expect(presentation.firstDraw(id, uptime: 100.125) == 125)
+    }
+
+    @Test func startupPlaceholderClearAndHandoffCannotAffectAnotherRequest() {
+        let first = UUID(), second = UUID()
+        var presentation = RecorderStartupPresentation()
+        presentation.commit(first, activationUptime: 100)
+        presentation.clear(second)
+        presentation.handoff(second)
+        #expect(presentation.requestID == first)
+        presentation.handoff(first)
+        #expect(presentation.requestID == nil)
+        #expect(presentation.isHandingOff(to: first))
+        #expect(!presentation.isHandingOff(to: nil))
+        #expect(!presentation.shouldShow(sessionCount: 0, assistantVisible: false))
+        presentation.commit(second, activationUptime: 200)
+        presentation.clear(first)
+        presentation.handoff(first)
+        #expect(presentation.requestID == second)
+        #expect(!presentation.isHandingOff(to: first))
+        presentation.clear(second)
+        #expect(presentation == RecorderStartupPresentation())
+    }
+
+    @Test func startupDrawTimingIsOneShotAndRejectsStaleOrInvalidCallbacks() {
+        let first = UUID(), second = UUID()
+        var presentation = RecorderStartupPresentation()
+        presentation.commit(first, activationUptime: 100)
+        #expect(presentation.firstDraw(first, uptime: 99) == nil)
+        #expect(presentation.firstDraw(first, uptime: .nan) == nil)
+        #expect(presentation.firstDraw(second, uptime: 101) == nil)
+        presentation.handoff(first)
+        // The draw callback is dispatched after draw(), so it can legitimately
+        // arrive just after the synchronous real-card handoff for this same ID.
+        #expect(presentation.firstDraw(first, uptime: 100.25) == 250)
+        #expect(presentation.firstDraw(first, uptime: 101) == nil)
+        presentation.commit(second, activationUptime: 200)
+        #expect(presentation.firstDraw(first, uptime: 201) == nil)
+        #expect(presentation.firstDraw(second, uptime: .greatestFiniteMagnitude) == Int(Int32.max))
+    }
+
+    @Test func startupPlaceholderDoesNotHideOlderCardsOrAssistantContent() {
+        var presentation = RecorderStartupPresentation()
+        presentation.commit(UUID(), activationUptime: 100)
+        #expect(presentation.shouldShow(sessionCount: 0, assistantVisible: false))
+        #expect(!presentation.shouldShow(sessionCount: 1, assistantVisible: false))
+        #expect(!presentation.shouldShow(sessionCount: 0, assistantVisible: true))
+        #expect(!presentation.shouldShow(sessionCount: 2, assistantVisible: true))
+    }
+
+    @Test func startupShellYieldsAndRevalidatesBeforeSessionSetup() throws {
+        let engine = try source("VoiceInk/Transcription/Engine/VoiceInkEngine.swift")
+        let start = try #require(engine.range(of: "// ── START branch"))
+        let end = try #require(engine.range(of: "// MARK: - Start a fresh session", range: start.upperBound..<engine.endIndex))
+        let body = String(engine[start.lowerBound..<end.lowerBound])
+        let commit = try #require(body.range(of: "guard commitRecordingStartPresentation(startRequestID)"))
+        let flush = try #require(body.range(of: "await recorderUIManager?.flushStartupPresentation(requestID: startRequestID)"))
+        let recheck = try #require(body.range(of: "guard canCommitRecordingStartReservation(startRequestID)"))
+        let consumePrepared = try #require(body.range(of: "self.preparedRecordingStart = nil"))
+        #expect(commit.lowerBound < flush.lowerBound)
+        #expect(flush.lowerBound < recheck.lowerBound)
+        #expect(recheck.lowerBound < consumePrepared.lowerBound)
+        #expect(!body.contains("recordingState = .starting"))
+        let handoff = try #require(engine.range(of: "startupPresentation.handoff(startRequestID)"))
+        let append = try #require(engine.range(of: "sessions.append(session)", range: handoff.upperBound..<engine.endIndex))
+        #expect(!engine[handoff.upperBound..<append.lowerBound].contains("await"))
+        #expect(engine.contains("record start: cleanup wait completed durationMs="))
+    }
+
+    @Test func startupShellClearPathsAndBothLayoutsRemainPresentationOnly() throws {
+        let engine = try source("VoiceInk/Transcription/Engine/VoiceInkEngine.swift")
+        #expect(engine.components(separatedBy: "recordingStartReservation.cancel(").count - 1 == 1)
+        let cancel = try #require(engine.range(of: "func cancelRecordingStartReservation(_ requestID: UUID)"))
+        let cancelEnd = try #require(engine.range(of: "func canCommitRecordingStartReservation", range: cancel.upperBound..<engine.endIndex))
+        let cancelBody = String(engine[cancel.lowerBound..<cancelEnd.lowerBound])
+        let clear = try #require(cancelBody.range(of: "startupPresentation.clear(requestID)"))
+        let pendingGuard = try #require(cancelBody.range(of: "guard recordingStartReservation.pendingID == requestID"))
+        #expect(clear.lowerBound < pendingGuard.lowerBound)
+        #expect(engine.contains("startupPresentation = RecorderStartupPresentation()\n        recordingStartReservation.invalidate()"))
+        #expect(engine.contains("startupPresentation.clear(session.startID)"))
+        let stacks = try source("VoiceInk/Views/Recorder/RecorderStackView.swift")
+        #expect(stacks.components(separatedBy: "RecorderStartupPlaceholder(requestID: requestID)").count - 1 == 2)
+        #expect(stacks.components(separatedBy: "engine?.recordStartupPlaceholderDraw(requestID: id, uptime: uptime)").count - 1 == 2)
+        #expect(stacks.components(separatedBy: ".accessibilityHidden(true)").count - 1 == 2)
+        #expect(stacks.contains("NSGraphicsContext.current?.isDrawingToScreen == true"))
+        let ui = try source("VoiceInk/Transcription/Engine/RecorderUIManager.swift")
+        #expect(ui.contains("guard showsAssistant || baseSession != nil || showsStartup else { return nil }"))
+        #expect(ui.contains("if engine.activeRecordingSession == nil {\n                guard let id = reservedStartRequestID ?? engine.reserveRecordingStart()"))
+        let notch = try source("VoiceInk/Views/Recorder/NotchRecorderView.swift")
+        let starting = try #require(notch.range(of: "        case .starting:\n"))
+        let recording = try #require(notch.range(of: "        case .recording, .paused:", range: starting.upperBound..<notch.endIndex))
+        #expect(notch[starting.upperBound..<recording.lowerBound].contains("return .active"))
+    }
+
+    @Test func startupFrameFlushUsesOnlyOwnedVisibleWindowsWithoutFocusOrSleep() throws {
+        let ui = try source("VoiceInk/Transcription/Engine/RecorderUIManager.swift")
+        let start = try #require(ui.range(of: "func flushStartupPresentation(requestID: UUID) async"))
+        let end = try #require(ui.range(of: "func toggleRecorderPanel(", range: start.upperBound..<ui.endIndex))
+        let flush = String(ui[start.lowerBound..<end.lowerBound])
+        #expect(flush.contains("DispatchQueue.main.async"))
+        #expect(flush.contains("startupPresentation.requestID == requestID"))
+        #expect(flush.contains("self.isRecorderPanelVisible"))
+        #expect(!flush.contains("Task.sleep"))
+        #expect(!flush.contains("makeKey"))
+        #expect(!flush.contains("activate("))
+        for file in ["MiniWindowManager.swift", "NotchWindowManager.swift"] {
+            let manager = try source("VoiceInk/Views/Recorder/" + file)
+            let display = try #require(manager.range(of: "func displayIfNeeded()"))
+            let next = try #require(manager.range(of: "private func refreshScale()", range: display.upperBound..<manager.endIndex))
+            let body = String(manager[display.lowerBound..<next.lowerBound])
+            #expect(body.contains("where entry.panel.isVisible"))
+            #expect(body.contains("entry.host.layoutSubtreeIfNeeded()"))
+            #expect(!body.contains("orderFront"))
+        }
+    }
+
+    @MainActor
+    @Test func startupShellRendersNeutralBlackAndNeverTakesPointerInput() throws {
+        for height in [40.0, 50.0] {
+            let view = RecorderStartupPlaceholderView(frame: NSRect(x: 0, y: 0, width: 280, height: height))
+            var acknowledgements = 0
+            view.configure(requestID: UUID()) { _, _ in acknowledgements += 1 }
+            let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            let black = try #require(bitmap.colorAt(x: 20, y: Int(height / 2))?.usingColorSpace(.deviceRGB))
+            #expect(black.alphaComponent > 0.99)
+            #expect(black.redComponent < 0.01 && black.greenComponent < 0.01 && black.blueComponent < 0.01)
+            let dots = try #require(bitmap.colorAt(x: 140, y: Int(height / 2))?.usingColorSpace(.deviceRGB))
+            #expect(dots.redComponent > 0.3 && dots.redComponent < 0.6)
+            #expect(abs(dots.redComponent - dots.greenComponent) < 0.01)
+            #expect(abs(dots.greenComponent - dots.blueComponent) < 0.01)
+            #expect(view.hitTest(NSPoint(x: 140, y: height / 2)) == nil)
+            #expect(view.window == nil)
+            // An offscreen cache is useful pixel evidence, never a live frame.
+            #expect(acknowledgements == 0)
+        }
+    }
+
+    private func source(_ path: String) throws -> String {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        return try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
     }
 }
 
