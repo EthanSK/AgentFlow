@@ -47,7 +47,8 @@ struct RecorderResponsivenessTests {
     @Test func startupPlaceholderDoesNotAppearForAnUncommittedReservation() throws {
         var reservation = RecordingStartReservation()
         var presentation = RecorderStartupPresentation()
-        let id = try #require(reservation.reserve())
+        let reservedID = reservation.reserve()
+        let id = try #require(reservedID)
         #expect(presentation.requestID == nil)
         #expect(!presentation.shouldShow(sessionCount: 0, assistantVisible: false))
         presentation.commit(id, activationUptime: 100)
