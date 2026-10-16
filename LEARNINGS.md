@@ -1,5 +1,46 @@
 # Learnings
 
+## 2026-10-17 — History actions belong above full-width previews
+
+Ethan's screenshots showed Retry and both copy actions beside a two-line History
+preview, leaving its text a narrow column. Snapshot
+`e60a427b9c6a31f0e580b4169a8e37afb1221b4b`, build 432, puts selection,
+timestamp and actions in the header in both inline cards and compact list rows;
+the preview owns a separate full-width row. Existing expanded message and exit
+draft headers already follow that pattern. The shared action is explicitly
+`Copy with LaTeX formatting`, including icon-only help/accessibility. Its label
+sizes to content instead of the former fixed 142-point width. Copy payloads and
+stored History remain unchanged.
+
+Thirty-five focused tests and the exact final 650-test/22-suite release gate
+passed through canonical Xcode on the Mini. Native hosted-window mouse events
+prove normal/LaTeX Copy and Retry remain usable without expanding or selecting
+the row, including recovered drafts. Inspected synthetic native bitmap evidence
+shows the complete header label and preview underneath spanning the row. These
+fixtures are not acceptance of a user's live History or a physical shortcut.
+
+The previously source-only startup shell also compiled and passed its eight
+new regressions here. Native compilation required declaring the new flush method
+on `RecorderPanelPresenting`, and Swift Testing required evaluating mutating
+`reserve()` before `#require`. The visibility source guard must require the
+resolved `startRequestID` through both failure cancellation and engine handoff,
+not the former optional incoming token. Preserve the failed native/full logs;
+source-pattern checks alone did not establish compilation or release readiness.
+
+Signing, installation and a live first-frame shortcut receipt remain separate
+from those native tests.
+
+The universal release was then signed with the existing VoiceInk Local Signing
+identity on the outer app and whisper framework, with explicit local entitlements.
+Build 432 installed at `/Applications/AgentFlow.app` only after the real five-second
+warning and cooperative idle quit. The new PID and CDHash
+`ae5b9060b6ffda4db6da6d2af27953f28146c76d`, deep/strict signature, outer Automation
+and audio-input entitlements, and passive primary receiver connect all verified.
+Custom audio-input settings, icon and official VoiceInk checksum stayed unchanged;
+the previous build is recoverable in a verified ZIP and Trash. Physical first-frame
+shortcut timing remains unverified; installation is not proof of zero latency or
+microphone readiness.
+
 ## 2026-10-16 — Ordered recorder windows are not a visible startup acknowledgement
 
 Source investigation of native snapshot `0bd18cc2858f5c1366fd8690a90a960d2da8dcc9`

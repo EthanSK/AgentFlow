@@ -1,5 +1,19 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-10-17 — Resolve SwiftUI fixture buttons from in-process AX children — REJECTED
+
+**Failure condition:** The Mini's hosted-window unit fixture rendered real Copy
+and Retry controls, but `NSWindow.accessibilityChildren` did not expose their
+identifiers. Walking ignored NSView subviews too still returned no match. A
+missing node is not proof the control is absent or broken.
+**Use instead:** Keep window-targeted native mouse events, require exact
+clipboard results and no accidental expand/select, inspect the synthetic native
+bitmap after layout, and retain source guards for full-width body/header
+separation. Never substitute direct action invocation for a real click.
+**Reconsider only if:** A disposable hosted fixture independently proves that
+the supported in-process SwiftUI accessibility tree exposes those identifiers
+and geometry without changing global Accessibility or probing Ethan's live apps.
+
 ## 2026-10-14 — Treat every keyboard extension as a labelled editor event — REJECTED
 
 **Failure condition:** In the disposable VS Code 1.139.1 editor, a window-targeted
