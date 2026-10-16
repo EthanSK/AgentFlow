@@ -62,10 +62,14 @@ final class ShortcutMonitor {
         var pressedAt: TimeInterval?
         var isInterrupted = false
         var typingFocusRequested = false
+        var deferredModifierCandidate = false
+        var deferredModifierBlocked = false
+        var deferredModifierReleasing = false
     }
 
     private var shortcuts: [ShortcutAction: ShortcutState] = [:]
     private var interruptibleActions: Set<ShortcutAction> = []
+    private var deferredModifierToggleActions: Set<ShortcutAction> = []
     private var onKeyDown: ((ShortcutAction, TimeInterval) -> Void)?
     private var onKeyUp: ((ShortcutAction, TimeInterval) -> Void)?
     private var onShortcutInterrupted: ((ShortcutAction, TimeInterval) -> Void)?
@@ -92,6 +96,7 @@ final class ShortcutMonitor {
     func start(
         shortcuts: [ShortcutAction: Shortcut],
         interruptibleActions: Set<ShortcutAction> = [],
+        deferredModifierToggleActions: Set<ShortcutAction> = [],
         onKeyDown: @escaping (ShortcutAction, TimeInterval) -> Void,
         onKeyUp: @escaping (ShortcutAction, TimeInterval) -> Void,
         onShortcutInterrupted: ((ShortcutAction, TimeInterval) -> Void)? = nil,
@@ -113,6 +118,7 @@ final class ShortcutMonitor {
         }
 
         self.interruptibleActions = interruptibleActions
+        self.deferredModifierToggleActions = deferredModifierToggleActions
         self.onKeyDown = onKeyDown
         self.onKeyUp = onKeyUp
         self.onShortcutInterrupted = onShortcutInterrupted
@@ -166,6 +172,13 @@ final class ShortcutMonitor {
     /// Tear down and rebuild the event tap + run-loop source. Used by ensureEventTapHealthy
     /// when the Mach port has been invalidated (cannot just re-enable a dead port).
     private func reinstallEventTap() {
+        // A lost tap may have missed the candidate's release. Never replay that
+        // stale keyboard intent when a later, unrelated modifier event arrives.
+        for action in Array(shortcuts.keys) {
+            shortcuts[action]?.deferredModifierCandidate = false
+            shortcuts[action]?.deferredModifierBlocked = false
+            shortcuts[action]?.deferredModifierReleasing = false
+        }
         if let eventTapRunLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), eventTapRunLoopSource, .commonModes)
             self.eventTapRunLoopSource = nil
@@ -190,6 +203,7 @@ final class ShortcutMonitor {
 
         shortcuts = [:]
         interruptibleActions = []
+        deferredModifierToggleActions = []
         onKeyDown = nil
         onKeyUp = nil
         onShortcutInterrupted = nil
@@ -252,6 +266,17 @@ final class ShortcutMonitor {
     func handleCGEvent(type: CGEventType, event: CGEvent) -> Bool {
         if type.rawValue == UInt32(NX_SYSDEFINED) {
             return handleSystemDefinedEvent(event)
+        }
+
+        if [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(type) {
+            // A modifier-click is another app's gesture, not a voice tap.
+            let flags = NSEvent.ModifierFlags(rawValue: UInt(event.flags.rawValue))
+            if !Shortcut.normalizedModifierFlags(flags, forKeyCode: nil).isEmpty {
+                for action in deferredModifierToggleActions {
+                    shortcuts[action]?.deferredModifierBlocked = true
+                }
+            }
+            return false
         }
 
         guard let eventKind = EventKind(type) else {
@@ -349,6 +374,11 @@ final class ShortcutMonitor {
         typingToggleKeysDown = false
         standaloneShiftCandidate = false
         shiftWasDown = false
+        for action in Array(shortcuts.keys) {
+            shortcuts[action]?.deferredModifierCandidate = false
+            shortcuts[action]?.deferredModifierBlocked = false
+            shortcuts[action]?.deferredModifierReleasing = false
+        }
         let eventTime = ProcessInfo.processInfo.systemUptime
         let pressedActions = shortcuts.compactMap { action, state in
             state.isDown ? action : nil
@@ -388,6 +418,13 @@ final class ShortcutMonitor {
             }
 
             if state.shortcut.isModifierOnly {
+                if deferredModifierToggleActions.contains(action) {
+                    shouldSuppress = handleDeferredModifierToggle(
+                        action: action, state: state, kind: kind,
+                        keyCode: keyCode, modifierFlags: modifierFlags, eventTime: eventTime
+                    ) || shouldSuppress
+                    continue
+                }
                 shouldSuppress = handleModifierOnlyShortcut(
                     action: action,
                     state: state,
@@ -437,6 +474,66 @@ final class ShortcutMonitor {
         case suppress
         case keyDown
         case keyUp
+    }
+
+    /// Shift-Option-Command is also a prefix of the four-physical-key typing
+    /// chord with Shift. Wait for a clean release instead of starting/stopping
+    /// voice on that ambiguous prefix. Only an explicitly configured recording
+    /// toggle owns this path; panel/Mode monitors must pass it through. Extra
+    /// keys, Control/Function, or the opposite Command/Option cancel the candidate
+    /// until all modifiers lift. Forward every release to keep other apps balanced.
+    private func handleDeferredModifierToggle(
+        action: ShortcutAction, state: ShortcutState, kind: EventKind,
+        keyCode: UInt16, modifierFlags: NSEvent.ModifierFlags, eventTime: TimeInterval
+    ) -> Bool {
+        var state = state
+        let flags = Shortcut.normalizedModifierFlags(modifierFlags, forKeyCode: nil)
+        let target = state.shortcut.modifierFlags
+        if flags.isEmpty {
+            let dispatch = kind == .flagsChanged && state.deferredModifierCandidate
+                && !state.deferredModifierBlocked
+            state.deferredModifierCandidate = false
+            state.deferredModifierBlocked = false
+            state.deferredModifierReleasing = false
+            shortcuts[action] = state
+            if dispatch {
+                // The configured secondary binding is an alias of the existing
+                // Primary toggle, not an independent hands-free latch. Otherwise
+                // stopping a session begun by typing/the mouse would need two taps.
+                // The recording owner enables this only while Primary is toggle.
+                let recordingAction: ShortcutAction = .primaryRecording
+                dispatchKeyDown(for: recordingAction, eventTime: eventTime)
+                dispatchKeyUp(for: recordingAction, eventTime: eventTime)
+            }
+            return false
+        }
+        let raw = modifierFlags.rawValue
+        let expandedTypingChord = raw & 0x18 == 0x18 || raw & 0x60 == 0x60
+        if kind == .keyDown || !target.isSuperset(of: flags) || expandedTypingChord {
+            state.deferredModifierBlocked = true
+        }
+        if state.deferredModifierCandidate && flags != target {
+            state.deferredModifierReleasing = true
+        }
+        if state.deferredModifierReleasing && flags == target {
+            state.deferredModifierBlocked = true
+        }
+        let physicalBit: UInt
+        switch keyCode {
+        case 56: physicalBit = 0x02
+        case 60: physicalBit = 0x04
+        case 55: physicalBit = 0x08
+        case 54: physicalBit = 0x10
+        case 58: physicalBit = 0x20
+        case 61: physicalBit = 0x40
+        default: physicalBit = 0
+        }
+        let completed = kind == .flagsChanged && physicalBit != 0
+            && raw & physicalBit != 0 && flags == target
+            && !state.deferredModifierBlocked && !state.deferredModifierCandidate
+        if completed { state.deferredModifierCandidate = true }
+        shortcuts[action] = state
+        return completed
     }
 
     private func transitionForKeyShortcut(
@@ -689,7 +786,10 @@ final class ShortcutMonitor {
     private static let eventMask: CGEventMask = [
         CGEventType.keyDown,
         CGEventType.keyUp,
-        CGEventType.flagsChanged
+        CGEventType.flagsChanged,
+        CGEventType.leftMouseDown,
+        CGEventType.rightMouseDown,
+        CGEventType.otherMouseDown
     ].reduce(CGEventMask(0)) { mask, type in
         mask | (CGEventMask(1) << Int(type.rawValue))
     } | (CGEventMask(1) << Int(NX_SYSDEFINED)) // Media keys arrive as legacy NX_SYSDEFINED events, which CGEventType does not expose as a named Swift case.

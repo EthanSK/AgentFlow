@@ -484,6 +484,15 @@ class RecordingShortcutManager: ObservableObject {
         shortcutMonitor.start(
             shortcuts: shortcuts,
             interruptibleActions: interruptibleRecordingActions,
+            // A clean three-key tap is voice; extending it to both Command and
+            // Option keys belongs to typing/Won't paste instead. Keep the normal
+            // Shift-Control-Option Primary and every hold shortcut unchanged.
+            deferredModifierToggleActions: Set(interruptibleRecordingActions.filter {
+                primaryRecordingShortcutMode == .toggle
+                    && recordingMode(for: $0) == .toggle
+                    && shortcuts[$0]?.isModifierOnly == true
+                    && shortcuts[$0]?.modifierFlags == [.shift, .option, .command]
+            }),
             onKeyDown: { [weak self] action, eventTime in
                 // Bind presentation intent to the reservation made by this exact
                 // keyboard press. Mouse starts and active-session stop presses

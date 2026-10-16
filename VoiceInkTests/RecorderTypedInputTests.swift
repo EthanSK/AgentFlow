@@ -664,6 +664,177 @@ struct RecorderTypedInputTests {
         }
     }
 
+    @Test @MainActor func voiceToggleAliasWaitsForCleanReleaseInEveryOrder() async throws {
+        let recording = ShortcutMonitor()
+        let panel = ShortcutMonitor()
+        let modes = ShortcutMonitor()
+        defer { recording.stop(); panel.stop(); modes.stop() }
+        var downs = 0
+        var ups = 0
+        recording.start(shortcuts: [.secondaryRecording: .modifierOnly(keyCode: nil,
+            modifierFlags: [.shift, .option, .command])],
+            deferredModifierToggleActions: [.secondaryRecording],
+            onKeyDown: { action, _ in #expect(action == .primaryRecording); downs += 1 },
+            onKeyUp: { action, _ in #expect(action == .primaryRecording); ups += 1 },
+            installSystemEventTap: false)
+        panel.start(shortcuts: RecorderPanelShortcutPolicy.shortcuts(
+            explicitCancelShortcut: nil, canUseModeShortcuts: true),
+            onKeyDown: { _, _ in Issue.record("Panel stole voice") },
+            onKeyUp: { _, _ in Issue.record("Panel stole voice") }, installSystemEventTap: false)
+        modes.start(shortcuts: [.mode(UUID()): .key(keyCode: 18, modifierFlags: [.control])],
+            onKeyDown: { _, _ in Issue.record("Mode stole voice") },
+            onKeyUp: { _, _ in Issue.record("Mode stole voice") }, installSystemEventTap: false)
+        let orders = [[0,1,2], [0,2,1], [1,0,2], [1,2,0], [2,0,1], [2,1,0]]
+        for command: (UInt16, UInt64) in [(55, 0x08), (54, 0x10)] {
+            for option: (UInt16, UInt64) in [(58, 0x20), (61, 0x40)] {
+                for shift: (UInt16, UInt64) in [(56, 0x02), (60, 0x04)] {
+                    let keys = [command, option, shift]
+                    for pressOrder in orders {
+                        for releaseOrder in orders {
+                            let before = downs
+                            var held: UInt64 = 0
+                            for (index, bit) in (pressOrder + releaseOrder).enumerated() {
+                                if index == 3 {
+                                    try await Task.sleep(nanoseconds: 1_000_000)
+                                    #expect(downs == before) // No prefix dispatch.
+                                }
+                                let (key, rawBit) = keys[bit]
+                                if index < 3 { held |= rawBit } else { held &= ~rawBit }
+                                var flags = held
+                                if held & 0x18 != 0 { flags |= CGEventFlags.maskCommand.rawValue }
+                                if held & 0x60 != 0 { flags |= CGEventFlags.maskAlternate.rawValue }
+                                if held & 0x06 != 0 { flags |= CGEventFlags.maskShift.rawValue }
+                                let event = try #require(CGEvent(keyboardEventSource: nil,
+                                    virtualKey: key, keyDown: true))
+                                event.type = .flagsChanged; event.flags = CGEventFlags(rawValue: flags)
+                                var consumed = false
+                                for monitor in [panel, modes, recording] {
+                                    if monitor.handleCGEvent(type: .flagsChanged, event: event) {
+                                        #expect(monitor === recording)
+                                        consumed = true; break
+                                    }
+                                }
+                                #expect(consumed == (index == 2))
+                            }
+                            try await Task.sleep(nanoseconds: 1_000_000)
+                            #expect(downs == before + 1 && ups == downs)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test @MainActor func voiceToggleAliasRejectsTypingPrefixesKeysClicksAndStaleState() async throws {
+        let monitor = ShortcutMonitor()
+        defer { monitor.stop() }
+        var voice = 0
+        var typing: [Bool] = []
+        func start() {
+            monitor.start(shortcuts: [.secondaryRecording: .modifierOnly(keyCode: nil,
+                modifierFlags: [.shift, .option, .command])],
+                deferredModifierToggleActions: [.secondaryRecording],
+                onKeyDown: { _, _ in voice += 1 }, onKeyUp: { _, _ in },
+                onTypingStart: { typing.append($0) }, installSystemEventTap: false)
+        }
+        start()
+        func send(_ key: UInt16, _ held: UInt64, type: CGEventType = .flagsChanged) throws {
+            var flags = held
+            if held & 0x18 != 0 { flags |= CGEventFlags.maskCommand.rawValue }
+            if held & 0x60 != 0 { flags |= CGEventFlags.maskAlternate.rawValue }
+            if held & 0x06 != 0 { flags |= CGEventFlags.maskShift.rawValue }
+            if held & 0x01 != 0 { flags |= CGEventFlags.maskControl.rawValue }
+            let event = try #require(CGEvent(keyboardEventSource: nil, virtualKey: key, keyDown: true))
+            event.type = type; event.flags = CGEventFlags(rawValue: flags)
+            let consumed = monitor.handleCGEvent(type: type, event: event)
+            if held == 0 || type == .leftMouseDown { #expect(!consumed) }
+        }
+        let four: [(UInt16, UInt64)] = [(55,0x08),(58,0x20),(54,0x10),(61,0x40)]
+        var orders: [[Int]] = []
+        for a in 0..<4 { for b in 0..<4 where b != a {
+            for c in 0..<4 where c != a && c != b {
+                for d in 0..<4 where d != a && d != b && d != c {
+                    orders.append([a,b,c,d])
+                }
+            }
+        } }
+        for order in orders {
+            var held: UInt64 = 0x02
+            try send(56, held)
+            for index in order { let (key, bit) = four[index]; held |= bit; try send(key, held) }
+            for index in order { let (key, bit) = four[index]; held &= ~bit; try send(key, held) }
+            try send(56, 0)
+            try await Task.sleep(nanoseconds: 1_000_000)
+            #expect(voice == 0)
+        }
+        #expect(typing == Array(repeating: true, count: orders.count))
+        for interruption: CGEventType in [.keyDown, .leftMouseDown] {
+            try send(55, 0x08); try send(58, 0x28); try send(56, 0x2a)
+            try send(0, 0x2a, type: interruption)
+            try send(56, 0x28); try send(58, 0x08); try send(55, 0)
+        }
+        try send(55, 0x08); try send(58, 0x28); try send(56, 0x2a)
+        // A refresh/reset cannot commit an old partially held gesture.
+        start()
+        try send(56, 0x28); try send(58, 0x08); try send(55, 0)
+        try await Task.sleep(nanoseconds: 1_000_000)
+        #expect(voice == 0)
+        // A normal click with no modifiers must not poison the next clean tap.
+        try send(0, 0, type: .leftMouseDown)
+        try send(55, 0x08); try send(58, 0x28); try send(56, 0x2a)
+        try send(56, 0x28); try send(58, 0x08); try send(55, 0)
+        try await Task.sleep(nanoseconds: 1_000_000)
+        #expect(voice == 1)
+    }
+
+    @Test @MainActor func voiceToggleAliasUsesPrimaryLifecycleAfterTypingAndVoiceStarts() async throws {
+        let monitor = ShortcutMonitor()
+        defer { monitor.stop() }
+        var state: RecordingState = .recording // A session begun by another control.
+        var starts = 0
+        var finishes: [RecordingPasteDestination] = []
+        let handler = RecordingShortcutModeHandler(
+            canHandleShortcutAction: { true }, isRecorderVisible: { state != .idle },
+            recordingState: { state },
+            toggleRecorderPanel: { _, route in finishes.append(route); state = .idle },
+            cancelRecording: {}, reserveRecordingStart: { UUID() },
+            startReservedRecording: { _, _ in starts += 1; state = .recording }
+        )
+        monitor.start(shortcuts: [.secondaryRecording: .modifierOnly(keyCode: nil,
+            modifierFlags: [.shift, .option, .command])],
+            deferredModifierToggleActions: [.secondaryRecording],
+            onKeyDown: { action, time in
+                Task { @MainActor in await handler.handleKeyDown(action: action,
+                    eventTime: time, mode: .toggle) }
+            }, onKeyUp: { action, time in
+                Task { @MainActor in await handler.handleKeyUp(action: action,
+                    eventTime: time, mode: .toggle) }
+            }, installSystemEventTap: false)
+        func tap() throws {
+            for (key, raw): (UInt16, UInt64) in [(55,0x100008),(58,0x180028),
+                (56,0x1a002a),(56,0x180028),(58,0x100008),(55,0)] {
+                let event = try #require(CGEvent(keyboardEventSource: nil,
+                    virtualKey: key, keyDown: true))
+                event.type = .flagsChanged; event.flags = CGEventFlags(rawValue: raw)
+                _ = monitor.handleCGEvent(type: .flagsChanged, event: event)
+            }
+        }
+        try tap()
+        try await Task.sleep(nanoseconds: 650_000_000)
+        #expect(state == .idle && finishes == [.primaryCurrentInput])
+        try tap()
+        // A distinct physical press must clear Primary's existing 90 ms duplicate
+        // transport window; a 30 ms re-press deliberately coalesces as one gesture.
+        try await Task.sleep(nanoseconds: 120_000_000)
+        #expect(state == .recording && starts == 1)
+        // The original Primary can finish the alias-started session too.
+        let now = ProcessInfo.processInfo.systemUptime
+        await handler.handleKeyDown(action: .primaryRecording, eventTime: now, mode: .toggle)
+        await handler.handleKeyUp(action: .primaryRecording, eventTime: now, mode: .toggle)
+        try await Task.sleep(nanoseconds: 650_000_000)
+        #expect(state == .idle && finishes == [.primaryCurrentInput, .primaryCurrentInput])
+    }
+
     @Test @MainActor func typingChordFinishesThroughVisiblePanelAndModeMonitors() async throws {
         // Replay real CGEvents through the production tap handler, in the same
         // head-insert order as macOS. Build 355's panel monitor swallowed the
