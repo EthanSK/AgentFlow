@@ -510,8 +510,7 @@ struct HistoryCardRow: View {
                 // selected-tab payload as the expanded entry, never listPreview.
                 // Separate buttons keep Copy/checkbox clicks from expanding it.
                 HistoryAudioRetryButton(transcription: transcription, actionOverride: onRetry)
-                CopyIconButton(textToCopy: displayText)
-                    .accessibilityIdentifier("history-copy-\(transcription.id)")
+                HistoryCopyButtons(text: displayText, identifier: "history-copy-\(transcription.id)")
 
                 Button(action: onToggleExpand) {
                     Image(systemName: "chevron.right")

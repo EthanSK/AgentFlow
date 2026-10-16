@@ -15,10 +15,12 @@ struct MainWindowPresentationTests {
         let canonical = "Opening words\n<app_selection source=\"test\">"
             + String(repeating: "Do not lose any of this full context. ", count: 1000)
             + "</app_selection>\nFinal words"
+        let styled = LiveSelectionStyledMath.coloredXML(canonical, color: LiveSelectionStyledMath.selectionColor)
         let rows = [
             Transcription(text: canonical, duration: 0, enhancedText: "Short enhanced preview"),
             Transcription(text: "", duration: 0, realtimeDraftText: canonical,
-                          transcriptionStatus: .recoveredAfterInterruption)
+                          transcriptionStatus: .recoveredAfterInterruption),
+            Transcription(text: styled, duration: 0)
         ]
         let pasteboard = NSPasteboard.general
         let savedItems = (pasteboard.pasteboardItems ?? []).map { item in
@@ -58,14 +60,41 @@ struct MainWindowPresentationTests {
 
             // Real mouse events at the scaled Copy control, not its action or
             // AXPress. It must work before expansion, including a recovered draft.
-            try click(window, logicalPoint: NSPoint(x: 916, y: 20))
+            try click(window, logicalPoint: NSPoint(x: 768, y: 20))
             #expect(pasteboard.string(forType: .string) == canonical)
             #expect(expanded == 0 && checked == 0)
-            #expect(row.text.isEmpty || row.text == canonical)
+            let savedSource = row.historyDisplayText
+            try click(window, logicalPoint: NSPoint(x: 859, y: 20))
+            #expect(pasteboard.string(forType: .string) ==
+                HistoryContextPresentation.copyText(savedSource, format: .latex))
+            #expect(pasteboard.string(forType: .string)?.contains("\\textsf") == true)
+            #expect(expanded == 0 && checked == 0)
+            #expect(row.historyDisplayText == savedSource)
+
+            // Optional native fixture artifact for a visual check, using only
+            // synthetic test content and never a user's saved History.
+            if row.text == styled,
+               let path = ProcessInfo.processInfo.environment["VIPP_TEST_HISTORY_COPY_SNAPSHOT"],
+               let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                try bitmap.representation(using: .png, properties: [:])?
+                    .write(to: URL(fileURLWithPath: path))
+            }
 
             // The independent entry opener still receives clicks under zoom.
             try click(window, logicalPoint: NSPoint(x: 300, y: 20))
             #expect(expanded == 1 && checked == 0)
+        }
+
+        var selected = 0, checked = 0
+        let row = Transcription(text: styled, duration: 0)
+        try withWindow(TranscriptionListItem(transcription: row, isSelected: false, isChecked: false,
+            onSelect: { selected += 1 }, onToggleCheck: { checked += 1 })) { window in
+            try click(window, logicalPoint: NSPoint(x: 892, y: 30))
+            #expect(pasteboard.string(forType: .string) == canonical)
+            try click(window, logicalPoint: NSPoint(x: 926, y: 30))
+            #expect(pasteboard.string(forType: .string) == styled)
+            #expect(selected == 0 && checked == 0)
         }
     }
 
@@ -79,7 +108,7 @@ struct MainWindowPresentationTests {
         try withWindow(HistoryCardRow(transcription: row, isExpanded: false, isChecked: false,
             onToggleExpand: { expanded += 1 }, onToggleCheck: { checked += 1 },
             onShowInfo: {}, onRetry: { retries += 1 })) { window in
-            try click(window, logicalPoint: NSPoint(x: 878, y: 20))
+            try click(window, logicalPoint: NSPoint(x: 730, y: 20))
             #expect(retries == 1 && expanded == 0 && checked == 0)
         }
     }
@@ -139,13 +168,19 @@ struct MainWindowPresentationTests {
         }
         try withWindow(HistoryDraftHeader(title: "Live draft at exit", text: xml,
                                           copyIdentifier: "test-draft-copy")) { window in
-            try click(window, logicalPoint: NSPoint(x: 936, y: 14))
+            try click(window, logicalPoint: NSPoint(x: 788, y: 14))
             #expect(pasteboard.string(forType: .string) == xml)
+            try click(window, logicalPoint: NSPoint(x: 879, y: 14))
+            #expect(pasteboard.string(forType: .string) ==
+                HistoryContextPresentation.copyText(xml, format: .latex))
         }
         pasteboard.clearContents()
         try withWindow(HistoryRecoveredCodexView(text: xml)) { window in
-            try click(window, logicalPoint: NSPoint(x: 936, y: 14))
+            try click(window, logicalPoint: NSPoint(x: 788, y: 14))
             #expect(pasteboard.string(forType: .string) == xml)
+            try click(window, logicalPoint: NSPoint(x: 879, y: 14))
+            #expect(pasteboard.string(forType: .string) ==
+                HistoryContextPresentation.copyText(xml, format: .latex))
         }
     }
 

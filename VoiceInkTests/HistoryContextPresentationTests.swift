@@ -88,9 +88,34 @@ struct HistoryContextPresentationTests {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         let inline = try String(contentsOf: root.appendingPathComponent("VoiceInk/Views/History/InlineHistoryView.swift"), encoding: .utf8)
         let detail = try String(contentsOf: root.appendingPathComponent("VoiceInk/Views/History/TranscriptionDetailView.swift"), encoding: .utf8)
-        #expect(inline.contains("CopyIconButton(textToCopy: displayText)"))
-        #expect(detail.contains("CopyIconButton(textToCopy: text)"))
+        #expect(inline.contains("HistoryCopyButtons(text: displayText"))
+        #expect(detail.contains("HistoryCopyButtons(text: text)"))
         #expect(inline.contains("Text(draft)"))
+    }
+
+    @Test func copyChoicesPreserveWholeContextWithoutRewritingHistory() {
+        let plain = "<speech start_at=\"123\">\nEvery word &amp; symbol 👋\n</speech>\n"
+            + "<app_selection>" + String(repeating: "full context ", count: 2000) + "</app_selection>"
+        let styled = LiveSelectionStyledMath.coloredXML(plain, color: LiveSelectionStyledMath.selectionColor)
+        let row = Transcription(text: styled, duration: 0)
+        #expect(HistoryContextPresentation.copyText(styled, format: .plain) == plain)
+        #expect(HistoryContextPresentation.copyText(styled, format: .latex) == styled)
+        #expect(HistoryContextPresentation.copyText(plain, format: .plain) == plain)
+        #expect(HistoryContextPresentation.document(
+            HistoryContextPresentation.copyText(plain, format: .latex)).plainText == plain)
+        #expect(row.text == styled && row.historyDisplayText == styled)
+        // Legacy overlap XML is coloured natively without containing LaTeX.
+        // It still needs generated formulas for the explicit LaTeX choice.
+        let overlap = "<potential_tts start_at=\"123\">Retained draft</potential_tts>"
+        #expect(HistoryContextPresentation.copyText(overlap, format: .plain) == overlap)
+        #expect(HistoryContextPresentation.copyText(overlap, format: .latex).contains("\\textsf"))
+    }
+
+    @Test func normalCopyDoesNotInterpretUserMathOrMalformedFormatting() {
+        for source in [#"Keep \(x^2\) and \input{private} literal."#,
+                       #"\(\textsf{\color{#67e8f9}unfinished"#, "\t  unstyled\n\nending\n"] {
+            #expect(HistoryContextPresentation.copyText(source, format: .plain) == source)
+        }
     }
 
     @MainActor @Test func nativeAttributesCarryColorsAndItalicMetadata() {

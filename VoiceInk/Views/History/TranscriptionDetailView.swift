@@ -104,7 +104,7 @@ private struct MessageBubble: View {
                         .font(.system(size: 9, weight: .medium))
                         .foregroundColor(AppTheme.Text.muted)
                     Spacer()
-                    CopyIconButton(textToCopy: text)
+                    HistoryCopyButtons(text: text)
                 }
                 .padding(.horizontal, 12)
 

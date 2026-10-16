@@ -3,7 +3,7 @@ import SwiftUI
 
 /// Read-only presentation for the small LaTeX vocabulary Agent Flow emits. History
 /// is not a TeX interpreter: arbitrary commands, HTML and selected source stay inert.
-/// Stored output and Copy remain byte-for-byte unchanged; no migration or API call.
+/// Stored output stays unchanged; copy formatting is an explicit user choice.
 enum HistoryContextPresentation {
     struct Run: Equatable {
         var text: String
@@ -115,6 +115,23 @@ enum HistoryContextPresentation {
         return readable.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    enum CopyFormat { case plain, latex }
+
+    static func copyText(_ source: String, format: CopyFormat) -> String {
+        let parsed = document(source)
+        switch format {
+        case .plain:
+            // Unwrap only our known presentation grammar, never a shortened
+            // list preview or selected authored words. XML/context stays whole.
+            return parsed.plainText
+        case .latex:
+            // Existing styled history is immutable recovery evidence. Reuse it
+            // byte for byte; plain/exit drafts can opt into the same formatter.
+            return source.contains(prefix) && parsed.hasFormatting ? source
+                : LiveSelectionStyledMath.coloredXML(source, color: LiveSelectionStyledMath.speechColor)
+        }
+    }
+
     static func recoveredCodexText(for transcription: Transcription) -> String? {
         guard transcription.transcriptionStatus == TranscriptionStatus.recoveredAfterInterruption.rawValue,
               let draft = transcription.recoverableRealtimeDraftText else { return nil }
@@ -146,6 +163,30 @@ enum HistoryContextPresentation {
         return NSColor(srgbRed: CGFloat((rgb >> 16) & 255) / 255,
                        green: CGFloat((rgb >> 8) & 255) / 255,
                        blue: CGFloat(rgb & 255) / 255, alpha: 1)
+    }
+}
+
+/// Both choices stay outside disclosure/scrolling content. Formatting runs only
+/// on click, not on every History render; neither choice rewrites the saved row.
+struct HistoryCopyButtons: View {
+    let text: String
+    var identifier: String = "history-copy"
+    var showsLatexTitle: Bool = true
+
+    var body: some View {
+        HStack(spacing: 6) {
+            CopyIconButton(textToCopy: text, textTransform: {
+                HistoryContextPresentation.copyText($0, format: .plain)
+            })
+            .accessibilityIdentifier(identifier)
+            CopyIconButton(textToCopy: text, systemImage: "function",
+                           title: showsLatexTitle ? "Copy with LaTeX" : nil,
+                           accessibilityTitle: "Copy with LaTeX", textTransform: {
+                HistoryContextPresentation.copyText($0, format: .latex)
+            })
+            .accessibilityIdentifier(identifier + "-latex")
+        }
+        .fixedSize()
     }
 }
 
@@ -208,8 +249,7 @@ struct HistoryDraftHeader: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundColor(.secondary)
             Spacer()
-            CopyIconButton(textToCopy: text)
-                .accessibilityIdentifier(copyIdentifier)
+            HistoryCopyButtons(text: text, identifier: copyIdentifier)
         }
     }
 }

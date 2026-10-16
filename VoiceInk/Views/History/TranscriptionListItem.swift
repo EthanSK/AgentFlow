@@ -41,6 +41,8 @@ struct TranscriptionListItem: View {
                     .foregroundColor(.primary)
             }
             HistoryAudioRetryButton(transcription: transcription)
+            HistoryCopyButtons(text: transcription.enhancedText ?? transcription.historyDisplayText,
+                               identifier: "history-list-copy-\(transcription.id)", showsLatexTitle: false)
         }
         .padding(10)
         .background {
