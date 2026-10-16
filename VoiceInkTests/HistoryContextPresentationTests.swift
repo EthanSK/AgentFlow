@@ -4,6 +4,16 @@ import Testing
 @testable import VoiceInkPlusPlus
 
 struct HistoryContextPresentationTests {
+    @Test func copyActionUsesFullFormattingLabelAndContentSizedWidth() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let presentation = try String(contentsOf: root.appendingPathComponent("VoiceInk/Views/History/HistoryContextPresentation.swift"), encoding: .utf8)
+        let button = try String(contentsOf: root.appendingPathComponent("VoiceInk/Views/Common/CopyIconButton.swift"), encoding: .utf8)
+        #expect(presentation.contains("title: showsLatexTitle ? \"Copy with LaTeX formatting\" : nil"))
+        #expect(presentation.contains("accessibilityTitle: \"Copy with LaTeX formatting\""))
+        #expect(button.contains("title == nil ? 28 : nil"))
+        #expect(!button.contains("title == nil ? 28 : 142"))
+    }
+
     @Test func listPreviewRemovesOnlyPresentationAndDuplicateTimeline() {
         let source = #"\(\textsf{\color{#70fad8}Read}\) \(\textsf{\color{#70fafa}this}\)"#
             + "\n\n" + #"\(\textsf{\color{#94a3b8}\textit{<agent\_flow\_context\ preview="authored\_text\_above">}}\)"#

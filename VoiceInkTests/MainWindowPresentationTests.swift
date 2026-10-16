@@ -60,16 +60,21 @@ struct MainWindowPresentationTests {
 
             // Real mouse events at the scaled Copy control, not its action or
             // AXPress. It must work before expansion, including a recovered draft.
-            try click(window, logicalPoint: NSPoint(x: 768, y: 20))
+            try click(window, identifier: "history-copy-\(row.id)")
             #expect(pasteboard.string(forType: .string) == canonical)
             #expect(expanded == 0 && checked == 0)
             let savedSource = row.historyDisplayText
-            try click(window, logicalPoint: NSPoint(x: 859, y: 20))
+            try click(window, identifier: "history-copy-\(row.id)-latex")
             #expect(pasteboard.string(forType: .string) ==
                 HistoryContextPresentation.copyText(savedSource, format: .latex))
             #expect(pasteboard.string(forType: .string)?.contains("\\textsf") == true)
             #expect(expanded == 0 && checked == 0)
             #expect(row.historyDisplayText == savedSource)
+
+            let preview = try accessibilityFrame(window, identifier: "history-preview-\(row.id)")
+            let copy = try accessibilityFrame(window, identifier: "history-copy-\(row.id)-latex")
+            #expect(preview.width >= MainWindowLayout.minimumSize.width - 2)
+            #expect(preview.maxY <= copy.minY)
 
             // Optional native fixture artifact for a visual check, using only
             // synthetic test content and never a user's saved History.
@@ -90,11 +95,15 @@ struct MainWindowPresentationTests {
         let row = Transcription(text: styled, duration: 0)
         try withWindow(TranscriptionListItem(transcription: row, isSelected: false, isChecked: false,
             onSelect: { selected += 1 }, onToggleCheck: { checked += 1 })) { window in
-            try click(window, logicalPoint: NSPoint(x: 892, y: 30))
+            try click(window, identifier: "history-list-copy-\(row.id)")
             #expect(pasteboard.string(forType: .string) == canonical)
-            try click(window, logicalPoint: NSPoint(x: 926, y: 30))
+            try click(window, identifier: "history-list-copy-\(row.id)-latex")
             #expect(pasteboard.string(forType: .string) == styled)
             #expect(selected == 0 && checked == 0)
+            let preview = try accessibilityFrame(window, identifier: "history-list-preview-\(row.id)")
+            let copy = try accessibilityFrame(window, identifier: "history-list-copy-\(row.id)-latex")
+            #expect(preview.width >= MainWindowLayout.minimumSize.width - 24 - 2)
+            #expect(preview.maxY <= copy.minY)
         }
     }
 
@@ -108,7 +117,7 @@ struct MainWindowPresentationTests {
         try withWindow(HistoryCardRow(transcription: row, isExpanded: false, isChecked: false,
             onToggleExpand: { expanded += 1 }, onToggleCheck: { checked += 1 },
             onShowInfo: {}, onRetry: { retries += 1 })) { window in
-            try click(window, logicalPoint: NSPoint(x: 730, y: 20))
+            try click(window, identifier: "history-retry-\(row.id)")
             #expect(retries == 1 && expanded == 0 && checked == 0)
         }
     }
@@ -168,17 +177,17 @@ struct MainWindowPresentationTests {
         }
         try withWindow(HistoryDraftHeader(title: "Live draft at exit", text: xml,
                                           copyIdentifier: "test-draft-copy")) { window in
-            try click(window, logicalPoint: NSPoint(x: 788, y: 14))
+            try click(window, identifier: "test-draft-copy")
             #expect(pasteboard.string(forType: .string) == xml)
-            try click(window, logicalPoint: NSPoint(x: 879, y: 14))
+            try click(window, identifier: "test-draft-copy-latex")
             #expect(pasteboard.string(forType: .string) ==
                 HistoryContextPresentation.copyText(xml, format: .latex))
         }
         pasteboard.clearContents()
         try withWindow(HistoryRecoveredCodexView(text: xml)) { window in
-            try click(window, logicalPoint: NSPoint(x: 788, y: 14))
+            try click(window, identifier: "history-recovered-codex-copy")
             #expect(pasteboard.string(forType: .string) == xml)
-            try click(window, logicalPoint: NSPoint(x: 879, y: 14))
+            try click(window, identifier: "history-recovered-codex-copy-latex")
             #expect(pasteboard.string(forType: .string) ==
                 HistoryContextPresentation.copyText(xml, format: .latex))
         }
@@ -212,6 +221,36 @@ struct MainWindowPresentationTests {
         let scale = MainWindowLayout.defaultZoom
         let point = NSPoint(x: logicalPoint.x * scale,
                             y: MainWindowLayout.minimumSize.height - logicalPoint.y * scale)
+        try click(window, windowPoint: point)
+    }
+
+    // Query only our hosted synthetic fixture. Resolve actual native geometry,
+    // so a longer localized label cannot silently move the test's click target.
+    @MainActor private func accessibilityFrame(_ window: NSWindow, identifier: String) throws -> NSRect {
+        var seen = Set<ObjectIdentifier>()
+        func find(_ object: NSObject) -> NSObject? {
+            guard seen.insert(ObjectIdentifier(object)).inserted else { return nil }
+            if object.responds(to: NSSelectorFromString("accessibilityIdentifier")),
+               object.value(forKey: "accessibilityIdentifier") as? String == identifier { return object }
+            if object.responds(to: NSSelectorFromString("accessibilityChildren")),
+               let children = object.value(forKey: "accessibilityChildren") as? [NSObject] {
+                for child in children { if let match = find(child) { return match } }
+            }
+            return nil
+        }
+        let node = try #require(find(window), "Missing fixture control: \(identifier)")
+        let value = try #require(node.value(forKey: "accessibilityFrame") as? NSValue)
+        return value.rectValue
+    }
+
+    @MainActor private func click(_ window: NSWindow, identifier: String) throws {
+        let frame = try accessibilityFrame(window, identifier: identifier)
+        #expect(frame.width > 0 && frame.height > 0)
+        let point = window.convertPoint(fromScreen: NSPoint(x: frame.midX, y: frame.midY))
+        try click(window, windowPoint: point)
+    }
+
+    @MainActor private func click(_ window: NSWindow, windowPoint point: NSPoint) throws {
         func event(_ type: NSEvent.EventType) throws -> NSEvent {
             try #require(NSEvent.mouseEvent(with: type, location: point,
                 modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,

@@ -478,54 +478,64 @@ struct HistoryCardRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-                Toggle("", isOn: Binding(
-                    get: { isChecked },
-                    set: { _ in onToggleCheck() }
-                ))
-                .toggleStyle(CircularCheckboxStyle())
-                .labelsHidden()
-
-                Button(action: onToggleExpand) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(transcription.timestamp, format: .dateTime.month(.abbreviated).day().hour().minute())
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.secondary)
-
-                            if !isExpanded {
-                                Text(HistoryContextPresentation.listPreview(transcription.enhancedText ?? transcription.historyDisplayText))
-                                    .font(.system(size: 13))
-                                    .lineLimit(2)
-                                    .foregroundColor(.primary)
-                            }
-                        }
-                        Spacer()
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-
-                // Copy stays available while collapsed and uses the same complete
-                // selected-tab payload as the expanded entry, never listPreview.
-                // Separate buttons keep Copy/checkbox clicks from expanding it.
-                HistoryAudioRetryButton(transcription: transcription, actionOverride: onRetry)
-                HistoryCopyButtons(text: displayText, identifier: "history-copy-\(transcription.id)")
-
-                Button(action: onToggleExpand) {
-                    Image(systemName: "chevron.right")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundColor(.secondary)
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                        .animation(.easeInOut(duration: 0.2), value: isExpanded)
-                }
-                .buttonStyle(.plain)
-            }
+            header
 
             if isExpanded {
                 expandedContent
                     .padding(.top, 10)
+            } else {
+                // Actions own only the header. A separate full-width preview
+                // must not lose a column to Copy, Retry or the checkbox.
+                Button(action: onToggleExpand) {
+                    Text(HistoryContextPresentation.listPreview(transcription.enhancedText ?? transcription.historyDisplayText))
+                        .font(.system(size: 13))
+                        .lineLimit(2)
+                        .foregroundColor(.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("history-preview-\(transcription.id)")
+                .padding(.top, 4)
             }
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Toggle("", isOn: Binding(
+                get: { isChecked },
+                set: { _ in onToggleCheck() }
+            ))
+            .toggleStyle(CircularCheckboxStyle())
+            .labelsHidden()
+
+            Button(action: onToggleExpand) {
+                HStack {
+                    Text(transcription.timestamp, format: .dateTime.month(.abbreviated).day().hour().minute())
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                    Spacer()
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            // Copy stays available while collapsed and uses the same complete
+            // selected-tab payload as the expanded entry, never listPreview.
+            // Separate buttons keep Copy/checkbox clicks from expanding it.
+            HistoryAudioRetryButton(transcription: transcription, actionOverride: onRetry)
+            HistoryCopyButtons(text: displayText, identifier: "history-copy-\(transcription.id)")
+
+            Button(action: onToggleExpand) {
+                Image(systemName: "chevron.right")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundColor(.secondary)
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    .animation(.easeInOut(duration: 0.2), value: isExpanded)
+            }
+            .buttonStyle(.plain)
         }
     }
 

@@ -180,8 +180,8 @@ struct HistoryCopyButtons: View {
             })
             .accessibilityIdentifier(identifier)
             CopyIconButton(textToCopy: text, systemImage: "function",
-                           title: showsLatexTitle ? "Copy with LaTeX" : nil,
-                           accessibilityTitle: "Copy with LaTeX", textTransform: {
+                           title: showsLatexTitle ? "Copy with LaTeX formatting" : nil,
+                           accessibilityTitle: "Copy with LaTeX formatting", textTransform: {
                 HistoryContextPresentation.copyText($0, format: .latex)
             })
             .accessibilityIdentifier(identifier + "-latex")

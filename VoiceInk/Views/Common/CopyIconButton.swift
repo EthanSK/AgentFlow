@@ -16,7 +16,9 @@ struct CopyIconButton: View {
             }
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(copied ? AppTheme.Status.positive : AppTheme.Selection.foreground)
-                .frame(width: title == nil ? 28 : 142, height: 28)
+                .frame(width: title == nil ? 28 : nil, height: 28)
+                .padding(.horizontal, title == nil ? 0 : 10)
+                .fixedSize(horizontal: true, vertical: false)
                 .background(
                     RoundedRectangle(cornerRadius: AppTheme.Radius.control, style: .continuous)
                         .fill(AppTheme.Surface.window.opacity(0.92))
