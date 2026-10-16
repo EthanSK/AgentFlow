@@ -1,5 +1,27 @@
 # Learnings
 
+## 2026-10-16 — Ordered recorder windows are not a visible startup acknowledgement
+
+Source investigation of native snapshot `0bd18cc2858f5c1366fd8690a90a960d2da8dcc9`
+found two distinct gaps before the first recorder content. Primary's
+`reserveRecordingStartAfterLaunchReset` joins launch cleanup and runs the engine's
+passive Next-only target capture before `toggleRecorderPanel` shows a window.
+Mini and Notch then order transparent panels, but their stack views render only
+real session cards or an assistant response. An empty start therefore has no
+painted black card until `startNewSession` appends one, after permission, an older
+delivery lease and any resource-cleanup wait.
+
+`isVisible`, frame intersection and `displayIfNeeded` establish an ordered window,
+not nontransparent startup pixels or microphone readiness. Treat command receipt,
+first painted HUD, capture startup and first recognized speech as separate signals.
+Keep the real reservation/destination/cancellation boundaries; do not insert a fake
+recording session or move command-time target capture merely to satisfy a visual
+check. Both window managers already reuse hosts when the display set is unchanged.
+
+This is verified source-path evidence, not measured live latency or a shipped
+acknowledgement change. No native source was changed or app restarted in this
+investigation; the next patch still requires Mini tests and real rendering checks.
+
 ## 2026-10-16 — History needs distinct normal and LaTeX copy choices
 
 Ethan requested normal Copy plus a top-level `Copy with LaTeX` action. The old
