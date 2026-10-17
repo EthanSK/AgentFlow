@@ -1,5 +1,22 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-10-17 — Infer a recorder leak from in-process text-view weak references — REJECTED
+
+**Failure condition:** A Mini test expected detached recorder editors and their
+Undo managers to disappear after an autorelease pool and a run-loop turn. It
+retained all 30 instances even after explicit responder release and Undo clearing.
+The decisive control also retained five untouched ordinary `NSTextView` objects
+and five recorder subclasses that had never been attached or edited. The fixture
+does not distinguish test/AppKit retention from a production ownership leak.
+**Use instead:** Preserve bounded live footprint trends and native leak reports,
+then establish an allocation/retention path with an independent control before
+changing native Undo or editor lifecycle. The speculative detach-time Undo clear
+and invalid regression were removed; the installed editor behavior was untouched.
+**Reconsider only if:** A disposable native harness first releases the ordinary
+AppKit control and proves a recorder-specific persistent path, or a live
+allocation backtrace independently identifies that path. A failing weak reference
+alone is not sufficient.
+
 ## 2026-10-17 — Resolve SwiftUI fixture buttons from in-process AX children — REJECTED
 
 **Failure condition:** The Mini's hosted-window unit fixture rendered real Copy

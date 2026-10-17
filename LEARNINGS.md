@@ -1,5 +1,53 @@
 # Learnings
 
+## 2026-10-17 — Expired and post-reservation captures amplify startup stalls
+
+Counts-only traces of installed 433 showed two pre-chord full-window scans over
+3,815 nodes (1,132 ms and 978 ms), followed by the accepted shortcut handler
+2,193 ms after its receipt and another 439 ms reservation capture. The first
+black frame arrived about 2.7 seconds after receipt. A separate process sample
+again found the main thread waiting for cross-process AX reads. Opus independently
+traced the same pre-existing path; ordinary modifier keys and the new release-only
+voice alias can also reach it. This is not proof that a wand event was dropped.
+
+Snapshot `aaa122429fde562f508f9170438304ddf3f02c3b` (candidate 434) skips a
+partial-modifier callback once its receipt is outside the existing 0.5-second
+staging window, before clearing or reading a target. It also skips staging once
+the engine owns a start reservation and has already frozen that target. Keep the
+full fresh completed-chord capture, original observation timestamp, fingerprint
+and both Next identities; never make an expired scan fresh by timestamping its
+completion. Primary still owns no saved destination. These guards remove
+redundant work, not the first valid synchronous scan or all OS scheduling delay.
+
+The Mac was heavily loaded by independent Codex/Nx/VM work; none was stopped.
+Twenty-four bounded samples showed recorder RSS falling from 255 MiB to 67 MiB,
+not monotonic growth. Two native leak scans reported the same 19,856 bytes in
+small XPC/Undo groups. The quiet receiver used about 14 MiB. This supports neither
+a large growing Agent Flow leak nor Magic Wand as the demonstrated cause; it
+does not rule out longer-term leaks or every indirect interaction. The separate
+failed-approaches entry records why the in-process editor-retirement fixture
+could not establish a production Undo leak. No Undo change was retained.
+
+The final source passed 124 focused tests and all 655 tests in 22 suites through
+canonical Mini Xcode actions. The two new guards are
+`delayedModifierCaptureCannotRepeatAnExpiredAXScan` and
+`reservedStartRejectsFurtherPreChordCaptureWithoutChangingItsTarget`; Primary,
+both Next routes, full fingerprints, HUD-only partials and shortcut aliases
+also passed. The universal Release is signed with VoiceInk Local Signing,
+CDHash `479e6f097e70006abb0dfe2b418ae9b5e3d510f9`, executable SHA-256
+`3c7ec44de9a07bc7023026bf144bb4603b2ecc3d549dc3e93123db205df55149`,
+and ZIP SHA-256 `70ad5649ffd491ba31bf0edccf60b7fc048ab9901348a8ad968245f882e0d64d`.
+Deep/strict signing and explicit outer Automation/audio-input entitlements pass.
+Build 434 installed at `/Applications/AgentFlow.app` after the real five-second
+heads-up and an all-session cooperative idle quit. Installed signature, executable,
+both shortcuts, selected input-device digest, icon and original VoiceInk checksum
+verified; 433 remains in a verified rollback ZIP and Trash. The first five-second
+receiver check returned ECONNREFUSED while the app initialized, then five successive
+passive probes returned zero. Do not restart a healthy new process on that single
+early observation; bounded readiness observation is separate from successful launch.
+No recording command was injected. Live post-change first-frame latency remains
+unverified; the first valid AX scan still precedes the startup shell.
+
 ## 2026-10-17 — Voice shortcut aliases need Primary lifecycle and clean release
 
 Ethan requested Shift–Option–Command for Agent Flow speech-to-text, alongside
