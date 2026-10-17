@@ -10,19 +10,32 @@ Quartz installed. The **Live** window opens on the built-in MacBook display only
 reader or event monitor and deliberately ignores clicks outside its own buttons.
 
 Click the main input, side input, then each chat body yourself. The viewer shows
-**Clicked pane** and **Keyboard input** separately, plus Same pane, Different
-panes, Different windows, or Not enough evidence. The event counter distinguishes
+**Clicked pane**, **Focused pane** and **Editable input focused** / **No editable
+input focused** separately, plus Same pane, Different panes, Different windows,
+or Not enough evidence. Clicking a Conversation region can identify its pane
+without claiming that its input has focus. The event counter distinguishes
 no received click from an Unknown classification. This is a snapshot after mouse
 release plus 90 ms, not continuous keyboard focus tracking; Tab is not monitored.
-A public AXIdentifier/AXDOMIdentifier containing an
-explicit main-chat/side-chat marker can identify a pane; none is assumed to exist
-in a particular Codex version. The metadata lists the clicked element and at most
-24 parents, not a full chat-tree scan. Focus additionally requires a confirmed
-editable leaf with AXFocused=true and unchanged system focused-element identity
-across that read. A pane outline or clicked message alone is not that evidence.
-All reads run on a worker, with a per-path time budget checked at each attribute,
-not the HUD. Unknown, missing permission, other-app focus, incomplete ancestors,
-cycles, timeouts and limit exhaustion remain explicit; there is no retry/poll loop.
+A public AXIdentifier/AXDOMIdentifier containing an explicit main-chat/side-chat
+marker can identify a pane. The measured ChatGPT.app 26.1013.31256 / 20586 profile
+also recognises a Conversation region under a `-chat-panel` container (Main chat)
+or `app-shell-tab-panel-app-shell-tab:<number>` AXTabPanel (Side chat). Other
+host/version tuples do not inherit that assumption. A generic panel without a
+Conversation region is not identified as a side chat. The metadata lists at most
+48 elements, not a full chat-tree scan. Focus uses the click owner's app element,
+not the failing system-wide focus query, and rechecks the same element and active
+app. Editable input additionally requires a confirmed editable leaf and bounds.
+A pane outline or clicked message alone is not that evidence.
+If a hit-test returns only a window-sized wrapper, a freshly focused Conversation
+region in the same window can identify the click only when its own bounds contain
+the captured click. A remembered input, a different window or stale focus cannot
+supply that fallback. The UI labels this different evidence explicitly.
+All reads run on a worker, with a per-path 0.85-second budget checked at each
+attribute, including a reserved final focus recheck, not the HUD. Incomplete
+ancestors retain safe evidence with an explicit partial-path warning only when
+window identity/bounds and (for focus) the same focused element are verified.
+Unknown, missing permission, other-app focus, cycles and timeouts remain explicit;
+there is no retry/poll loop, descendant scan, focus write, click or paste.
 
 If there is no explicit marker, choose an ancestor container and label it Main
 chat or Side chat. Subsequent hits inside that region are marked **Learned
@@ -52,8 +65,9 @@ Quit stops the helper. No native Agent Flow build, update or restart is needed.
   can leave another composer remembered/focused; this viewer never fixes it.
 - Copy diagnostics after reproducing. Only the last 20 snapshots are retained in
   memory. Copy exports roles, availability/counts, app version, failure codes,
-  timings and classifications, not message values, raw IDs, titles, paths or
-  coordinates. Earlier misses keep their original classification after teaching.
+  timings, safe marker-presence flags, partial-path/focus-recheck states and
+  classifications, not message values, raw IDs, titles, paths or coordinates.
+  Earlier misses keep their original classification after teaching.
 - Do not infer main/side from the most recent active chat event, left/right
   position, whole-window geometry, or a successful API return. A safe production
   fix needs separate exact pane-to-composer proof and end-to-end acceptance.
@@ -62,6 +76,11 @@ This is for Ethan's own interactive inspection, not an agent automation interfac
 or a workaround for a Computer Use refusal. Do not capture/read its live Codex
 output as an agent or automate Codex through it. Use fixtures for validation.
 
-Validate with `python3 -m unittest -v test_pane_model` on the Mini, and exercise the
+Validate with `python3 -m unittest -v test_pane_model test_ax_reader` on the Mini,
+and exercise the
 disposable Demo UI without inspecting live Codex. Synthetic evidence is not live
 Codex acceptance. The helper has no effect on the installed native Agent Flow.
+The fake-AX adapter tests cover deep paths, the app-owned focus query, partial
+reads, the reserved recheck, changed focus/app, and balanced reference releases;
+they never contact the live Accessibility tree. Demo also includes Chat area and
+Partial read cases. Leave **Live**, never Demo, as the user-operated handoff.

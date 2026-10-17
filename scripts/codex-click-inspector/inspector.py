@@ -16,7 +16,7 @@ import AppKit as K
 import Quartz as Q
 import objc
 from Foundation import NSObject, NSTimer, NSBundle
-from pane_model import Node, PaneModel, Rect, Sample, Observation, Diagnostics, describe
+from pane_model import Node, PaneModel, Rect, Sample, Observation, Diagnostics, describe, MAX_ANCESTORS
 
 OPTIONS = None
 
@@ -40,7 +40,9 @@ class AXReader:
             fn.restype, fn.argtypes = result, list(args)
             return fn
         self.release = bind(self.cf, "CFRelease", None, ptr)
+        self.retain = bind(self.cf, "CFRetain", ptr, ptr)
         self.hash = bind(self.cf, "CFHash", C.c_ulong, ptr)
+        self.equal = bind(self.cf, "CFEqual", C.c_bool, ptr, ptr)
         self.type_id = bind(self.cf, "CFGetTypeID", C.c_ulong, ptr)
         self.string_type = bind(self.cf, "CFStringGetTypeID", C.c_ulong)
         self.bool_type = bind(self.cf, "CFBooleanGetTypeID", C.c_ulong)
@@ -48,6 +50,7 @@ class AXReader:
         self.string = bind(self.cf, "CFStringCreateWithCString", ptr, ptr, C.c_char_p, C.c_uint32)
         self.get_string = bind(self.cf, "CFStringGetCString", C.c_bool, ptr, ptr, C.c_long, C.c_uint32)
         self.system = bind(self.ax, "AXUIElementCreateSystemWide", ptr)()
+        self.create_app = bind(self.ax, "AXUIElementCreateApplication", ptr, C.c_int)
         self.attr = bind(self.ax, "AXUIElementCopyAttributeValue", C.c_int, ptr, ptr, C.POINTER(ptr))
         self.hit = bind(self.ax, "AXUIElementCopyElementAtPosition", C.c_int, ptr, C.c_float, C.c_float, C.POINTER(ptr))
         self.get_pid = bind(self.ax, "AXUIElementGetPid", C.c_int, ptr, C.POINTER(C.c_int))
@@ -57,14 +60,14 @@ class AXReader:
         self.timeout = bind(self.ax, "AXUIElementSetMessagingTimeout", C.c_int, ptr, C.c_float)
         self.trusted = bind(self.ax, "AXIsProcessTrusted", C.c_bool)
         self.keys = {name: self.string(None, name.encode(), 0x08000100) for name in
-                     ("AXRole", "AXIdentifier", "AXDOMIdentifier", "AXParent", "AXWindow", "AXPosition", "AXSize",
+                     ("AXRole", "AXSubrole", "AXDescription", "AXIdentifier", "AXDOMIdentifier", "AXParent", "AXWindow", "AXPosition", "AXSize",
                       "AXFocusedUIElement", "AXFocused", "AXEditable", "AXValue", "AXSelectedText")}
         self.timeout(self.system, 0.08)
         self.deadline, self.errors = 0, []
 
     def copy(self, element, name):
         # Budget EVERY attribute, not just the loop: a slow app must not turn
-        # 24 ancestors times several 60 ms reads into a many-second backlog.
+        # dozens of ancestors into a many-second backlog.
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
             return None
@@ -132,22 +135,35 @@ class AXReader:
 
     def sample(self, x, y, expected_pid, focus=False):
         started = time.monotonic()
-        self.deadline, self.errors = started + 0.85, []
+        # Reserve the last 100ms for a fresh same-app focus/owner check even when
+        # the ancestry hits its budget. A partial path must not hide changed focus.
+        final_deadline = started + 0.85
+        self.deadline, self.errors = started + 0.75, []
         if not self.trusted():
             return Sample(expected_pid, 0, None, x, y, (), "Accessibility access needed")
+        if self.frontmost_pid() != expected_pid:
+            return Sample(expected_pid, 0, None, x, y, (), "Click owner changed")
+        app_element = self.create_app(expected_pid) if focus else None
         element = C.c_void_p()
         if focus:
-            element.value = self.copy(self.system, "AXFocusedUIElement")
+            # System-wide focus reads failed in the supplied live report.
+            # Query the already-verified click owner's public app element, never
+            # discover or activate another app as a fallback.
+            element.value = self.copy(app_element, "AXFocusedUIElement") if app_element else None
             err = 0 if element.value else -1
         else:
             err = self.hit(self.system, x, y, C.byref(element))
         if err or not element.value:
+            if app_element:
+                self.release(app_element)
             return Sample(expected_pid, 0, None, x, y, (),
                           "Focused element unavailable" if focus else f"Hit-test unavailable ({err})",
                           errors=tuple(self.errors))
         current, nodes, window_key, window_rect = element.value, [], 0, None
-        original = self.hash(current)
+        original = current
+        self.retain(original)
         seen, end, failure = set(), "", ""
+        focus_stable = None
         try:
             pid = C.c_int()
             if self.get_pid(current, C.byref(pid)) or pid.value != expected_pid:
@@ -160,7 +176,7 @@ class AXReader:
                     window_key, window_rect = self.hash(window), self.rect(window)
                 finally:
                     self.release(window)
-            for index in range(24):
+            for index in range(MAX_ANCESTORS):
                 if time.monotonic() >= self.deadline:
                     end, failure = "time-budget", "Read timed out"
                     break
@@ -171,10 +187,16 @@ class AXReader:
                 seen.add(token)
                 self.timeout(current, 0.06)
                 role = self.text(current, "AXRole")
+                subrole = self.text(current, "AXSubrole")
+                # Retain only this structural label, not arbitrary description
+                # text or a chat title. Other AXDescription values are discarded.
+                conversation = (subrole == "AXLandmarkRegion"
+                                and self.text(current, "AXDescription") == "Conversation")
                 node = Node(role, self.text(current, "AXIdentifier"),
                             self.text(current, "AXDOMIdentifier"), self.rect(current),
                             self.boolean(current, "AXFocused") if focus and index == 0 else None,
-                            self.editable(current, role) if focus and index == 0 else None)
+                            self.editable(current, role) if focus and index == 0 else None,
+                            subrole, conversation)
                 nodes.append(node)
                 if node.role == "AXWindow":
                     window_key, window_rect = self.hash(current), node.frame
@@ -190,21 +212,34 @@ class AXReader:
                 end, failure = "ancestor-limit", "Ancestor limit reached"
             if time.monotonic() >= self.deadline:
                 failure = "Read timed out"
+            self.deadline = final_deadline
             if focus:
-                check = self.copy(self.system, "AXFocusedUIElement")
+                check = self.copy(app_element, "AXFocusedUIElement")
                 try:
-                    if not check or self.hash(check) != original:
-                        failure = "Keyboard focus changed during read"
+                    focus_stable = bool(check and self.equal(check, original))
+                    if not focus_stable:
+                        failure = ("Keyboard focus changed during read" if check
+                                   else "Keyboard focus could not be rechecked")
                 finally:
                     if check:
                         self.release(check)
                 if nodes and nodes[0].frame:
                     rect = nodes[0].frame
                     x, y = rect.x + rect.width / 2, rect.y + rect.height / 2
+            if self.frontmost_pid() != expected_pid:
+                failure, focus_stable = "Click owner changed", False
             return Sample(expected_pid, window_key, window_rect, x, y, tuple(nodes), failure,
-                          end, round((time.monotonic() - started) * 1000), tuple(self.errors))
+                          end, round((time.monotonic() - started) * 1000), tuple(self.errors), focus_stable)
         finally:
             self.release(current)
+            self.release(original)
+            if app_element:
+                self.release(app_element)
+
+    @staticmethod
+    def frontmost_pid():
+        app = K.NSWorkspace.sharedWorkspace().frontmostApplication()
+        return app.processIdentifier() if app else None
 
 
 class Inspector(NSObject):
@@ -254,7 +289,7 @@ class Inspector(NSObject):
             K.NSApp.terminate_(None)
             return False
         visible = screen.visibleFrame()
-        width, height = min(720, visible.size.width * 0.8), min(880, visible.size.height * 0.8)
+        width, height = min(720, visible.size.width * 0.8), min(960, visible.size.height * 0.8)
         rect = K.NSMakeRect(visible.origin.x + (visible.size.width - width) / 2,
                             visible.origin.y + (visible.size.height - height) / 2, width, height)
         self.initial_rect = rect
@@ -290,7 +325,8 @@ class Inspector(NSObject):
         self.event_status = label("DEMO · buttons only; Codex clicks are ignored" if OPTIONS.demo else "Starting click monitor…", 14,
                                   K.NSColor.systemOrangeColor() if OPTIONS.demo else K.NSColor.secondaryLabelColor())
         self.result = label("Clicked pane: waiting", 23)
-        self.focus_result = label("Keyboard input: waiting", 23)
+        self.focus_result = label("Focused pane: waiting", 23)
+        self.input_status = label("Input focus: waiting", 16)
         self.comparison = label("Click the main input, side input, then each chat body.", 16)
         self.evidence = label("Each click takes one snapshot after release. Keyboard-only focus changes are not tracked.")
         self.next_check = label("Unknown stays unknown; no destination is guessed.", color=K.NSColor.secondaryLabelColor())
@@ -308,6 +344,7 @@ class Inspector(NSObject):
             demos = K.NSStackView.stackViewWithViews_([])
             demos.setSpacing_(8)
             for title, action in (("Same pane", "demoSame:"), ("Different panes", "demoMismatch:"),
+                                  ("Chat area", "demoConversation:"), ("Partial read", "demoPartial:"),
                                   ("Unknown", "demoUnknown:"), ("Read failure", "demoFailure:")):
                 demos.addArrangedSubview_(K.NSButton.buttonWithTitle_target_action_(title, self, action))
             stack.addArrangedSubview_(demos)
@@ -350,7 +387,8 @@ class Inspector(NSObject):
             self.sequence += 1
             self.last = None
             self.result.setStringValue_("Clicked pane: outside Codex")
-            self.focus_result.setStringValue_("Keyboard input: not sampled")
+            self.focus_result.setStringValue_("Focused pane: not sampled")
+            self.input_status.setStringValue_("Input focus: not sampled")
             self.comparison.setStringValue_("No current Codex snapshot")
             self.evidence.setStringValue_("Click a Codex input to take a fresh snapshot.")
             self.next_check.setStringValue_("No destination is guessed.")
@@ -415,22 +453,25 @@ class Inspector(NSObject):
             return
         pane, reason, focus, focus_reason, relation, next_check = describe(self.model, self.last)
         self.result.setStringValue_(f"Clicked pane: {pane}")
-        self.focus_result.setStringValue_(f"Keyboard input: {focus}")
+        self.focus_result.setStringValue_(f"Focused pane: {focus}")
+        self.input_status.setStringValue_(self.model.input_state(
+            self.last.focus, self.last.host, self.last.version))
         self.comparison.setStringValue_(relation)
         color = {"Main chat": K.NSColor.systemTealColor(), "Side chat": K.NSColor.systemPurpleColor()}.get(pane, K.NSColor.systemOrangeColor())
         self.result.setTextColor_(color)
         self.focus_result.setTextColor_({"Main chat": K.NSColor.systemTealColor(), "Side chat": K.NSColor.systemPurpleColor()}.get(focus, K.NSColor.systemOrangeColor()))
-        self.evidence.setStringValue_(f"Click: {reason}\nInput: {focus_reason}")
+        self.evidence.setStringValue_(f"Click: {reason}\nFocus: {focus_reason}")
         self.next_check.setStringValue_(next_check)
         s = self.last.click
         self.position.setStringValue_(f"Snapshot {self.last.number} · release + {self.last.delay_ms} ms · reads {s.elapsed_ms} / {self.last.focus.elapsed_ms} ms")
-        lines = ["CLICKED ELEMENT → PARENTS", ""]
+        lines = [f"Host: {self.last.host} · {self.last.version}",
+                 "CLICKED ELEMENT → PARENTS", ""]
         for i, node in enumerate(s.nodes):
-            lines += [f"{i} {node.role}", f"  bounds: {node.frame.short() if node.frame else 'unavailable'}",
+            lines += [f"{i} {node.role} {node.subrole}", f"  bounds: {node.frame.short() if node.frame else 'unavailable'}",
                       f"  identifier: {node.identifier or '—'}", f"  DOM identifier: {node.dom_identifier or '—'}", ""]
         lines += ["KEYBOARD-FOCUSED ELEMENT → PARENTS", ""]
         for i, node in enumerate(self.last.focus.nodes):
-            lines += [f"{i} {node.role} · focused={node.focused} · editable={node.editable}",
+            lines += [f"{i} {node.role} {node.subrole} · focused={node.focused} · editable={node.editable}",
                       f"  bounds: {node.frame.short() if node.frame else 'unavailable'}",
                       f"  identifier: {node.identifier or '—'}", f"  DOM identifier: {node.dom_identifier or '—'}"]
         lines += ["", "READ DIAGNOSTICS", f"Click ended: {s.end}; input ended: {self.last.focus.end}",
@@ -445,7 +486,7 @@ class Inspector(NSObject):
         if self.last and self.model.learn(pane, self.last.click, self.containers.indexOfSelectedItem()):
             self.render()
         else:
-            self.evidence.setStringValue_("Choose a smaller container inside the clicked window, not the whole window.")
+            self.evidence.setStringValue_("Use a container inside the clicked window; unavailable or changed reads cannot be labelled.")
 
     def main_(self, sender):
         self.learn("Main chat")
@@ -459,7 +500,8 @@ class Inspector(NSObject):
         self.sequence += 1
         self.last = None
         self.result.setStringValue_("Clicked pane: waiting")
-        self.focus_result.setStringValue_("Keyboard input: waiting")
+        self.focus_result.setStringValue_("Focused pane: waiting")
+        self.input_status.setStringValue_("Input focus: waiting")
         self.comparison.setStringValue_("Samples and pane labels cleared")
         self.evidence.setStringValue_("Click a Codex input to take a fresh snapshot.")
         self.next_check.setStringValue_("Unknown stays unknown; no destination is guessed.")
@@ -475,16 +517,22 @@ class Inspector(NSObject):
         self.next_check.setStringValue_("Diagnostics copied. Paste them in the chat if detection failed.")
 
     @objc.python_method
-    def demo(self, clicked, focused, failure=""):
+    def demo(self, clicked, focused, failure="", editable=True, coarse=False):
         self.sequence += 1
         window = Rect(0, 0, 1200, 800)
         def sample(pane, is_focus):
             rect = Rect(20 if pane == "main-chat" else 820, 650, 330, 90)
-            nodes = (Node("AXTextArea" if is_focus else "AXStaticText", "", "", rect,
-                          True if is_focus else None, True if is_focus else None),
+            nodes = (Node("AXTextArea" if is_focus and editable else "AXGroup", "", "", rect,
+                          True if is_focus else None, editable if is_focus else None,
+                          "AXLandmarkRegion" if is_focus and not editable else "",
+                          is_focus and not editable),
                      Node("AXGroup", pane, "", Rect(0, 0, 800, 800) if pane == "main-chat" else Rect(800, 0, 400, 800)),
                      Node("AXWindow", "", "", window))
-            return Sample(42, 8, window, rect.x + 10, 690, nodes, failure, "window", 4)
+            if coarse and not is_focus:
+                nodes = (Node("AXGroup", "", "", window), Node("AXWindow", "", "", window))
+            return Sample(42, 8, window, rect.x + 10, 690, nodes, failure,
+                          "ancestor-limit" if failure == "Ancestor limit reached" else "window", 4,
+                          focus_stable=True if is_focus else None)
         self.last = Observation(sample(clicked, False), sample(focused, True), self.sequence, host="demo")
         self.diagnostics.append(self.last, self.model)
         self.containers.removeAllItems()
@@ -497,6 +545,12 @@ class Inspector(NSObject):
 
     def demoMismatch_(self, sender):
         self.demo("main-chat", "side-chat")
+
+    def demoConversation_(self, sender):
+        self.demo("main-chat", "main-chat", editable=False, coarse=True)
+
+    def demoPartial_(self, sender):
+        self.demo("main-chat", "side-chat", "Ancestor limit reached")
 
     def demoUnknown_(self, sender):
         self.demo("", "")

@@ -104,6 +104,100 @@ class PaneModelTests(unittest.TestCase):
                       "Keyboard focus belongs to another app", "Accessibility access needed"):
             self.assertEqual(self.model.classify_focus(self.focus(error=error))[0], "Unknown")
 
+    def measured(self, side=False, editable=True, **kwargs):
+        leaf = Node("AXTextArea" if editable else "AXGroup", "", "", Rect(50, 600, 400, 60),
+                    True, editable, "" if editable else "AXLandmarkRegion", not editable)
+        region = Node("AXGroup", "", "", Rect(0, 0, 600, 700), subrole="AXLandmarkRegion", conversation=True)
+        marker = (Node("AXGroup", "", "app-shell-tab-panel-app-shell-tab:68", None, subrole="AXTabPanel")
+                  if side else Node("AXGroup", "", "_r_3rkn_-chat-panel", None))
+        return replace(self.sample, nodes=(leaf,) + (region,) + (Node("AXGroup", "", "", None),) * 30
+                       + (marker, Node("AXWindow", "", "", self.sample.window)), focus_stable=True, **kwargs)
+
+    def classify_measured(self, sample):
+        return self.model.classify(sample, "ChatGPT.app", "26.1013.31256 / 20586")
+
+    def test_actual_main_and_side_markers_beyond_old_depth(self):
+        self.assertEqual(self.classify_measured(self.measured())[0], "Main chat")
+        self.assertEqual(self.classify_measured(self.measured(side=True))[0], "Side chat")
+
+    def test_measured_markers_require_exact_host_and_version(self):
+        for host, version in [("Codex.app", "26.1013.31256 / 20586"), ("ChatGPT.app", "new"), ("", "")]:
+            self.assertEqual(self.model.classify(self.measured(), host, version)[0], "Unknown")
+
+    def test_panel_without_conversation_is_not_a_side_chat(self):
+        sample = self.measured(side=True)
+        sample = replace(sample, nodes=tuple(replace(n, conversation=False) for n in sample.nodes))
+        self.assertEqual(self.classify_measured(sample)[0], "Unknown")
+
+    def test_nearest_side_scope_wins_over_enclosing_main(self):
+        sample = self.measured(side=True)
+        sample = replace(sample, nodes=sample.nodes[:-1] +
+                         (Node("AXGroup", "", "_r_outer_-chat-panel", None), sample.nodes[-1]))
+        self.assertEqual(self.classify_measured(sample)[0], "Side chat")
+
+    def test_conversation_focus_identifies_pane_but_never_claims_input(self):
+        sample = self.measured(editable=False)
+        observation = Observation(sample, sample, 1, host="ChatGPT.app", version="26.1013.31256 / 20586")
+        result = describe(self.model, observation)
+        self.assertEqual((result[0], result[2]), ("Main chat", "Main chat"))
+        self.assertEqual(result[4], "Same pane · no editable input focused")
+        self.assertIn("not an input", result[5])
+        self.assertEqual(self.model.classify_focus(sample, observation.host, observation.version)[0], "Unknown")
+
+    def test_partial_path_keeps_real_marker_and_explicit_warning(self):
+        for error in ("Read timed out", "Ancestor limit reached", "Ancestor path incomplete"):
+            sample = self.measured(error=error)
+            pane, reason = self.classify_measured(sample)
+            self.assertEqual(pane, "Main chat")
+            self.assertIn(error, reason)
+            self.assertEqual(self.model.classify_focus(sample, "ChatGPT.app", "26.1013.31256 / 20586")[0], "Main chat")
+
+    def test_body_click_uses_current_containing_conversation_after_coarse_hit_test(self):
+        focused = self.measured(editable=False)
+        clicked = replace(self.sample, x=100, y=620,
+                          nodes=(Node("AXGroup", "", "", self.sample.window),))
+        result = describe(self.model, Observation(clicked, focused, 1, host="ChatGPT.app",
+                                                  version="26.1013.31256 / 20586"))
+        self.assertEqual(result[0], "Main chat")
+        self.assertIn("region contains click", result[1])
+        self.assertEqual(result[4], "Same pane · no editable input focused")
+        for changed in (replace(focused, focus_stable=False), replace(focused, window_key=9),
+                        self.measured(editable=True)):
+            result = describe(self.model, Observation(clicked, changed, 1, host="ChatGPT.app",
+                                                      version="26.1013.31256 / 20586"))
+            self.assertEqual(result[0], "Unknown")
+        result = describe(self.model, Observation(replace(clicked, x=900), focused, 1,
+                                                  host="ChatGPT.app", version="26.1013.31256 / 20586"))
+        self.assertEqual(result[0], "Unknown")
+
+    def test_partial_path_without_window_or_stable_focus_is_not_proof(self):
+        sample = self.measured(error="Ancestor limit reached")
+        self.assertEqual(self.classify_measured(replace(sample, window=None))[0], "Unknown")
+        self.assertEqual(self.model.classify_focus(replace(sample, focus_stable=None),
+                         "ChatGPT.app", "26.1013.31256 / 20586")[0], "Unknown")
+
+    def test_partial_read_can_learn_only_fresh_in_window_container(self):
+        sample = replace(self.sample, error="Ancestor limit reached")
+        self.assertTrue(self.model.learn("Main chat", sample, 1))
+        self.assertFalse(self.model.learn("Side chat", replace(sample, window=None), 1))
+
+    def test_owner_change_is_fatal_even_with_known_markers(self):
+        self.assertEqual(self.classify_measured(self.measured(error="Click owner changed"))[0], "Unknown")
+
+    def test_export_keeps_deep_safe_metadata_and_original_verdict(self):
+        diagnostics = Diagnostics()
+        sample = self.measured(error="Ancestor limit reached")
+        diagnostics.append(Observation(sample, sample, 1, host="ChatGPT.app", version="26.1013.31256 / 20586"), self.model)
+        report = diagnostics.report(self.model)
+        parsed = json.loads(report)
+        self.assertEqual(parsed["schema"], 3)
+        row = parsed["samples"][0]
+        self.assertTrue(row["focus"]["partial"])
+        self.assertTrue(row["focus"]["focus_stable"])
+        self.assertEqual(len(row["focus"]["nodes"]), 34)
+        self.assertEqual(row["input_state"], "Editable input focused")
+        self.assertNotIn("_r_3rkn_", report)
+
     def test_unknown_contains_next_check_not_guess(self):
         result = describe(self.model, Observation(self.sample, self.sample, 1))
         self.assertEqual(result[4], "Not enough evidence")
@@ -138,6 +232,8 @@ class PaneModelTests(unittest.TestCase):
         self.assertIn("NSEventMaskLeftMouseUp", source)
         self.assertIn("captured + 0.09", source)
         self.assertIn("None if OPTIONS.demo else AXReader()", source)
+        self.assertNotIn('self.copy(self.system, "AXFocusedUIElement")', source)
+        self.assertIn("self.create_app(expected_pid)", source)
 
 
 if __name__ == "__main__":
