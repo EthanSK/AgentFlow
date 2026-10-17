@@ -560,6 +560,11 @@ class RecordingShortcutManager: ObservableObject {
                           !self.engine.hasPendingRecordingStart else {
                         return
                     }
+                    // Original-input capture is unused/off. Do not let partial
+                    // keyboard modifiers scan a chat before the HUD can appear.
+                    guard FocusLockService.recordingStartInputCaptureEnabled else {
+                        return
+                    }
                     // Once Start owns a reservation, its Next-only target is already
                     // frozen. Late modifier callbacks must not scan again ahead of
                     // the committed HUD/audio startup, even while state is still idle.
@@ -576,6 +581,16 @@ class RecordingShortcutManager: ObservableObject {
             onNextTrackKeyDown: { [weak self] in
                 MainActor.assumeIsolated {
                     guard let self else { return false }
+                    // No original composer is captured anymore. This retired
+                    // recording-time Next route is a consumed no-op, not a stop
+                    // into a missing target or a fallback to some other input.
+                    // Check before canceling Primary's pending normal-stop gesture.
+                    if self.engine.recordingState.isRecordingOrPaused,
+                       self.recorderUIManager.isRecorderPanelVisible,
+                       !FocusLockService.recordingStartInputCaptureEnabled {
+                        self.logger.info("Next Track key-down consumed route=recordingStart result=unusedCaptureDisabled")
+                        return true
+                    }
                     // Next owns a different physical gesture and destination route.
                     // Cancel the delayed single-Primary decision first so it cannot
                     // fire after Next has already stopped the same recording.

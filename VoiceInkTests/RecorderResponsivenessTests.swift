@@ -7,6 +7,46 @@ import ApplicationServices
 
 @Suite(.serialized)
 struct RecorderResponsivenessTests {
+    @Test @MainActor func unusedRecordingStartInputCaptureReturnsNilWithoutReadingAX() {
+        #expect(!FocusLockService.recordingStartInputCaptureEnabled)
+        FocusLockService.shared.stageRecordingStartInputBeforeShortcutCompletion()
+        #expect(FocusLockService.shared.captureRecordingStartInputSnapshot() == nil)
+    }
+
+    @Test func unusedRecordingStartCaptureGuardsEveryProductionRead() throws {
+        let engine = try source("VoiceInk/Transcription/Engine/VoiceInkEngine.swift")
+        #expect(engine.contains("if FocusLockService.recordingStartInputCaptureEnabled {\n            focusedInput = FocusLockService.shared.captureRecordingStartInputSnapshot()"))
+        #expect(engine.contains("if FocusLockService.recordingStartInputCaptureEnabled,\n               session.recordingStartFocusedInput == nil"))
+        let manager = try source("VoiceInk/Shortcuts/RecordingShortcutManager.swift")
+        let stage = try #require(manager.range(of: "            onModifierOnlySequenceProgress:"))
+        let next = try #require(manager.range(of: "            onNextTrackKeyDown:", range: stage.upperBound..<manager.endIndex))
+        let body = String(manager[stage.lowerBound..<next.lowerBound])
+        let guardRange = try #require(body.range(of: "guard FocusLockService.recordingStartInputCaptureEnabled else"))
+        let capture = try #require(body.range(of: ".stageRecordingStartInputBeforeShortcutCompletion("))
+        #expect(guardRange.lowerBound < capture.lowerBound)
+        let focus = try source("VoiceInk/Modes/FocusLockService.swift")
+        let completed = try #require(focus.range(of: "    func captureRecordingStartInputSnapshot() -> Target? {"))
+        let completedEnd = try #require(focus.range(of: "    private func captureAuditedOpenAIComposerAtRecordingStart(", range: completed.upperBound..<focus.endIndex))
+        let completedBody = String(focus[completed.lowerBound..<completedEnd.lowerBound])
+        let completedGuard = try #require(completedBody.range(of: "guard Self.recordingStartInputCaptureEnabled else"))
+        let completedRead = try #require(completedBody.range(of: "captureFocusedInputSnapshot("))
+        #expect(completedGuard.lowerBound < completedRead.lowerBound)
+    }
+
+    @Test func disabledRecordingTimeNextDoesNotCancelPrimaryOrUseMissingSavedInput() throws {
+        let manager = try source("VoiceInk/Shortcuts/RecordingShortcutManager.swift")
+        let start = try #require(manager.range(of: "            onNextTrackKeyDown:"))
+        let end = try #require(manager.range(of: "            onPrimaryTypingFocus:", range: start.upperBound..<manager.endIndex))
+        let body = String(manager[start.lowerBound..<end.lowerBound])
+        let disabled = try #require(body.range(of: "!FocusLockService.recordingStartInputCaptureEnabled"))
+        let cancel = try #require(body.range(of: "cancelPendingPrimaryDecisions()"))
+        let stop = try #require(body.range(of: "stopPasteDestination: .recordingStart"))
+        #expect(disabled.lowerBound < cancel.lowerBound)
+        #expect(disabled.lowerBound < stop.lowerBound)
+        #expect(body.contains("unusedCaptureDisabled\")\n                        return true"))
+        #expect(body.contains("retargetMostRecentPendingTranscriptionToFocusedInput()"))
+    }
+
     @Test @MainActor func batchedContextTraversalPreservesBreadthFirstOrderAndDepthLimit() {
         let edges = [0: [1, 2], 1: [2, 3], 2: [0, 4], 3: [5], 4: [6]]
         var observations: [(Int, Bool)] = []

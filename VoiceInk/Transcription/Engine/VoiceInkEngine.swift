@@ -844,8 +844,8 @@ class VoiceInkEngine: NSObject, ObservableObject {
     /// Reserve one prospective recording before the idle-only Primary debounce yields.
     /// The delivery barrier must begin at the physical single-press candidate, not
     /// 0.45 seconds later, so an older FIFO transcript cannot press Return underneath
-    /// the user's new capture intent. Capture the passive Next-only input now as well:
-    /// Electron's exact pre-chord snapshot expires before the debounce timer does.
+    /// the user's new capture intent. Original-input capture is now unused/off;
+    /// reserve lifecycle ownership without reading or saving the current composer.
     /// A matching second click cancels this token without showing UI, touching audio,
     /// pausing media, or posting the YouTube recording-start notification.
     func reserveRecordingStart(microphoneOff: Bool = false) -> UUID? {
@@ -867,7 +867,14 @@ class VoiceInkEngine: NSObject, ObservableObject {
         activeRecordingDeliveryBarrier.beginCapture(owner: requestID)
         let activationTime = Date()
         let captureStartedAt = ProcessInfo.processInfo.systemUptime
-        let focusedInput = FocusLockService.shared.captureRecordingStartInputSnapshot()
+        let focusedInput: FocusLockService.Target?
+        if FocusLockService.recordingStartInputCaptureEnabled {
+            focusedInput = FocusLockService.shared.captureRecordingStartInputSnapshot()
+        } else {
+            // Primary deliberately follows keyboard focus at final delivery. The
+            // unused Next-start feature must not pay for an original-input scan.
+            focusedInput = nil
+        }
         let captureMilliseconds = Int(
             (ProcessInfo.processInfo.systemUptime - captureStartedAt) * 1_000
         )
@@ -1099,7 +1106,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
             }
             // Commit only after the pending-result gesture decision has accepted
             // Start. Render acknowledgement before costly setup, without faking
-            // .starting or moving the command-time Next-only input capture.
+            // .starting. Unused original-input capture remains disabled.
             guard commitRecordingStartPresentation(startRequestID) else {
                 cancelRecordingStartReservation(startRequestID)
                 return
@@ -1121,9 +1128,9 @@ class VoiceInkEngine: NSObject, ObservableObject {
                 assistantSession.reset()
             }
 
-            // This passive recording-start capture exists solely for a possible Next
-            // stop. A normal Primary stop discards it structurally and never enters an
-            // app-specific resolver, even though the user could choose Next later.
+            // This is nil while original-input capture is unused/off. Primary
+            // continues to own no saved input or destination Mode; it follows the
+            // current system-focused input when the final paste is issued.
             let recordingStartFocusedInput = preparedRecordingStart.focusedInput
             let activationTime = preparedRecordingStart.activationTime
             let recordingStartIdentityTask: Task<
@@ -1413,7 +1420,11 @@ class VoiceInkEngine: NSObject, ObservableObject {
                 typingFocusStartID = nil
                 session.typingFocus.requestInitialFocus()
             }
-            if session.recordingStartFocusedInput == nil {
+            // Do not silently revive unused original-input capture after audio
+            // starts. That retry otherwise scans the chat again (or even the HUD)
+            // despite deliberately skipping the shortcut/reservation reads.
+            if FocusLockService.recordingStartInputCaptureEnabled,
+               session.recordingStartFocusedInput == nil {
                 let retryTarget = FocusLockService.shared
                     .captureFocusedInputSnapshot(
                         allowApplicationFallback: true

@@ -5,6 +5,13 @@ import os
 
 @MainActor
 final class FocusLockService: ObservableObject {
+    /// Unused recording-start destination capture is OFF at Ethan's request
+    /// (2026-10-17). Changing inputs while speaking must not require saving or
+    /// fingerprinting the original composer. Keep legacy Next-start machinery
+    /// dormant for reference, not as an automatically enabled preference/fallback.
+    /// Explicit post-stop second-chance capture is a separate decision and remains.
+    static let recordingStartInputCaptureEnabled = false
+
     /// Apple Terminal can reuse one AXTextArea while its selected tab changes. The
     /// native window ID plus TTY is therefore part of the exact Next-button decision;
     /// neither a PID, mutable title, nor retained AX wrapper is a session identity.
@@ -581,6 +588,7 @@ final class FocusLockService: ObservableObject {
     func stageRecordingStartInputBeforeShortcutCompletion(
         eventTime: TimeInterval? = nil
     ) {
+        guard Self.recordingStartInputCaptureEnabled else { return }
         let now = ProcessInfo.processInfo.systemUptime
         // A partial modifier can wait behind an earlier synchronous AX capture.
         // Once it has outlived the same freshness window as its staged target,
@@ -634,6 +642,10 @@ final class FocusLockService: ObservableObject {
     /// and still a descendant of that exact observed ancestor. This prevents a fast
     /// app/task switch from silently latching a different composer.
     func captureRecordingStartInputSnapshot() -> Target? {
+        guard Self.recordingStartInputCaptureEnabled else {
+            stagedRecordingStartInput = nil
+            return nil
+        }
         let completedChordTarget = captureFocusedInputSnapshot(
             allowApplicationFallback: true
         )
