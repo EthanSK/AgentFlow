@@ -50,6 +50,7 @@ enum LiveSelectionTier: String, Equatable, Sendable {
     case focusedElement
     case pointerElement
     case browserScript
+    case telegramRegionImage
 }
 
 enum LiveSelectionTextSource: String, Equatable, Sendable {

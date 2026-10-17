@@ -16,6 +16,7 @@ struct SettingsView: View {
     @AppStorage("hasCompletedOnboardingV2") private var hasCompletedOnboardingV2 = true
     @AppStorage("restoreClipboardAfterPaste") private var restoreClipboardAfterPaste = true
     @AppStorage("clipboardRestoreDelay") private var clipboardRestoreDelay = 2.0
+    @AppStorage(TelegramSelectionImageCapture.preferenceKey) private var telegramHighlightImages = false
     @AppStorage(PasteMethod.userDefaultsKey) private var pasteMethodRawValue = PasteMethod.standard.rawValue
     @State private var showResetOnboardingAlert = false
     @State private var hasCancelRecordingShortcut = ShortcutStore.shortcut(for: .cancelRecorder) != nil
@@ -177,6 +178,13 @@ struct SettingsView: View {
                     }
                     PasteMethod.setCurrent(method)
                 }
+            }
+
+            Section("Selection Context") {
+                Toggle("Telegram highlight images", isOn: $telegramHighlightImages)
+                Text("Save an image of the area I highlight when Telegram cannot provide selected text. Nearby messages may be included. Images are saved locally.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Interface") {

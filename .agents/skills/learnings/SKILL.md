@@ -248,6 +248,15 @@ the resolver regression fixtures prove these traps and safety boundaries; requir
 physical rendered-symbol highlighting before claiming a KaTeX-specific fix.
 
 Keep every separately highlighted block in capture order, including equal speech anchors
+and approved Telegram `app_selection_image` references. Telegram's image fallback is off
+without explicit consent, gesture-triggered only during an attached session, and permitted
+only after its trusted AX reader returns no elements or endpoint hits. Capture one exact
+window's bounded gesture area, not the screen; recheck cancellation, source identity and
+consent before committing. Retain private local pixels without Copy/OCR or selected-word
+claims. Keep this separate from metadata-only native screenshot watching and Telegram's
+non-retaining delivery-identity digest. User-approved privacy alternative — 2026-10-18.
+
+Keep every separately highlighted block in capture order, including equal speech anchors
 and a run with no recognized speech. Those cues form a best-effort reading trail, not a
 replacement for the spoken request or proof of precise timing. Require
 `repeatedHighlightsWithoutSpeechPreserveReadingTrail` and

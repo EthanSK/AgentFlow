@@ -19,7 +19,7 @@ enum HistoryContextPresentation {
         guard source.contains("<") else { return false }
         return AgentFlowPromptViewer.events(source).contains {
             ["speech", "speech_segment", "typed_text", "potential_tts",
-             "app_selection", "codex_selection", "local_screenshot"].contains($0.tag)
+             "app_selection", "codex_selection", "app_selection_image", "local_screenshot"].contains($0.tag)
         }
     }
 
@@ -176,7 +176,7 @@ enum HistoryContextPresentation {
             let events = AgentFlowPromptViewer.events(timeline)
             let authoredTags: Set<String> = ["speech", "speech_segment", "typed_text", "potential_tts"]
             guard events.contains(where: { authoredTags.contains($0.tag)
-                || ["app_selection", "codex_selection", "local_screenshot"].contains($0.tag) }) else { return readable }
+                || ["app_selection", "codex_selection", "app_selection_image", "local_screenshot"].contains($0.tag) }) else { return readable }
             let authored = events.filter { authoredTags.contains($0.tag) }
                 .map { unframed($0.text) }
             let normalizedAuthored = authored.joined(separator: " ").split(whereSeparator: \.isWhitespace).joined(separator: " ")

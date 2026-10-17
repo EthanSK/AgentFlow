@@ -66,6 +66,8 @@ struct LiveSelectionReference: Equatable {
     let truncated: Bool
     private let selectedText: String
     private let screenshotPath: String?
+    private var selectionImagePath: String?
+    private var imagePath: String? { selectionImagePath ?? screenshotPath }
     private var typedText: String?
     private var capturedAt: Date?
     private var runStartedAt: Date?
@@ -145,6 +147,22 @@ struct LiveSelectionReference: Equatable {
         omittedMiddle = false
         truncated = false
         self.selectedText = ""
+    }
+
+    /// Approved Telegram fallback, distinct from a native macOS screenshot and
+    /// from exact selected words. Do not attach made-up text/character counts.
+    init?(telegramSelectionImageURL: URL) {
+        guard telegramSelectionImageURL.isFileURL,
+              telegramSelectionImageURL.path.hasPrefix("/"),
+              !telegramSelectionImageURL.path.contains(where: { $0.isNewline || $0 == "\0" }) else { return nil }
+        screenshotPath = nil
+        selectionImagePath = telegramSelectionImageURL.standardizedFileURL.path
+        preview = "Selection image"
+        characterCount = 0
+        omittedMiddle = false
+        truncated = false
+        selectedText = ""
+        source = .application(name: "Telegram", bundleID: TelegramSelectionImageCapture.bundleID)
     }
 
     func anchored(after spokenText: String) -> Self {
@@ -471,7 +489,7 @@ struct LiveSelectionReference: Equatable {
                                compactMetadata: Bool = false) -> String {
         let base = parts.enumerated().map { offset, part -> String in
             guard case let .reference(reference, _) = part,
-                  let path = reference.screenshotPath else { return canonical[offset] }
+                  let path = reference.imagePath else { return canonical[offset] }
             return canonical[offset] + "\n\n" + LiveSelectionStyledMath.localImageReference(path: path)
         }
         let beforeTimeline = "\n\n"
@@ -495,7 +513,7 @@ struct LiveSelectionReference: Equatable {
                     continue
                 case .authoredXML(_, let authoredColor): color = authoredColor
                 case .reference(let reference, _):
-                    path = reference.screenshotPath
+                    path = reference.imagePath
                     color = path == nil ? LiveSelectionStyledMath.selectionColor : LiveSelectionStyledMath.screenshotColor
                 }
                 // Only whitespace BETWEEN actual tags is scaffolding. All source
@@ -552,7 +570,7 @@ struct LiveSelectionReference: Equatable {
                 color = authoredColor
             case .reference(let reference, _):
                 guard !reference.isTypedText else { return base[offset] }
-                screenshotPath = reference.screenshotPath
+                screenshotPath = reference.imagePath
                 color = screenshotPath == nil ? LiveSelectionStyledMath.selectionColor : LiveSelectionStyledMath.screenshotColor
             }
             var colored = LiveSelectionStyledMath.coloredXML(canonical[offset], color: color)
@@ -573,7 +591,7 @@ struct LiveSelectionReference: Equatable {
     /// already plain in the message, so it never gets a preview.
     private func styledDisplayCopy(index: Int) -> String? {
         guard typedText == nil else { return nil }
-        if screenshotPath != nil {
+        if imagePath != nil {
             return LiveSelectionStyledMath.screenshotPreview(fileName: preview)
         }
         // The caption names where the text was highlighted. It is never the app
@@ -598,6 +616,9 @@ struct LiveSelectionReference: Equatable {
         // Emitted only when the preview paragraph directly above was included.
         let displayCopy = hasDisplayCopy ? " display_copy=\"above\"" : ""
         let timing = capturedAt.map { " captured_at=\"\(Self.timestamp($0))\"" } ?? ""
+        if let selectionImagePath {
+            return "<app_selection_image index=\"\(index)\" source=\"Telegram\" bundle_id=\"ru.keepcoder.Telegram\" path=\"\(Self.xmlEscaped(selectionImagePath))\" scope=\"gesture_area\" exact_selection=\"false\"\(timing)/>"
+        }
         if let screenshotPath {
             return "<local_screenshot path=\"\(Self.xmlEscaped(screenshotPath))\"\(timing)\(displayCopy)/>"
         }
@@ -1513,6 +1534,7 @@ final class LiveSelectionCapture {
             let chromeContext = bundleID == "com.google.Chrome" && Self.isFrontmost(sourcePID)
                 ? await ChromeSelectionContextReader.capture() : nil
             let selectedText: String?
+            var accessibility: LiveSelectionResolution?
             if let chromeContext {
                 selectedText = chromeContext.selectedText
                 LiveSelectionDiagnostics.captured(
@@ -1520,7 +1542,7 @@ final class LiveSelectionCapture {
                     bundleID: bundleID, startedAt: startedAt
                 )
             } else {
-                selectedText = await Self.readSelectedText(
+                let result = await Self.readSelectedText(
                     sourcePID: sourcePID,
                     identity: identity,
                     bundleID: bundleID,
@@ -1530,13 +1552,31 @@ final class LiveSelectionCapture {
                     bridgeInputDirection: bridgeInputDirection,
                     startedAt: startedAt
                 )
+                selectedText = result.text
+                accessibility = result.resolution
             }
             guard !Task.isCancelled else { return }
             guard Self.canRead(identity) else {
                 outcome = "source-changed-during-read"
                 return
             }
-            guard let text = selectedText, let reference = LiveSelectionReference(text) else {
+            let reference: LiveSelectionReference
+            if let text = selectedText, let textReference = LiveSelectionReference(text) {
+                reference = textReference
+            } else if TelegramSelectionImageCapture.mayCapture(
+                enabled: UserDefaults.standard.bool(forKey: TelegramSelectionImageCapture.preferenceKey),
+                sourceBundleID: bundleID, precedesSpeech: precedesSpeech,
+                gesture: gesture, resolution: accessibility), let gesture,
+                let imageURL = await TelegramSelectionImageCapture.capture(identity: identity, gesture: gesture) {
+                guard !Task.isCancelled, Self.canRead(identity), let self, self.isAttached,
+                      let imageReference = LiveSelectionReference(telegramSelectionImageURL: imageURL) else {
+                    TelegramSelectionImageCapture.discard(imageURL)
+                    return
+                }
+                reference = imageReference
+                LiveSelectionDiagnostics.captured(tier: .telegramRegionImage, source: nil,
+                    evidence: .atGesture, attempt: 1, bundleID: bundleID, startedAt: startedAt)
+            } else {
                 outcome = "selection-unavailable"
                 return
             }
@@ -1599,7 +1639,7 @@ final class LiveSelectionCapture {
         bridgeInputKind: String?,
         bridgeInputDirection: String?,
         startedAt: UInt64
-    ) async -> String? {
+    ) async -> (text: String?, resolution: LiveSelectionResolution?) {
         // VS Code's default Monaco editor intentionally exposes no AX text.
         // Better Git proves a matching mouse, keyboard-extension or Select All
         // selection in the focused editor. A stationary Shift-click's range
@@ -1616,7 +1656,7 @@ final class LiveSelectionCapture {
                 tier: .vscodeBridge, source: nil, evidence: .atGesture, attempt: 1,
                 bundleID: bundleID, startedAt: startedAt
             )
-            return text
+            return (text, nil)
         }
         var last = LiveSelectionResolution()
         var attempts = 0
@@ -1625,7 +1665,7 @@ final class LiveSelectionCapture {
                 try? await Task.sleep(nanoseconds: delay)
             }
             guard !Task.isCancelled, canRead(identity) else {
-                return nil
+                return (nil, nil)
             }
             attempts += 1
             last = await LiveSelectionTextReader.resolveAccessibility(
@@ -1647,14 +1687,14 @@ final class LiveSelectionCapture {
                     clickCount: gesture?.clickCount,
                     callbackLagMilliseconds: gesture?.callbackLagMilliseconds
                 )
-                return candidate.text
+                return (candidate.text, last)
             }
             // Without Accessibility trust a re-read cannot succeed.
             if !last.accessibilityTrusted { break }
         }
 
         guard !Task.isCancelled, canRead(identity), isFrontmost(sourcePID) else {
-            return nil
+            return (nil, nil)
         }
         if LiveSelectionBrowserScriptReader.engine(for: bundleID) != nil,
            LiveSelectionBrowserScriptReader.mayReadForGesture(
@@ -1666,12 +1706,12 @@ final class LiveSelectionCapture {
                 tier: .browserScript, source: nil, evidence: nil, attempt: attempts,
                 bundleID: bundleID, startedAt: startedAt
             )
-            return text
+            return (text, last)
         }
         LiveSelectionDiagnostics.unavailable(
             last, attempts: attempts, bundleID: bundleID, startedAt: startedAt
         )
-        return nil
+        return (nil, last)
     }
 
     private static func isFrontmost(_ pid: pid_t) -> Bool {

@@ -123,7 +123,7 @@ enum AgentFlowPromptViewer {
         let text: String
     }
 
-    static let fragmentPattern = #"(?ms)^[\t ]*<(speech|speech_segment|typed_text|potential_tts|app_selection|codex_selection)\b[^>]*>.*?</\1>|^[\t ]*<local_screenshot\b[^>]*?/>"#
+    static let fragmentPattern = #"(?ms)^[\t ]*<(speech|speech_segment|typed_text|potential_tts|app_selection|codex_selection)\b[^>]*>.*?</\1>|^[\t ]*<(?:local_screenshot|app_selection_image)\b[^>]*?/>"#
 
     /// Parse only known, line-delimited top-level fragments, never tags that
     /// merely occur inside a quoted selection. A malformed fragment is shown
@@ -154,7 +154,7 @@ enum AgentFlowPromptViewer {
             let xml = ns.substring(with: match.range)
             if let event = Fragment.parse(xml) {
                 result.append(event)
-                if event.tag == "local_screenshot", let path = event.attributes["path"] {
+                if ["local_screenshot", "app_selection_image"].contains(event.tag), let path = event.attributes["path"] {
                     screenshotReference = LiveSelectionStyledMath.localImageReference(path: path)
                 }
             } else {
@@ -327,6 +327,7 @@ enum AgentFlowPromptViewer {
             case "typed_text": label = "Typed text"; color = LiveSelectionStyledMath.typedColor
             case "potential_tts": label = "Potential ignore"; color = LiveSelectionStyledMath.potentialTTSColor
             case "app_selection", "codex_selection": label = "Selection"; color = LiveSelectionStyledMath.selectionColor
+            case "app_selection_image": label = "Selection image"; color = LiveSelectionStyledMath.selectionColor
             case "local_screenshot": label = "Screenshot"; color = LiveSelectionStyledMath.screenshotColor
             default: label = "Text"; color = LiveSelectionStyledMath.speechColor
             }
@@ -348,7 +349,7 @@ enum AgentFlowPromptViewer {
                     % AuthoredTextRainbow.palette.count
                 content = "<div class=\"payload\" style=\"color:\(color)\">\(escape(displayText))</div>"
             }
-            if event.tag == "local_screenshot", let path = event.attributes["path"] {
+            if ["local_screenshot", "app_selection_image"].contains(event.tag), let path = event.attributes["path"] {
                 let filename = URL(fileURLWithPath: path).lastPathComponent
                 if path.hasPrefix("/"), !path.contains(where: { $0.isNewline || $0 == "\0" }) {
                     content = "<a class=\"screenshot\" href=\"\(escape(URL(fileURLWithPath: path).absoluteString))\">\(escape(filename)) ↗</a>"
@@ -359,7 +360,11 @@ enum AgentFlowPromptViewer {
                         // The original path and all XML remain intact even if
                         // pixels are missing, unsupported or over the viewer's
                         // resource budget. Never imply a blank card is an image.
-                        content += "<p class=\"image-unavailable\">Preview unavailable — open the screenshot above.</p>"
+                        let noun = event.tag == "app_selection_image" ? "image" : "screenshot"
+                        content += "<p class=\"image-unavailable\">Preview unavailable — open the \(noun) above.</p>"
+                    }
+                    if event.tag == "app_selection_image" {
+                        content += "<p class=\"image-unavailable\">Highlighted area; nearby text may be included.</p>"
                     }
                 } else { content = "<div class=\"payload\">\(escape(path))</div>" }
             }
@@ -416,7 +421,7 @@ enum AgentFlowPromptPreview {
             case "speech", "speech_segment": color = LiveSelectionStyledMath.speechColor
             case "typed_text": color = LiveSelectionStyledMath.typedColor
             case "potential_tts": color = LiveSelectionStyledMath.potentialTTSColor
-            case "app_selection", "codex_selection": color = LiveSelectionStyledMath.selectionColor
+            case "app_selection", "codex_selection", "app_selection_image": color = LiveSelectionStyledMath.selectionColor
             case "local_screenshot": color = LiveSelectionStyledMath.screenshotColor
             default: return fragment
             }
