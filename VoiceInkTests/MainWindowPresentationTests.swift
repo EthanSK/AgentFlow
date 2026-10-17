@@ -84,6 +84,31 @@ struct MainWindowPresentationTests {
         }
     }
 
+    @MainActor @Test func mainWindowZoomResizesAfterSwiftUILayoutUpdates() throws {
+        let suite = "MainWindowZoomResize-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = MainWindowZoomStore(defaults: defaults)
+        let manager = WindowManager(zoomStore: store)
+        let window = NSWindow(contentRect: NSRect(origin: NSPoint(x: 100, y: 100),
+            size: MainWindowLayout.minimumSize), styleMask: [.titled, .resizable],
+            backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let host = NSHostingView(rootView: Color.gray.modifier(MainWindowZoom(store: store)))
+        window.contentView = host
+        manager.registerMainWindow(window)
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil); window.close() }
+        settle(host)
+        for scale in [1.2, 0.8, 1.0] {
+            store.setScale(scale)
+            settle(host)
+            #expect(abs(window.contentRect(forFrameRect: window.frame).width - 950 * scale) < 1)
+            #expect(abs(host.frame.width - 950 * scale) < 1)
+            #expect(host.bounds.size == host.frame.size)
+        }
+    }
+
     @MainActor @Test func collapsedHistoryCopyWorksAtEnlargedSizeWithoutExpanding() throws {
         let canonical = "Opening words\n<app_selection source=\"test\">"
             + String(repeating: "Do not lose any of this full context. ", count: 1000)
