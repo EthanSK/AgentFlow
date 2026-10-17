@@ -222,6 +222,27 @@ struct MainWindowPresentationTests {
         }
     }
 
+    @MainActor @Test func expandedHistoryShowsTheFlowMessageAndOnlyRawWordsBelow() throws {
+        let xml = "<speech start_at=\"123\" end_at=\"456\">\n\nMy complete request.\n\n</speech>\n"
+            + "<app_selection source=\"Example\"><text>Selected context stays here.</text></app_selection>"
+        let row = Transcription(text: "My complete request.", duration: 0,
+            realtimeDraftText: xml, transcriptionStatus: .completed)
+        let before = row.realtimeDraftText
+        for expanded in [false, true] {
+            try withWindow(HistoryCardRow(transcription: row, isExpanded: expanded, isChecked: false,
+                onToggleExpand: {}, onToggleCheck: {}, onShowInfo: {})) { window in
+                let host = try #require(window.contentView)
+                let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                let path = FileManager.default.temporaryDirectory.appendingPathComponent(
+                    "AgentFlow-447-History-\(expanded ? "expanded" : "collapsed").png")
+                try #require(bitmap.representation(using: .png, properties: [:])).write(to: path)
+                print("Flow History fixture: \(path.path)")
+            }
+        }
+        #expect(row.text == "My complete request." && row.realtimeDraftText == before)
+    }
+
     @MainActor @Test func historyRetryRejectsMissingAudioAndDuplicateInFlightRequests() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".wav")
         let row = Transcription(text: "Retained draft", duration: 0, audioFileURL: url.absoluteString)
@@ -277,7 +298,7 @@ struct MainWindowPresentationTests {
         }
         try withWindow(HistoryDraftHeader(title: "Live draft at exit", text: xml,
                                           copyIdentifier: "test-draft-copy")) { window in
-            try click(window, logicalPoint: NSPoint(x: 770, y: 14))
+            try click(window, logicalPoint: NSPoint(x: 750, y: 14))
             #expect(pasteboard.string(forType: .string) == String(repeating: "Every retained word and attribute. ", count: 1000))
             try click(window, logicalPoint: NSPoint(x: 870, y: 14))
             #expect(pasteboard.string(forType: .string) ==
@@ -285,7 +306,7 @@ struct MainWindowPresentationTests {
         }
         pasteboard.clearContents()
         try withWindow(HistoryRecoveredCodexView(text: xml)) { window in
-            try click(window, logicalPoint: NSPoint(x: 770, y: 14))
+            try click(window, logicalPoint: NSPoint(x: 750, y: 14))
             #expect(pasteboard.string(forType: .string) == String(repeating: "Every retained word and attribute. ", count: 1000))
             try click(window, logicalPoint: NSPoint(x: 870, y: 14))
             #expect(pasteboard.string(forType: .string) ==

@@ -158,8 +158,9 @@ struct HistoryContextPresentationTests {
         let inline = try String(contentsOf: root.appendingPathComponent("VoiceInk/Views/History/InlineHistoryView.swift"), encoding: .utf8)
         let detail = try String(contentsOf: root.appendingPathComponent("VoiceInk/Views/History/TranscriptionDetailView.swift"), encoding: .utf8)
         #expect(inline.contains("HistoryCopyButtons(text: displayText"))
-        #expect(detail.contains("HistoryCopyButtons(text: text)"))
-        #expect(inline.contains("Text(draft)"))
+        #expect(detail.contains("HistoryCopyButtons(text: text, rawText: rawText)"))
+        #expect(inline.contains("HistoryRawTextView(text: message.rawText"))
+        #expect(!inline.contains("Text(draft)"))
     }
 
     @Test func copyChoicesPreserveWholeContextWithoutRewritingHistory() {
