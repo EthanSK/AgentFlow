@@ -35,7 +35,7 @@ struct TranscriptionListItem: View {
                 }
                 HistoryAudioRetryButton(transcription: transcription)
                 HistoryCopyButtons(text: transcription.enhancedText ?? transcription.historyDisplayText,
-                                   identifier: "history-list-copy-\(transcription.id)", showsLatexTitle: false)
+                                   identifier: "history-list-copy-\(transcription.id)", showsFormattingTitle: false)
             }
             // Match the card layout: only metadata/actions share the top row.
             Text(HistoryContextPresentation.listPreview(transcription.enhancedText ?? transcription.historyDisplayText))

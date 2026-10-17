@@ -115,20 +115,19 @@ enum HistoryContextPresentation {
         return readable.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    enum CopyFormat { case plain, latex }
+    enum CopyFormat { case plain, formatted }
 
     static func copyText(_ source: String, format: CopyFormat) -> String {
-        let parsed = document(source)
         switch format {
         case .plain:
             // Unwrap only our known presentation grammar, never a shortened
             // list preview or selected authored words. XML/context stays whole.
-            return parsed.plainText
-        case .latex:
-            // Existing styled history is immutable recovery evidence. Reuse it
-            // byte for byte; plain/exit drafts can opt into the same formatter.
-            return source.contains(prefix) && parsed.hasFormatting ? source
-                : LiveSelectionStyledMath.coloredXML(source, color: LiveSelectionStyledMath.speechColor)
+            return document(source).plainText
+        case .formatted:
+            // Copy the complete stored format, including XML, without inventing
+            // legacy rainbow/LaTeX markup for today's plain records. Already
+            // styled history remains immutable and copyable byte for byte.
+            return source
         }
     }
 
@@ -171,7 +170,7 @@ enum HistoryContextPresentation {
 struct HistoryCopyButtons: View {
     let text: String
     var identifier: String = "history-copy"
-    var showsLatexTitle: Bool = true
+    var showsFormattingTitle: Bool = true
 
     var body: some View {
         HStack(spacing: 6) {
@@ -179,12 +178,12 @@ struct HistoryCopyButtons: View {
                 HistoryContextPresentation.copyText($0, format: .plain)
             })
             .accessibilityIdentifier(identifier)
-            CopyIconButton(textToCopy: text, systemImage: "function",
-                           title: showsLatexTitle ? "Copy with LaTeX formatting" : nil,
-                           accessibilityTitle: "Copy with LaTeX formatting", textTransform: {
-                HistoryContextPresentation.copyText($0, format: .latex)
+            CopyIconButton(textToCopy: text, systemImage: "textformat",
+                           title: showsFormattingTitle ? "Copy with formatting" : nil,
+                           accessibilityTitle: "Copy with formatting", textTransform: {
+                HistoryContextPresentation.copyText($0, format: .formatted)
             })
-            .accessibilityIdentifier(identifier + "-latex")
+            .accessibilityIdentifier(identifier + "-formatted")
         }
         .fixedSize()
     }

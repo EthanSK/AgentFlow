@@ -52,7 +52,9 @@ Accessibility permission may be needed for the Python host. The settings button
 only opens the normal settings page when clicked; nothing changes TCC or prompts
 automatically. No keyboard monitoring, Screen Recording, network access or saved
 chat data is needed. Pause stops new sampling; Clear forgets samples and labels;
-Quit stops the helper. No native Agent Flow build, update or restart is needed.
+Quit or ⌘W in the inspector closes the helper. The shortcut is local to its
+key window and never intercepts shortcuts in another app. No native Agent Flow
+build, update or restart is needed.
 
 ## Learn From a Failed Read
 
@@ -76,7 +78,7 @@ This is for Ethan's own interactive inspection, not an agent automation interfac
 or a workaround for a Computer Use refusal. Do not capture/read its live Codex
 output as an agent or automate Codex through it. Use fixtures for validation.
 
-Validate with `python3 -m unittest -v test_pane_model test_ax_reader` on the Mini,
+Validate with `python3 -m unittest -v test_pane_model test_ax_reader test_shortcuts` on the Mini,
 and exercise the
 disposable Demo UI without inspecting live Codex. Synthetic evidence is not live
 Codex acceptance. The helper has no effect on the installed native Agent Flow.

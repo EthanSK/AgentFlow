@@ -21,6 +21,13 @@ from pane_model import Node, PaneModel, Rect, Sample, Observation, Diagnostics, 
 OPTIONS = None
 
 
+def is_close_shortcut(key_code, modifiers, inspector_is_key):
+    """Only the inspector's own Command-W; never a global shortcut."""
+    relevant = (K.NSEventModifierFlagCommand | K.NSEventModifierFlagShift
+                | K.NSEventModifierFlagControl | K.NSEventModifierFlagOption)
+    return inspector_is_key and key_code == 13 and modifiers & relevant == K.NSEventModifierFlagCommand
+
+
 class Point(C.Structure):
     _fields_ = [("x", C.c_double), ("y", C.c_double)]
 
@@ -256,6 +263,11 @@ class Inspector(NSObject):
             self.thread.start()
         if not self.make_window():
             return
+        # Non-activating panels cannot rely on another app's menu-bar Close
+        # command. Handle only key events already delivered to this process,
+        # and only while this panel owns the keyboard. Never steal Codex's W.
+        self.close_monitor = K.NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
+            K.NSEventMaskKeyDown, self.close_key_event)
         if self.reader:
             # Mouse-down observes the PREVIOUS keyboard focus in many hosts.
             # Sample after release plus one short settling interval, off the UI.
@@ -573,6 +585,13 @@ class Inspector(NSObject):
     def quit_(self, sender):
         K.NSApp.terminate_(None)
 
+    @objc.python_method
+    def close_key_event(self, event):
+        if is_close_shortcut(event.keyCode(), event.modifierFlags(), K.NSApp.keyWindow() == self.window):
+            self.window.performClose_(None)
+            return None
+        return event
+
     def windowWillClose_(self, notification):
         K.NSApp.terminate_(None)
 
@@ -580,6 +599,8 @@ class Inspector(NSObject):
         print("Inspector closed", flush=True)
         if self.monitor:
             K.NSEvent.removeMonitor_(self.monitor)
+        if getattr(self, "close_monitor", None):
+            K.NSEvent.removeMonitor_(self.close_monitor)
 
 
 if __name__ == "__main__":
