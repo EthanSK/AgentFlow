@@ -523,7 +523,9 @@ struct LiveTranscriptView: View {
     var typingUndo: RecorderTypingUndoController? = nil
     var width: CGFloat = MiniRecorderLayoutMetrics.liveTranscriptWidth
     var dragsWindow = false
-    @State private var typingFocusRequest = UUID()
+    // Absence means no explicit click-to-type request. A random default token
+    // could look like a new request when SwiftUI reused the previous editor.
+    @State private var typingFocusRequest: UUID? = nil
 
     private var editorHeight: CGFloat {
         guard let typedInput else { return 0 }

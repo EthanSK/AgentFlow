@@ -2508,6 +2508,79 @@ struct RecorderTypedInputTests {
             > MiniRecorderLayoutMetrics.typingHeight(text: prose, width: 640, maxHeight: 1000))
     }
 
+    @Test @MainActor func mirroredEditorReplacementCannotOptVoiceSessionIntoTyping() async throws {
+        let first = RecordingSession()
+        let second = RecordingSession()
+        let window = TypingFocusProbeWindow()
+        func input(_ session: RecordingSession) -> RecorderTypedInput {
+            RecorderTypedInput(text: .constant(""), focusRequest: UUID(),
+                onEndEditing: {}, typingFocus: session.typingFocus)
+        }
+        let host = NSHostingView(rootView: input(first))
+        host.frame = NSRect(x: 0, y: 0, width: 640, height: 80)
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(nanoseconds: 30_000_000)
+        #expect(window.focusRequests == 0 && !first.typingFocus.isEnabled)
+
+        // SwiftUI can reuse this representable/coordinator for a new live card.
+        // Its freshly initialized presentation token is not a click to type.
+        host.rootView = input(second)
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(nanoseconds: 50_000_000)
+        #expect(window.focusRequests == 0)
+        #expect(!second.typingFocus.isEnabled)
+        first.typingFocus.disable(releaseKeyboard: false)
+        second.typingFocus.disable(releaseKeyboard: false)
+    }
+
+    @Test @MainActor func explicitHUDClickFocusUsesSessionGuardsAndStopsAtFinish() async throws {
+        let session = RecordingSession()
+        let window = TypingFocusProbeWindow()
+        func input(_ token: UUID?) -> RecorderTypedInput {
+            RecorderTypedInput(text: .constant(""), focusRequest: token,
+                onEndEditing: {}, typingFocus: session.typingFocus)
+        }
+        let host = NSHostingView(rootView: input(nil))
+        host.frame = NSRect(x: 0, y: 0, width: 640, height: 80)
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(nanoseconds: 30_000_000)
+        #expect(window.focusRequests == 0 && !session.typingFocus.isEnabled)
+
+        let click = UUID()
+        host.rootView = input(click)
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(nanoseconds: 40_000_000)
+        #expect(window.focusRequests == 1 && session.typingFocus.isEnabled)
+        host.rootView = input(click)
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(nanoseconds: 20_000_000)
+        #expect(window.focusRequests == 1)
+
+        window.dropFocus()
+        session.phase = .transcribing
+        session.typingFocus.disable(releaseKeyboard: false)
+        host.rootView = input(UUID())
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(nanoseconds: 40_000_000)
+        #expect(window.focusRequests == 1 && !session.typingFocus.isEnabled)
+    }
+
+    @Test func voiceHUDHasNoSyntheticFocusRequestOrDirectUpdateFocus() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let components = try String(contentsOf: root.appendingPathComponent("VoiceInk/Views/Recorder/RecorderComponents.swift"))
+        #expect(components.contains("@State private var typingFocusRequest: UUID? = nil"))
+        let source = try String(contentsOf: root.appendingPathComponent("VoiceInk/Views/Recorder/RecorderTypedInput.swift"))
+        let start = try #require(source.range(of: "func updateNSView("))
+        let end = try #require(source.range(of: "final class RecorderTypingTextView", range: start.upperBound..<source.endIndex))
+        let update = source[start.lowerBound..<end.lowerBound]
+        #expect(update.contains("guard sameSession else"))
+        #expect(update.contains("coordinator?.parent.typingFocus === typingFocus"))
+        #expect(update.contains("requestInitialFocus(preferredEditor: editor)"))
+        #expect(!update.contains("makeKey()") && !update.contains("makeFirstResponder("))
+    }
+
     @Test @MainActor func focusIsOptInAndFinishDisarmsIt() throws {
         let session = RecordingSession()
         session.recordLiveSelection(try #require(LiveSelectionReference("before typing")))

@@ -9,7 +9,7 @@ import OSLog
 /// Context return starts only after explicit typing opt-in, never voice-only start.
 struct RecorderTypedInput: NSViewRepresentable {
     @Binding var text: String
-    let focusRequest: UUID
+    let focusRequest: UUID?
     let onEndEditing: () -> Void
     var typingFocus: RecorderTypingFocus? = nil
     var typingUndo: RecorderTypingUndoController? = nil
@@ -18,7 +18,7 @@ struct RecorderTypedInput: NSViewRepresentable {
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: RecorderTypedInput
-        var focusRequest: UUID
+        var focusRequest: UUID?
         init(_ parent: RecorderTypedInput) {
             self.parent = parent
             focusRequest = parent.focusRequest
@@ -70,6 +70,7 @@ struct RecorderTypedInput: NSViewRepresentable {
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
+        let sameSession = context.coordinator.parent.typingFocus === typingFocus
         context.coordinator.parent = self
         guard let editor = scroll.documentView as? RecorderTypingTextView else { return }
         editor.onEndEditing = onEndEditing
@@ -84,13 +85,23 @@ struct RecorderTypedInput: NSViewRepresentable {
             editor.string = text
             editor.undoManager?.removeAllActions()
         }
+        // SwiftUI may reuse an editor/coordinator for the next live card. Its
+        // presentation state is not a fresh click to type in that new session.
+        guard sameSession else {
+            context.coordinator.focusRequest = focusRequest
+            return
+        }
         guard context.coordinator.focusRequest != focusRequest else { return }
         context.coordinator.focusRequest = focusRequest
-        DispatchQueue.main.async { [weak editor] in
-            guard let editor, let window = editor.window else { return }
-            editor.typingFocus?.enable(editor)
-            window.makeKey()
-            window.makeFirstResponder(editor)
+        guard let focusRequest, let typingFocus else { return }
+        DispatchQueue.main.async { [weak editor, weak typingFocus, weak coordinator = context.coordinator] in
+            guard let editor, let typingFocus,
+                  coordinator?.focusRequest == focusRequest,
+                  coordinator?.parent.typingFocus === typingFocus,
+                  editor.typingFocus === typingFocus else { return }
+            // Use the same session/lifetime and mouse-release guards as explicit
+            // keyboard startup. Never focus directly from a delayed UI update.
+            typingFocus.requestInitialFocus(preferredEditor: editor)
         }
     }
 }
@@ -388,8 +399,12 @@ final class RecorderTypingFocus: ObservableObject {
         isEnabled = true
     }
 
-    func requestInitialFocus() {
+    func requestInitialFocus(preferredEditor: RecorderTypingTextView? = nil) {
         guard canFocus() else { return }
+        if let preferredEditor {
+            self.preferredEditor = preferredEditor
+            editors.add(preferredEditor)
+        }
         isEnabled = true
         initialFocusPending = true
         scheduleReturn(initial: true)
