@@ -426,7 +426,7 @@ enum AgentFlowPromptPreview {
                                         version _: String? = nil, build _: String? = nil) -> Bool {
         // Compact local files are for the known native Codex hosts, independent
         // of their release version. Ordinary apps must not receive agent prompts;
-        // Telegram alone instead retains its inline context format. This
+        // Telegram and Claude instead retain their inline context format. This
         // classifier changes presentation only, never exact-input authority.
         guard bundleID == "com.openai.codex" else { return false }
         guard let bundleURL else { return true }
@@ -434,7 +434,11 @@ enum AgentFlowPromptPreview {
     }
 
     static let inlineContextRecipientBundleIdentifiers: Set<String> = [
-        "ru.keepcoder.Telegram", "org.telegram.desktop"
+        "ru.keepcoder.Telegram", "org.telegram.desktop",
+        // Explicit recipient opt-in: Claude needs the full XML in the paste.
+        // Its Chat/remote Code modes cannot be assumed to read this Mac's files.
+        // This never allows Claude-specific focus, insertion or Send behavior.
+        "com.anthropic.claudefordesktop"
     ]
 
     static func excerpt(_ text: String, limit: Int) -> String {

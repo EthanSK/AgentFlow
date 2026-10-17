@@ -1,5 +1,18 @@
 # Recording destination controls (VoiceInk++)
 
+## Current override — original-input capture is unused/off
+
+At Ethan's request on 2026-10-17, candidate build 436 disables the unused
+recording-start destination feature. Partial modifiers, the Start reservation and
+the post-audio retry perform no original-input capture. Normal Primary finish
+continues to paste into whichever input owns keyboard focus at delivery.
+Recording-time Next is consumed without stopping or choosing a missing target;
+the explicit post-stop second-chance Next route is unchanged. The legacy
+recording-start machinery below is retained as inactive reference, not current
+startup work. `FocusLockService.recordingStartInputCaptureEnabled` is hard-off;
+the historical `VIPPExactInputDeliveryEnabled` preference does not re-enable it.
+This candidate is not installed until the Mini test/build/install gate completes.
+
 VoiceInk++ keeps normal dictation as simple as base VoiceInk while the Next button adds optional
 exact-input latching. A Primary stop follows whichever keyboard input is current when delivery
 happens. Next can instead preserve the recording-start input or select a second-chance input while

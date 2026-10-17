@@ -2,6 +2,14 @@
 
 This is the canonical glossary for Ethan's mouse controls and recording destinations. Read it before interpreting phrases such as “same button,” “toggle,” “secondary behavior,” “latch,” “original input,” or “current input.” Timing is part of the meaning.
 
+**2026-10-17 current override (candidate 436, not yet installed):** Ethan retired
+the unused original-input capture. No tentative destination is captured at Start
+or retried after audio starts. Recording-time Next is consumed as a no-op while
+the bar is visible; it cannot stop into a missing saved input. Primary still uses
+current keyboard focus at delivery, and explicit post-stop second chance is
+unchanged. Recording-start capture descriptions below are inactive legacy
+reference unless Ethan explicitly requests that feature again.
+
 ## The two physical controls
 
 | Preferred term | Ethan may also say | Exact meaning |

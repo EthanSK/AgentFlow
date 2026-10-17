@@ -1,5 +1,181 @@
 # Learnings
 
+## 2026-10-17 — Claude context is an explicit recipient exception
+
+Ethan requested Agent Flow XML context in Claude and one shared interpretation
+skill. The prior 2026-10-03 policy deliberately excluded Claude, so automatic
+paste discarded selection/screenshot context for its exact desktop bundle ID.
+Add only `com.anthropic.claudefordesktop` to the existing inline-context set;
+keep the native Codex compact-file classifier, ordinary browsers/editors/terminals,
+raw/skip, clipboard-only completion and Primary/Next delivery ownership unchanged.
+Claude's remote Chat/Code modes cannot be assumed to read this Mac's archives,
+so the desktop exception carries the complete XML inline, with the existing Mode
+styling choice. This is presentation eligibility, not an exact-delivery allowlist.
+
+Claude Code supports symlinked personal skill directories. The local installation
+now links `~/.claude/skills/interpret-agent-flow-context` to the existing
+`~/.codex/skills/interpret-agent-flow-context`, preserving one live source rather
+than copying instructions. Anthropic documents that local Desktop Code sessions
+load this personal directory; cloud sessions and Cowork use account-side skills,
+not this local link. Terminal/editor hosts still identify as their host app, so
+never broaden every terminal or editor merely because Claude Code can run there.
+These source/link facts do not prove live Claude rendering or skill invocation.
+
+## 2026-10-17 — Diagnose clicked pane separately from the focused input
+
+The first user-operated pane inspector only walked mouse-hit ancestors; it did
+not read AXFocusedUIElement. Its Unknown result could not answer which composer
+owned keyboard focus. It also sampled mouse-down, which can observe focus before
+the click takes effect. The separate Python helper now samples mouse-up plus a
+90 ms worker delay, distinguishes click and system-focused-input paths, requires
+an editable focused leaf, and records explicit timeout/access/path-limit reasons.
+The focused element must remain the same across the read. This is diagnostic
+evidence, not a new paste route or permission to activate a pane.
+
+Manual region labels require a fresh matching container and complete input
+bounds, not the click point. This rejects a stale divider layout even when the
+outer window does not resize. Copy diagnostics retains only 20 in-memory samples
+and omits raw identifiers, message values, titles, paths and geometry. It freezes
+each original verdict so later manual calibration does not rewrite a prior miss.
+Twenty-one synthetic checks executed and passed on the Mini. The disposable Demo
+UI exercised Same pane, Unknown, read failure, Clear and Copy; the copied schema
+and bounded sample count were checked independently. None proves live Codex
+classification, caret ownership or delivery. Native build 436 was not changed.
+
+Ethan reported that the panel ignored his clicks while its title visibly said
+Demo. Demo intentionally creates neither reader nor monitor; never leave it as a
+live-test handoff. The helper now visibly names Live/Demo, explains that Demo
+ignores Codex, and shows live received-event and Codex-event counts separately
+from classification. In the disposable demo the initial window was below the
+screen; one next-run-loop placement produced fully visible geometry and controls.
+Keep placement one-shot so subsequent user moves are respected. Agent UI tooling
+remains restricted from live Codex; leave the Live helper for Ethan's own clicks
+and accept only the diagnostics he explicitly chooses to share.
+
+## 2026-10-17 — Retire unused original-input capture at all three start boundaries
+
+Initial native snapshot `0751888331523e004c56df6158781d4de6a4b0fa`
+(`refs/codex-snapshots/no-original-input-436`) was prepared without Mini access.
+Final candidate `6d560c3f194fa4c0a8be2e327cd509546cb6e0d4` adds only a
+Retina-safe pixel-test correction to that native behavior.
+Ethan explicitly requested that the recording-start saved-input feature be
+removed or turned off, then asked to leave the click inspector alone. Candidate
+436 makes `recordingStartInputCaptureEnabled` hard-false and gates partial-chord
+staging, Start-reservation capture, and the retry after audio starts. Gating only
+the first scan is insufficient: the existing retry otherwise captures again
+after the HUD/audio start. Direct legacy capture entry points also return before
+AX reads. Recording-time Next is consumed before canceling a pending Primary
+gesture; no missing-target stop or guessed alternate destination is introduced.
+The explicit post-stop second-chance route and ordinary Primary delivery remain.
+
+This source inspection establishes the capture call graph, not the cause of all
+wrong-input pastes. Primary already discards a tentative start target at normal
+stop, so changing inputs does not by itself prove that target caused the report.
+Highlights/screenshots, HUD typing, audio and media coordination are untouched.
+After Ethan's explicit one-time MacBook build/test exception, the local focused
+Xcode action passed 24 tests. The first pixel fixture sampled view points as
+bitmap pixels and failed on the Retina host; mapping through pixelsWide/width
+and pixelsHigh/height corrected the fixture without changing recorder drawing.
+The local full action executed 671 tests but failed two existing fixtures: a
+dictionary-import test inherited the owner's exclusion of both sample words,
+and a hosted keyboard test did not retain its key window. Preferences were not
+changed and those failures were not counted as a release pass.
+
+The separate connectivity investigation restored the Mini's existing Tailscale
+access under an approved temporary key extension. The exact final candidate
+then passed the canonical Mini focused action (24 tests in two suites) and full
+unit action (671 tests in 23 suites), including the three new capture-disable
+guards, both Primary boundaries, second-chance Mode carriage and HUD-only
+realtime guard. The ordinary universal Release was signed with the unchanged
+VoiceInk Local Signing identity and installed at `/Applications/AgentFlow.app`
+after the actual five-second notification and cooperative idle-only quit of
+435. Installed 436 CDHash: `f16ebc0a502589cab3c2f79bb325f3ed999642d3`;
+executable SHA-256:
+`4439fb167f400e5786e879de6bbdd6dee4c03926a4eaa21254780fd92d98cc10`.
+Deep/strict verification, unchanged designated requirement, outer Automation
+and audio-input entitlements, stable nested signer, universal architectures,
+surfer icon, critical preferences and official VoiceInk passed. The new process
+owns the receiver and passive connect returned zero. The verified 435 ZIP and
+Trash bundle remain recoverable; unregistering the intermediate retired path
+returned -10814 and is not claimed verified. Physical shortcut/startup latency
+acceptance remains separate. This one-time MacBook exception does not change
+the standing Mini-only build/test policy.
+
+## 2026-10-17 — Keep pane-click diagnostics separate from paste ownership
+
+`scripts/codex-click-inspector` is a separate, interpreted user-operated helper,
+not part of the native Agent Flow binary. It observes user clicks and reads only
+public hit-test ancestor roles, identifiers and bounds on a worker. It does not
+read message values, scan descendants, write focus, synthesize input, or save
+Codex metadata. Agent automation must not use its output to bypass a Computer
+Use restriction on the live host.
+
+The UI distinguishes explicit main-chat/side-chat identifiers, unknown results,
+and user-labelled geometry. A learned region is tied to process, window and
+exact layout; conflicting identifiers and overlapping regions remain Unknown.
+None of these establishes composer caret ownership. Do not promote the
+diagnostic result into a production paste target without independent proof.
+
+The interpreted helper launched with an actual task-owned panel; this is only
+launch evidence. The Mini was unreachable for the prepared synthetic classifier
+tests, and no live Codex classification or input-focus acceptance is claimed.
+Installed native build 435 and every Primary/Next delivery route are unchanged.
+
+## 2026-10-17 — Give start-failure teardown one current microphone owner
+
+Snapshot `e80df02cbeb2f2629dc7712f90e8539af85a0291`, build 435, makes
+the Engine the single shared-capture teardown decision after Recorder startup
+fails. Recorder must log/rethrow its start error, not stop shared recording
+before the Engine can check ownership. The Engine may stop/discard only when
+the start token is current, the session is still registered, and that exact
+session still owns the active microphone. CoreAudioRecorder retains its own
+local cleanup for an unusable hardware start. A late failure belonging to A
+must never stop or detach the current B capture.
+
+The optional realtime startup helper is nonthrowing to its recording caller.
+For an owning session, a stream setup failure/overflow/missing callback can
+release only that stream and keep capture/WAV/recovery running for existing
+completed-file handling; it must not promise every provider supports batch
+fallback. Superseded attempts cannot clear another session's shared callback.
+The current production `StreamingTranscriptionSession.prepare` itself catches
+connection failures and does not suspend or throw: this hardening is not proof
+that a present-day socket failure caused Ethan's reported spontaneous stop.
+No matching incident trace was found. Do not label the report resolved from
+these regression fixtures alone.
+
+Cooperative termination now also checks a pending start reservation, before a
+session card exists, as well as live sessions and retry work. This closes the
+startup gap in idle-only replacement without replacing a session guard with
+mere HUD visibility. Primary system-focused paste and both Next routes remain
+unchanged; no guessed Codex pane/caret targeting was added.
+
+The exact final 435 snapshot passed 47 focused tests in five suites and the
+canonical Mini full Xcode action: 668 named tests in 23 suites, zero failures.
+Nine new stop-safety tests cover delayed prepare success/failure/cancel,
+startup buffering, ownership combinations, Recorder's single teardown, and
+pending-start quit veto; the Primary/Next/HUD guards also passed. The four AX
+batch/equivalence guards pass but do not measure physical startup latency.
+The first valid full AX capture still runs synchronously before the black bar.
+
+The ordinary universal Release was built on the Mini and signed with the
+existing VoiceInk Local Signing identity, CDHash
+`ebfbdd667765d9779e8736112cb5107503ddbb0a`, executable SHA-256
+`b75b2a548fb4f86e25d2f0290b106b50c08075d75c5e69257f7f8fc902b6ae4f`,
+ZIP SHA-256 `6aa9070dda6adf886ab17a49fa8191f280fad3dc86d7778ddba7ff99af664313`.
+Its deep/strict signature, stable nested signer, universal architectures and
+outer Automation/audio-input entitlements verified. The saved private signer
+had disappeared again; restoring its previously approved owner-only helper
+and unlocking/signing in the same process succeeded without trust/TCC changes.
+Keep credentials out of transcripts, source, and diagnostic output.
+
+435 installed at `/Applications/AgentFlow.app` after the real five-second
+heads-up and cooperative idle quit. The new PID persisted, and the installed
+mouse receiver's passive connect returned zero. Both shortcuts, selected input
+digest, surfer icon and official VoiceInk executable checksum are unchanged.
+434 is preserved in a verified rollback ZIP and Trash; retired-path Launch
+Services unregister returned -10814, so unregister was not verified. No
+recording command or live Codex focus probe was injected as an install check.
+
 ## 2026-10-17 — Batch original-document AX reads without changing the fingerprint
 
 The saved-original-input Next route consumes the recording-start fingerprint;

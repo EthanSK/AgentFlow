@@ -72,10 +72,16 @@ link, concise footer, inline angular markers and every authored word. Compare
 automatic and Won't paste output after normalizing only immutable archive paths;
 first filter automatic output by its actual recipient: ordinary apps such as
 Chrome, Safari, editors, terminals and unknown identities receive authored
-speech/typing only, without prompt links, XML, timestamps or math. Supported
-Only Codex and Telegram have context overrides: local Codex hosts use compact
-file links; both Telegram identities retain inline XML. Cloud ChatGPT, Claude,
-Slack, Discord and all other apps receive plain authored speech/typing. Preserve raw/skip output. Do not infer local-file access from
+speech/typing only, without prompt links, XML, timestamps or math. Only Codex,
+Telegram and Claude Desktop have context overrides: local Codex hosts use compact
+file links; both Telegram identities and `com.anthropic.claudefordesktop` retain
+inline XML. Cloud ChatGPT, Slack, Discord and all other apps receive plain authored
+speech/typing. Claude Code in an ordinary terminal/editor does not identify itself
+as Claude Desktop; do not broaden those hosts automatically. Share the local
+interpretation skill with Claude Code through a symlink to the existing Codex
+skill directory, not a separately maintained copy. Local Code sessions load that
+personal skill; cloud Chat/Cowork do not load a local symlink. User-requested
+Claude exception and shared skill — 2026-10-17. Preserve raw/skip output. Do not infer local-file access from
 presentation, a browser name or Tailscale connectivity. Clipboard
 completion has no selected recipient and must never consult foreground focus.
 Self-improved — 2026-10-01: the 12553 host update repeated the stale-presentation
@@ -496,6 +502,13 @@ Require native phase/slow-start/order/session tests plus attended physical sourc
 Start-release-no-op, later release gestures, context-menu, Next, and lock-screen checks before
 physical acceptance. Preserve retired controls and the mouse owner's exact-device lease rules.
 
+For receiver startup or release readiness, read
+[Primary socket qualification](references/primary-input-socket.md). A private socket file is
+not proof of a bound receiver; require a passive datagram connect after installation, without
+sending a recording command. Self-improved — 2026-10-15: a restored socket's device-only
+marker mismatch left build 428 unbound despite its correct file permissions; see the matching
+startup-recovery entry in `LEARNINGS.md`.
+
 When several hardware controls converge through Karabiner as one modifier-only Primary chord,
 establish the ownership boundary before trying to identify the source. An exclusive HID-open failure
 such as `0xe00002c5` means VoiceInk++ cannot recover F19/F21/F22 identity after Karabiner has collapsed
@@ -509,7 +522,17 @@ triple-click, quadruple-click, fifth-click, and lock-screen checks.
 
 For modifier-only Primary regressions, inspect the complete `flagsChanged` sequence. VoiceInk++ owns and suppresses only the event that completes the configured Shift-Control-Option chord plus any full-chord repeats; partial modifiers and every release must remain downstream-balanced. Require the pure reducer test and a physical check with a context menu already open. Never swallow the entire modifier sequence to hide a menu-dismissal symptom, because that can leave the foreground app with stuck logical modifiers.
 
-For recording-start exact-input capture, remember that Ethan's G HUB Primary macro completes its
+User-requested — 2026-10-17: recording-start saved-input capture is unused/off.
+Respect `FocusLockService.recordingStartInputCaptureEnabled = false` at partial-chord
+staging, Start reservation and the post-audio retry; do not revive any of them from
+the historical guidance below. Recording-time Next is a consumed no-op before
+canceling Primary gesture decisions, while explicit post-stop second chance stays
+available. Keep the three `unusedRecordingStart...` / `disabledRecordingTimeNext...`
+regressions passing. Revisit recording-start capture only at Ethan's explicit request.
+See the current override in `RECORDING_DESTINATIONS.md` and its qualification in
+`LEARNINGS.md`; the older recording-start contract is dormant, not deleted.
+
+For explicitly re-enabled recording-start exact-input capture, remember that Ethan's G HUB Primary macro completes its
 modifiers sequentially. Electron may expose the exact composer during an earlier forwarded partial
 modifier and only an ancestor container on the completed chord. Preserve one passive, short-lived
 pre-chord snapshot, but recover it only when the completed-chord container has the same process and
@@ -613,8 +636,14 @@ Before any real-time transcription change, search `FAILED_APPROACHES.md` for the
 `RealtimeInputDraftSession` experiment and preserve
 `realtimeStreamingRemainsRecorderHUDOnlyUntilFinalDelivery`.
 
-First check the runtime delivery-engine flag `VIPPExactInputDeliveryEnabled`. When it
-is false, VoiceInk++ deliberately uses base VoiceInk compatibility delivery: Primary
+Inspect the actual source guard before using the historical preference
+`VIPPExactInputDeliveryEnabled`: current 435/436 source has no runtime reader for
+that key, so writing it does not change delivery. The current recording-start
+off-switch is documented above and does not disable post-stop second chance.
+Self-improved — 2026-10-17: a source-wide reader check rejected the stale flag
+advice; see the retired original-input capture entry in `LEARNINGS.md`.
+On an older audited version that still reads the historical flag, false selects
+base VoiceInk compatibility delivery: Primary
 follows the current Mode and keyboard-focused input, no exact input is captured at start
 or stop, and Next Track performs no destination action. Keep the recorder's second
 destination slot visible as a warning in this state; returning a stale target would lie

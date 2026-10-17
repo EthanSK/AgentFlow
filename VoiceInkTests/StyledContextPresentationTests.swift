@@ -432,7 +432,8 @@ struct StyledContextPresentationTests {
     }
 
     @Test func capturedContextIsLimitedToAgentRecipientsUsingTheSelectedRoute() {
-        for bundle in ["com.openai.codex", "ru.keepcoder.Telegram", "org.telegram.desktop"] {
+        for bundle in ["com.openai.codex", "ru.keepcoder.Telegram", "org.telegram.desktop",
+                       "com.anthropic.claudefordesktop"] {
             #expect(LiveContextPastePolicy.includesSourceContext(
                 destination: .primaryCurrentInput,
                 currentApplicationBundleIdentifier: bundle,
@@ -448,7 +449,7 @@ struct StyledContextPresentationTests {
         }
         for bundle in [nil, "com.google.Chrome", "com.apple.Safari", "com.microsoft.VSCode",
                        "com.apple.Terminal", "com.googlecode.iterm2", "unknown.app",
-                       "com.openai.chat", "com.anthropic.claudefordesktop",
+                       "com.openai.chat",
                        "com.tinyspeck.slackmacgap", "com.hnc.Discord"] as [String?] {
             #expect(!LiveContextPastePolicy.includesSourceContext(
                 destination: .primaryCurrentInput,

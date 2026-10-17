@@ -131,8 +131,8 @@ diff bridge has isolated Mac test coverage, not everyday-use acceptance. Telegra
 working reliably and are not claimed as supported. Other apps depend on their read-only
 Accessibility selection exposure; keyboard-only selection changes are not captured.
 
-Automatic paste includes highlights and screenshot paths only in the native Codex, ChatGPT and
-Claude apps. Browsers, editors and terminals receive spoken/typed prose without those tags.
+Automatic paste includes highlights and screenshot paths only in the native Codex/ChatGPT,
+Telegram and Claude apps. Browsers, editors and terminals receive spoken/typed prose without those tags.
 Clipboard-only finishes keep the full context; raw/skip and assistant follow-up output omit it.
 Click **Click to type** in the recorder to add typed words alongside speech and references; Enter
 commits the typed section at the current observed speech position without stopping capture.

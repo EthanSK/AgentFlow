@@ -984,7 +984,7 @@ enum LiveSelectionStyledMath {
     }
 }
 
-/// Format captured context only for Codex and Telegram, the only approved
+/// Format captured context only for Codex, Telegram and Claude, the approved
 /// per-app overrides. Ordinary apps (including Chrome) receive authored
 /// speech/typing without links, XML or math. Use Primary's current app after the
 /// queue wait and Next's saved app; the highlight source never owns this choice.

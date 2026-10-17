@@ -1467,7 +1467,7 @@ struct RecorderTypedInputTests {
         let typed = "Every typed word\nand its line break"
         let speech = "Spoken context survives"
         for bundleID in ["com.google.Chrome", "com.apple.Safari", "com.microsoft.VSCode", "com.apple.Terminal", "unknown",
-                         "com.openai.chat", "com.anthropic.claudefordesktop",
+                         "com.openai.chat",
                          "com.tinyspeck.slackmacgap", "com.hnc.Discord"] {
             for styled in [true, false] {
                 let host = AgentFlowPromptPreview.Recipient(bundleID: bundleID, bundleURL: nil)
@@ -1487,7 +1487,8 @@ struct RecorderTypedInputTests {
                 #expect(result.archive.contains(typed) && archivedSpeech == speech)
             }
         }
-        for bundleID in ["com.openai.codex", "ru.keepcoder.Telegram", "org.telegram.desktop"] {
+        for bundleID in ["com.openai.codex", "ru.keepcoder.Telegram", "org.telegram.desktop",
+                         "com.anthropic.claudefordesktop"] {
             let host = AgentFlowPromptPreview.Recipient(bundleID: bundleID,
                 bundleURL: URL(fileURLWithPath: "/Applications/ChatGPT.app"),
                 version: "future-host-version", build: "future-build")
@@ -1511,6 +1512,31 @@ struct RecorderTypedInputTests {
         let raw = try await clipboardPipelineFixture(clipboardOnly: false,
             typed: "Raw stays verbatim", raw: true)
         #expect(raw.message == "Raw stays verbatim" && raw.history == raw.message)
+    }
+
+    @Test @MainActor func claudeDesktopPasteKeepsCompleteXMLAndRespectsModeStyling() async throws {
+        let host = AgentFlowPromptPreview.Recipient(
+            bundleID: "com.anthropic.claudefordesktop",
+            bundleURL: URL(fileURLWithPath: "/Applications/Claude.app"))
+        for styled in [false, true] {
+            let result = try await clipboardPipelineFixture(clipboardOnly: false,
+                typed: "Claude typed words", speech: "Claude spoken words", styled: styled,
+                recipientOverride: host)
+            let readable = HistoryContextPresentation.document(result.message).plainText
+            for required in ["Claude typed words", "Claude spoken words", "Selected exact content &amp; metadata",
+                             "<codex_selection", "<local_screenshot", "<typed_text", "<speech ", "start_at="] {
+                #expect(readable.contains(required))
+            }
+            // Claude is an explicit inline-context recipient, not proof that its
+            // current Chat/Code session can read a local archive. No link-only
+            // preview, assumed terminal identity, or delivery mechanism is added.
+            #expect(!result.message.contains("[↗](") && !result.message.contains("Read the [full prompt]"))
+            #expect(result.message.contains("\\color{") == styled)
+            #expect(result.archive.contains("Claude typed words") && result.archive.contains("Selected exact content"))
+        }
+        let raw = try await clipboardPipelineFixture(clipboardOnly: false,
+            typed: "Raw Claude words", raw: true, recipientOverride: host)
+        #expect(raw.message == "Raw Claude words")
     }
 
     @Test @MainActor func clipboardOnlyArchiveFailureRawAndOtherRecipientsRetainFullText() async throws {

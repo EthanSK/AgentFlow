@@ -1,5 +1,50 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-10-17 — Treat a click-pane result or Demo panel as live keyboard focus — REJECTED
+
+**Failure condition:** The first inspector only walked the clicked element's
+ancestors, so it could not establish keyboard focus. Ethan later tried clicking
+Codex while the replacement's synthetic Demo was open and reported no reaction;
+his screenshot explicitly shows Demo. That mode intentionally has no AX reader
+or global mouse monitor. Synthetic Different panes is not live reproduction.
+**Use instead:** Keep independent click and focused-editable-input readings after
+mouse release; show Live/Demo and received-event counts. Preserve explicit unknown
+and read-failure evidence. Validate Demo controls independently, then hand off
+Live for user-operated reads and an explicit sanitized Copy report. Never read
+live Codex through this helper as an agent automation workaround.
+**Reconsider only if:** A supported exact pane-to-composer identity/control path
+is independently proven on disposable main and side inputs. A pane outline,
+manual region, mock result or successful AX call is insufficient for routing.
+
+## 2026-10-17 — Sample view points directly as cached bitmap pixels — REJECTED
+
+**Failure condition:** The startup-shell pixel test passed on the Mini but failed
+twice on a Retina MacBook because AppKit's cache had more backing pixels than
+view points. Sampling the unscaled centre coordinate read black background,
+not the grey dot. The recorder's production drawing was unchanged.
+**Use instead:** Scale sample coordinates by pixelsWide/view.width and
+pixelsHigh/view.height. The corrected exact fixture passed the canonical Xcode
+action on both hosts; keep its hit-testing and offscreen-callback guards.
+**Reconsider only if:** The fixture explicitly constructs and proves a fixed
+one-pixel-per-point representation rather than assuming the display scale.
+
+## 2026-10-17 — Treat optional realtime prepare as the proven spontaneous-stop cause — REJECTED
+
+**Failure condition:** A catch around `try await prepare()` looked capable of
+tearing down a capture on a stream connection failure. Current production
+`StreamingTranscriptionSession.prepare` catches those connection errors itself
+and neither throws nor suspends. Fake delayed/throwing callbacks prove useful
+ownership safety, but cannot establish that today's production path caused a
+reported uncommanded stop. No matching incident trace was recovered.
+**Use instead:** Keep the nonthrowing optional stream setup, single Engine
+teardown ownership boundary and pending-start quit veto, test them directly,
+and report the original incident as uncorrelated. Distinguish optional streaming
+from actual microphone/WAV capture.
+**Reconsider only if:** A changed production provider can actually suspend/throw
+at that boundary, or a matched real-session trace proves that exact failure
+reaches shared recorder teardown. Never substitute a plausible catch block or
+passing regression for causal evidence.
+
 ## 2026-10-17 — Infer a recorder leak from in-process text-view weak references — REJECTED
 
 **Failure condition:** A Mini test expected detached recorder editors and their
@@ -30,6 +75,34 @@ separation. Never substitute direct action invocation for a real click.
 **Reconsider only if:** A disposable hosted fixture independently proves that
 the supported in-process SwiftUI accessibility tree exposes those identifiers
 and geometry without changing global Accessibility or probing Ethan's live apps.
+
+## 2026-10-15 — Infer receiver readiness from socket existence and mode — REJECTED
+
+**Failure condition:** Installed 428 had a real uid-owned mode-0600 socket but
+connect returned ECONNREFUSED. Its recorded and current device numbers differed,
+so the startup identity guard refused recovery. No live descriptor was bound.
+**Use instead:** Verify passive datagram connect success and the owning process
+after install, without sending a recording event. Recover only a recorded stale
+identity under the private lock with explicit refusal and final identity recheck.
+**Reconsider only if:** A supported read-only receiver health signal independently
+proves a live bound endpoint. A file, test pass, signature or successful launch
+does not establish transport readiness or physical button acceptance.
+
+## 2026-10-15 — Unlock the signing keychain in a separate SSH session — REJECTED
+
+**Failure condition:** The dedicated keychain's certificate was valid but its
+user Code Signing trust was missing. Restoring that trust alone did not make a
+later SSH session inherit an earlier session's unlock; codesign still failed
+with errSecInternalComponent. An SSH-only trust request could not display the
+required user authorization either.
+**Use instead:** Ask for approval to restore the existing certificate's narrow
+Code Signing trust, let the user authorize through the logged-in GUI session,
+then unlock and sign together with the restored private canonical helper.
+The same certificate successfully signed the 426 Release with deep/strict and
+designated-requirement verification; no replacement identity was necessary.
+**Reconsider only if:** Fresh keychain diagnostics establish a supported unlock
+scope shared by those sessions. Do not reset all trust, change TCC or substitute
+ad-hoc signing to work around this failure.
 
 ## 2026-10-14 — Treat every keyboard extension as a labelled editor event — REJECTED
 
@@ -206,8 +279,10 @@ prompt links the default for Chrome, editors, terminals and unknown recipients.
 Ethan's ordinary YouTube comment therefore received an agent prompt wrapper.
 Classifier tests expecting Chrome links reinforced the regression.
 **Use instead:** Filter ordinary automatic pastes to authored speech/typing first;
-choose Codex local-file versus Telegram inline presentation only for those two
-approved app overrides. All other recipients remain plain authored text. Keep the decision after the queue wait and respect Primary/current
+choose local-file versus inline presentation only for explicitly approved app
+overrides: Codex uses local files; Telegram and, following Ethan's explicit
+2026-10-17 request, Claude Desktop use inline XML. Other recipients remain plain
+authored text. Keep the decision after the queue wait and respect Primary/current
 versus Next/saved identity. Test the actual production pipeline with context on/off
 and styling on/off; complete archives and explicit Won't paste retain context.
 **Reconsider only if:** Ethan explicitly requests agent context in an ordinary
