@@ -2642,6 +2642,7 @@ struct RecorderTypedInputTests {
 
     @Test @MainActor func acceptedSelectionAndScreenshotReturnOnlyEngagedTypingFocus() async throws {
         let session = RecordingSession()
+        session.microphoneOff = true
         let window = TypingFocusProbeWindow()
         let editor = RecorderTypingTextView()
         window.contentView = editor
@@ -2662,6 +2663,41 @@ struct RecorderTypedInputTests {
         session.recordLiveSelection(selection)
         try await Task.sleep(nanoseconds: 20_000_000)
         #expect(window.focusRequests == 2)
+    }
+
+    @Test @MainActor func voiceCaptureNeverAutomaticallyReturnsAfterHUDTypingOptIn() async throws {
+        let session = RecordingSession()
+        let window = TypingFocusProbeWindow()
+        let editor = RecorderTypingTextView()
+        window.contentView = editor
+        session.typingFocus.enable(editor)
+        session.recordLiveSelection(try #require(LiveSelectionReference("voice selection")))
+        session.recordLiveSelection(try #require(LiveSelectionReference(screenshotURL:
+            URL(fileURLWithPath: "/Users/test/Screenshot.png"))))
+        try await Task.sleep(nanoseconds: 30_000_000)
+        #expect(window.focusRequests == 0)
+        // Explicit click/shortcut intent is separate from automatic context return.
+        session.typingFocus.requestInitialFocus(preferredEditor: editor)
+        try await Task.sleep(nanoseconds: 30_000_000)
+        #expect(window.focusRequests == 1)
+        session.typingFocus.disable(releaseKeyboard: false)
+    }
+
+    @Test @MainActor func queuedTypingReturnCannotCrossIntoVoiceOrMicrophoneStartup() async throws {
+        for microphoneStarting in [false, true] {
+            let session = RecordingSession()
+            session.microphoneOff = true
+            let window = TypingFocusProbeWindow()
+            let editor = RecorderTypingTextView()
+            window.contentView = editor
+            session.typingFocus.enable(editor)
+            session.recordLiveSelection(try #require(LiveSelectionReference("typing selection")))
+            if microphoneStarting { session.microphoneTransitionPending = true }
+            else { session.microphoneOff = false }
+            try await Task.sleep(nanoseconds: 30_000_000)
+            #expect(window.focusRequests == 0)
+            session.typingFocus.disable(releaseKeyboard: false)
+        }
     }
 
     @Test @MainActor func automaticTypingFocusReturnRechecksFlagAndFinishAtFocusBoundary() async throws {
