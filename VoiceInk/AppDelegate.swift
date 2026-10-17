@@ -33,15 +33,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
-    static func shouldBlockTermination(hasInFlightSessions: Bool, hasHistoryRetries: Bool = false) -> Bool {
-        hasInFlightSessions || hasHistoryRetries
+    static func shouldBlockTermination(
+        hasInFlightSessions: Bool,
+        hasHistoryRetries: Bool = false,
+        hasPendingRecordingStart: Bool = false
+    ) -> Bool {
+        hasInFlightSessions || hasHistoryRetries || hasPendingRecordingStart
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let hasInFlightSessions = voiceInkEngine?.sessions.isEmpty == false
+        // An accepted Primary/typing start owns its reservation, startup bar and
+        // Next-only input before its session card exists, and may still be waiting on
+        // exact-input capture, an older delivery or model cleanup. A cooperative quit
+        // (including a release swap) in that window must wait like a live recording.
+        let hasPendingRecordingStart = voiceInkEngine?.hasPendingRecordingStart == true
         guard Self.shouldBlockTermination(
             hasInFlightSessions: hasInFlightSessions,
-            hasHistoryRetries: !HistoryAudioRetryState.shared.activeIDs.isEmpty
+            hasHistoryRetries: !HistoryAudioRetryState.shared.activeIDs.isEmpty,
+            hasPendingRecordingStart: hasPendingRecordingStart
         ) else {
             return .terminateNow
         }

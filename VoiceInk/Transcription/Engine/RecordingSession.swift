@@ -257,7 +257,10 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     var onMicrophoneToggle: (() -> Void)?
     var onPauseToggle: (() -> Void)?
     var startupAudioRouter: RecordingStartupAudioRouter?
-    var prepareMicrophoneTranscription: (() async throws -> Void)?
+    // Optional realtime setup for this exact session. Deliberately non-throwing: a
+    // provider failure keeps live capture on its completed-WAV fallback and must never
+    // surface as a recorder-start or pause/resume failure that stops the recording.
+    var prepareMicrophoneTranscription: (() async -> Void)?
     func toggleMicrophone() { onMicrophoneToggle?() }
     func togglePause() {
         // A retained/transcribing card must never pause a newer mic-owning session.

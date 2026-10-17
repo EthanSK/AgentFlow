@@ -325,7 +325,10 @@ class VoiceInkEngine: NSObject, ObservableObject {
                 session.liveRecordingState = .recording
                 let prepare = session.prepareMicrophoneTranscription
                 session.prepareMicrophoneTranscription = nil
-                try await prepare?()
+                // Realtime setup cannot throw: a provider failure keeps this enabled
+                // capture on its completed-WAV fallback, so derived state below is always
+                // recomputed instead of reporting a false microphone failure.
+                await prepare?()
             } else {
                 try await recorder.pauseRecording()
                 guard activeRecordingSession === session, session.phase == .recording else { return }
@@ -718,7 +721,9 @@ class VoiceInkEngine: NSObject, ObservableObject {
                 session.microphoneOff = false
                 let prepare = session.prepareMicrophoneTranscription
                 session.prepareMicrophoneTranscription = nil
-                try await prepare?()
+                // Non-throwing realtime setup: resume must not report failure, or leave the
+                // engine's derived state paused, after capture has already restarted.
+                await prepare?()
                 vippLog.info("recording pause toggle: session \(session.id.uuidString, privacy: .public) capture=resumed playback=unchanged")
 
             default:
@@ -1504,56 +1509,31 @@ class VoiceInkEngine: NSObject, ObservableObject {
                     }
                 )
                 session.transcriptionSession = streamingSession
-                let realCallback = try await streamingSession.prepare(
-                    configuration: transcriptionConfiguration
-                )
-
-                // `prepare` is async. Session A may have stopped and session B may now
-                // own the shared Recorder while this await was suspended. Never install
-                // A's callback into B's recorder: that would route B's microphone chunks
-                // into A's streaming provider and is a direct old/new transcript race.
-                guard session.liveRecordingState.isRecordingOrPaused,
-                      self.activeRecordingSession === session,
-                      session.startID == startID,
-                      !session.shouldCancel else {
-                    streamingSession.cancel()
-                    return
-                }
-
-                if let realCallback {
-                    switch startupAudioRouter.activate(realCallback) {
-                    case .connected(let replayedChunks, let replayedBytes):
-                        vippLog.info("streaming startup audio connected replayedChunks=\(replayedChunks, privacy: .public) replayedBytes=\(replayedBytes, privacy: .public)")
-                    case .fallbackRequired(let droppedChunks, let droppedBytes):
-                        // The WAV has every frame. Keep the recording usable by disabling
-                        // only its incomplete realtime session; normal stop will use the
-                        // same frozen OpenAI prompt/Vocabulary with completed-file audio.
-                        streamingSession.cancel()
-                        session.transcriptionSession = nil
-                        session.showsRealtimeTranscriptHUD = false
-                        startupAudioRouter.close()
-                        self.recorder.onAudioChunk = nil
-                        recomputeDerivedState()
-                        vippLog.warning("streaming startup audio exceeded its bound; using complete WAV fallback droppedChunks=\(droppedChunks, privacy: .public) droppedBytes=\(droppedBytes, privacy: .public)")
-                        NotificationManager.shared.showNotification(
-                            title: String(localized: "Realtime startup took too long; this recording will transcribe after stop"),
-                            type: .warning
-                        )
-                    case .closed:
-                        streamingSession.cancel()
-                        session.transcriptionSession = nil
-                        session.showsRealtimeTranscriptHUD = false
-                        self.recorder.onAudioChunk = nil
-                        recomputeDerivedState()
+                // Realtime is an optional accelerator on top of capture that is already
+                // live (WAV open, microphone capturing). Resolve every provider outcome
+                // without throwing: connect, keep this still-live recording on its
+                // complete-WAV fallback, or release a superseded attempt. A thrown
+                // preparation must never reach the hardware-start catch below, which stops
+                // the shared Recorder, deletes the WAV/journal and dismisses the HUD.
+                // Ownership is re-evaluated after the await, so A's late result can never
+                // install a callback into, or detach, B's Recorder.
+                let outcome = await RealtimeTranscriptionStartup.prepare(
+                    streamingSession: streamingSession,
+                    configuration: transcriptionConfiguration,
+                    session: session,
+                    startupAudioRouter: startupAudioRouter,
+                    ownsLiveCapture: { [weak self, weak session] in
+                        guard let self, let session else { return false }
+                        return session.liveRecordingState.isRecordingOrPaused
+                            && self.activeRecordingSession === session
+                            && session.startID == startID
+                            && !session.shouldCancel
+                    },
+                    detachRecorderAudio: { [weak self] in
+                        self?.recorder.onAudioChunk = nil
                     }
-                } else {
-                    streamingSession.cancel()
-                    session.transcriptionSession = nil
-                    session.showsRealtimeTranscriptHUD = false
-                    startupAudioRouter.close()
-                    self.recorder.onAudioChunk = nil
-                    recomputeDerivedState()
-                }
+                )
+                self.applyRealtimeStartupOutcome(outcome, sessionID: session.id)
             } else {
                 session.transcriptionSession = nil
                 startupAudioRouter.close()
@@ -1566,7 +1546,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
             if session.microphoneOff { return }
             let prepare = session.prepareMicrophoneTranscription
             session.prepareMicrophoneTranscription = nil
-            try await prepare?()
+            await prepare?()
 
             // Best-effort model preload so the eventual transcribe is fast. Use this
             // recording's frozen model; rereading the global Mode here lets a newer
@@ -1601,6 +1581,19 @@ class VoiceInkEngine: NSObject, ObservableObject {
 
         } catch {
             activeModeTask.cancel()
+            // A recorder-start failure may tear down shared capture only while this same
+            // start still owns its session. Cancel, an overlapping normal stop and reset
+            // replace the token or remove the session and already own teardown; repeating
+            // it here could stop a newer session's Recorder, release its media/mute
+            // leases, delete audio an enqueued pipeline owns, or claim a failed start.
+            guard RecorderPanelLifecyclePolicy.startFailureOwnsCaptureTeardown(
+                startTokenIsCurrent: session.startID == startID,
+                sessionIsRegistered: self.sessions.contains(where: { $0 === session }),
+                sessionStillOwnsMic: self.activeRecordingSession === session
+            ) else {
+                vippLog.info("startNewSession: start failure arrived after its lifecycle was superseded; shared Recorder, audio, History and HUD left to their owner sessionID=\(session.id.uuidString, privacy: .public)")
+                return
+            }
             self.logger.error("Recording failed to start: \(error, privacy: .public)")
             await self.recorder.stopRecording()
             session.transcriptionSession?.cancel()
@@ -1655,6 +1648,39 @@ class VoiceInkEngine: NSObject, ObservableObject {
 
     private func requestRecordPermission(response: @escaping (Bool) -> Void) {
         response(true)
+    }
+
+    /// Present one realtime startup decision. RealtimeTranscriptionStartup has already
+    /// changed only this session's optional realtime state. A superseded result must not
+    /// notify or recompute on behalf of a newer recording.
+    private func applyRealtimeStartupOutcome(
+        _ outcome: RealtimeTranscriptionStartup.Outcome,
+        sessionID: UUID
+    ) {
+        switch outcome {
+        case .connected(let replayedChunks, let replayedBytes):
+            vippLog.info("streaming startup audio connected replayedChunks=\(replayedChunks, privacy: .public) replayedBytes=\(replayedBytes, privacy: .public)")
+        case .completedFileFallback(let reason):
+            recomputeDerivedState()
+            switch reason {
+            case .startupAudioOverflow(let droppedChunks, let droppedBytes):
+                vippLog.warning("streaming startup audio exceeded its bound; using complete WAV fallback droppedChunks=\(droppedChunks, privacy: .public) droppedBytes=\(droppedBytes, privacy: .public)")
+                NotificationManager.shared.showNotification(
+                    title: String(localized: "Realtime startup took too long; this recording will transcribe after stop"),
+                    type: .warning
+                )
+            case .providerPreparationFailed:
+                vippLog.warning("streaming provider preparation failed; capture continues with complete WAV fallback session=\(sessionID.uuidString, privacy: .public)")
+                NotificationManager.shared.showNotification(
+                    title: String(localized: "Realtime unavailable — recording continues"),
+                    type: .warning
+                )
+            case .startupRouterClosed, .noLiveAudioCallback:
+                vippLog.info("streaming startup has no live audio route reason=\(String(describing: reason), privacy: .public); capture continues with complete WAV fallback session=\(sessionID.uuidString, privacy: .public)")
+            }
+        case .supersededAttemptReleased:
+            vippLog.info("streaming startup superseded after its recording stopped or was canceled; newer capture, audio and HUD untouched session=\(sessionID.uuidString, privacy: .public)")
+        }
     }
 
     // MARK: - Recording Context

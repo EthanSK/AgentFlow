@@ -73,6 +73,18 @@ enum RecorderPanelLifecyclePolicy {
     ) -> Bool {
         startTokenIsCurrent && sessionStillOwnsMic && !panelIsVisible && !canceled
     }
+
+    /// A recorder-start failure may stop the shared Recorder, discard the WAV/journal,
+    /// remove the session and dismiss the HUD only while that exact start still owns its
+    /// session. Cancel, an overlapping normal stop and reset replace the start token or
+    /// remove the session first and own their own teardown and History retention.
+    static func startFailureOwnsCaptureTeardown(
+        startTokenIsCurrent: Bool,
+        sessionIsRegistered: Bool,
+        sessionStillOwnsMic: Bool
+    ) -> Bool {
+        startTokenIsCurrent && sessionIsRegistered && sessionStillOwnsMic
+    }
 }
 
 /// Presentation only: an accepted Start is not a microphone owner or a fake session.

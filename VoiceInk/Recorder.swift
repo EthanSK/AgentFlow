@@ -331,7 +331,12 @@ class Recorder: NSObject, ObservableObject {
             return inputDeviceSnapshot
         } catch {
             logger.error("Failed to start recording deviceID=\(deviceID, privacy: .public) file=\(url.lastPathComponent, privacy: .public) error=\(error, privacy: .public)")
-            await stopRecording()
+            // VoiceInkEngine is the sole caller and owns the session's failure
+            // teardown. It revalidates the start token and current microphone
+            // owner before stopping shared capture. An unconditional second stop
+            // here could arrive after A was canceled and B opened its own WAV.
+            // CoreAudioRecorder already closes its unusable local hardware on
+            // failure; leave media/HUD/History cleanup to the owning engine start.
             throw error
         }
     }

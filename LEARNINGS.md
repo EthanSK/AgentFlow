@@ -1,5 +1,30 @@
 # Learnings
 
+## 2026-10-17 — Batch original-document AX reads without changing the fingerprint
+
+The saved-original-input Next route consumes the recording-start fingerprint;
+normal Primary delivery deliberately discards it. The current source has no
+reader for the historical `VIPPExactInputDeliveryEnabled` preference, so its
+stored value is not evidence that capture work is disabled. Both an idle partial
+modifier and a completed Start chord can reach the synchronous MainActor scan.
+
+Candidate `7ba96eb4218fca12ad6491a1915dcee96fa9cb7f`, build 435, batches
+role/children and value/title reads with per-attribute errors preserved and one
+fallback only after global failure or malformed results. Keep the exact same
+breadth-first node set, depth limit, region test, readable-empty handling and
+longest-16 normalized anchors. No node budget or late/lazy fingerprint is added.
+The audited no-caret path retains the candidate's first verified identity rather
+than discarding it and rescanning the winner, while preserving final host,
+focused-container/window and exact-structure rechecks. This is batching and
+duplicate-read removal, not moving the work off the UI thread.
+
+The Mini's canonical focused Xcode action executed 29 named tests in two suites,
+including the four new batch/equivalence guards, full-tree fingerprint guards,
+passive no-caret capture, Primary isolation, Next Mode ownership, shortcut-event
+ordering and HUD-only streaming. A 3,901-node fake-tree test proves traversal/read
+count equivalence, not a measured live latency improvement. No candidate from
+this entry is installed yet; release and physical timing remain separate gates.
+
 ## 2026-10-17 — Expired and post-reservation captures amplify startup stalls
 
 Counts-only traces of installed 433 showed two pre-chord full-window scans over

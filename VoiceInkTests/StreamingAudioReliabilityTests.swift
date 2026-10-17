@@ -198,24 +198,28 @@ struct StreamingAudioReliabilityTests {
             ),
             encoding: .utf8
         )
-        let overflowStart = try #require(engine.range(of: "case .fallbackRequired"))
-        let closedStart = try #require(
-            engine.range(of: "case .closed:", range: overflowStart.upperBound..<engine.endIndex)
+        let startup = try String(
+            contentsOf: repositoryRoot.appendingPathComponent(
+                "VoiceInk/Transcription/Engine/RealtimeTranscriptionStartup.swift"
+            ),
+            encoding: .utf8
         )
-        let nilCallbackStart = try #require(
-            engine.range(of: "} else {", range: closedStart.upperBound..<engine.endIndex)
+        // Every realtime abandon path (provider failure, startup overflow, closed router,
+        // no live callback) runs through one session-local completed-WAV fallback that
+        // collapses the realtime HUD. RecordingStopSafetyTests prove each outcome; this
+        // guard keeps the engine from growing an inline branch that skips that fallback.
+        #expect(startup.contains("case .fallbackRequired"))
+        #expect(startup.contains("case .closed:"))
+        #expect(
+            startup.components(
+                separatedBy: "session.showsRealtimeTranscriptHUD = false"
+            ).count == 2
         )
-        let overflowBranch = engine[overflowStart.lowerBound..<closedStart.lowerBound]
-        let closedBranch = engine[closedStart.lowerBound..<nilCallbackStart.lowerBound]
-        #expect(overflowBranch.contains("session.showsRealtimeTranscriptHUD = false"))
-        #expect(closedBranch.contains("session.showsRealtimeTranscriptHUD = false"))
-        // Exactly three abandon branches must collapse the realtime HUD: startup
-        // overflow, a closed router, and a streaming session with no callback. A tail
-        // search was too broad and could pass because of an unrelated later occurrence.
         #expect(
             engine.components(
                 separatedBy: "session.showsRealtimeTranscriptHUD = false"
-            ).count == 4
+            ).count == 1
         )
+        #expect(engine.contains("RealtimeTranscriptionStartup.prepare("))
     }
 }
