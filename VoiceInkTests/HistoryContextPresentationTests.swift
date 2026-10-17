@@ -10,6 +10,8 @@ struct HistoryContextPresentationTests {
         let button = try String(contentsOf: root.appendingPathComponent("VoiceInk/Views/Common/CopyIconButton.swift"), encoding: .utf8)
         #expect(presentation.contains("title: showsFormattingTitle ? \"Copy with formatting\" : nil"))
         #expect(presentation.contains("accessibilityTitle: \"Copy with formatting\""))
+        #expect(presentation.contains("systemImage: \"doc.on.doc\""))
+        #expect(!presentation.contains("systemImage: \"textformat\""))
         #expect(!presentation.contains("Copy with LaTeX"))
         #expect(!presentation.contains("LiveSelectionStyledMath.coloredXML"))
         #expect(button.contains("title == nil ? 28 : nil"))
@@ -148,15 +150,28 @@ struct HistoryContextPresentationTests {
         }
     }
 
-    @MainActor @Test func nativeAttributesCarryColorsAndItalicMetadata() {
+    @MainActor @Test func nativeHistoryIgnoresRetiredColorsAndItalicMetadata() {
         let parsed = HistoryContextPresentation.document(#"\(\textsf{\color{#67e8f9}\textit{<text>}}\) \(\textsf{\color{#67e8f9}words}\)"#)
-        let rendered = NSAttributedString(HistoryContextPresentation.attributed(parsed, fontSize: 14, foreground: .primary))
+        let rendered = NSAttributedString(HistoryContextPresentation.attributed(parsed, fontSize: 14, foreground: .gray))
         #expect(rendered.string == "<text> words")
         let metadata = rendered.attribute(.font, at: 0, effectiveRange: nil) as? NSFont
         let payload = rendered.attribute(.font, at: 7, effectiveRange: nil) as? NSFont
-        #expect(metadata.map { NSFontManager.shared.traits(of: $0).contains(.italicFontMask) } == true)
+        #expect(metadata.map { NSFontManager.shared.traits(of: $0).contains(.italicFontMask) } == false)
         #expect(payload.map { NSFontManager.shared.traits(of: $0).contains(.italicFontMask) } == false)
         let color = rendered.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? NSColor
-        #expect(abs((color?.redComponent ?? 0) - 103.0 / 255) < 0.001)
+        #expect(color == NSColor(Color.gray))
+        #expect(rendered.attribute(.foregroundColor, at: 7, effectiveRange: nil) as? NSColor == color)
+    }
+
+    @MainActor @Test func neutralHistoryRetainsEveryLegacyWordAndContextByte() {
+        let source = LiveSelectionStyledMath.coloredXML("Every word 👋\n<speech>XML & symbols</speech>",
+            color: "#fa7070")
+        let row = Transcription(text: source, duration: 0)
+        let parsed = HistoryContextPresentation.document(source)
+        let rendered = NSAttributedString(HistoryContextPresentation.attributed(parsed, fontSize: 14, foreground: .primary))
+        #expect(rendered.string == "Every word 👋\n<speech>XML & symbols</speech>")
+        #expect(row.text == source)
+        #expect(HistoryContextPresentation.copyText(source, format: .formatted) == source)
+        #expect(HistoryContextPresentation.copyText(source, format: .plain) == rendered.string)
     }
 }

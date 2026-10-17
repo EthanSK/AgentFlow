@@ -1,9 +1,10 @@
 import AppKit
 import SwiftUI
 
-/// Read-only presentation for the small LaTeX vocabulary Agent Flow emits. History
-/// is not a TeX interpreter: arbitrary commands, HTML and selected source stay inert.
-/// Stored output stays unchanged; copy formatting is an explicit user choice.
+/// Lossless decoding for Agent Flow's retired presentation vocabulary. History
+/// now uses the same neutral text appearance as the current Codex paste; recognizing
+/// an old colour wrapper must not revive its rainbow or metadata colours.
+/// Arbitrary commands stay inert and stored/copy source remains unchanged.
 enum HistoryContextPresentation {
     struct Run: Equatable {
         var text: String
@@ -147,21 +148,14 @@ enum HistoryContextPresentation {
     }
 
     static func attributed(_ document: Document, fontSize: CGFloat, foreground: Color) -> AttributedString {
-        let result = NSMutableAttributedString(string: "")
-        for run in document.runs {
-            let regular = NSFont.systemFont(ofSize: fontSize)
-            let font = run.italic ? NSFontManager.shared.convert(regular, toHaveTrait: .italicFontMask) : regular
-            let color = run.colorHex.flatMap(nsColor) ?? NSColor(foreground)
-            result.append(NSAttributedString(string: run.text, attributes: [.font: font, .foregroundColor: color]))
-        }
-        return AttributedString(result)
-    }
-
-    private static func nsColor(_ hex: String) -> NSColor? {
-        guard let rgb = UInt32(hex.dropFirst(), radix: 16) else { return nil }
-        return NSColor(srgbRed: CGFloat((rgb >> 16) & 255) / 255,
-                       green: CGFloat((rgb >> 8) & 255) / 255,
-                       blue: CGFloat(rgb & 255) / 255, alpha: 1)
+        // Old History retains its exact producer markup for recovery/copy. Decode
+        // those wrappers for reading, but never apply their retired colours or
+        // italics to the native UI. A single neutral attributed run also avoids
+        // rebuilding a separate native font/colour span for every rainbow word.
+        AttributedString(NSAttributedString(string: document.plainText, attributes: [
+            .font: NSFont.systemFont(ofSize: fontSize),
+            .foregroundColor: NSColor(foreground),
+        ]))
     }
 }
 
@@ -178,7 +172,7 @@ struct HistoryCopyButtons: View {
                 HistoryContextPresentation.copyText($0, format: .plain)
             })
             .accessibilityIdentifier(identifier)
-            CopyIconButton(textToCopy: text, systemImage: "textformat",
+            CopyIconButton(textToCopy: text, systemImage: "doc.on.doc",
                            title: showsFormattingTitle ? "Copy with formatting" : nil,
                            accessibilityTitle: "Copy with formatting", textTransform: {
                 HistoryContextPresentation.copyText($0, format: .formatted)
