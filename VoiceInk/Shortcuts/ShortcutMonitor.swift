@@ -84,9 +84,16 @@ final class ShortcutMonitor {
     private var isConsumingNextTrackPress = false
     private var eventTap: CFMachPort?
     private var eventTapRunLoopSource: CFRunLoopSource?
+    private let sourceApplicationBundleID: (pid_t) -> String?
     private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "ShortcutMonitor")
 
     private static let shortcutInterruptionWindow: TimeInterval = 1.0
+
+    init(sourceApplicationBundleID: @escaping (pid_t) -> String? = {
+        NSRunningApplication(processIdentifier: $0)?.bundleIdentifier
+    }) {
+        self.sourceApplicationBundleID = sourceApplicationBundleID
+    }
 
     deinit {
         stop()
@@ -348,6 +355,19 @@ final class ShortcutMonitor {
         let data = UInt32(truncatingIfNeeded: systemEvent.data1)
         let keyType = Int((data & 0xFFFF_0000) >> 16)
         guard keyType == NX_KEYTYPE_NEXT else { return false }
+
+        // Agentic Mouse's separate Tracks + Wheel control intentionally sends media
+        // Next, not the physical recorder's Next/latch action. Read the creator of
+        // this ORIGINAL event-tap CGEvent (not a reconstructed global NSEvent's
+        // target PID). Only that known emitter bypasses recorder ownership; hardware,
+        // unknown and every other source keep the visible-bar/three-route contract.
+        // Bypass both halves before touching the latch press state, so an interleaved
+        // media cycle cannot release a physical Next press owned by this recorder.
+        let sourcePID = event.getIntegerValueField(.eventSourceUnixProcessID)
+        if sourcePID > 1, sourcePID <= Int64(Int32.max),
+           sourceApplicationBundleID(pid_t(sourcePID)) == "com.ethan.agentic-mouse" {
+            return false
+        }
 
         let keyState = Int((data & 0x0000_FF00) >> 8)
         switch keyState {

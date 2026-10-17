@@ -343,6 +343,13 @@ consumes the press as a no-op. Only after the bar is hidden does the callback re
 unowned event unchanged so macOS can route it to the normal media destination. The behavior is
 global and is not Spotify-specific.
 
+Agentic Mouse's separate **Tracks + Wheel** control is an intentional media command,
+not that physical recorder Next button. Its synthetic Next events are identified by
+the original event-tap CGEvent's creator PID resolving to `com.ethan.agentic-mouse`;
+both halves pass to media without changing recorder press ownership. Hardware,
+missing/unresolved creator identity and every other emitter retain the visible-bar
+rule above. This is not an eligibility-based fallback or another recording route.
+
 ## Accessibility and safe failure behavior
 
 Exact-input routing uses the macOS Accessibility API, which VoiceInk++ already needs for pasting.

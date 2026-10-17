@@ -10,6 +10,7 @@ import AppKit
 import Carbon.HIToolbox
 import CoreAudio
 import CoreGraphics
+import IOKit.hidsystem
 import Darwin
 import Foundation
 import ApplicationServices
@@ -254,6 +255,71 @@ private final class PrimaryShortcutHandlerTestState {
 }
 
 struct VoiceInkTests {
+    @Test @MainActor func agenticMouseMediaNextBypassesRecorderWithoutChangingPhysicalPressOwnership() throws {
+        let mousePID: pid_t = 4201
+        var routeRequests = 0
+        let monitor = ShortcutMonitor(sourceApplicationBundleID: {
+            $0 == mousePID ? "com.ethan.agentic-mouse" : nil
+        })
+        defer { monitor.stop() }
+        #expect(monitor.start(
+            shortcuts: [.primaryRecording: .modifierOnly(keyCode: nil, modifierFlags: [.control, .option])],
+            onKeyDown: { _, _ in }, onKeyUp: { _, _ in },
+            onNextTrackKeyDown: { routeRequests += 1; return true },
+            installSystemEventTap: false
+        ))
+
+        func event(_ state: Int, sourcePID: pid_t) throws -> CGEvent {
+            let native = try #require(NSEvent.otherEvent(
+                with: .systemDefined, location: .zero, modifierFlags: [], timestamp: 0,
+                windowNumber: 0, context: nil, subtype: Int16(NX_SUBTYPE_AUX_CONTROL_BUTTONS),
+                data1: (Int(NX_KEYTYPE_NEXT) << 16) | (state << 8), data2: -1
+            ))
+            let event = try #require(native.cgEvent)
+            event.setIntegerValueField(.eventSourceUnixProcessID, value: Int64(sourcePID))
+            return event
+        }
+        let type = try #require(CGEventType(rawValue: UInt32(NSEvent.EventType.systemDefined.rawValue)))
+        // An ordinary physical Next still owns its complete press while the HUD is visible.
+        #expect(monitor.handleCGEvent(type: type, event: try event(Int(NX_KEYDOWN), sourcePID: 0)))
+        #expect(routeRequests == 1)
+        // Explicit media wheel/click cycles pass through even inside that physical press.
+        for _ in 0..<3 {
+            #expect(!monitor.handleCGEvent(type: type, event: try event(Int(NX_KEYDOWN), sourcePID: mousePID)))
+            #expect(!monitor.handleCGEvent(type: type, event: try event(Int(NX_KEYUP), sourcePID: mousePID)))
+        }
+        #expect(routeRequests == 1)
+        #expect(monitor.handleCGEvent(type: type, event: try event(Int(NX_KEYDOWN), sourcePID: 0)))
+        #expect(routeRequests == 1) // Physical repeat, not another latch request.
+        #expect(monitor.handleCGEvent(type: type, event: try event(Int(NX_KEYUP), sourcePID: 0)))
+        #expect(!monitor.handleCGEvent(type: type, event: try event(Int(NX_KEYUP), sourcePID: 0)))
+    }
+
+    @Test @MainActor func unknownMediaEmittersKeepVisibleRecorderNextOwnership() throws {
+        for bundle in [nil, "com.example.other", "com.ethan.agentic-mouse-other"] as [String?] {
+            var routeRequests = 0
+            let monitor = ShortcutMonitor(sourceApplicationBundleID: { _ in bundle })
+            defer { monitor.stop() }
+            monitor.start(
+                shortcuts: [.primaryRecording: .modifierOnly(keyCode: nil, modifierFlags: [.control, .option])],
+                onKeyDown: { _, _ in }, onKeyUp: { _, _ in },
+                onNextTrackKeyDown: { routeRequests += 1; return true }, installSystemEventTap: false
+            )
+            let type = try #require(CGEventType(rawValue: UInt32(NSEvent.EventType.systemDefined.rawValue)))
+            for state in [Int(NX_KEYDOWN), Int(NX_KEYUP)] {
+                let native = try #require(NSEvent.otherEvent(
+                    with: .systemDefined, location: .zero, modifierFlags: [], timestamp: 0,
+                    windowNumber: 0, context: nil, subtype: Int16(NX_SUBTYPE_AUX_CONTROL_BUTTONS),
+                    data1: (Int(NX_KEYTYPE_NEXT) << 16) | (state << 8), data2: -1
+                ))
+                let event = try #require(native.cgEvent)
+                event.setIntegerValueField(.eventSourceUnixProcessID, value: 4202)
+                #expect(monitor.handleCGEvent(type: type, event: event))
+            }
+            #expect(routeRequests == 1)
+        }
+    }
+
     @Test func dashboardResourcesUseForkOwnedDestinations() throws {
         let expected: [(URL, String, String)] = [
             (AgentFlowResourceURLs.website, "ethansk.github.io", "/AgentFlow"),

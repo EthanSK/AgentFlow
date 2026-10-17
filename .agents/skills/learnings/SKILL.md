@@ -18,6 +18,14 @@ validation contract applies.
 
 ## Start with prior evidence
 
+Agent Flow must use Ethan's Scarlett 18i8 microphone. Warn him if another input
+is selected or used, and ask for his approval before changing it or accepting a
+changed input. Do not silently switch back to Scarlett either. Verify both the
+saved input choice and the actual recording-device metadata; the system output
+or a saved preference alone does not prove which microphone captured the audio.
+This is an agent operating rule, not a continuously running microphone monitor.
+User-requested, destination approved — 2026-10-17.
+
 Never stop, quit, terminate, or restart Ethan's running Agent Flow while he is
 mid-speech or in a recording session. Wait until his current session ends before
 an install or restart, even when the build and tests are ready. A missing recorder
@@ -61,6 +69,18 @@ User-requested cleanup and recurrence prevention — 2026-10-06; see `LEARNINGS.
 4. Inspect named accepted commits and current tests when a learning points to them. If `FAILED_APPROACHES.md` names the proposed mechanism, stop unless new evidence changes the exact recorded failure condition; write that distinction down before experimenting. Preserve verified contracts instead of recreating remembered behavior.
 5. For a remembered historical rollback, never choose by version proximity or a version label alone. Correlate Ethan's timestamped acceptance/failure message with the immediately preceding verified install/restart, then require the artifact's build, CDHash or executable checksum, and delivery architecture to agree. Early build 203 was reused for materially different binaries, so its label is not an identity.
 6. State any relevant prior constraint before making a risky change.
+
+For the separate read-only Codex pane inspector, distinguish the clicked pane,
+focused pane and editable-input status; Conversation-region focus is not a caret.
+Use only reported/verified host-specific markers, bounded app-owned focus reads
+and fresh same-window evidence. Preserve explicit partial-path evidence instead
+of discarding it solely because an ancestor limit was reached; owner/focus changes
+remain fatal. Test the model and fake adapter on the Mini, exercise Demo locally,
+then leave Live for Ethan's own clicks. Never inspect its live Codex output as an
+agent workaround, add descendant scans, or turn a diagnostic classification into
+paste authority. Self-improved — 2026-10-17: the 24-ancestor/old-marker inspector
+failed against the supplied 34-deep live path; 39 bounded regression checks and
+the Demo body-click case validate the correction recorded in LEARNINGS.md.
 
 For a missing prompt link or expanded-XML regression, compare the live recipient's
 bundle URL, version and build with the compact-prompt classifier before changing
@@ -259,7 +279,12 @@ microphone-free editor/controller fixtures from physical shortcut/context accept
 User-requested keyboard focus behaviour — 2026-09-26; restored on 2026-09-28:
 return focus after each accepted highlight/screenshot once typing is engaged.
 Default an absent automatic-return preference to enabled, preserve an explicit
-false opt-out, and never apply this to untouched voice-only sessions. Bind initial
+false opt-out, and permit automatic return only while the microphone is off and
+not transitioning. Recheck that live policy at the queued focus boundary, not
+only when capturing context: a remembered typing opt-in must not steal Codex's
+caret during speech. Explicit editor clicks remain independent. User correction
+— 2026-10-17; see LEARNINGS.md, “Automatic context return is typing-only, not a
+lifetime opt-in”. Bind initial
 focus before the audio handshake, allow keyboard input during microphone-off
 startup, and preserve already-typed prose in History if startup fails.
 User correction — 2026-09-28: remove the Unfocus button and its reserved gutter.
@@ -311,6 +336,30 @@ canonical archive bytes and metadata. Raw producer-LaTeX can split words;
 substring failure alone does not prove text was lost. Self-improved — 2026-09-30:
 the first late-Shift release gate exposed this assertion trap; the corrected
 523-test gate passed. See the same late-Shift entry in `LEARNINGS.md`.
+
+History's **Copy** returns raw authored speech/typing; **Copy with flow markers**
+returns the entire readable XML/context, not the retired LaTeX producer bytes.
+Decode only the known presentation grammar, preserve malformed/unknown text,
+and never rewrite stored History or truncate either copy. Derive the main message
+and structured copy from one shared projection: prefer final Flow content, then
+the retained live timeline or the existing recovered-context wrapper. Show Flow
+content without expanding the row; expansion may expose authored-only raw text,
+not a second exit-draft/recovered message. Preserve provider-final words separately
+when a live snapshot is earlier; never invent missing timing or overwrite either
+source to reconcile the UI. Exercise real shared buttons in cards, compact lists
+and original/enhanced detail headers, including raw-only and recovered records.
+User correction — 2026-10-17; see LEARNINGS.md, “History's Flow timeline is the
+main message, not a second exit draft”. For Codex paste, keep the editable opening
+and full-file preview plain; complete inline context uses fixed colours for
+selection/screenshot metadata and rainbow only for authored speech/typing inside
+its later blocks. Use the shared response palette once per message and continue
+across blocks/lines; never colour the editable top paragraph. Compact generated
+tag scaffolding only, preserving payload paragraphs and indentation. This latest
+inline-rainbow clarification supersedes the earlier no-rainbow inline rule.
+Count the actual coloured UTF-16 expansion against
+the existing attachment threshold, and reject an oversized plain candidate before
+colouring it. Archives remain canonical plain XML. User correction — 2026-10-17;
+supersedes the earlier byte-for-byte formatted-copy contract.
 Do not classify the four-key chord as Primary multi-click, resume the mic, or
 reinterpret a repeated chord as a pending-result action. Forward all modifier
 releases. Ethan corrected start-only behaviour
