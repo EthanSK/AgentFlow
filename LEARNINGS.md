@@ -45,8 +45,12 @@ verified; 433 remains in a verified rollback ZIP and Trash. The first five-secon
 receiver check returned ECONNREFUSED while the app initialized, then five successive
 passive probes returned zero. Do not restart a healthy new process on that single
 early observation; bounded readiness observation is separate from successful launch.
-No recording command was injected. Live post-change first-frame latency remains
-unverified; the first valid AX scan still precedes the startup shell.
+No recording command was injected. Three subsequent natural starts reported
+shortcut-dispatch plus first-frame intervals of about 611, 1,490 and 41 ms across
+different contexts, and the expired-event skip appeared in the installed trace.
+These are app-receipt telemetry, not a controlled before/after or physical
+key-to-photon test. The first valid AX scan still precedes the startup shell;
+instant startup remains unfinished and physical acceptance is unverified.
 
 ## 2026-10-17 — Voice shortcut aliases need Primary lifecycle and clean release
 
