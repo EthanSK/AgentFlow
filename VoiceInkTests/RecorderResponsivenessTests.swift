@@ -7,6 +7,27 @@ import ApplicationServices
 
 @Suite(.serialized)
 struct RecorderResponsivenessTests {
+    @Test @MainActor func disabledRecordingStartWarningDoesNotPresentNotification() {
+        #expect(!FocusLockService.recordingStartInputCaptureEnabled)
+        let windowNumbers = NSApp.windows.map(\.windowNumber)
+        FocusLockService.shared.showRecordingStartInput(nil)
+        #expect(NSApp.windows.map(\.windowNumber) == windowNumbers)
+    }
+
+    @Test func recordingStartWarningRequiresEnabledCaptureBeforeNotification() throws {
+        let focus = try source("VoiceInk/Modes/FocusLockService.swift")
+        let start = try #require(focus.range(of: "    func showRecordingStartInput(_ target: Target?) {"))
+        let end = try #require(focus.range(of: "    func showPendingPasteInputUnavailable()", range: start.upperBound..<focus.endIndex))
+        let body = String(focus[start.lowerBound..<end.lowerBound])
+        let enabled = try #require(body.range(of: "guard Self.recordingStartInputCaptureEnabled, target == nil else { return }"))
+        let notification = try #require(body.range(of: "NotificationManager.shared.showNotification("))
+        #expect(enabled.lowerBound < notification.lowerBound)
+        // Only this dormant feature's advisory is suppressed, not microphone
+        // failures or an explicit second-chance paste-target failure.
+        #expect(body.contains("Recording start input unavailable"))
+        #expect(focus[end.lowerBound...].contains("Paste target unchanged — focus a text input and press Next Track again"))
+    }
+
     @Test @MainActor func unusedRecordingStartInputCaptureReturnsNilWithoutReadingAX() {
         #expect(!FocusLockService.recordingStartInputCaptureEnabled)
         FocusLockService.shared.stageRecordingStartInputBeforeShortcutCompletion()

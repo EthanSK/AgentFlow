@@ -1315,7 +1315,11 @@ final class FocusLockService: ObservableObject {
     }
 
     func showRecordingStartInput(_ target: Target?) {
-        guard target == nil else { return } // The persistent capsule icon already shows a valid Next Track destination; only interrupt the user when capture failed.
+        // A missing target is expected while Ethan's unused recording-start
+        // capture is disabled, not a failed recording or a reason to focus an
+        // input. Keep real capture failures visible if that feature is restored;
+        // a valid destination already has its persistent capsule icon.
+        guard Self.recordingStartInputCaptureEnabled, target == nil else { return }
         NotificationManager.shared.showNotification(
             title: String(localized: "Recording start input unavailable — focus a text input before recording"),
             type: .warning,
