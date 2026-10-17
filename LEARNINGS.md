@@ -2784,3 +2784,16 @@ Each entry looks like:
 **Commit:** 570a6fa
 **Guard:** Thorough comments at start()/handleFrontmostAppActivation/resolveAndApplyConfiguration; ignores own bundle id + nil bundle id; [weak self] in observer + async hop to avoid retain cycle / actor violation
 ---
+# Cross-machine screenshot references require pixel retrieval — 2026-10-17
+
+**Symptom:** Agent Flow delivered speech plus MacBook Pro screenshot paths to an OpenClaw agent on the Mini; the paths were not image attachments and the agent initially had not inspected their pixels.
+**Cause:** The interpretation skill's inaccessible-path fallback skipped the paired source machine.
+**Fix:** Check the exact referenced path with Agent Bridge, retrieve only that file using the pairing's configured SSH identity and internet host into local temporary storage, then use the image viewer. Two real PNGs were retrieved byte-for-byte (1,031,620 and 284,856 bytes) and visually inspected, showing an optic-chiasm diagram and a Telegram message respectively.
+**Guard:** Distinguish XML receipt, remote file existence, successful transfer, and actual visual inspection. Ask for an attachment only after the authorized source route is unavailable or fails; do not bulk-fetch neighbouring screenshots or infer pixels from a filename.
+
+# Agent Flow upstream refresh and mandatory screenshots — 2026-10-17
+
+**User correction (5970):** Always open supplied screenshots; use the MacBook Pro Agent Flow skill, not response-preferences, as interpretation source of truth.
+**Verified source:** MacBookPro `~/.codex/skills/interpret-agent-flow-context`; the Claude skill symlinks there. Its newer full-prompt reader and references were absent from the Mini skill.
+**Adaptation:** Imported reviewed reader/reference updates, split conditional reading/legacy details out of the under-10,000-character entrypoint, and retained OpenClaw-specific source refresh plus mandatory per-screenshot image viewing. The receipt records upstream hashes for subsequent source comparisons. Repaired inherited relative links in the historical reference. Telegram styling remains local; inspecting screenshots does not automatically resend media.
+**Validation:** Skill validator and all 15 canonical-reader tests passed; linked resources resolve. Re-fetched the exact 1,031,620-byte optic-chiasm PNG using the Bridge pairing's configured Tailscale endpoint and opened it in `view_image`. MacBook skill/app unchanged; local documentation/skill changes only.
