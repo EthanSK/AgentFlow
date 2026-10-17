@@ -180,7 +180,7 @@ struct AgentFlowPromptArchiveTests {
             .init(tag: "screenshot", text: "image.png", color: "#e879f9"),
             .init(tag: "typed_text", text: "after", color: "#f4f4f5")
         ], fileURL: URL(fileURLWithPath: "/tmp/never-created.md"), completePromptText: canonical))
-        #expect(preview == "[↗](/tmp/never-created.md) before `<selection>` `<screenshot>` after\n\n" + canonical)
+        #expect(preview == "[↗](/tmp/never-created.md) before `<selection>` `<screenshot>` after\n\n\n" + canonical)
         #expect(!preview.contains(AgentFlowPromptArchive.interpretationReminder))
         #expect(preview.utf16.count < 5_000)
         #expect(!preview.contains("Read the [full prompt]"))
@@ -191,7 +191,7 @@ struct AgentFlowPromptArchiveTests {
         let file = URL(fileURLWithPath: "/tmp/full (😀) prompt.md")
         let viewer = URL(fileURLWithPath: "/tmp/full (😀) prompt.html")
         let encoded = "/tmp/full%20%28%F0%9F%98%80%29%20prompt.html"
-        let prefix = "[↗](\(encoded)) keep these words `<selection>`\n\n"
+        let prefix = "[↗](\(encoded)) keep these words `<selection>`\n\n\n"
         let sections = [AgentFlowPromptPreview.Section(tag: "speech", text: "keep these words", color: "#f1f5f9"),
                         AgentFlowPromptPreview.Section(tag: "selection", text: "hidden", color: "#67e8f9")]
         for length in [4_999, 5_000, 5_001] {

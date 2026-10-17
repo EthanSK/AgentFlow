@@ -517,11 +517,13 @@ enum AgentFlowPromptPreview {
         // A fitting timeline is additional context underneath, not a replacement
         // opening. Reuse the pipeline's exact payload without the archive's skill
         // reminder; normal skill discovery/reuse already handles interpretation.
-        // Count both copies of authored words and the paragraph separator before
+        // Leave an extra blank line between the editable opening and raw XML:
+        // compact question/queue surfaces can visually collapse the usual gap.
+        // Count both copies of authored words and the full separator before
         // selecting this branch, so one paste stays below the host's boundary.
         if needsFullPrompt, let completePromptText,
            completePromptText.contains(where: { !$0.isWhitespace }) {
-            let inline = result + "\n\n" + completePromptText
+            let inline = result + "\n\n\n" + completePromptText
             if inline.utf16.count < pastedTextAttachmentThreshold { return inline }
         }
         return needsFullPrompt ? result + "\n\n" + pointer : result
