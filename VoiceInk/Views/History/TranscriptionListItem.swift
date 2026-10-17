@@ -7,6 +7,10 @@ struct TranscriptionListItem: View {
     let onSelect: () -> Void
     let onToggleCheck: () -> Void
 
+    private var message: HistoryContextPresentation.Message {
+        HistoryContextPresentation.message(for: transcription)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
@@ -34,11 +38,12 @@ struct TranscriptionListItem: View {
                         .foregroundColor(.secondary)
                 }
                 HistoryAudioRetryButton(transcription: transcription)
-                HistoryCopyButtons(text: transcription.enhancedText ?? transcription.historyDisplayText,
-                                   identifier: "history-list-copy-\(transcription.id)", showsFormattingTitle: false)
+                HistoryCopyButtons(text: message.text,
+                                   identifier: "history-list-copy-\(transcription.id)", showsFormattingTitle: false,
+                                   rawText: message.rawText)
             }
             // Match the card layout: only metadata/actions share the top row.
-            Text(HistoryContextPresentation.listPreview(transcription.enhancedText ?? transcription.historyDisplayText))
+            Text(HistoryContextPresentation.listPreview(message.text))
                 .font(.system(size: 12, weight: .regular))
                 .lineLimit(2)
                 .foregroundColor(.primary)

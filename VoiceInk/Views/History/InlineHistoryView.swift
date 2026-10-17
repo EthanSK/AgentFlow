@@ -459,12 +459,11 @@ struct HistoryCardRow: View {
     @State private var selectedTab: TranscriptionTab = .original
 
     private var displayText: String {
-        switch selectedTab {
-        case .original:
-            return transcription.historyDisplayText
-        case .enhanced:
-            return transcription.enhancedText ?? ""
-        }
+        message.text
+    }
+
+    private var message: HistoryContextPresentation.Message {
+        HistoryContextPresentation.message(for: transcription, enhanced: selectedTab == .enhanced)
     }
 
     private var hasAudioFile: Bool {
@@ -487,7 +486,7 @@ struct HistoryCardRow: View {
                 // Actions own only the header. A separate full-width preview
                 // must not lose a column to Copy, Retry or the checkbox.
                 Button(action: onToggleExpand) {
-                    Text(HistoryContextPresentation.listPreview(transcription.enhancedText ?? transcription.historyDisplayText))
+                    Text(HistoryContextPresentation.listPreview(displayText))
                         .font(.system(size: 13))
                         .lineLimit(2)
                         .foregroundColor(.primary)
@@ -526,7 +525,7 @@ struct HistoryCardRow: View {
             // selected-tab payload as the expanded entry, never listPreview.
             // Separate buttons keep Copy/checkbox clicks from expanding it.
             HistoryAudioRetryButton(transcription: transcription, actionOverride: onRetry)
-            HistoryCopyButtons(text: displayText, identifier: "history-copy-\(transcription.id)")
+            HistoryCopyButtons(text: displayText, identifier: "history-copy-\(transcription.id)", rawText: message.rawText)
 
             Button(action: onToggleExpand) {
                 Image(systemName: "chevron.right")
@@ -577,26 +576,9 @@ struct HistoryCardRow: View {
             }
             .frame(maxHeight: 350)
 
-            if let draft = transcription.recoverableRealtimeDraftText,
-               draft != transcription.historyDisplayText
-                .trimmingCharacters(in: .whitespacesAndNewlines) {
-                VStack(alignment: .leading, spacing: 6) {
-                    HistoryDraftHeader(title: "Live draft at exit", text: draft,
-                                       copyIdentifier: "history-exit-draft-copy-\(transcription.id)")
-                    Text(draft)
-                        .font(.system(size: 13))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(10)
-                        .background(
-                            RoundedRectangle(cornerRadius: AppTheme.Radius.card, style: .continuous)
-                                .fill(AppTheme.Surface.subtle)
-                        )
-                }
-            }
-
-            if let codexText = HistoryContextPresentation.recoveredCodexText(for: transcription) {
-                HistoryRecoveredCodexView(text: codexText)
+            if message.hasFlowMarkers {
+                HistoryRawTextView(text: message.rawText,
+                    identifier: "history-raw-copy-\(transcription.id)")
             }
 
             if hasAudioFile, let urlString = transcription.audioFileURL,

@@ -6,6 +6,45 @@ import SwiftUI
 /// an old colour wrapper must not revive its rainbow or metadata colours.
 /// Arbitrary commands stay inert and stored source remains unchanged.
 enum HistoryContextPresentation {
+    /// One read-only projection owns each History message and its copy actions.
+    /// Never hide a retained timeline in a second exit-draft message, or mutate
+    /// the provider result / recovery snapshot just to arrange the History UI.
+    struct Message {
+        let text: String
+        let rawText: String
+        let hasFlowMarkers: Bool
+    }
+
+    static func hasFlowMarkers(_ source: String) -> Bool {
+        guard source.contains("<") else { return false }
+        return AgentFlowPromptViewer.events(source).contains {
+            ["speech", "speech_segment", "typed_text", "potential_tts",
+             "app_selection", "codex_selection", "local_screenshot"].contains($0.tag)
+        }
+    }
+
+    static func message(for transcription: Transcription, enhanced: Bool = false) -> Message {
+        let original = transcription.historyDisplayText
+        let selected = enhanced ? transcription.enhancedText ?? original : original
+        let readable = document(selected).plainText
+        let source: String
+        if hasFlowMarkers(readable) {
+            source = readable
+        } else if !enhanced, let draft = transcription.recoverableRealtimeDraftText,
+                  hasFlowMarkers(document(draft).plainText) {
+            source = document(draft).plainText
+        } else if !enhanced, let recovered = recoveredCodexText(for: transcription) {
+            source = document(recovered).plainText
+        } else {
+            source = readable
+        }
+        // Final authored words remain available independently of a possibly
+        // earlier live snapshot. Do not invent timing or replace corrections
+        // in the provider result with guesses from the retained timeline.
+        return Message(text: source, rawText: copyText(selected, format: .plain),
+                       hasFlowMarkers: hasFlowMarkers(source))
+    }
+
     struct Run: Equatable {
         var text: String
         var colorHex: String?
@@ -200,16 +239,17 @@ struct HistoryCopyButtons: View {
     let text: String
     var identifier: String = "history-copy"
     var showsFormattingTitle: Bool = true
+    var rawText: String? = nil
 
     var body: some View {
         HStack(spacing: 6) {
-            CopyIconButton(textToCopy: text, textTransform: {
-                HistoryContextPresentation.copyText($0, format: .plain)
+            CopyIconButton(textToCopy: rawText ?? text, textTransform: {
+                rawText == nil ? HistoryContextPresentation.copyText($0, format: .plain) : $0
             })
             .accessibilityIdentifier(identifier)
             CopyIconButton(textToCopy: text, systemImage: "doc.on.doc",
-                           title: showsFormattingTitle ? "Copy with formatting" : nil,
-                           accessibilityTitle: "Copy with formatting", textTransform: {
+                           title: showsFormattingTitle ? "Copy with flow markers" : nil,
+                           accessibilityTitle: "Copy with flow markers", textTransform: {
                 HistoryContextPresentation.copyText($0, format: .formatted)
             })
             .accessibilityIdentifier(identifier + "-formatted")
@@ -228,12 +268,35 @@ struct HistoryMessageContentView: View {
 
     var body: some View {
         let document = HistoryContextPresentation.document(text)
-        if document.hasFormatting {
+        if document.hasFormatting || HistoryContextPresentation.hasFlowMarkers(document.plainText) {
             Text(HistoryContextPresentation.attributed(document, fontSize: fontSize, foreground: foregroundColor))
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: alignment)
         } else {
             MarkdownContentView(text, fontSize: fontSize, foregroundColor: foregroundColor, alignment: alignment)
+        }
+    }
+}
+
+/// Authored words are the only alternate representation inside expanded History.
+struct HistoryRawTextView: View {
+    let text: String
+    var identifier: String = "history-raw-copy"
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Raw text")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
+                Spacer()
+                CopyIconButton(textToCopy: text)
+                    .accessibilityIdentifier(identifier)
+            }
+            Text(text)
+                .font(.system(size: 13))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }

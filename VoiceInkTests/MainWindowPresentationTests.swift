@@ -116,6 +116,8 @@ struct MainWindowPresentationTests {
         let styled = LiveSelectionStyledMath.coloredXML(canonical, color: LiveSelectionStyledMath.selectionColor)
         let rows = [
             Transcription(text: canonical, duration: 0, enhancedText: "Short enhanced preview"),
+            Transcription(text: "Opening words\n\nFinal words", duration: 0, realtimeDraftText: canonical,
+                          transcriptionStatus: .completed),
             Transcription(text: "", duration: 0, realtimeDraftText: canonical,
                           transcriptionStatus: .recoveredAfterInterruption),
             Transcription(text: styled, duration: 0)
@@ -167,13 +169,13 @@ struct MainWindowPresentationTests {
 
             // Real mouse events at the scaled Copy control, not its action or
             // AXPress. It must work before expansion, including a recovered draft.
-            try click(window, logicalPoint: NSPoint(x: 750, y: 14))
+            try click(window, logicalPoint: NSPoint(x: 730, y: 14))
             #expect(pasteboard.string(forType: .string) == "Opening words\n\nFinal words")
             #expect(expanded == 0 && checked == 0)
             let savedSource = row.historyDisplayText
             try click(window, logicalPoint: NSPoint(x: 850, y: 14))
             #expect(pasteboard.string(forType: .string) ==
-                HistoryContextPresentation.copyText(savedSource, format: .formatted))
+                HistoryContextPresentation.message(for: row).text)
             #expect(pasteboard.string(forType: .string) == canonical)
             #expect(expanded == 0 && checked == 0)
             #expect(row.historyDisplayText == savedSource)
@@ -215,7 +217,7 @@ struct MainWindowPresentationTests {
         try withWindow(HistoryCardRow(transcription: row, isExpanded: false, isChecked: false,
             onToggleExpand: { expanded += 1 }, onToggleCheck: { checked += 1 },
             onShowInfo: {}, onRetry: { retries += 1 })) { window in
-            try click(window, logicalPoint: NSPoint(x: 710, y: 14))
+            try click(window, logicalPoint: NSPoint(x: 690, y: 14))
             #expect(retries == 1 && expanded == 0 && checked == 0)
         }
     }

@@ -9,14 +9,50 @@ struct HistoryContextPresentationTests {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         let presentation = try String(contentsOf: root.appendingPathComponent("VoiceInk/Views/History/HistoryContextPresentation.swift"), encoding: .utf8)
         let button = try String(contentsOf: root.appendingPathComponent("VoiceInk/Views/Common/CopyIconButton.swift"), encoding: .utf8)
-        #expect(presentation.contains("title: showsFormattingTitle ? \"Copy with formatting\" : nil"))
-        #expect(presentation.contains("accessibilityTitle: \"Copy with formatting\""))
+        #expect(presentation.contains("title: showsFormattingTitle ? \"Copy with flow markers\" : nil"))
+        #expect(presentation.contains("accessibilityTitle: \"Copy with flow markers\""))
         #expect(presentation.contains("systemImage: \"doc.on.doc\""))
         #expect(!presentation.contains("systemImage: \"textformat\""))
         #expect(!presentation.contains("Copy with LaTeX"))
         #expect(!presentation.contains("LiveSelectionStyledMath.coloredXML"))
         #expect(button.contains("title == nil ? 28 : nil"))
         #expect(!button.contains("title == nil ? 28 : 142"))
+    }
+
+    @Test func retainedFlowTimelineIsTheMainHistoryMessage() {
+        let xml = "<speech start_at=\"1\">\n\nEarlier words\n\n</speech>\n"
+            + "<app_selection source=\"test\"><text>Quoted context</text></app_selection>"
+        let row = Transcription(text: "Final corrected words and tail", duration: 1,
+            realtimeDraftText: xml, transcriptionStatus: .completed)
+        let message = HistoryContextPresentation.message(for: row)
+        #expect(message.text == xml)
+        #expect(message.hasFlowMarkers)
+        #expect(message.rawText == "Final corrected words and tail")
+        #expect(HistoryContextPresentation.copyText(message.text, format: .formatted) == xml)
+        #expect(row.text == "Final corrected words and tail" && row.realtimeDraftText == xml)
+    }
+
+    @Test func finalFlowOutranksTheLiveDraftAndPlainEntriesStaySingle() {
+        let xml = "<speech timing=\"approximate\">Final &amp; complete</speech>"
+        let row = Transcription(text: xml, duration: 1, enhancedText: "Enhanced answer",
+            realtimeDraftText: "<speech>Earlier partial</speech>", transcriptionStatus: .completed)
+        let message = HistoryContextPresentation.message(for: row)
+        #expect(message.text == xml && message.rawText == "Final & complete")
+        let enhanced = HistoryContextPresentation.message(for: row, enhanced: true)
+        #expect(enhanced.text == "Enhanced answer" && !enhanced.hasFlowMarkers)
+        let plain = Transcription(text: "Plain words", duration: 0, realtimeDraftText: "Earlier")
+        let plainMessage = HistoryContextPresentation.message(for: plain)
+        #expect(plainMessage.text == "Plain words" && !plainMessage.hasFlowMarkers)
+    }
+
+    @Test func everyHistorySurfaceUsesTheSameFlowProjectionWithoutDuplicateDrafts() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        for file in ["InlineHistoryView.swift", "TranscriptionListItem.swift", "TranscriptionDetailView.swift"] {
+            let source = try String(contentsOf: root.appendingPathComponent("VoiceInk/Views/History/" + file), encoding: .utf8)
+            #expect(source.contains("HistoryContextPresentation.message(for:"))
+            #expect(!source.contains("HistoryRecoveredCodexView(text:"))
+            #expect(!source.contains("text: draft"))
+        }
     }
 
     @Test func historyPreviewsOwnAFullWidthRowBelowHeaderActions() throws {

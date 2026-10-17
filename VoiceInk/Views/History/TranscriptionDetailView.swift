@@ -14,6 +14,7 @@ struct TranscriptionDetailView: View {
     }
 
     var body: some View {
+        let message = HistoryContextPresentation.message(for: transcription)
         VStack(spacing: 12) {
             ScrollView {
                 VStack(spacing: 16) {
@@ -24,22 +25,13 @@ struct TranscriptionDetailView: View {
                                 transcription.text == Transcription.canceledTranscriptionText
                             ? "Live draft at exit"
                             : "Original",
-                        text: transcription.historyDisplayText,
+                        text: message.text,
+                        rawText: message.rawText,
                         isEnhanced: false
                     )
 
-                    if let draft = transcription.recoverableRealtimeDraftText,
-                       draft != transcription.historyDisplayText
-                        .trimmingCharacters(in: .whitespacesAndNewlines) {
-                        MessageBubble(
-                            label: "Live draft at exit",
-                            text: draft,
-                            isEnhanced: false
-                        )
-                    }
-
-                    if let codexText = HistoryContextPresentation.recoveredCodexText(for: transcription) {
-                        HistoryRecoveredCodexView(text: codexText)
+                    if message.hasFlowMarkers {
+                        HistoryRawTextView(text: message.rawText)
                     }
 
                     if let enhancedText = transcription.enhancedText {
@@ -92,6 +84,7 @@ struct TranscriptionDetailView: View {
 private struct MessageBubble: View {
     let label: LocalizedStringKey
     let text: String
+    var rawText: String? = nil
     let isEnhanced: Bool
 
     var body: some View {
@@ -104,7 +97,7 @@ private struct MessageBubble: View {
                         .font(.system(size: 9, weight: .medium))
                         .foregroundColor(AppTheme.Text.muted)
                     Spacer()
-                    HistoryCopyButtons(text: text)
+                    HistoryCopyButtons(text: text, rawText: rawText)
                 }
                 .padding(.horizontal, 12)
 
