@@ -340,10 +340,19 @@ struct RecorderResponsivenessTests {
             view.configure(requestID: UUID()) { _, _ in acknowledgements += 1 }
             let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
             view.cacheDisplay(in: view.bounds, to: bitmap)
-            let black = try #require(bitmap.colorAt(x: 20, y: Int(height / 2))?.usingColorSpace(.deviceRGB))
+            // AppKit's cache uses backing pixels: a Retina MacBook returns twice
+            // as many pixels as view points. Sampling unscaled point coordinates
+            // tests the black background instead of the centre dot on that host.
+            let scaleX = CGFloat(bitmap.pixelsWide) / view.bounds.width
+            let scaleY = CGFloat(bitmap.pixelsHigh) / view.bounds.height
+            let black = try #require(bitmap.colorAt(
+                x: Int(20 * scaleX), y: Int(CGFloat(height / 2) * scaleY)
+            )?.usingColorSpace(.deviceRGB))
             #expect(black.alphaComponent > 0.99)
             #expect(black.redComponent < 0.01 && black.greenComponent < 0.01 && black.blueComponent < 0.01)
-            let dots = try #require(bitmap.colorAt(x: 140, y: Int(height / 2))?.usingColorSpace(.deviceRGB))
+            let dots = try #require(bitmap.colorAt(
+                x: Int(140 * scaleX), y: Int(CGFloat(height / 2) * scaleY)
+            )?.usingColorSpace(.deviceRGB))
             #expect(dots.redComponent > 0.3 && dots.redComponent < 0.6)
             #expect(abs(dots.redComponent - dots.greenComponent) < 0.01)
             #expect(abs(dots.greenComponent - dots.blueComponent) < 0.01)
