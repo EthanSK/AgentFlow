@@ -6,7 +6,8 @@ import OSLog
 /// keyboard monitor. Clicking another app returns keyboard ownership to that app.
 /// Only explicit typing opt-in permits a one-shot return after accepted context;
 /// ordinary speech updates and arbitrary app switches must never chase focus.
-/// Context return starts only after explicit typing opt-in, never voice-only start.
+/// Context return requires both typing opt-in and microphone-off typing mode.
+/// A previous editor click must not pull the caret out of Codex during speech.
 struct RecorderTypedInput: NSViewRepresentable {
     @Binding var text: String
     let focusRequest: UUID?
@@ -354,6 +355,7 @@ final class RecorderTypingFocus: ObservableObject {
     private weak var preferredEditor: RecorderTypingTextView?
     private let editors = NSHashTable<RecorderTypingTextView>.weakObjects()
     private let automaticReturnEnabled: () -> Bool
+    private let canAutomaticallyReturn: () -> Bool
     private let canFocus: () -> Bool
     private let mouseButtonsPressed: () -> Bool
     private let retryDelay: UInt64
@@ -370,10 +372,12 @@ final class RecorderTypingFocus: ObservableObject {
 
     init(automaticReturnEnabled: @escaping () -> Bool = {
         RecorderTypingFocus.automaticReturnEnabled(in: .standard)
-    }, canFocus: @escaping () -> Bool = { true },
+    }, canAutomaticallyReturn: @escaping () -> Bool = { true },
+         canFocus: @escaping () -> Bool = { true },
          mouseButtonsPressed: @escaping () -> Bool = { NSEvent.pressedMouseButtons != 0 },
          retryDelay: UInt64 = 50_000_000, maximumAttempts: Int = 40) {
         self.automaticReturnEnabled = automaticReturnEnabled
+        self.canAutomaticallyReturn = canAutomaticallyReturn
         self.canFocus = canFocus
         self.mouseButtonsPressed = mouseButtonsPressed
         self.retryDelay = retryDelay
@@ -411,7 +415,9 @@ final class RecorderTypingFocus: ObservableObject {
     }
 
     func returnAfterContext() {
-        guard isEnabled, automaticReturnEnabled() else { return }
+        // Remembered typing opt-in is not current typing mode. Microphone-on
+        // speech must leave the system/Codex caret alone after every highlight.
+        guard isEnabled, automaticReturnEnabled(), canAutomaticallyReturn() else { return }
         // An initial highlight can arrive before the editor mounts. It must not
         // replace the pending explicit startup with a return to a nil editor.
         scheduleReturn(initial: initialFocusPending)
@@ -449,7 +455,7 @@ final class RecorderTypingFocus: ObservableObject {
                       self.generation == expectedGeneration else { return }
                 // Recheck the explicit opt-out at the actual focus boundary;
                 // it cannot cancel an explicitly requested keyboard-mode start.
-                guard initial || self.automaticReturnEnabled() else { return }
+                guard initial || (self.automaticReturnEnabled() && self.canAutomaticallyReturn()) else { return }
                 if !self.mouseButtonsPressed() {
                     let editor: RecorderTypingTextView?
                     if initial {

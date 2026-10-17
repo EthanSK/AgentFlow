@@ -371,7 +371,12 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         return annotatedReferences(references + [.speechTiming(after: partialTranscript,
             startedAt: createdAt, endedAt: ended, sessionWindow: true)], endedAt: ended)
     }
-    lazy var typingFocus = RecorderTypingFocus(canFocus: { [weak self] in self?.canTypeInHUD == true })
+    // Explicit editor clicks may still mix typing into speech. Only automatic
+    // post-context focus is typing-mode-only: check live microphone state at
+    // scheduling and again before a queued return could reclaim the keyboard.
+    lazy var typingFocus = RecorderTypingFocus(canAutomaticallyReturn: { [weak self] in
+        self?.microphoneOff == true && self?.microphoneTransitionPending == false
+    }, canFocus: { [weak self] in self?.canTypeInHUD == true })
     var typingFocusController: RecorderTypingFocus? { typingFocus }
 
     var canTypeInHUD: Bool {
