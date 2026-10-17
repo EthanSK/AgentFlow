@@ -582,6 +582,15 @@ final class FocusLockService: ObservableObject {
         eventTime: TimeInterval? = nil
     ) {
         let now = ProcessInfo.processInfo.systemUptime
+        // A partial modifier can wait behind an earlier synchronous AX capture.
+        // Once it has outlived the same freshness window as its staged target,
+        // another full scan cannot recover decision-time context. Do not let
+        // queued stale modifiers repeat that work ahead of the real start. The
+        // completed chord still performs its independent, full Next-only capture.
+        guard Self.isFreshRecordingStartModifierEvent(eventTime, now: now) else {
+            logger.notice("Recording-start pre-chord snapshot skipped reason=expiredOrInvalidModifierEvent")
+            return
+        }
         let dispatchLatencyMilliseconds = eventTime.map {
             max(0, Int((now - $0) * 1_000))
         } ?? -1
@@ -607,6 +616,16 @@ final class FocusLockService: ObservableObject {
             capturedAt: now
         )
         logger.info("Staged exact recording-start input before modifier chord completion pid=\(target.pid, privacy: .public) bundle=\(target.bundleIdentifier ?? "nil", privacy: .public) dispatchLatencyMs=\(dispatchLatencyMilliseconds, privacy: .public)")
+    }
+
+    static func isFreshRecordingStartModifierEvent(
+        _ eventTime: TimeInterval?, now: TimeInterval
+    ) -> Bool {
+        guard now.isFinite else { return false }
+        guard let eventTime else { return true }
+        let age = now - eventTime
+        return eventTime.isFinite && age >= 0
+            && age <= stagedRecordingStartInputLifetime
     }
 
     /// Complete the physical recording-start decision. Prefer the ordinary focused

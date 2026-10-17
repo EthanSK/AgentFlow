@@ -6,6 +6,45 @@ import AppKit
 
 @Suite(.serialized)
 struct RecorderResponsivenessTests {
+    @Test func reservedStartRejectsFurtherPreChordCaptureWithoutChangingItsTarget() throws {
+        let manager = try source("VoiceInk/Shortcuts/RecordingShortcutManager.swift")
+        let start = try #require(manager.range(of: "            onModifierOnlySequenceProgress:"))
+        let end = try #require(manager.range(of: "            onNextTrackKeyDown:", range: start.upperBound..<manager.endIndex))
+        let body = String(manager[start.lowerBound..<end.lowerBound])
+        let reservationGuard = try #require(body.range(of: "!self.engine.hasPendingRecordingStart else"))
+        let capture = try #require(body.range(of: ".stageRecordingStartInputBeforeShortcutCompletion("))
+        #expect(reservationGuard.lowerBound < capture.lowerBound)
+        #expect(!body.contains("cancelRecordingStartReservation"))
+        #expect(!body.contains("preparedRecordingStart ="))
+    }
+
+    @Test @MainActor func delayedModifierCaptureCannotRepeatAnExpiredAXScan() throws {
+        #expect(FocusLockService.isFreshRecordingStartModifierEvent(10, now: 10))
+        #expect(FocusLockService.isFreshRecordingStartModifierEvent(10, now: 10.5))
+        #expect(!FocusLockService.isFreshRecordingStartModifierEvent(10, now: 10.501))
+        #expect(!FocusLockService.isFreshRecordingStartModifierEvent(10, now: 11.163))
+        #expect(!FocusLockService.isFreshRecordingStartModifierEvent(11, now: 10))
+        #expect(!FocusLockService.isFreshRecordingStartModifierEvent(.nan, now: 10))
+        #expect(!FocusLockService.isFreshRecordingStartModifierEvent(.infinity, now: 10))
+        #expect(!FocusLockService.isFreshRecordingStartModifierEvent(10, now: .infinity))
+        #expect(FocusLockService.isFreshRecordingStartModifierEvent(nil, now: 10))
+
+        let focus = try source("VoiceInk/Modes/FocusLockService.swift")
+        let start = try #require(focus.range(of: "    func stageRecordingStartInputBeforeShortcutCompletion("))
+        let end = try #require(focus.range(of: "    static func isFreshRecordingStartModifierEvent(", range: start.upperBound..<focus.endIndex))
+        let body = String(focus[start.lowerBound..<end.lowerBound])
+        let freshGuard = try #require(body.range(of: "guard Self.isFreshRecordingStartModifierEvent(eventTime, now: now)"))
+        let capture = try #require(body.range(of: "captureFocusedInputSnapshot()"))
+        let clear = try #require(body.range(of: "stagedRecordingStartInput = nil"))
+        #expect(freshGuard.lowerBound < capture.lowerBound)
+        #expect(freshGuard.lowerBound < clear.lowerBound)
+        // Expired partials must not substitute for, or remove, the independent
+        // completed-chord identity capture used only by the two Next routes.
+        let completed = try #require(focus.range(of: "    func captureRecordingStartInputSnapshot() -> Target? {"))
+        let completedEnd = try #require(focus.range(of: "    private func captureAuditedOpenAIComposerAtRecordingStart(", range: completed.upperBound..<focus.endIndex))
+        #expect(focus[completed.lowerBound..<completedEnd.lowerBound].contains("captureFocusedInputSnapshot(\n            allowApplicationFallback: true"))
+    }
+
     @Test func captureInteractionHasExplicitInteractivePriorityWithoutPromotingIdlePreparation() {
         #expect(RecorderWorkPriority.captureInteraction.qosClass == .userInteractive)
         #expect(RecorderWorkPriority.idleHardware.qosClass == .userInitiated)

@@ -556,9 +556,13 @@ class RecordingShortcutManager: ObservableObject {
                 MainActor.assumeIsolated {
                     guard let self,
                           action == .primaryRecording,
-                          self.engine.recordingState == .idle else {
+                          self.engine.recordingState == .idle,
+                          !self.engine.hasPendingRecordingStart else {
                         return
                     }
+                    // Once Start owns a reservation, its Next-only target is already
+                    // frozen. Late modifier callbacks must not scan again ahead of
+                    // the committed HUD/audio startup, even while state is still idle.
                     // Read only. Partial modifiers and every release still pass to the
                     // foreground app unchanged; this merely preserves the exact
                     // composer before Electron transiently reports an ancestor at the
