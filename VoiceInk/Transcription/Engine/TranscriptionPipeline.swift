@@ -291,9 +291,9 @@ class TranscriptionPipeline {
             }
             let hasAuthoredWords = current.contains(where: { !$0.isWhitespace })
                 || references.contains(where: \.isTypedText)
-            // Reserve one shared palette offset only for this final styled AI
-            // message. The formatter itself stays pure, and plain/raw output
-            // must neither acquire a file lock nor consume a colour position.
+            // Reserve once for this final styled AI message or a local Codex
+            // inline timeline, never per section/line. The formatter stays pure;
+            // ordinary/raw recipients neither lock nor consume palette state.
             let rainbowStart = (presentation == .styledMath || compactFileURL != nil) && includeSourceContext
                 && !skipPostProcessingNow && hasAuthoredWords ? AuthoredTextRainbow.reserveStartIndex() : 0
             let annotated = LiveSelectionReference.interleaving(
