@@ -110,9 +110,9 @@ struct MainWindowPresentationTests {
     }
 
     @MainActor @Test func collapsedHistoryCopyWorksAtEnlargedSizeWithoutExpanding() throws {
-        let canonical = "Opening words\n<app_selection source=\"test\">"
+        let canonical = "Opening words\n<app_selection source=\"test\"><text>"
             + String(repeating: "Do not lose any of this full context. ", count: 1000)
-            + "</app_selection>\nFinal words"
+            + "</text></app_selection>\nFinal words"
         let styled = LiveSelectionStyledMath.coloredXML(canonical, color: LiveSelectionStyledMath.selectionColor)
         let rows = [
             Transcription(text: canonical, duration: 0, enhancedText: "Short enhanced preview"),
@@ -168,13 +168,13 @@ struct MainWindowPresentationTests {
             // Real mouse events at the scaled Copy control, not its action or
             // AXPress. It must work before expansion, including a recovered draft.
             try click(window, logicalPoint: NSPoint(x: 750, y: 14))
-            #expect(pasteboard.string(forType: .string) == canonical)
+            #expect(pasteboard.string(forType: .string) == "Opening words\n\nFinal words")
             #expect(expanded == 0 && checked == 0)
             let savedSource = row.historyDisplayText
             try click(window, logicalPoint: NSPoint(x: 850, y: 14))
             #expect(pasteboard.string(forType: .string) ==
                 HistoryContextPresentation.copyText(savedSource, format: .formatted))
-            #expect(pasteboard.string(forType: .string) == savedSource)
+            #expect(pasteboard.string(forType: .string) == canonical)
             #expect(expanded == 0 && checked == 0)
             #expect(row.historyDisplayText == savedSource)
 
@@ -198,9 +198,9 @@ struct MainWindowPresentationTests {
         try withWindow(TranscriptionListItem(transcription: row, isSelected: false, isChecked: false,
             onSelect: { selected += 1 }, onToggleCheck: { checked += 1 })) { window in
             try click(window, logicalPoint: NSPoint(x: 892, y: 24))
-            #expect(pasteboard.string(forType: .string) == canonical)
+            #expect(pasteboard.string(forType: .string) == "Opening words\n\nFinal words")
             try click(window, logicalPoint: NSPoint(x: 926, y: 24))
-            #expect(pasteboard.string(forType: .string) == styled)
+            #expect(pasteboard.string(forType: .string) == canonical)
             #expect(selected == 0 && checked == 0)
         }
     }
@@ -276,7 +276,7 @@ struct MainWindowPresentationTests {
         try withWindow(HistoryDraftHeader(title: "Live draft at exit", text: xml,
                                           copyIdentifier: "test-draft-copy")) { window in
             try click(window, logicalPoint: NSPoint(x: 770, y: 14))
-            #expect(pasteboard.string(forType: .string) == xml)
+            #expect(pasteboard.string(forType: .string) == String(repeating: "Every retained word and attribute. ", count: 1000))
             try click(window, logicalPoint: NSPoint(x: 870, y: 14))
             #expect(pasteboard.string(forType: .string) ==
                 HistoryContextPresentation.copyText(xml, format: .formatted))
@@ -284,7 +284,7 @@ struct MainWindowPresentationTests {
         pasteboard.clearContents()
         try withWindow(HistoryRecoveredCodexView(text: xml)) { window in
             try click(window, logicalPoint: NSPoint(x: 770, y: 14))
-            #expect(pasteboard.string(forType: .string) == xml)
+            #expect(pasteboard.string(forType: .string) == String(repeating: "Every retained word and attribute. ", count: 1000))
             try click(window, logicalPoint: NSPoint(x: 870, y: 14))
             #expect(pasteboard.string(forType: .string) ==
                 HistoryContextPresentation.copyText(xml, format: .formatted))

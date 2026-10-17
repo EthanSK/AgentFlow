@@ -131,15 +131,15 @@ struct HistoryContextPresentationTests {
             + "<app_selection>" + String(repeating: "full context ", count: 2000) + "</app_selection>"
         let styled = LiveSelectionStyledMath.coloredXML(plain, color: LiveSelectionStyledMath.selectionColor)
         let row = Transcription(text: styled, duration: 0)
-        #expect(HistoryContextPresentation.copyText(styled, format: .plain) == plain)
-        #expect(HistoryContextPresentation.copyText(styled, format: .formatted) == styled)
-        #expect(HistoryContextPresentation.copyText(plain, format: .plain) == plain)
+        #expect(HistoryContextPresentation.copyText(styled, format: .plain) == "Every word & symbol 👋\n")
+        #expect(HistoryContextPresentation.copyText(styled, format: .formatted) == plain)
+        #expect(HistoryContextPresentation.copyText(plain, format: .plain) == "Every word & symbol 👋\n")
         #expect(HistoryContextPresentation.copyText(plain, format: .formatted) == plain)
         #expect(row.text == styled && row.historyDisplayText == styled)
         // Native display colour is not stored markup. Copy must not synthesize
         // LaTeX even when the renderer recognises overlap XML.
         let overlap = "<potential_tts start_at=\"123\">Retained draft</potential_tts>"
-        #expect(HistoryContextPresentation.copyText(overlap, format: .plain) == overlap)
+        #expect(HistoryContextPresentation.copyText(overlap, format: .plain) == "Retained draft")
         #expect(HistoryContextPresentation.copyText(overlap, format: .formatted) == overlap)
     }
 
@@ -172,7 +172,33 @@ struct HistoryContextPresentationTests {
         let rendered = NSAttributedString(HistoryContextPresentation.attributed(parsed, fontSize: 14, foreground: .primary))
         #expect(rendered.string == "Every word 👋\n<speech>XML & symbols</speech>")
         #expect(row.text == source)
+        #expect(HistoryContextPresentation.copyText(source, format: .formatted) == rendered.string)
+        #expect(HistoryContextPresentation.copyText(source, format: .plain) == "Every word 👋\n\nXML & symbols")
+    }
+
+    @Test func legacyFormattedCopyMatchesVisibleCompleteXMLAndRawCopyExcludesContext() {
+        let xml = "First request\n\n<speech start_at=\"1\">First request</speech>\n\n"
+            + "<app_selection source=\"Code\"><text>not authored &amp; not omitted</text></app_selection>\n\n"
+            + "<typed_text start_at=\"2\">  then typed  </typed_text>\n\n"
+            + "<local_screenshot path=\"/private/example.png\"/>"
+        let legacy = LiveSelectionStyledMath.coloredXML(xml, color: "#fa7070")
+        let stored = Transcription(text: legacy, duration: 0)
+        #expect(HistoryContextPresentation.copyText(legacy, format: .formatted) == xml)
+        // The opening here is not a duplicate of the complete authored request,
+        // so it must remain rather than guessing away potentially distinct prose.
+        #expect(HistoryContextPresentation.copyText(legacy, format: .plain) == "First request\n\nFirst request\n\n  then typed  ")
+        #expect(stored.text == legacy)
+        let duplicate = "one two\n\n<speech>one</speech>\n\n<typed_text>two</typed_text>"
+        #expect(HistoryContextPresentation.copyText(duplicate, format: .plain) == "one\n\ntwo")
+    }
+
+    @Test func rawCopyHandlesLegacyEnvelopeAndAdjacentSpeechWithoutEditingFullCopy() {
+        let source = "one two\n\n<agent_flow_context preview=\"authored_text_above\">\n\n"
+            + "<speech>one</speech><speech>two</speech>\n\n</agent_flow_context>"
+        #expect(HistoryContextPresentation.copyText(source, format: .plain) == "one\n\ntwo")
         #expect(HistoryContextPresentation.copyText(source, format: .formatted) == source)
-        #expect(HistoryContextPresentation.copyText(source, format: .plain) == rendered.string)
+        let selectedOnly = "<app_selection><text>not dictated</text></app_selection>"
+        #expect(HistoryContextPresentation.copyText(selectedOnly, format: .plain).isEmpty)
+        #expect(HistoryContextPresentation.copyText(selectedOnly, format: .formatted) == selectedOnly)
     }
 }

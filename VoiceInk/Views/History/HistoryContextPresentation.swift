@@ -4,7 +4,7 @@ import SwiftUI
 /// Lossless decoding for Agent Flow's retired presentation vocabulary. History
 /// now uses the same neutral text appearance as the current Codex paste; recognizing
 /// an old colour wrapper must not revive its rainbow or metadata colours.
-/// Arbitrary commands stay inert and stored/copy source remains unchanged.
+/// Arbitrary commands stay inert and stored source remains unchanged.
 enum HistoryContextPresentation {
     struct Run: Equatable {
         var text: String
@@ -29,7 +29,7 @@ enum HistoryContextPresentation {
     static func document(_ source: String) -> Document {
         // New recovery journals preserve canonical metadata rather than only
         // raw HUD words. Colour the known overlap fragment without interpreting
-        // arbitrary markup or altering any source byte used by Copy.
+        // arbitrary markup or altering any stored source byte.
         if !source.contains(prefix), source.contains("<potential_tts "),
            let expression = try? NSRegularExpression(pattern: #"(?ms)^[\t ]*<potential_tts\b[^>]*>.*?</potential_tts>"#) {
             let ns = source as NSString
@@ -119,17 +119,50 @@ enum HistoryContextPresentation {
     enum CopyFormat { case plain, formatted }
 
     static func copyText(_ source: String, format: CopyFormat) -> String {
+        let readable = document(source).plainText
         switch format {
         case .plain:
-            // Unwrap only our known presentation grammar, never a shortened
-            // list preview or selected authored words. XML/context stays whole.
-            return document(source).plainText
+            // Normal Copy means the user's words, not captured source material
+            // or our XML/timing scaffolding. Parse only known timeline events;
+            // malformed/unrecognised source stays literal rather than vanishing.
+            // Legacy producers sometimes joined two sections without a newline
+            // and wrapped the timeline after an opening preview. Normalize only
+            // these known structural boundaries for extraction, not stored/XML
+            // copy bytes or escaped tags inside selected/typed payloads.
+            let timeline = readable
+                .replacingOccurrences(of: "<agent_flow_context preview=\"authored_text_above\">", with: "")
+                .replacingOccurrences(of: "</agent_flow_context>", with: "")
+                .replacingOccurrences(of: #"(</(?:speech|speech_segment|typed_text|potential_tts)>)(?=<(?:speech|speech_segment|typed_text|potential_tts)\b)"#,
+                                      with: "$1\n", options: .regularExpression)
+            let events = AgentFlowPromptViewer.events(timeline)
+            let authoredTags: Set<String> = ["speech", "speech_segment", "typed_text", "potential_tts"]
+            guard events.contains(where: { authoredTags.contains($0.tag)
+                || ["app_selection", "codex_selection", "local_screenshot"].contains($0.tag) }) else { return readable }
+            let authored = events.filter { authoredTags.contains($0.tag) }
+                .map { unframed($0.text) }
+            let normalizedAuthored = authored.joined(separator: " ").split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            return events.compactMap { event -> String? in
+                if authoredTags.contains(event.tag) { return unframed(event.text) }
+                guard event.tag == "opening" || event.tag == "text" else { return nil }
+                // Older records repeat the same words before their timeline.
+                if event.tag == "opening", !normalizedAuthored.isEmpty,
+                   event.text.split(whereSeparator: \.isWhitespace).joined(separator: " ") == normalizedAuthored { return nil }
+                return event.text.trimmingCharacters(in: .newlines)
+            }.filter { !$0.isEmpty }.joined(separator: "\n\n")
         case .formatted:
-            // Copy the complete stored format, including XML, without inventing
-            // legacy rainbow/LaTeX markup for today's plain records. Already
-            // styled history remains immutable and copyable byte for byte.
-            return source
+            // Match the complete readable History, including XML/context, not
+            // the retired producer-LaTeX hidden by its renderer. Never truncate
+            // this copy or rewrite the saved record. Recipient-specific colour
+            // belongs only to the actual inline Codex paste, not the clipboard.
+            return readable
         }
+    }
+
+    private static func unframed(_ text: String) -> String {
+        var text = text
+        if text.hasPrefix("\n\n") { text.removeFirst(2) }
+        if text.hasSuffix("\n\n") { text.removeLast(2) }
+        return text
     }
 
     static func recoveredCodexText(for transcription: Transcription) -> String? {
@@ -148,7 +181,7 @@ enum HistoryContextPresentation {
     }
 
     static func attributed(_ document: Document, fontSize: CGFloat, foreground: Color) -> AttributedString {
-        // Old History retains its exact producer markup for recovery/copy. Decode
+        // Old History retains its exact producer markup for recovery. Decode
         // those wrappers for reading, but never apply their retired colours or
         // italics to the native UI. A single neutral attributed run also avoids
         // rebuilding a separate native font/colour span for every rainbow word.

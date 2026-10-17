@@ -180,11 +180,12 @@ struct AgentFlowPromptArchiveTests {
             .init(tag: "screenshot", text: "image.png", color: "#e879f9"),
             .init(tag: "typed_text", text: "after", color: "#f4f4f5")
         ], fileURL: URL(fileURLWithPath: "/tmp/never-created.md"), completePromptText: canonical))
-        #expect(preview == "[↗](/tmp/never-created.md) before `<selection>` `<screenshot>` after\n\n\n" + canonical)
+        #expect(preview == "[↗](/tmp/never-created.md) before `<selection>` `<screenshot>` after\n\n\n" + AgentFlowPromptPreview.coloredInlineTimeline(canonical))
         #expect(!preview.contains(AgentFlowPromptArchive.interpretationReminder))
         #expect(preview.utf16.count < 5_000)
         #expect(!preview.contains("Read the [full prompt]"))
-        #expect(!preview.contains("\\color{"))
+        #expect(preview.contains("\\color{#67e8f9}"))
+        #expect(HistoryContextPresentation.document(preview).plainText.hasSuffix(canonical))
     }
 
     @Test func inlinePasteBudgetCountsEditableOpeningLinksAndUTF16AtExactBoundary() throws {
@@ -197,21 +198,41 @@ struct AgentFlowPromptArchiveTests {
         for length in [4_999, 5_000, 5_001] {
             // Emoji and combining characters must use the same length as JS,
             // not Swift's grapheme count; include their real serialized bytes.
-            let start = "<app_selection><text>😀e\u{301}"
-            let end = "</text></app_selection>"
-            let padding = length - (prefix + start + end).utf16.count
-            let canonical = start + String(repeating: "x", count: padding) + end
+            let section = "<app_selection><text>selected</text></app_selection>"
+            let end = "\n😀e\u{301}"
+            let padding = length - (prefix + AgentFlowPromptPreview.coloredInlineTimeline(section) + end).utf16.count
+            let canonical = section + end + String(repeating: "x", count: padding)
             let preview = try #require(AgentFlowPromptPreview.make(authoredText: "", sections: sections,
                 fileURL: file, viewerURL: viewer, completePromptText: canonical))
             if length < 5_000 {
-                #expect(preview == prefix + canonical)
+                #expect(preview == prefix + AgentFlowPromptPreview.coloredInlineTimeline(canonical))
                 #expect(preview.utf16.count == length)
             } else {
                 #expect(!preview.contains(canonical))
                 #expect(preview.contains("`<selection>`"))
                 #expect(preview.hasSuffix("Read the [full prompt](\(encoded)) before answering."))
+                #expect(!preview.contains("\\color{"))
             }
         }
+    }
+
+    @Test func inlineSectionColorsAreFixedAndNeverRainbowOrAppliedToArchivePreview() throws {
+        let canonical = "<speech>spoken words</speech>\n<typed_text>typed words</typed_text>\n"
+            + "<app_selection source=\"Code\"><text>quoted words</text></app_selection>\n"
+            + "<local_screenshot path=\"/tmp/image.png\"/>"
+        let colored = AgentFlowPromptPreview.coloredInlineTimeline(canonical)
+        for color in [LiveSelectionStyledMath.speechColor, LiveSelectionStyledMath.typedColor,
+                      LiveSelectionStyledMath.selectionColor, LiveSelectionStyledMath.screenshotColor] {
+            #expect(colored.contains("\\color{\(color)}"))
+        }
+        #expect(HistoryContextPresentation.document(colored).plainText == canonical)
+        #expect(!colored.contains("#fa7070"))
+        let plainPreview = try #require(AgentFlowPromptPreview.make(authoredText: "spoken words", sections: [
+            .init(tag: "speech", text: "spoken words", color: "#fa7070"),
+            .init(tag: "selection", text: "quoted", color: "#67e8f9")
+        ], fileURL: URL(fileURLWithPath: "/tmp/large.md"), completePromptText: String(repeating: canonical, count: 30)))
+        #expect(plainPreview.contains("Read the [full prompt]"))
+        #expect(!plainPreview.contains("\\color{"))
     }
 
     @Test func duplicatedAuthoredOpeningCanRequireTheArchiveEvenWhenTimelineAloneFits() throws {

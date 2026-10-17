@@ -1449,13 +1449,14 @@ struct RecorderTypedInputTests {
         #expect(opening.contains("Editable typed words") && opening.contains("Speech before"))
         #expect(opening.contains("`<selection>`") && opening.contains("`<screenshot>`"))
         #expect(!opening.contains("<codex_selection") && !opening.contains("<speech "))
-        #expect(result.message.hasSuffix("\n\n" + result.archive))
+        #expect(result.message.hasSuffix("\n\n" + AgentFlowPromptPreview.coloredInlineTimeline(result.archive)))
         #expect(!result.message.contains(AgentFlowPromptArchive.interpretationReminder))
         #expect(result.message.utf16.count < 5_000)
         #expect(!result.message.contains("Read the [full prompt]"))
-        #expect(!result.message.contains("\\color{"))
-        #expect(result.message.contains("start_at=") && result.message.contains("Selected exact content &amp; metadata"))
-        #expect(result.message.contains("<codex_selection") && result.message.contains("<local_screenshot"))
+        #expect(result.message.contains("\\color{#67e8f9}"))
+        let readable = HistoryContextPresentation.document(result.message).plainText
+        #expect(readable.contains("start_at=") && readable.contains("Selected exact content &amp; metadata"))
+        #expect(readable.contains("<codex_selection") && readable.contains("<local_screenshot"))
         let copied = try await clipboardPipelineFixture(typed: "Editable typed words",
             speech: "Speech before selection and after it", styled: true, recipientOverride: host)
         #expect(result.message.replacingOccurrences(of: result.link, with: "PROMPT")
@@ -1500,7 +1501,7 @@ struct RecorderTypedInputTests {
             if compact {
                 let opening = result.message.components(separatedBy: "\n\n")[0]
                 #expect(opening.contains("Every typed word") && !opening.contains("<typed_text "))
-                #expect(result.message.hasSuffix("\n\n" + result.archive))
+                #expect(result.message.hasSuffix("\n\n" + AgentFlowPromptPreview.coloredInlineTimeline(result.archive)))
                 #expect(!result.message.contains(AgentFlowPromptArchive.interpretationReminder))
             } else {
                 #expect(HistoryContextPresentation.document(result.message).plainText.contains("Selected exact content"))

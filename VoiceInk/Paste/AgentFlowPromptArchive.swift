@@ -397,6 +397,38 @@ enum AgentFlowPromptViewer {
 /// choreography, saved input, retries, or extra Return. The full file is the
 /// source of truth for metadata/context; every authored word also stays inline.
 enum AgentFlowPromptPreview {
+    /// Only the inline Codex timeline gets fixed type colours. Archive bytes,
+    /// compact file previews, clipboard copies and non-Codex recipients stay
+    /// independent. Preserve the original XML slices instead of reserializing
+    /// events and changing payload whitespace or metadata attribute order.
+    static func coloredInlineTimeline(_ source: String) -> String {
+        let pattern = #"(?ms)^[\t ]*<(speech|speech_segment|typed_text|potential_tts|app_selection|codex_selection)\b[^>]*>.*?</\1>|^[\t ]*<local_screenshot\b[^>]*?/>"#
+        guard let expression = try? NSRegularExpression(pattern: pattern) else { return source }
+        let ns = source as NSString
+        var output = "", end = 0
+        for match in expression.matches(in: source, range: NSRange(location: 0, length: ns.length)) {
+            output += ns.substring(with: NSRange(location: end, length: match.range.location - end))
+            let fragment = ns.substring(with: match.range)
+            let parsed = AgentFlowPromptViewer.events(fragment)
+            guard parsed.count == 1, let event = parsed.first else {
+                output += fragment; end = NSMaxRange(match.range); continue
+            }
+            let color: String
+            switch event.tag {
+            case "speech", "speech_segment": color = LiveSelectionStyledMath.speechColor
+            case "typed_text": color = LiveSelectionStyledMath.typedColor
+            case "potential_tts": color = LiveSelectionStyledMath.potentialTTSColor
+            case "app_selection", "codex_selection": color = LiveSelectionStyledMath.selectionColor
+            case "local_screenshot": color = LiveSelectionStyledMath.screenshotColor
+            default: output += fragment; end = NSMaxRange(match.range); continue
+            }
+            output += LiveSelectionStyledMath.coloredXML(fragment, color: color)
+            end = NSMaxRange(match.range)
+        }
+        output += ns.substring(from: end)
+        return output
+    }
+
     struct Recipient {
         var bundleID: String?
         var bundleURL: URL?
@@ -519,12 +551,17 @@ enum AgentFlowPromptPreview {
         // reminder; normal skill discovery/reuse already handles interpretation.
         // Leave an extra blank line between the editable opening and raw XML:
         // compact question/queue surfaces can visually collapse the usual gap.
-        // Count both copies of authored words and the full separator before
-        // selecting this branch, so one paste stays below the host's boundary.
+        // Count the actual fixed-colour expansion, both copies of authored
+        // words and the separator. If it cannot fit, keep the plain compact
+        // preview plus file instruction; never leak colours into that branch.
         if needsFullPrompt, let completePromptText,
            completePromptText.contains(where: { !$0.isWhitespace }) {
-            let inline = result + "\n\n\n" + completePromptText
-            if inline.utf16.count < pastedTextAttachmentThreshold { return inline }
+            // Reject an already-oversized plain candidate before allocating its
+            // larger styled representation. Colouring is bounded to short copies.
+            if (result + "\n\n\n" + completePromptText).utf16.count < pastedTextAttachmentThreshold {
+                let inline = result + "\n\n\n" + coloredInlineTimeline(completePromptText)
+                if inline.utf16.count < pastedTextAttachmentThreshold { return inline }
+            }
         }
         return needsFullPrompt ? result + "\n\n" + pointer : result
     }
