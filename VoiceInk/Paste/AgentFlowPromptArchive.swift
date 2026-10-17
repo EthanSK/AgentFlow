@@ -123,12 +123,13 @@ enum AgentFlowPromptViewer {
         let text: String
     }
 
+    static let fragmentPattern = #"(?ms)^[\t ]*<(speech|speech_segment|typed_text|potential_tts|app_selection|codex_selection)\b[^>]*>.*?</\1>|^[\t ]*<local_screenshot\b[^>]*?/>"#
+
     /// Parse only known, line-delimited top-level fragments, never tags that
     /// merely occur inside a quoted selection. A malformed fragment is shown
     /// verbatim rather than silently dropping text or guessing a repaired XML.
     static func events(_ source: String) -> [Event] {
-        let pattern = #"(?ms)^[\t ]*<(speech|speech_segment|typed_text|potential_tts|app_selection|codex_selection)\b[^>]*>.*?</\1>|^[\t ]*<local_screenshot\b[^>]*?/>"#
-        let expression = try! NSRegularExpression(pattern: pattern)
+        let expression = try! NSRegularExpression(pattern: fragmentPattern)
         let ns = source as NSString
         var result: [Event] = []
         var end = 0
@@ -402,8 +403,7 @@ enum AgentFlowPromptPreview {
     /// independent. Preserve the original XML slices instead of reserializing
     /// events and changing payload whitespace or metadata attribute order.
     static func coloredInlineTimeline(_ source: String) -> String {
-        let pattern = #"(?ms)^[\t ]*<(speech|speech_segment|typed_text|potential_tts|app_selection|codex_selection)\b[^>]*>.*?</\1>|^[\t ]*<local_screenshot\b[^>]*?/>"#
-        guard let expression = try? NSRegularExpression(pattern: pattern) else { return source }
+        guard let expression = try? NSRegularExpression(pattern: AgentFlowPromptViewer.fragmentPattern) else { return source }
         let ns = source as NSString
         var output = "", end = 0
         for match in expression.matches(in: source, range: NSRange(location: 0, length: ns.length)) {

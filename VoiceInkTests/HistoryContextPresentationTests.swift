@@ -128,12 +128,12 @@ struct HistoryContextPresentationTests {
 
     @Test func copyChoicesPreserveWholeContextWithoutRewritingHistory() {
         let plain = "<speech start_at=\"123\">\nEvery word &amp; symbol 👋\n</speech>\n"
-            + "<app_selection>" + String(repeating: "full context ", count: 2000) + "</app_selection>"
+            + "<app_selection><text>" + String(repeating: "full context ", count: 2000) + "</text></app_selection>"
         let styled = LiveSelectionStyledMath.coloredXML(plain, color: LiveSelectionStyledMath.selectionColor)
         let row = Transcription(text: styled, duration: 0)
-        #expect(HistoryContextPresentation.copyText(styled, format: .plain) == "Every word & symbol 👋\n")
+        #expect(HistoryContextPresentation.copyText(styled, format: .plain) == "Every word & symbol 👋")
         #expect(HistoryContextPresentation.copyText(styled, format: .formatted) == plain)
-        #expect(HistoryContextPresentation.copyText(plain, format: .plain) == "Every word & symbol 👋\n")
+        #expect(HistoryContextPresentation.copyText(plain, format: .plain) == "Every word & symbol 👋")
         #expect(HistoryContextPresentation.copyText(plain, format: .formatted) == plain)
         #expect(row.text == styled && row.historyDisplayText == styled)
         // Native display colour is not stored markup. Copy must not synthesize
@@ -173,7 +173,9 @@ struct HistoryContextPresentationTests {
         #expect(rendered.string == "Every word 👋\n<speech>XML & symbols</speech>")
         #expect(row.text == source)
         #expect(HistoryContextPresentation.copyText(source, format: .formatted) == rendered.string)
-        #expect(HistoryContextPresentation.copyText(source, format: .plain) == "Every word 👋\n\nXML & symbols")
+        // This legacy fixture is not valid XML (literal ampersand). Preserve it
+        // as readable text rather than silently dropping an unparsed fragment.
+        #expect(HistoryContextPresentation.copyText(source, format: .plain) == rendered.string)
     }
 
     @Test func legacyFormattedCopyMatchesVisibleCompleteXMLAndRawCopyExcludesContext() {

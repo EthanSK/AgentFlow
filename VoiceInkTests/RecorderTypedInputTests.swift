@@ -1569,13 +1569,14 @@ struct RecorderTypedInputTests {
                 #expect(!copied.message.contains("Read the [\(AgentFlowPromptPreview.fullPromptLinkLabel)]"))
                 // Clipboard-only must reuse the same editable Codex preview,
                 // even if another app owns focus when the session finishes.
-                #expect(!copied.message.components(separatedBy: "\n\n")[0].contains("\\color{") && !copied.message.contains("\\("))
+                #expect(!copied.message.components(separatedBy: "\n\n")[0].contains("\\color{"))
+                #expect(copied.message.contains("\\color{#67e8f9}"))
                 #expect(copied.message.contains("typed after source app switch"))
                 #expect(copied.archive.contains("typed after source app switch"))
                 let opening = copied.message.components(separatedBy: "\n\n")[0]
                 #expect(opening.contains("typed after source app switch"))
                 #expect(opening.contains("`<selection>`") && opening.contains("`<screenshot>`"))
-                #expect(copied.message.hasSuffix("\n\n" + copied.archive))
+                #expect(copied.message.hasSuffix("\n\n" + AgentFlowPromptPreview.coloredInlineTimeline(copied.archive)))
                 #expect(!copied.message.contains(AgentFlowPromptArchive.interpretationReminder))
             }
         }

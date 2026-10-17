@@ -161,7 +161,9 @@ enum HistoryContextPresentation {
     private static func unframed(_ text: String) -> String {
         var text = text
         if text.hasPrefix("\n\n") { text.removeFirst(2) }
+        else if text.hasPrefix("\n") { text.removeFirst() }
         if text.hasSuffix("\n\n") { text.removeLast(2) }
+        else if text.hasSuffix("\n") { text.removeLast() }
         return text
     }
 
