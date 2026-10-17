@@ -1,0 +1,17 @@
+{
+  "machine": "MacBookPro",
+  "path": "/Users/ethansarif-kattan/.codex/skills/interpret-agent-flow-context",
+  "reviewed_on": "2026-10-17",
+  "files": {
+    "SKILL.md": "d79fbbf7187f1c709f83099bfddcf353f135e0214c4f3de39c5e093454e01cb2",
+    "agents/openai.yaml": "42a852bfd3be643adf2a008a4726893df9680abb1eb4ba37e6d2fdd80333bcb7",
+    "references/app-specific-cues.md": "92a2a1fc7b93759dbef1acf864599b23c7e36b9d9767231d2ad30c95a8907d0a",
+    "references/historical-formats.md": "4820584562d6931b025f0c1f5654860f60c66c05d2377097461c7e9d3750698f",
+    "references/public-updates.md": "87184d603b1fbbd328d93927890d8f4ca0d5851e121772fc7c6701d35e4d6239",
+    "references/startup-performance.md": "833cbefc0213e3ef41d27b5c3326c83ea42f0c01bfe79e7d16e74d8b836effde",
+    "scripts/read-prompt.py": "1b9c7b759a37fe128c50793d5460f70d2344d68848186cca7dd89e992a1a9003",
+    "scripts/skill-update-state.py": "7f4fae4fd9af0b44cb614cbe5bf926fb75e7fbc80ce893453c5f8db83a3987da",
+    "skill-update.json": "d343638d4dd1320a64be5dc5bc828f5f4d64303cb1e4771ce3e46114ea60dbac",
+    "tests/test_read_prompt.py": "fc19187be8d563a2926b5ddac2eb7abbd8d7a39bb48ed6efa3f518d259d98a6c"
+  }
+}
