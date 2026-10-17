@@ -839,13 +839,17 @@ struct VoiceInkTests {
         #expect(!LiveSelectionCapture.isNativeScreenshot(
             screenshot, since: Date().addingTimeInterval(10)
         ))
-        // A saved macOS screenshot in the two seconds before the shortcut is
-        // accepted even though capture attaches after the start handshake.
+        // Measure from the file's actual timestamp, not how long this test took
+        // to write it. The inclusive five-second window is anchored to shortcut
+        // activation even when capture attaches after the start handshake.
+        let created = try #require(screenshot.resourceValues(forKeys: [.creationDateKey]).creationDate)
+        for age in [1.0, 3.0, 4.9, 5.0] {
+            #expect(LiveSelectionCapture.findNativeScreenshots(
+                in: directory, activatedAt: created.addingTimeInterval(age)
+            ).map(\.0.lastPathComponent) == [screenshot.lastPathComponent])
+        }
         #expect(LiveSelectionCapture.findNativeScreenshots(
-            in: directory, activatedAt: start.addingTimeInterval(1)
-        ).map(\.0.lastPathComponent) == [screenshot.lastPathComponent])
-        #expect(LiveSelectionCapture.findNativeScreenshots(
-            in: directory, activatedAt: start.addingTimeInterval(3)
+            in: directory, activatedAt: created.addingTimeInterval(5.01)
         ).isEmpty)
         let ordinaryImage = directory.appendingPathComponent("Screenshot not-native.png")
         try Data([0x89, 0x50, 0x4e, 0x47]).write(to: ordinaryImage)

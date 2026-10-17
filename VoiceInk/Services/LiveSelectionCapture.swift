@@ -1233,7 +1233,7 @@ final class LiveSelectionCapture {
         guard descriptor >= 0 else { return }
         screenshotDirectory = directory
         // Keep the native screenshot event time, not the later mic/AX handshake,
-        // as the two-second boundary. Never enumerate Desktop on MainActor while
+        // as the five-second boundary. Never enumerate Desktop on MainActor while
         // the newly requested recorder panel is trying to render.
         screenshotStart = activationTime
         let source = DispatchSource.makeFileSystemObjectSource(
@@ -1290,7 +1290,7 @@ final class LiveSelectionCapture {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else {
             return []
         }
-        let cutoff = activatedAt.addingTimeInterval(-2)
+        let cutoff = activatedAt.addingTimeInterval(-5)
         return names.compactMap { name -> (URL, Date)? in
             let url = directory.appendingPathComponent(name)
             guard let created = (try? url.resourceValues(forKeys: [.creationDateKey]))?.creationDate,
