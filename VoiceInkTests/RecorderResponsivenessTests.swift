@@ -2,10 +2,88 @@ import Darwin
 import Foundation
 import Testing
 import AppKit
+import ApplicationServices
 @testable import VoiceInkPlusPlus
 
 @Suite(.serialized)
 struct RecorderResponsivenessTests {
+    @Test @MainActor func batchedContextTraversalPreservesBreadthFirstOrderAndDepthLimit() {
+        let edges = [0: [1, 2], 1: [2, 3], 2: [0, 4], 3: [5], 4: [6]]
+        var observations: [(Int, Bool)] = []
+        let nodes = FocusLockService.contextAnchorTraversal(
+            root: 0, maximumDepth: 2, identity: { $0 },
+            read: { element, readsChildren in
+                observations.append((element, readsChildren))
+                return ("role-\(element)", readsChildren ? edges[element] ?? [] : [])
+            }
+        )
+        #expect(nodes.map(\.element) == [0, 1, 2, 3, 4])
+        #expect(nodes.map(\.role) == ["role-0", "role-1", "role-2", "role-3", "role-4"])
+        #expect(observations.map(\.0) == [0, 1, 2, 3, 4])
+        #expect(observations.map(\.1) == [true, true, true, false, false])
+    }
+
+    @Test @MainActor func batchedContextTraversalKeepsEveryNodeAndHalvesPairedReadCalls() {
+        var pairedReadCalls = 0
+        let nodes = FocusLockService.contextAnchorTraversal(
+            root: 0, identity: { $0 },
+            read: { element, _ in
+                pairedReadCalls += 1
+                return (element.isMultiple(of: 2) ? "AXStaticText" : nil,
+                        element == 0 ? Array(1...3_900) + [1, 2] : [0])
+            }
+        )
+        #expect(nodes.map(\.element) == Array(0...3_900))
+        #expect(pairedReadCalls == 3_901)
+        // Original traversal + role pass performs two reads per distinct node;
+        // this counts the production traversal seam, not a live AX benchmark.
+        #expect(pairedReadCalls * 2 == 7_802)
+    }
+
+    @Test @MainActor func contextAttributePairsPreserveErrorsEmptyValuesAndOneShotFallback() {
+        var fallbackCalls = 0
+        func fallback() -> (Any?, Any?) {
+            fallbackCalls += 1
+            return ("individual-value", "individual-title")
+        }
+        let valid = FocusLockService.contextAnchorAttributePair(
+            values: ["", "title must not replace a readable empty value"], fallback: fallback
+        )
+        #expect((valid.0 as? String ?? valid.1 as? String) == "")
+        #expect(fallbackCalls == 0)
+        let unreadable = FocusLockService.contextAnchorAttributePair(
+            values: [NSNull(), "readable fallback title"], fallback: fallback
+        )
+        #expect((unreadable.0 as? String ?? unreadable.1 as? String) == "readable fallback title")
+        var axError = AXError.attributeUnsupported
+        let errorValue = AXValueCreate(.axError, &axError)!
+        let perAttributeError = FocusLockService.contextAnchorAttributePair(
+            values: [errorValue, NSNull()], fallback: fallback
+        )
+        #expect(perAttributeError.0 as? String == nil)
+        #expect(perAttributeError.1 as? String == nil)
+        #expect(fallbackCalls == 0)
+        let failed = FocusLockService.contextAnchorAttributePair(values: nil, fallback: fallback)
+        #expect(failed.0 as? String == "individual-value")
+        #expect(fallbackCalls == 1)
+        _ = FocusLockService.contextAnchorAttributePair(values: ["malformed"], fallback: fallback)
+        #expect(fallbackCalls == 2)
+    }
+
+    @Test func passiveOpenAIWinnerKeepsItsFirstFingerprintAndFinalBoundaryChecks() throws {
+        let focus = try source("VoiceInk/Modes/FocusLockService.swift")
+        let start = try #require(focus.range(of: "    private func captureAuditedOpenAIComposerAtRecordingStart("))
+        let end = try #require(focus.range(of: "    func captureFocusedInput(", range: start.upperBound..<focus.endIndex))
+        let body = String(focus[start.lowerBound..<end.lowerBound])
+        #expect(body.components(separatedBy: "exactInputIdentity(").count - 1 == 1)
+        #expect(body.contains("candidates.append((element, identity))"))
+        #expect(body.contains("let identity = candidate.identity"))
+        #expect(body.contains("let structureStillMatches = exactStructureMatches("))
+        #expect(body.contains("focusedWindowMatches,"))
+        #expect(body.contains("currentFocusMatches,"))
+        #expect(body.contains("buildStillMatches,"))
+    }
+
     @Test func reservedStartRejectsFurtherPreChordCaptureWithoutChangingItsTarget() throws {
         let manager = try source("VoiceInk/Shortcuts/RecordingShortcutManager.swift")
         let start = try #require(manager.range(of: "            onModifierOnlySequenceProgress:"))
