@@ -381,6 +381,11 @@ struct VoiceInkApp: App {
         .commands {
             CommandGroup(replacing: .newItem) { }
 
+            CommandGroup(after: .toolbar) {
+                Divider()
+                MainWindowZoomMenu(keyboardShortcuts: true)
+            }
+
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesView(updaterViewModel: updaterViewModel)
             }

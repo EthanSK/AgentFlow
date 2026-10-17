@@ -5,10 +5,83 @@ import Testing
 
 @Suite(.serialized)
 struct MainWindowPresentationTests {
-    @Test func mainAppDefaultIsFourZoomStepsWithoutChangingRecorderScale() {
-        #expect(MainWindowLayout.defaultZoom == 1.20)
-        #expect(MainWindowLayout.minimumSize == CGSize(width: 1140, height: 876))
+    @Test func mainAppDefaultIsActualSizeWithoutChangingRecorderScale() {
+        #expect(MainWindowLayout.defaultZoom == 1)
+        #expect(MainWindowLayout.minimumSize == CGSize(width: 950, height: 730))
         #expect(RecorderHUDScaleStore.defaultScale == 0.85)
+    }
+
+    @MainActor @Test func mainWindowZoomPersistsClampsAndResetsIndependently() throws {
+        let suite = "MainWindowZoomTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(0.8, forKey: "RecorderHUDScale")
+        let store = MainWindowZoomStore(defaults: defaults)
+        #expect(store.scale == 1)
+        store.apply(.zoomIn)
+        #expect(store.percentage == 110)
+        #expect(MainWindowZoomStore(defaults: defaults).scale == 1.1)
+        store.apply(.zoomOut)
+        #expect(store.scale == 1)
+        store.setScale(100)
+        #expect(store.scale == 1.5 && !store.canZoomIn)
+        store.setScale(-1)
+        #expect(store.scale == 0.75 && !store.canZoomOut)
+        store.apply(.actualSize)
+        #expect(store.scale == 1)
+        store.setScale(.nan)
+        #expect(store.scale == 1)
+        #expect(defaults.double(forKey: "RecorderHUDScale") == 0.8)
+        #expect(MainWindowLayout.minimumSize(at: 0.8) == CGSize(width: 760, height: 584))
+    }
+
+    @MainActor @Test func mainWindowZoomShortcutsRequireMainWindowAndCommand() throws {
+        func event(_ text: String, _ flags: NSEvent.ModifierFlags) throws -> NSEvent {
+            try #require(NSEvent.keyEvent(with: .keyDown, location: .zero,
+                modifierFlags: flags, timestamp: 0, windowNumber: 0, context: nil,
+                characters: text, charactersIgnoringModifiers: text, isARepeat: false, keyCode: 24))
+        }
+        for text in ["+", "="] {
+            #expect(MainWindowZoomAction.from(try event(text, .command), mainWindowIsKey: true) == .zoomIn)
+            #expect(MainWindowZoomAction.from(try event(text, [.command, .shift]), mainWindowIsKey: true) == .zoomIn)
+        }
+        #expect(MainWindowZoomAction.from(try event("-", .command), mainWindowIsKey: true) == .zoomOut)
+        #expect(MainWindowZoomAction.from(try event("0", .command), mainWindowIsKey: true) == .actualSize)
+        for flags: NSEvent.ModifierFlags in [[], .shift, .option, [.command, .option], [.command, .control]] {
+            #expect(MainWindowZoomAction.from(try event("=", flags), mainWindowIsKey: true) == nil)
+        }
+        #expect(MainWindowZoomAction.from(try event("=", .command), mainWindowIsKey: false) == nil)
+    }
+
+    @MainActor @Test func mainWindowZoomPreservesClickTargetsAtSmallAndLargeScales() throws {
+        let suite = "MainWindowZoomClicks-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = MainWindowZoomStore(defaults: defaults)
+        for scale in [0.75, 1.0, 1.2, 1.5] {
+            store.setScale(scale)
+            var clicks = 0
+            let size = MainWindowLayout.minimumSize(at: scale)
+            let window = NSWindow(contentRect: NSRect(origin: NSPoint(x: 100, y: 100), size: size),
+                                  styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            let host = NSHostingView(rootView:
+                Button("Zoom test") { clicks += 1 }
+                    .frame(width: 160, height: 40)
+                    .position(x: 200, y: 80)
+                    .frame(width: MainWindowLayout.logicalWidth,
+                           height: MainWindowLayout.logicalMinimumHeight, alignment: .topLeading)
+                    .modifier(MainWindowZoom(store: store)))
+            window.contentView = host
+            window.orderFrontRegardless()
+            window.makeKey()
+            defer { window.orderOut(nil); window.close() }
+            settle(host)
+            #expect(host.bounds.size == host.frame.size)
+            try click(window, windowPoint: NSPoint(x: 200 * scale,
+                y: (MainWindowLayout.logicalMinimumHeight - 80) * scale))
+            #expect(clicks == 1)
+        }
     }
 
     @MainActor @Test func collapsedHistoryCopyWorksAtEnlargedSizeWithoutExpanding() throws {

@@ -29,6 +29,10 @@ struct MenuBarView: View {
             } else {
                 onboardingMenu
             }
+
+            Menu("App Zoom") {
+                MainWindowZoomMenu()
+            }
         }
     }
 
