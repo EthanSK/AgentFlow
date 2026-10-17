@@ -482,6 +482,11 @@ struct HistoryCardRow: View {
             if isExpanded {
                 expandedContent
                     .padding(.top, 10)
+            } else if message.hasFlowMarkers {
+                // Flow is the message, not hidden disclosure content. Expanding
+                // this row reveals the authored-only alternative and audio.
+                messageContent
+                    .padding(.top, 10)
             } else {
                 // Actions own only the header. A separate full-width preview
                 // must not lose a column to Copy, Retry or the checkbox.
@@ -540,6 +545,14 @@ struct HistoryCardRow: View {
 
     // MARK: - Expanded Content
 
+    private var messageContent: some View {
+        ScrollView {
+            HistoryMessageContentView(text: displayText, fontSize: 14,
+                foregroundColor: AppTheme.Text.primary)
+        }
+        .frame(maxHeight: 350)
+    }
+
     private var expandedContent: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Tabs
@@ -567,14 +580,7 @@ struct HistoryCardRow: View {
                 }
             }
 
-            ScrollView {
-                HistoryMessageContentView(
-                    text: displayText,
-                    fontSize: 14,
-                    foregroundColor: AppTheme.Text.primary
-                )
-            }
-            .frame(maxHeight: 350)
+            messageContent
 
             if message.hasFlowMarkers {
                 HistoryRawTextView(text: message.rawText,
