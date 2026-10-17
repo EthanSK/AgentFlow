@@ -185,7 +185,7 @@ struct AgentFlowPromptArchiveTests {
         #expect(preview.utf16.count < 5_000)
         #expect(!preview.contains("Read the [full prompt]"))
         #expect(preview.contains("\\color{#67e8f9}"))
-        #expect(HistoryContextPresentation.document(preview).plainText.hasSuffix(canonical))
+        #expect(HistoryContextPresentation.document(preview).plainText.hasSuffix(AgentFlowPromptPreview.compactTimeline(canonical)))
     }
 
     @Test func inlinePasteBudgetCountsEditableOpeningLinksAndUTF16AtExactBoundary() throws {
@@ -216,7 +216,7 @@ struct AgentFlowPromptArchiveTests {
         }
     }
 
-    @Test func inlineSectionColorsAreFixedAndNeverRainbowOrAppliedToArchivePreview() throws {
+    @Test func inlineAuthoredRainbowKeepsTypeColorsAndPlainArchivePreview() throws {
         let canonical = "<speech>spoken words</speech>\n<typed_text>typed words</typed_text>\n"
             + "<app_selection source=\"Code\"><text>quoted words</text></app_selection>\n"
             + "<local_screenshot path=\"/tmp/image.png\"/>"
@@ -225,14 +225,45 @@ struct AgentFlowPromptArchiveTests {
                       LiveSelectionStyledMath.selectionColor, LiveSelectionStyledMath.screenshotColor] {
             #expect(colored.contains("\\color{\(color)}"))
         }
-        #expect(HistoryContextPresentation.document(colored).plainText == canonical)
-        #expect(!colored.contains("#fa7070"))
+        #expect(HistoryContextPresentation.document(colored).plainText == AgentFlowPromptPreview.compactTimeline(canonical))
+        #expect(colored.contains("#fa7070"))
         let plainPreview = try #require(AgentFlowPromptPreview.make(authoredText: "spoken words", sections: [
             .init(tag: "speech", text: "spoken words", color: "#fa7070"),
             .init(tag: "selection", text: "quoted", color: "#67e8f9")
         ], fileURL: URL(fileURLWithPath: "/tmp/large.md"), completePromptText: String(repeating: canonical, count: 30)))
         #expect(plainPreview.contains("Read the [full prompt]"))
         #expect(!plainPreview.contains("\\color{"))
+    }
+
+    @Test func compactBlocksKeepPayloadParagraphsButRemoveTagFraming() {
+        let selected = "\n\n  selected first\n\nselected last  \n"
+        let spoken = "\n\nspoken first\n\nspoken last\n\n"
+        let source = "<app_selection source=\"Code\">\n\n  <text>" + selected
+            + "</text>\n\n</app_selection>\n\n<speech start_at=\"1\">\n\n" + spoken + "\n\n</speech>"
+        let expected = "<app_selection source=\"Code\"><text>" + selected
+            + "</text></app_selection>\n\n<speech start_at=\"1\">" + spoken + "</speech>"
+        #expect(AgentFlowPromptPreview.compactTimeline(source) == expected)
+        let colored = AgentFlowPromptPreview.coloredInlineTimeline(source)
+        #expect(HistoryContextPresentation.document(colored).plainText == expected)
+        #expect(HistoryContextPresentation.copyText(colored, format: .formatted) == expected)
+        let malformed = "<app_selection>\n\n<text>unfinished"
+        #expect(AgentFlowPromptPreview.compactTimeline(malformed) == malformed)
+    }
+
+    @Test func inlineRainbowContinuesOnlyAcrossAuthoredWordsAndPreservesWhitespace() throws {
+        let source = "<speech>one\n\ntwo</speech>\n\n<app_selection><text>quoted</text></app_selection>\n\n<typed_text>  three  </typed_text>"
+        let colored = AgentFlowPromptPreview.coloredInlineTimeline(source, rainbowStartIndex: 23)
+        #expect(colored.contains(try #require(AuthoredTextRainbow.render("one\n\ntwo", startIndex: 23, preserveWhitespace: true))))
+        #expect(colored.contains(try #require(AuthoredTextRainbow.render("  three  ", startIndex: 1, preserveWhitespace: true))))
+        #expect(HistoryContextPresentation.document(colored).plainText == source)
+        #expect(HistoryContextPresentation.copyText(colored, format: .formatted) == source)
+        let preview = try #require(AgentFlowPromptPreview.make(authoredText: "one two three", sections: [
+            .init(tag: "speech", text: "one two", color: "#fff"),
+            .init(tag: "selection", text: "quoted", color: "#67e8f9"),
+            .init(tag: "typed_text", text: "three", color: "#fff")
+        ], fileURL: URL(fileURLWithPath: "/tmp/full.md"), completePromptText: source, rainbowStartIndex: 23))
+        #expect(!preview.components(separatedBy: "\n\n\n")[0].contains("\\color"))
+        #expect(preview.hasSuffix(colored))
     }
 
     @Test func duplicatedAuthoredOpeningCanRequireTheArchiveEvenWhenTimelineAloneFits() throws {

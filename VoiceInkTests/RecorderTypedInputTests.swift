@@ -1449,7 +1449,7 @@ struct RecorderTypedInputTests {
         #expect(opening.contains("Editable typed words") && opening.contains("Speech before"))
         #expect(opening.contains("`<selection>`") && opening.contains("`<screenshot>`"))
         #expect(!opening.contains("<codex_selection") && !opening.contains("<speech "))
-        #expect(result.message.hasSuffix("\n\n" + AgentFlowPromptPreview.coloredInlineTimeline(result.archive)))
+        #expect(HistoryContextPresentation.document(result.message).plainText.hasSuffix("\n\n" + AgentFlowPromptPreview.compactTimeline(result.archive)))
         #expect(!result.message.contains(AgentFlowPromptArchive.interpretationReminder))
         #expect(result.message.utf16.count < 5_000)
         #expect(!result.message.contains("Read the [full prompt]"))
@@ -1459,8 +1459,8 @@ struct RecorderTypedInputTests {
         #expect(readable.contains("<codex_selection") && readable.contains("<local_screenshot"))
         let copied = try await clipboardPipelineFixture(typed: "Editable typed words",
             speech: "Speech before selection and after it", styled: true, recipientOverride: host)
-        #expect(result.message.replacingOccurrences(of: result.link, with: "PROMPT")
-            == copied.message.replacingOccurrences(of: copied.link, with: "PROMPT"))
+        #expect(HistoryContextPresentation.document(result.message).plainText.replacingOccurrences(of: result.link, with: "PROMPT")
+            == HistoryContextPresentation.document(copied.message).plainText.replacingOccurrences(of: copied.link, with: "PROMPT"))
         #expect(result.archive == copied.archive)
     }
 
@@ -1501,7 +1501,7 @@ struct RecorderTypedInputTests {
             if compact {
                 let opening = result.message.components(separatedBy: "\n\n")[0]
                 #expect(opening.contains("Every typed word") && !opening.contains("<typed_text "))
-                #expect(result.message.hasSuffix("\n\n" + AgentFlowPromptPreview.coloredInlineTimeline(result.archive)))
+                #expect(HistoryContextPresentation.document(result.message).plainText.hasSuffix("\n\n" + AgentFlowPromptPreview.compactTimeline(result.archive)))
                 #expect(!result.message.contains(AgentFlowPromptArchive.interpretationReminder))
             } else {
                 #expect(HistoryContextPresentation.document(result.message).plainText.contains("Selected exact content"))
@@ -1576,7 +1576,7 @@ struct RecorderTypedInputTests {
                 let opening = copied.message.components(separatedBy: "\n\n")[0]
                 #expect(opening.contains("typed after source app switch"))
                 #expect(opening.contains("`<selection>`") && opening.contains("`<screenshot>`"))
-                #expect(copied.message.hasSuffix("\n\n" + AgentFlowPromptPreview.coloredInlineTimeline(copied.archive)))
+                #expect(HistoryContextPresentation.document(copied.message).plainText.hasSuffix("\n\n" + AgentFlowPromptPreview.compactTimeline(copied.archive)))
                 #expect(!copied.message.contains(AgentFlowPromptArchive.interpretationReminder))
             }
         }
@@ -1856,8 +1856,8 @@ struct RecorderTypedInputTests {
             // Esc must reuse the current Won't paste format, not invent a
             // compact-link policy for Respond/custom-command Modes. Only paste
             // Mode owns that preview; the other Modes retain the full context.
-            #expect(result.message.replacingOccurrences(of: result.link, with: "PROMPT")
-                == existingClipboardFinish.message.replacingOccurrences(
+            #expect(HistoryContextPresentation.document(result.message).plainText.replacingOccurrences(of: result.link, with: "PROMPT")
+                == HistoryContextPresentation.document(existingClipboardFinish.message).plainText.replacingOccurrences(
                     of: existingClipboardFinish.link, with: "PROMPT"))
             if mode == .paste {
                 #expect(result.message.contains(result.link) && !result.link.isEmpty)

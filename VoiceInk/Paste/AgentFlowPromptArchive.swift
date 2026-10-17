@@ -398,11 +398,76 @@ enum AgentFlowPromptViewer {
 /// choreography, saved input, retries, or extra Return. The full file is the
 /// source of truth for metadata/context; every authored word also stays inline.
 enum AgentFlowPromptPreview {
-    /// Only the inline Codex timeline gets fixed type colours. Archive bytes,
-    /// compact file previews, clipboard copies and non-Codex recipients stay
-    /// independent. Preserve the original XML slices instead of reserializing
-    /// events and changing payload whitespace or metadata attribute order.
-    static func coloredInlineTimeline(_ source: String) -> String {
+    /// Remove only producer-added framing inside valid blocks. Real payload
+    /// paragraphs/indentation and all bytes outside those blocks stay intact.
+    static func compactTimeline(_ source: String) -> String {
+        mapTimeline(source) { fragment, event in compactFragment(fragment, tag: event.tag) }
+    }
+
+    /// The editable opening and file preview remain plain. Only inline authored
+    /// payloads use the shared rainbow; metadata and source context keep their
+    /// fixed type colours. Copy/archives never store this presentation.
+    static func coloredInlineTimeline(_ source: String, rainbowStartIndex: Int = 0) -> String {
+        var nextColor = rainbowStartIndex
+        return mapTimeline(source) { fragment, event in
+            let compact = compactFragment(fragment, tag: event.tag)
+            let color: String
+            switch event.tag {
+            case "speech", "speech_segment": color = LiveSelectionStyledMath.speechColor
+            case "typed_text": color = LiveSelectionStyledMath.typedColor
+            case "potential_tts": color = LiveSelectionStyledMath.potentialTTSColor
+            case "app_selection", "codex_selection": color = LiveSelectionStyledMath.selectionColor
+            case "local_screenshot": color = LiveSelectionStyledMath.screenshotColor
+            default: return fragment
+            }
+            if ["speech", "speech_segment", "typed_text"].contains(event.tag),
+               let openingEnd = compact.firstIndex(of: ">"),
+               let closing = compact.range(of: "</\(event.tag)>", options: .backwards) {
+                let contentStart = compact.index(after: openingEnd)
+                let content = String(compact[contentStart..<closing.lowerBound])
+                let count = content.split(whereSeparator: \.isWhitespace).count
+                let body = AuthoredTextRainbow.render(content, startIndex: nextColor,
+                    preserveWhitespace: true)
+                nextColor = (nextColor + count) % AuthoredTextRainbow.palette.count
+                if let body {
+                    return joinStyled([
+                        LiveSelectionStyledMath.coloredXML(String(compact[...openingEnd]), color: color),
+                        body,
+                        LiveSelectionStyledMath.coloredXML(String(compact[closing.lowerBound...]), color: color)
+                    ])
+                }
+            }
+            return LiveSelectionStyledMath.coloredXML(compact, color: color)
+        }
+    }
+
+    private static func joinStyled(_ parts: [String]) -> String {
+        parts.reduce("") { result, part in
+            result + (result.hasSuffix("\\)") && part.hasPrefix("\\(")
+                ? LiveSelectionStyledMath.zeroWidthSpace : "") + part
+        }
+    }
+
+    private static func compactFragment(_ fragment: String, tag: String) -> String {
+        if ["app_selection", "codex_selection"].contains(tag) {
+            let pattern = #"(?s)^(\s*<(?:app_selection|codex_selection)\b[^>]*>)\s*(<text\b[^>]*>)(.*)(</text>)\s*(</(?:app_selection|codex_selection)>)$"#
+            guard let expression = try? NSRegularExpression(pattern: pattern),
+                  let match = expression.firstMatch(in: fragment, range: NSRange(fragment.startIndex..., in: fragment)) else { return fragment }
+            let ns = fragment as NSString
+            return (1...5).map { ns.substring(with: match.range(at: $0)) }.joined()
+        }
+        guard ["speech", "speech_segment", "typed_text", "potential_tts"].contains(tag),
+              let openingEnd = fragment.firstIndex(of: ">"),
+              let closing = fragment.range(of: "</\(tag)>", options: .backwards) else { return fragment }
+        var body = String(fragment[fragment.index(after: openingEnd)..<closing.lowerBound])
+        // The serializer adds exactly two LFs. Removing those, not trimming,
+        // retains genuine leading/trailing blank lines inside the payload.
+        if body.hasPrefix("\n\n") { body.removeFirst(2) }
+        if body.hasSuffix("\n\n") { body.removeLast(2) }
+        return String(fragment[...openingEnd]) + body + String(fragment[closing.lowerBound...])
+    }
+
+    private static func mapTimeline(_ source: String, transform: (String, AgentFlowPromptViewer.Event) -> String) -> String {
         guard let expression = try? NSRegularExpression(pattern: AgentFlowPromptViewer.fragmentPattern) else { return source }
         let ns = source as NSString
         var output = "", end = 0
@@ -413,16 +478,7 @@ enum AgentFlowPromptPreview {
             guard parsed.count == 1, let event = parsed.first else {
                 output += fragment; end = NSMaxRange(match.range); continue
             }
-            let color: String
-            switch event.tag {
-            case "speech", "speech_segment": color = LiveSelectionStyledMath.speechColor
-            case "typed_text": color = LiveSelectionStyledMath.typedColor
-            case "potential_tts": color = LiveSelectionStyledMath.potentialTTSColor
-            case "app_selection", "codex_selection": color = LiveSelectionStyledMath.selectionColor
-            case "local_screenshot": color = LiveSelectionStyledMath.screenshotColor
-            default: output += fragment; end = NSMaxRange(match.range); continue
-            }
-            output += LiveSelectionStyledMath.coloredXML(fragment, color: color)
+            output += transform(fragment, event)
             end = NSMaxRange(match.range)
         }
         output += ns.substring(from: end)
@@ -493,7 +549,8 @@ enum AgentFlowPromptPreview {
     static let pastedTextAttachmentThreshold = 5_000
 
     static func make(authoredText: String, sections: [Section], fileURL: URL,
-                     viewerURL: URL? = nil, completePromptText: String? = nil) -> String? {
+                     viewerURL: URL? = nil, completePromptText: String? = nil,
+                     rainbowStartIndex: Int = 0) -> String? {
         guard fileURL.isFileURL, fileURL.path.hasPrefix("/"),
               !fileURL.path.contains(where: { "\n\r<>".contains($0) }) else { return nil }
         // Codex's native file-reference scanner reparses the raw Markdown target,
@@ -559,7 +616,7 @@ enum AgentFlowPromptPreview {
             // Reject an already-oversized plain candidate before allocating its
             // larger styled representation. Colouring is bounded to short copies.
             if (result + "\n\n\n" + completePromptText).utf16.count < pastedTextAttachmentThreshold {
-                let inline = result + "\n\n\n" + coloredInlineTimeline(completePromptText)
+                let inline = result + "\n\n\n" + coloredInlineTimeline(completePromptText, rainbowStartIndex: rainbowStartIndex)
                 if inline.utf16.count < pastedTextAttachmentThreshold { return inline }
             }
         }

@@ -294,7 +294,7 @@ class TranscriptionPipeline {
             // Reserve one shared palette offset only for this final styled AI
             // message. The formatter itself stays pure, and plain/raw output
             // must neither acquire a file lock nor consume a colour position.
-            let rainbowStart = presentation == .styledMath && includeSourceContext
+            let rainbowStart = (presentation == .styledMath || compactFileURL != nil) && includeSourceContext
                 && !skipPostProcessingNow && hasAuthoredWords ? AuthoredTextRainbow.reserveStartIndex() : 0
             let annotated = LiveSelectionReference.interleaving(
                 references,
@@ -318,7 +318,8 @@ class TranscriptionPipeline {
                         sections: LiveSelectionReference.compactPromptSections(references, with: current),
                         fileURL: compactFileURL,
                         viewerURL: AgentFlowPromptArchive.viewerURL(for: compactFileURL),
-                        completePromptText: completePromptText
+                        completePromptText: completePromptText,
+                        rainbowStartIndex: rainbowStart
                     )
                 }
             }

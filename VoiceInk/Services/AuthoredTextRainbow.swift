@@ -13,23 +13,29 @@ enum AuthoredTextRainbow {
         "#b570fa", "#d870fa", "#fa70fa", "#fa70d8", "#fa70b5", "#fa7093"
     ]
 
-    static func render(_ text: String, startIndex: Int, maxUTF16Count: Int = 64_000) -> String? {
+    static func render(_ text: String, startIndex: Int, maxUTF16Count: Int = 64_000,
+                       preserveWhitespace: Bool = false) -> String? {
         let start = ((startIndex % palette.count) + palette.count) % palette.count
         // One complete formula per word makes the exact original word colour
         // reusable in a reply. Long words retain one colour across short boxes;
         // reversible escaping is shared with XML, not lossy preview sanitization.
         var words: [String] = []
         var used = 0
+        var cursor = text.startIndex
         for (offset, word) in text.split(whereSeparator: \.isWhitespace).enumerated() {
             // A single huge identifier cannot fit; avoid expanding it merely to
             // discover that. Complete authored content remains in plain fallback.
             guard word.utf16.count <= maxUTF16Count - used else { return nil }
             let colored = LiveSelectionStyledMath.coloredXML(String(word), color: palette[(start + offset) % palette.count])
-            used += colored.utf16.count + (words.isEmpty ? 0 : 1)
+            let gap = preserveWhitespace ? String(text[cursor..<word.startIndex]) : (words.isEmpty ? "" : " ")
+            used += colored.utf16.count + gap.utf16.count
             guard used <= maxUTF16Count else { return nil }
-            words.append(colored)
+            words.append(gap + colored)
+            cursor = word.endIndex
         }
-        return words.joined(separator: " ")
+        let tail = preserveWhitespace ? String(text[cursor...]) : ""
+        guard used + tail.utf16.count <= maxUTF16Count else { return nil }
+        return words.joined() + tail
     }
 
     static func reserveStartIndex() -> Int {
