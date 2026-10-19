@@ -183,7 +183,7 @@ struct AgentFlowPromptArchiveTests {
         #expect(preview == "[↗](/tmp/never-created.md) before `<selection>` `<screenshot>` after\n\n\n" + AgentFlowPromptPreview.coloredInlineTimeline(canonical))
         #expect(!preview.contains(AgentFlowPromptArchive.interpretationReminder))
         #expect(preview.utf16.count < 5_000)
-        #expect(!preview.contains("Read the [full prompt]"))
+        #expect(!preview.contains("[full prompt]"))
         #expect(preview.contains("\\color{#67e8f9}"))
         #expect(HistoryContextPresentation.document(preview).plainText.hasSuffix(AgentFlowPromptPreview.compactTimeline(canonical)))
     }
@@ -210,8 +210,8 @@ struct AgentFlowPromptArchiveTests {
             } else {
                 #expect(!preview.contains(canonical))
                 #expect(preview.contains("`<selection>`"))
-                #expect(preview.hasSuffix("Read the [full prompt](\(encoded)) before answering."))
-                #expect(!preview.contains("\\color{"))
+                #expect(preview.hasSuffix(AgentFlowPromptPreview.fullPromptPointer(target: encoded)))
+                #expect(!preview.components(separatedBy: "\n\n")[0].contains("\\color{"))
             }
         }
     }
@@ -231,8 +231,8 @@ struct AgentFlowPromptArchiveTests {
             .init(tag: "speech", text: "spoken words", color: "#fa7070"),
             .init(tag: "selection", text: "quoted", color: "#67e8f9")
         ], fileURL: URL(fileURLWithPath: "/tmp/large.md"), completePromptText: String(repeating: canonical, count: 30)))
-        #expect(plainPreview.contains("Read the [full prompt]"))
-        #expect(!plainPreview.contains("\\color{"))
+        #expect(plainPreview.contains(AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/large.md")))
+        #expect(!plainPreview.components(separatedBy: "\n\n")[0].contains("\\color{"))
     }
 
     @Test func compactBlocksKeepPayloadParagraphsButRemoveTagFraming() {
@@ -276,7 +276,7 @@ struct AgentFlowPromptArchiveTests {
             .init(tag: "selection", text: "hidden", color: "#67e8f9")
         ], fileURL: URL(fileURLWithPath: "/tmp/full.md"), completePromptText: canonical))
         #expect(preview.hasPrefix("[↗](/tmp/full.md) " + words + " `<selection>`"))
-        #expect(preview.hasSuffix("Read the [full prompt](/tmp/full.md) before answering."))
+        #expect(preview.hasSuffix(AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/full.md")))
         #expect(!preview.contains(canonical))
         #expect(preview.utf16.count < 5_000)
     }
@@ -291,7 +291,7 @@ struct AgentFlowPromptArchiveTests {
                 .init(tag: "unknown_context", text: "private", color: "#67e8f9"),
                 .init(tag: "speech", text: "keep every word", color: "#f1f5f9")
             ], fileURL: file, completePromptText: canonical))
-            #expect(result == "[↗](/tmp/full.md) `<unknown_context>` keep every word\n\nRead the [full prompt](/tmp/full.md) before answering.")
+            #expect(result == "[↗](/tmp/full.md) `<unknown_context>` keep every word\n\n" + AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/full.md"))
         }
     }
 
@@ -308,7 +308,7 @@ struct AgentFlowPromptArchiveTests {
         #expect(!preview.contains("beginning") && !preview.contains("ending"))
         #expect(!preview.contains("</"))
         #expect(!preview.contains("captured") && !preview.contains("bundle") && !preview.contains("characters="))
-        #expect(preview.hasSuffix("Read the [\(AgentFlowPromptPreview.fullPromptLinkLabel)](/tmp/full%20prompt.md) before answering."))
+        #expect(preview.hasSuffix(AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/full%20prompt.md")))
         #expect(!preview.contains("not just this preview"))
         #expect(preview.hasPrefix("[↗](/tmp/full%20prompt.md) `<selection>`"))
         #expect(!preview.contains("IMPORTANT:"))
@@ -328,7 +328,7 @@ struct AgentFlowPromptArchiveTests {
         #expect(!preview.contains("…"))
         for word in words { #expect(preview.contains(word)) }
         #expect(!preview.contains("private quoted context") && !preview.contains("private image path"))
-        #expect(preview.hasSuffix("before answering."))
+        #expect(preview.hasSuffix(#"before answering.}\)"#))
         let firstTail = try #require(preview.range(of: "word1000"))
         let lastHead = try #require(preview.range(of: "word999"))
         #expect(lastHead.lowerBound < firstTail.lowerBound)
@@ -383,7 +383,7 @@ struct AgentFlowPromptArchiveTests {
             .init(tag: "selection", text: "quote ` code <secret>", color: "#67e8f9")
         ], fileURL: URL(fileURLWithPath: "/tmp/full.md")))
         #expect(preview.contains("`<selection>`"))
-        #expect(!preview.contains("[selection]") && !preview.contains("\\("))
+        #expect(!preview.contains("[selection]") && !preview.components(separatedBy: "\n\n")[0].contains("\\("))
         #expect(!preview.contains("quote") && !preview.contains("secret"))
     }
 
@@ -663,11 +663,11 @@ struct AgentFlowPromptArchiveTests {
         for text in ["", " \n\t"] {
             let preview = try #require(AgentFlowPromptPreview.make(authoredText: text, sections: [],
                 fileURL: URL(fileURLWithPath: "/tmp/prompt.md")))
-            #expect(preview == "Read the [\(AgentFlowPromptPreview.fullPromptLinkLabel)](/tmp/prompt.md) before answering.")
+            #expect(preview == AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/prompt.md"))
         }
     }
 
-    @Test func plainFooterContainsNoMathAndPreservesBothLinkTargets() throws {
+    @Test func greenFooterKeepsMathOutsidePlainLinkAndPreservesBothTargets() throws {
         let label = AgentFlowPromptPreview.fullPromptLinkLabel
         #expect(label == "full prompt")
         let preview = try #require(AgentFlowPromptPreview.make(authoredText: "", sections: [
@@ -676,9 +676,10 @@ struct AgentFlowPromptArchiveTests {
         ],
             fileURL: URL(fileURLWithPath: "/tmp/full.md"), viewerURL: URL(fileURLWithPath: "/tmp/full.html")))
         #expect(preview.components(separatedBy: "\n\n")[0] == "[↗](/tmp/full.html) editable words `<selection>`")
-        #expect(preview.hasSuffix("Read the [\(label)](/tmp/full.html) before answering."))
+        #expect(preview.hasSuffix(AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/full.html")))
         #expect(preview.components(separatedBy: "/tmp/full.html").count == 3)
-        #expect(!preview.contains("$$") && !preview.contains("\\textsf") && !preview.contains("\\color"))
+        #expect(preview.hasSuffix(#"\(\textsf{\color{#22c55e}Read the}\) [full prompt](/tmp/full.html) \(\textsf{\color{#22c55e}before answering.}\)"#))
+        #expect(!preview.contains("[\\") && !preview.contains("$$"))
     }
 
     @Test func authoredSpeechAndTypingOmitMandatoryReadEvenWhenMentioningReferences() throws {
@@ -695,7 +696,7 @@ struct AgentFlowPromptArchiveTests {
             .init(tag: "speech", text: "Look at this", color: "#f1f5f9"),
             .init(tag: tag, text: "context payload", color: "#67e8f9")
         ], fileURL: URL(fileURLWithPath: "/tmp/full.md")))
-        #expect(preview.hasSuffix("\n\nRead the [full prompt](/tmp/full.md) before answering."))
+        #expect(preview.hasSuffix("\n\n" + AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/full.md")))
     }
 
     @Test func headTailPreviewDoesNotPretendToContainEntireSelection() {

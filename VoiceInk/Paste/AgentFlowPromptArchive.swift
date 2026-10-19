@@ -547,6 +547,14 @@ enum AgentFlowPromptPreview {
     // without actual recipient bubble evidence; keep both file targets intact.
     static let fullPromptLinkLabel = "full prompt"
 
+    // Ethan's “read the full prompt text can be green” refers to this footer.
+    // Style only the surrounding words: math inside the clickable label was
+    // shown as raw commands by Codex. Keep that label and target ordinary Markdown.
+    static func fullPromptPointer(target: String) -> String {
+        #"\(\textsf{\color{#22c55e}Read the}\) ["# + fullPromptLinkLabel + "](" + target
+            + #") \(\textsf{\color{#22c55e}before answering.}\)"#
+    }
+
     // The native Codex handlePaste compares JS UTF-16 length against 5,000 per
     // paste event (ChatGPT 26.1002.52244/13536, rechecked 2026-10-08). At the
     // threshold it creates a pasted-text attachment. Count the entire plain-text
@@ -575,7 +583,7 @@ enum AgentFlowPromptPreview {
                   !url.path.contains(where: { "\n\r<>".contains($0) }) else { return nil }
             return url.path.addingPercentEncoding(withAllowedCharacters: linkCharacters)
         }
-        let pointer = "Read the [\(fullPromptLinkLabel)](\(viewerPath ?? linkPath)) before answering."
+        let pointer = fullPromptPointer(target: viewerPath ?? linkPath)
         let openingLink = "[↗](\(viewerPath ?? linkPath))"
         var parts: [String] = []
         let ordered = sections.isEmpty ? [Section(tag: "speech", text: authoredText, color: LiveSelectionStyledMath.speechColor)] : sections
