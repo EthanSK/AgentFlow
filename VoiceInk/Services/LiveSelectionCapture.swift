@@ -1166,6 +1166,20 @@ enum CodexSelectionThreadTitleReader {
 /// closed rather than borrowing the clipboard.
 @MainActor
 final class LiveSelectionCapture {
+    /// The independent pane helper must not clear a pre-start highlight. This
+    /// receipt acknowledges only an already committed live mouse selection;
+    /// it carries no words, AX target or paste authority and never delays Start.
+    nonisolated static let selectionCapturedNotification = Notification.Name(
+        "com.ethansk.agentflow.selectionCaptured")
+
+    nonisolated static func selectionReceipt(sourcePID: pid_t, selectedAt: Date,
+                                             precedesSpeech: Bool, hasGesture: Bool) -> [String: Any]? {
+        guard sourcePID > 0, selectedAt.timeIntervalSince1970.isFinite,
+              !precedesSpeech, hasGesture else { return nil }
+        return ["version": 1, "sourcePID": Int(sourcePID),
+                "selectedAt": selectedAt.timeIntervalSince1970]
+    }
+
     typealias MouseEdge = SelectionGestureWatcher.MouseEdge
 
     /// `precedesSpeech` is true only for a highlight made before this capture
@@ -1591,6 +1605,14 @@ final class LiveSelectionCapture {
             self.onCapture(captured.timed(at: selectedAt).identifiedForCapture(captureID),
                            precedesSpeech, spokenAnchor)
             outcome = "emitted-to-session"
+            if isCodex, let receipt = Self.selectionReceipt(sourcePID: sourcePID, selectedAt: selectedAt,
+                precedesSpeech: precedesSpeech, hasGesture: gesture != nil) {
+                // Focus-after-highlight is separate from Primary delivery. The
+                // helper still proves its own fresh same-pane click/focus path.
+                DistributedNotificationCenter.default().postNotificationName(
+                    Self.selectionCapturedNotification, object: nil, userInfo: receipt,
+                    deliverImmediately: true)
+            }
             guard isCodex else { return }
             let labeled: LiveSelectionReference
             if isCodex {

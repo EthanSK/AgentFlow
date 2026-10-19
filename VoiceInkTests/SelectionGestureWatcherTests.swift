@@ -7,6 +7,33 @@ import Testing
 /// reading before pressing start, or during microphone start-up) were missed
 /// because each recording owned its own mouse monitor from its start onward.
 struct SelectionGestureWatcherTests {
+    @Test func paneFocusReceiptRequiresCommittedLiveMouseContext() throws {
+        let at = Date(timeIntervalSince1970: 1_000)
+        let receipt = try #require(LiveSelectionCapture.selectionReceipt(
+            sourcePID: 7, selectedAt: at, precedesSpeech: false, hasGesture: true))
+        #expect(receipt["version"] as? Int == 1)
+        #expect(receipt["sourcePID"] as? Int == 7)
+        #expect(receipt["selectedAt"] as? Double == 1_000)
+        #expect(Set(receipt.keys) == ["version", "sourcePID", "selectedAt"])
+        #expect(LiveSelectionCapture.selectionReceipt(sourcePID: 7, selectedAt: at,
+            precedesSpeech: true, hasGesture: true) == nil)
+        #expect(LiveSelectionCapture.selectionReceipt(sourcePID: 7, selectedAt: at,
+            precedesSpeech: false, hasGesture: false) == nil)
+        #expect(LiveSelectionCapture.selectionReceipt(sourcePID: 0, selectedAt: at,
+            precedesSpeech: false, hasGesture: true) == nil)
+    }
+
+    @Test func paneFocusReceiptFollowsContextCommitAndNeverChangesDelivery() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent("VoiceInk/Services/LiveSelectionCapture.swift"), encoding: .utf8)
+        let commit = try #require(source.range(of: "self.onCapture(captured.timed"))
+        let receipt = try #require(source.range(of: "if isCodex, let receipt = Self.selectionReceipt"))
+        let labels = try #require(source.range(of: "let threadsBefore = await beforeLabels"))
+        #expect(commit.lowerBound < receipt.lowerBound && receipt.lowerBound < labels.lowerBound)
+        #expect(!source.contains("AXUIElementSetAttributeValue"))
+        #expect(!source.contains("NSPasteboard.general"))
+    }
+
     @Test @MainActor func shiftClickRetainsDownModifierWithoutInventingADrag() {
         let watcher = SelectionGestureWatcher()
         let now = Date()
