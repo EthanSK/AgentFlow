@@ -41,6 +41,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         hasInFlightSessions || hasHistoryRetries || hasPendingRecordingStart
     }
 
+    @MainActor
+    static func makeTerminationRetryAction(retry: @escaping () -> Void) -> (label: String, action: () -> Void) {
+        (String(localized: "I've finished"), retry)
+    }
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let hasInFlightSessions = voiceInkEngine?.sessions.isEmpty == false
         // An accepted Primary/typing start owns its reservation, startup bar and
@@ -64,7 +69,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationManager.shared.showNotification(
             title: String(localized: "Agent Flow is still recording or transcribing — finish or cancel it before quitting"),
             type: .error,
-            duration: 12
+            duration: 12,
+            // Ethan's "I've finished" retries the normal quit, not Stop/Cancel.
+            // The same live all-session veto runs again if capture/start/delivery
+            // is still active. A guarded installer waits for process exit and owns
+            // replacement/relaunch; this button never starts an independent updater.
+            actionButton: Self.makeTerminationRetryAction { sender.terminate(nil) },
+            dismissesAutomatically: false
         )
         return .terminateCancel
     }

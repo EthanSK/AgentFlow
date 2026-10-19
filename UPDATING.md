@@ -100,7 +100,7 @@ installed `.app`).
 # on the Mac Mini:
 cd ~/Projects/VoiceInk-build        # the Mini's clone of this fork
 make local                          # builds whisper.cpp (cached after first time) + ad-hoc-signed xcodebuild
-# output: ~/Downloads/AgentFlow.app  (quarantine already stripped by the Makefile)
+# output: build.noindex/AgentFlow.app  (quarantine already stripped by the Makefile)
 ```
 
 AgentFlow contains no commercial license, trial, purchase, affiliate-promotion, or remote
@@ -109,7 +109,7 @@ promotional-announcement runtime. Do not reintroduce those upstream systems duri
 ad-hoc `CODE_SIGN_IDENTITY = -`, so no paid Apple Developer certificate is needed. Mic /
 Accessibility / Screen-Recording are normal TCC grants on first launch.
 
-The built bundle is **`AgentFlow.app`** (output: `~/Downloads/AgentFlow.app`) — the
+The built bundle is **`AgentFlow.app`** (output: `build.noindex/AgentFlow.app`) — the
 `PRODUCT_NAME` is `AgentFlow`; the user-visible name is **AgentFlow** via
 `CFBundleDisplayName`.
 
@@ -143,6 +143,19 @@ sleep 5
 Only after that delay and a fresh idle check: cooperatively quit the installed app, preserve a verified ZIP rollback, replace it,
 relaunch it, and verify the new PID plus the strict/deep code signature and stable designated
 requirement. Do not claim a live fix while an older PID/build remains running.
+
+If the all-session veto refuses, leave the running app and staged candidate
+untouched. Build 454's warning stays visible with **I've finished**: that button
+retries ordinary termination and checks all active sessions again; it does not
+stop, cancel or discard them. The waiting installer, not the button, owns the
+verified replacement and background relaunch. For a user-driven deferred update,
+wait with `python3 scripts/wait-for-agent-flow-exit.py <verified-pid>` instead of
+repeated quit attempts or model polling. It uses one bounded Darwin process-exit
+event, sends no signal and performs no install. After it wakes, recheck that no
+Agent Flow instance remains and revalidate the candidate before swapping. A
+timeout or unknown identity preserves both app and candidate. Closing the warning
+does not grant permission to force quit. Older builds have no retry button; keep
+their existing safe bounded installation procedure until this update is installed.
 
 ### Keep rollback backups out of app menus
 
@@ -212,7 +225,7 @@ checked-in entitlements as argument 2, refuses a missing file, and verifies Auto
 
 ```sh
 ~/Projects/VoiceInk-build/resign-local.sh \
-  ~/Downloads/AgentFlow.app \
+  build.noindex/AgentFlow.app \
   "$PWD/VoiceInk/VoiceInk.local.entitlements"
 ```
 

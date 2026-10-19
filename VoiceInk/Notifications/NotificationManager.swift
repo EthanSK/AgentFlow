@@ -55,7 +55,8 @@ class NotificationManager {
         onTap: (() -> Void)? = nil,
         actionButton: (label: String, action: () -> Void)? = nil,
         preservesErrorCopyAction: Bool = false,
-        copyText: String? = nil
+        copyText: String? = nil,
+        dismissesAutomatically: Bool = true
     ) {
         dismissTimer?.invalidate()
         dismissTimer = nil
@@ -113,7 +114,8 @@ class NotificationManager {
                     copyAction.action()
                 })
                 : nil,
-            copyText: copyText
+            copyText: copyText,
+            dismissesAutomatically: dismissesAutomatically
         )
         let hostingController = NSHostingController(rootView: notificationView)
         let size = hostingController.view.fittingSize
@@ -150,12 +152,15 @@ class NotificationManager {
             panel.animator().alphaValue = 1
         })
         
-        // Schedule a new timer to dismiss the new notification.
-        dismissTimer = Timer.scheduledTimer(
-            withTimeInterval: effectiveDuration,
-            repeats: false
-        ) { [weak self] _ in
-            self?.dismissNotification(presentationID: presentationID)
+        // Deferred quit is user-driven: its button must survive a long session.
+        // Ordinary notifications retain the existing bounded auto-dismiss timer.
+        if dismissesAutomatically {
+            dismissTimer = Timer.scheduledTimer(
+                withTimeInterval: effectiveDuration,
+                repeats: false
+            ) { [weak self] _ in
+                self?.dismissNotification(presentationID: presentationID)
+            }
         }
     }
 

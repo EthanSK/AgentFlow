@@ -1,4 +1,6 @@
 import Foundation
+import AppKit
+import SwiftUI
 import os
 import Testing
 @testable import VoiceInkPlusPlus
@@ -445,5 +447,77 @@ struct RecordingStopSafetyTests {
             "let hasPendingRecordingStart = voiceInkEngine?.hasPendingRecordingStart == true"
         ))
         #expect(delegate.contains("hasPendingRecordingStart: hasPendingRecordingStart"))
+    }
+
+    @Test @MainActor func finishedButtonRetriesNormalQuitWithoutEndingCapture() throws {
+        var retries = 0
+        let button = AppDelegate.makeTerminationRetryAction { retries += 1 }
+        #expect(button.label == "I've finished")
+        #expect(retries == 0)
+        button.action()
+        #expect(retries == 1)
+        #expect(AppDelegate.shouldBlockTermination(hasInFlightSessions: true))
+        #expect(AppDelegate.shouldBlockTermination(hasInFlightSessions: false, hasHistoryRetries: true))
+        #expect(AppDelegate.shouldBlockTermination(hasInFlightSessions: false, hasPendingRecordingStart: true))
+        #expect(!AppDelegate.shouldBlockTermination(hasInFlightSessions: false))
+        let delegate = try source("VoiceInk/AppDelegate.swift")
+        let start = try #require(delegate.range(of: "func applicationShouldTerminate(_ sender:"))
+        let end = try #require(delegate.range(of: "// Stash URL", range: start.upperBound..<delegate.endIndex))
+        let body = delegate[start.lowerBound..<end.lowerBound]
+        #expect(body.contains("Self.makeTerminationRetryAction { sender.terminate(nil) }"))
+        #expect(body.contains("return .terminateCancel"))
+        #expect(!body.contains("stopRecording") && !body.contains("cancelRecording"))
+    }
+
+    @Test @MainActor func deferredQuitWarningHasNoDismissOrProgressTimer() throws {
+        let view = AppNotificationView(title: "Test", type: .warning, duration: 0.01,
+            onClose: {}, onTap: nil, dismissesAutomatically: false)
+        #expect(!view.dismissesAutomatically)
+        let delegate = try source("VoiceInk/AppDelegate.swift")
+        #expect(delegate.contains("dismissesAutomatically: false"))
+        let manager = try source("VoiceInk/Notifications/NotificationManager.swift")
+        #expect(manager.contains("if dismissesAutomatically {\n            dismissTimer = Timer.scheduledTimer("))
+        let notification = try source("VoiceInk/Notifications/AppNotificationView.swift")
+        #expect(notification.contains("if dismissesAutomatically { startProgressTimer() }"))
+    }
+
+    @Test @MainActor func finishedButtonRendersAndAcceptsAHostedClick() throws {
+        var retries = 0
+        var closes = 0
+        let view = AppNotificationView(
+            title: "Agent Flow is still recording or transcribing — finish or cancel it before quitting",
+            type: .error, duration: 0.01, onClose: { closes += 1 }, onTap: nil,
+            actionButton: AppDelegate.makeTerminationRetryAction { retries += 1 },
+            dismissesAutomatically: false)
+        let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 650, height: 64),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let host = NSHostingView(rootView: view.frame(width: 650, height: 64).preferredColorScheme(.dark))
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil); window.close() }
+        host.layoutSubtreeIfNeeded()
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        #expect(window.isVisible && retries == 0 && closes == 0)
+        let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        let png = try #require(bitmap.representation(using: .png, properties: [:]))
+        let artifact = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AgentFlow-finished-warning-\(UUID().uuidString).png")
+        try png.write(to: artifact, options: .atomic)
+        print("QUIT_WARNING_FIXTURE=\(artifact.path)")
+        func event(_ type: NSEvent.EventType) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(with: type, location: NSPoint(x: 570, y: 32),
+                modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 1,
+                clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0))
+        }
+        let up = try event(.leftMouseUp)
+        NSApp.postEvent(up, atStart: false)
+        NSApp.sendEvent(try event(.leftMouseDown))
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        NSApp.sendEvent(up)
+        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        #expect(retries == 1 && closes == 1)
     }
 }
