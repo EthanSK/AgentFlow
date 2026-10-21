@@ -37,12 +37,16 @@ struct CodexSpeechPlaybackMessage: Decodable {
               let m = try? JSONDecoder().decode(Self.self, from: Data(payload.utf8)),
               ((m.version == 2 && m.mode == "annotate") || (m.version == 3 && m.mode == "idle-only")),
               m.reason == "codex-spoken-reminder",
-              ["begin", "playback-started", "heartbeat", "end"].contains(m.type), m.pid > 1,
+              ["begin", "playback-started", "heartbeat", "end", "allow-next"].contains(m.type), m.pid > 1,
               m.audioPID == nil || m.audioPID! > 1,
               m.startedAtUptime == nil || (m.startedAtUptime!.isFinite && m.startedAtUptime! >= 0),
               m.endedAtUptime == nil || (m.endedAtUptime!.isFinite && m.endedAtUptime! >= 0) else { return nil }
         if m.type == "begin" {
             guard let d = m.maxDurationSeconds, d.isFinite, d > 0, d <= 30 else { return nil }
+        }
+        if m.type == "allow-next" {
+            guard m.version == 3, m.mode == "idle-only", m.maxDurationSeconds == nil,
+                  m.audioPID == nil, m.startedAtUptime == nil, m.endedAtUptime == nil else { return nil }
         }
         if ["playback-started", "heartbeat"].contains(m.type) {
             guard m.audioPID != nil, m.startedAtUptime != nil else { return nil }
@@ -300,6 +304,13 @@ final class CodexSpeechPlaybackReceiver: ObservableObject {
         guard message.version == 3, message.mode == "idle-only",
               let owner = identity(message.pid, false) else { return }
         let now = uptime()
+        // Ethan requires this to be agent controllable. The same-user command
+        // arms the same expiring menu grant; it cannot start/stop capture or audio.
+        if message.type == "allow-next" {
+            allowNextAnnouncementOnce()
+            acknowledge(message.speechID, type: "override-ack", allowed: true)
+            return
+        }
         if let deadline = overrideDeadline, now >= deadline { cancelAnnouncementOverride() }
         admissions = admissions.filter {
             $0.value.deadline > now && (identity($0.value.owner.pid, false) == $0.value.owner ||

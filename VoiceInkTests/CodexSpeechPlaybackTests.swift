@@ -289,6 +289,35 @@ struct CodexSpeechPlaybackTests {
         #expect(!receiver.announcementOverrideArmed)
     }
 
+    @MainActor @Test func agentCommandArmsTheSameSingleAnnouncementGrant() throws {
+        let object: [String: Any] = ["version": 3, "mode": "idle-only", "type": "allow-next",
+            "speechID": UUID().uuidString, "pid": 100, "reason": "codex-spoken-reminder"]
+        func decode(_ object: [String: Any]) throws -> CodexSpeechPlaybackMessage? {
+            CodexSpeechPlaybackMessage.decode(String(decoding: try JSONSerialization.data(withJSONObject: object), as: UTF8.self))
+        }
+        let command = try #require(decode(object))
+        var invalid = object; invalid["maxDurationSeconds"] = 10
+        #expect(try decode(invalid) == nil)
+        invalid = object; invalid["version"] = 2; invalid["mode"] = "annotate"
+        #expect(try decode(invalid) == nil)
+        var replies: [[String: Any]] = []
+        var knownOwner = false
+        let receiver = CodexSpeechPlaybackReceiver(recordingActive: { true },
+            identity: { pid, _ in knownOwner ? (pid == 100 ? self.owner : self.child) : nil },
+            sendAck: { replies.append($0) })
+        receiver.receive(command)
+        #expect(!receiver.announcementOverrideArmed && replies.isEmpty)
+        knownOwner = true
+        receiver.receive(command)
+        #expect(receiver.announcementOverrideArmed)
+        #expect(replies.last?["type"] as? String == "override-ack")
+        receiver.receive(idleMessage("begin", id: UUID()))
+        #expect(replies.last?["playbackAllowed"] as? Bool == true)
+        #expect(!receiver.announcementOverrideArmed)
+        receiver.receive(idleMessage("begin", id: UUID()))
+        #expect(replies.last?["playbackAllowed"] as? Bool == false)
+    }
+
     @MainActor @Test func recordingReservationStopsAdmittedChildBeforeCapture() {
         var active = false
         var resumed: [Int32] = [], stopped: [Int32] = []
