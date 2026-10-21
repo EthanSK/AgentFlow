@@ -238,6 +238,57 @@ struct CodexSpeechPlaybackTests {
         #expect(replies.count == count) // v2 cannot revive live annotation.
     }
 
+    @MainActor @Test func explicitOverrideAdmitsOneRecordingAnnouncementAndKeepsItsHeartbeat() {
+        var replies: [[String: Any]] = []
+        var resumed = 0, stopped = 0
+        let receiver = CodexSpeechPlaybackReceiver(recordingActive: { true },
+            identity: { pid, _ in pid == 100 ? self.owner : self.child },
+            parentMatches: { _, _ in true }, resumeAudio: { _ in resumed += 1 },
+            stopAudio: { _ in stopped += 1 }, sendAck: { replies.append($0) })
+        receiver.allowNextAnnouncementOnce()
+        let id = UUID()
+        receiver.receive(idleMessage("begin", id: id))
+        #expect(replies.last?["playbackAllowed"] as? Bool == true)
+        #expect(!receiver.announcementOverrideArmed)
+        receiver.receive(idleMessage("begin", id: id)) // Duplicate consumes no new grant.
+        #expect(replies.last?["playbackAllowed"] as? Bool == true)
+        receiver.receive(idleMessage("playback-started", id: id))
+        receiver.receive(.init(version: 3, mode: "idle-only", type: "heartbeat", speechID: id,
+            pid: 100, reason: "codex-spoken-reminder", maxDurationSeconds: nil,
+            audioPID: 101, startedAtUptime: ProcessInfo.processInfo.systemUptime, endedAtUptime: nil))
+        #expect(resumed == 1 && stopped == 0)
+        #expect(replies.last?["playbackAllowed"] as? Bool == true)
+        receiver.receive(idleMessage("begin", id: UUID()))
+        #expect(replies.last?["playbackAllowed"] as? Bool == false)
+        receiver.silenceBeforeRecording() // A new capture reservation wins again.
+        #expect(stopped == 1)
+    }
+
+    @MainActor @Test func overrideExpiresCancelsAndNeverBypassesUnknownCapture() {
+        var now: TimeInterval = 100
+        var active: Bool? = nil
+        var replies: [[String: Any]] = []
+        let receiver = CodexSpeechPlaybackReceiver(recordingActive: { active },
+            identity: { pid, _ in pid == 100 ? self.owner : self.child },
+            sendAck: { replies.append($0) }, uptime: { now })
+        receiver.allowNextAnnouncementOnce()
+        receiver.receive(idleMessage("begin", id: UUID()))
+        #expect(replies.last?["playbackAllowed"] as? Bool == false)
+        #expect(receiver.announcementOverrideArmed)
+        active = true
+        now = 130
+        receiver.receive(idleMessage("begin", id: UUID()))
+        #expect(replies.last?["playbackAllowed"] as? Bool == false)
+        #expect(!receiver.announcementOverrideArmed)
+        receiver.allowNextAnnouncementOnce()
+        receiver.cancelAnnouncementOverride()
+        receiver.receive(idleMessage("begin", id: UUID()))
+        #expect(replies.last?["playbackAllowed"] as? Bool == false)
+        receiver.allowNextAnnouncementOnce()
+        receiver.silenceBeforeRecording()
+        #expect(!receiver.announcementOverrideArmed)
+    }
+
     @MainActor @Test func recordingReservationStopsAdmittedChildBeforeCapture() {
         var active = false
         var resumed: [Int32] = [], stopped: [Int32] = []

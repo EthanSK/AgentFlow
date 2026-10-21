@@ -199,13 +199,14 @@ enum CodexSpeechCapturePolicy {
 /// Recording owns priority. This channel controls only the reminder's audio child;
 /// it never mutes the microphone, alters Pause, or classifies the user's words.
 @MainActor
-final class CodexSpeechPlaybackReceiver {
+final class CodexSpeechPlaybackReceiver: ObservableObject {
     static let shared = CodexSpeechPlaybackReceiver()
     static let notificationName = Notification.Name("com.ethansk.codex.speechPlayback")
     static let acknowledgementName = Notification.Name("com.ethansk.codex.speechPlaybackAck")
     private struct Admission {
         let owner: SpeechPlaybackProcessIdentity
         let deadline: TimeInterval
+        let allowsRecording: Bool
         var audio: SpeechPlaybackProcessIdentity?
     }
     private let center: DistributedNotificationCenter
@@ -217,6 +218,28 @@ final class CodexSpeechPlaybackReceiver {
     private let resumeAudio: (SpeechPlaybackProcessIdentity) -> Void
     private let stopAudio: (SpeechPlaybackProcessIdentity) -> Void
     private let sendAck: (([String: Any]) -> Void)?
+    private let uptime: () -> TimeInterval
+    @Published private(set) var announcementOverrideArmed = false
+    private var overrideDeadline: TimeInterval?
+    private var overrideTimer: Timer?
+
+    /// Ethan's "override the safeguard" is one explicit, expiring admission.
+    /// Keep capture untouched; a new recording still revokes the audio child.
+    func allowNextAnnouncementOnce() {
+        overrideDeadline = uptime() + 30
+        announcementOverrideArmed = true
+        overrideTimer?.invalidate()
+        overrideTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.cancelAnnouncementOverride() }
+        }
+    }
+
+    func cancelAnnouncementOverride() {
+        overrideDeadline = nil
+        announcementOverrideArmed = false
+        overrideTimer?.invalidate()
+        overrideTimer = nil
+    }
 
     init(center: DistributedNotificationCenter = .default(),
          recordingActive: @escaping () -> Bool? = { nil },
@@ -242,10 +265,12 @@ final class CodexSpeechPlaybackReceiver {
                  kill(child.pid, SIGKILL)
              }
          },
-         sendAck: (([String: Any]) -> Void)? = nil) {
+         sendAck: (([String: Any]) -> Void)? = nil,
+         uptime: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
         self.center = center; self.recordingActive = recordingActive
         self.identity = identity; self.parentMatches = parentMatches
         self.resumeAudio = resumeAudio; self.stopAudio = stopAudio; self.sendAck = sendAck
+        self.uptime = uptime
         observer = center.addObserver(forName: Self.notificationName, object: nil, queue: .main) { [weak self] note in
             guard let payload = note.userInfo?["payload"] as? String,
                   let message = CodexSpeechPlaybackMessage.decode(payload) else { return }
@@ -261,6 +286,7 @@ final class CodexSpeechPlaybackReceiver {
     /// also checks admission immediately before launch and while running, covering
     /// a start notice that races the reservation. Capture itself never waits on TTS.
     func silenceBeforeRecording() {
+        cancelAnnouncementOverride()
         for (id, admission) in admissions {
             if let child = admission.audio { stopAudio(child) }
             acknowledge(id, type: "state", allowed: false)
@@ -273,7 +299,8 @@ final class CodexSpeechPlaybackReceiver {
         // check instead of restoring Potential ignore or microphone suppression.
         guard message.version == 3, message.mode == "idle-only",
               let owner = identity(message.pid, false) else { return }
-        let now = ProcessInfo.processInfo.systemUptime
+        let now = uptime()
+        if let deadline = overrideDeadline, now >= deadline { cancelAnnouncementOverride() }
         admissions = admissions.filter {
             $0.value.deadline > now && (identity($0.value.owner.pid, false) == $0.value.owner ||
                 $0.value.audio.map { identity($0.pid, true) == $0 } == true)
@@ -284,15 +311,21 @@ final class CodexSpeechPlaybackReceiver {
             acknowledge(message.speechID, type: "end-ack", allowed: false)
             return
         }
-        let idle = recordingActive() == false // Unknown/startup is never idle.
+        let captureState = recordingActive()
+        let idle = captureState == false // Unknown/startup is never idle.
         if message.type == "begin" {
             if let previous = admissions[message.speechID], previous.owner != owner { return }
-            if idle, admissions[message.speechID] == nil, admissions.count < 16,
+            let override = announcementOverrideArmed && captureState != nil
+            if idle || override, admissions[message.speechID] == nil, admissions.count < 16,
                let budget = message.maxDurationSeconds, budget > 0, budget <= 30 {
-                admissions[message.speechID] = Admission(owner: owner, deadline: now + budget)
+                admissions[message.speechID] = Admission(owner: owner, deadline: now + budget,
+                                                       allowsRecording: override)
+                if override { cancelAnnouncementOverride() }
             }
             acknowledge(message.speechID, type: "begin-ack",
-                        allowed: idle && admissions[message.speechID] != nil)
+                        allowed: admissions[message.speechID].map {
+                            captureState != nil && (idle || $0.allowsRecording)
+                        } ?? false)
             return
         }
         guard var admission = admissions[message.speechID], admission.owner == owner,
@@ -307,12 +340,13 @@ final class CodexSpeechPlaybackReceiver {
         let firstStart = admission.audio == nil
         admission.audio = child
         admissions[message.speechID] = admission
-        if idle, firstStart { resumeAudio(child) }
-        if !idle {
+        let allowed = captureState != nil && (idle || admission.allowsRecording)
+        if allowed, firstStart { resumeAudio(child) }
+        if !allowed {
             stopAudio(child)
             admissions.removeValue(forKey: message.speechID)
         }
-        acknowledge(message.speechID, type: "state", allowed: idle)
+        acknowledge(message.speechID, type: "state", allowed: allowed)
     }
 
     private func acknowledge(_ id: UUID, type: String, allowed: Bool) {
