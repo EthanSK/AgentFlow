@@ -295,7 +295,8 @@ struct CodexSpeechPlaybackTests {
         func decode(_ object: [String: Any]) throws -> CodexSpeechPlaybackMessage? {
             CodexSpeechPlaybackMessage.decode(String(decoding: try JSONSerialization.data(withJSONObject: object), as: UTF8.self))
         }
-        let command = try #require(decode(object))
+        let decoded = try decode(object)
+        let command = try #require(decoded)
         var invalid = object; invalid["maxDurationSeconds"] = 10
         #expect(try decode(invalid) == nil)
         invalid = object; invalid["version"] = 2; invalid["mode"] = "annotate"
