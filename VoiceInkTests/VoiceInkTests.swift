@@ -946,7 +946,7 @@ struct VoiceInkTests {
             showsRealtimeTranscript: true,
             sessionCount: 1,
             realtimeTranscriptHeight: long
-        ) == 24 + long + 1 + 40)
+        ) == long + 1 + 40)
         let stacks = try repositorySource("VoiceInk/Views/Recorder/RecorderStackView.swift")
         #expect(stacks.contains(".onReceive((baseSession?.objectWillChange ?? ObservableObjectPublisher()).receive(on: RunLoop.main))"))
         #expect(stacks.contains(".onReceive((pillSession?.objectWillChange ?? ObservableObjectPublisher()).receive(on: RunLoop.main))"))
@@ -1016,7 +1016,7 @@ struct VoiceInkTests {
             realtimeTranscriptHeight: 200,
             scale: 0.5
         )
-        let expectedReserved: CGFloat = 24 + (200 + 1 + 40 + 46) * 0.5
+        let expectedReserved: CGFloat = (200 + 1 + 40 + 46) * 0.5
         #expect(reserved == expectedReserved)
         let mini = MiniRecorderPanel.calculateWindowMetrics(for: nil, scale: 0.5)
         let notch = NotchRecorderPanel.calculateWindowMetrics(for: nil, scale: 0.5)
@@ -2526,7 +2526,7 @@ struct VoiceInkTests {
             bottomReservedHeight: reservedHeight
         )
 
-        #expect(reservedHeight == 121)
+        #expect(reservedHeight == 97)
         #expect(origin.y == recorderTop + 16)
     }
 
@@ -2536,7 +2536,7 @@ struct VoiceInkTests {
             showsRealtimeTranscript: true,
             sessionCount: 3
         )
-        #expect(reservedHeight == 213)
+        #expect(reservedHeight == 189)
     }
 
     @Test func clipboardOnlySelectionRendersAsRedNoPasteHUDState() throws {

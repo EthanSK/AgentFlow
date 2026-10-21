@@ -3,10 +3,98 @@ import Foundation
 import Testing
 import AppKit
 import ApplicationServices
+import SwiftUI
 @testable import VoiceInkPlusPlus
 
 @Suite(.serialized)
 struct RecorderResponsivenessTests {
+    @Test @MainActor func miniRecorderHostedViewRendersFlushAtPhysicalBottom() async throws {
+        let screen = try #require(NSScreen.main)
+        let scale: CGFloat = 0.85
+        let session = RecordingSession()
+        let recorder = Recorder()
+        let assistant = AssistantSession()
+        let panel = MiniRecorderPanel(contentRect: .zero)
+        let view = MiniRecorderView(
+            stateProvider: session, liveTranscriptHeight: 56, liveTranscriptWidth: 640,
+            recorder: recorder, assistantSession: assistant,
+            onRecordButtonTapped: {}, onCloseTapped: {}, onCancelTapped: {},
+            onAssistantFollowUp: { _ in })
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            .background(RecorderPanelHeightSync(desiredHeight: 200, edge: .bottom, scale: scale))
+        let host = ScaledRecorderHostingView(rootView: AnyView(view), scale: scale)
+        panel.contentView = host
+        defer { panel.orderOut(nil); panel.close() }
+        panel.show(on: screen, scale: scale)
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(250))
+        host.layoutSubtreeIfNeeded()
+        #expect(panel.frame.minY == screen.frame.minY)
+        #expect(abs(panel.frame.height - 200 * scale) <= 1)
+        let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        // Native AppKit pixels, not inferred host geometry: the black capsule
+        // must reach the host's bottom centre after SwiftUI's asynchronous resize.
+        let pixel = try #require(bitmap.colorAt(x: bitmap.pixelsWide / 2,
+                                                y: bitmap.pixelsHigh - 1)?.usingColorSpace(.deviceRGB))
+        #expect(pixel.alphaComponent > 0.95)
+        #expect(max(pixel.redComponent, pixel.greenComponent, pixel.blueComponent) < 0.1)
+        let image = try #require(bitmap.representation(using: .png, properties: [:]))
+        try image.write(to: URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("MiniRecorder-bottom.png"))
+        let dragged = panel.frame.offsetBy(dx: 15, dy: 100)
+        panel.wasDraggedByUser = true
+        panel.setFrame(dragged, display: true)
+        #expect(panel.frame.origin == dragged.origin)
+    }
+
+    @Test @MainActor func miniRecorderTouchesPhysicalBottomAcrossDocksOriginsAndScales() {
+        for origin: CGFloat in [0, -900, 420] {
+            let screen = NSRect(x: -1440, y: origin, width: 1440, height: 900)
+            for dockHeight: CGFloat in [0, 80] {
+                let visible = NSRect(x: screen.minX, y: origin + dockHeight,
+                                     width: 1440, height: 875 - dockHeight)
+                for scale: CGFloat in [0.5, 0.85, 1] {
+                    let initial = MiniRecorderPanel.calculateWindowMetrics(
+                        screenFrame: screen, visibleFrame: visible, scale: scale)
+                    #expect(initial.minY == screen.minY)
+                    #expect(initial.midX == visible.midX)
+                    for contentHeight: CGFloat in [120, 700, 2_000] {
+                        let grown = RecorderPanelHeightSync.resizedFrame(
+                            initial, desiredHeight: contentHeight, edge: .bottom, scale: scale,
+                            screenFrame: screen, visibleFrame: visible, wasDraggedByUser: false)
+                        #expect(grown.minY == screen.minY)
+                        #expect(grown.maxY <= visible.maxY - 12)
+                        let dragged = initial.offsetBy(dx: 15, dy: 100)
+                        let resizedDrag = RecorderPanelHeightSync.resizedFrame(
+                            dragged, desiredHeight: contentHeight, edge: .bottom, scale: scale,
+                            screenFrame: screen, visibleFrame: visible, wasDraggedByUser: true)
+                        #expect(resizedDrag.origin == dragged.origin)
+                    }
+                }
+            }
+        }
+    }
+
+    @Test @MainActor func miniRecorderWarningReservationConvertsPhysicalBottomOnlyOnce() {
+        let screenBottom: CGFloat = -900
+        for dockHeight: CGFloat in [0, 80, 150] {
+            for scale: CGFloat in [0.5, 0.85, 1] {
+                let reserved = MiniRecorderLayoutMetrics.notificationBottomReservedHeight(
+                    showsAssistant: false, showsRealtimeTranscript: true, sessionCount: 3,
+                    realtimeTranscriptHeight: 200, scale: scale, screenBottomInset: dockHeight)
+                let visible = NSRect(x: 0, y: screenBottom + dockHeight,
+                                     width: 1440, height: 875 - dockHeight)
+                let warning = NotificationManager.notificationOrigin(
+                    screenRect: visible, notificationSize: NSSize(width: 500, height: 44),
+                    bottomReservedHeight: reserved)
+                let renderedTop = screenBottom + (200 + 1 + 40 + 92) * scale
+                #expect(warning.y >= renderedTop + 16)
+                #expect(reserved == max(0, (200 + 1 + 40 + 92) * scale - dockHeight))
+            }
+        }
+    }
+
     @Test @MainActor func disabledRecordingStartWarningDoesNotPresentNotification() {
         #expect(!FocusLockService.recordingStartInputCaptureEnabled)
         let windowNumbers = NSApp.windows.map(\.windowNumber)

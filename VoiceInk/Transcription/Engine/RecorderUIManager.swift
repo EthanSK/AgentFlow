@@ -261,7 +261,8 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
             assistantHeight: min(MiniRecorderLayoutMetrics.assistantPanelHeight,
                 MiniRecorderLayoutMetrics.contextHeightLimit(screenHeight: screen.visibleFrame.height,
                     scale: CGFloat(RecorderHUDScaleStore.shared.scale))),
-            scale: CGFloat(RecorderHUDScaleStore.shared.scale)
+            scale: CGFloat(RecorderHUDScaleStore.shared.scale),
+            screenBottomInset: screen.visibleFrame.minY - screen.frame.minY
         )
     }
 
