@@ -1,5 +1,35 @@
 # Learnings
 
+## 2026-10-22 — Public release and first-use setup must be qualified independently
+
+The installed native app was build 458 while the public downloadable app was still
+366. A local install does not update GitHub Releases, the default branch, or Pages.
+The public 458 candidate was built and passed 710 named native tests on the Mini at
+commit `1627d20e`, then signed and notarized on the MacBook using a hash-bound build
+receipt. Publish only that verified archive, never rebuild while publishing. The
+SHA256SUMS entry must contain only the archive basename so it works in a stranger's
+Downloads folder, not a private builder path.
+
+The standalone context-skill installer now keeps one canonical copy under
+`~/.agents/skills` with Codex and Claude Code links. A fresh temporary home, repeat
+install, conflicting existing skill and broken link were tested independently.
+On macOS, `mktemp -d ...XXXXXX.noindex` leaves a literal suffix instead of creating
+the intended random name; create a `.noindex` parent and use `stage.XXXXXX` inside it.
+Do not call temporary-home tests a clean macOS-account microphone/permission test.
+
+Ethan explicitly approved exporting newer video-bridge code without publishing its
+private repository. Import only the enumerated runtime/test directories and the
+extension packager, preserving the public portable build/install wrappers. Record
+per-file hashes and whether the source includes uncommitted work; its base commit
+alone is not exact provenance. Extension 0.2.6 and the Swift helper built on the Mini,
+and all 19 bridge test files passed. This does not prove arbitrary websites or a
+new user's Chrome permission grant. Broad HTTP/HTTPS access is optional and must be
+disclosed before installation. Private settings, Git history and Rollbacks stay out.
+
+The current recording-start capture guard disables only that Next route. The
+post-stop `focusedDuringTranscription` second-chance code still runs; do not describe
+both Next routes as disabled merely because original-input capture is off.
+
 ## 2026-10-17 — Claude context is an explicit recipient exception
 
 Ethan requested Agent Flow XML context in Claude and one shared interpretation
