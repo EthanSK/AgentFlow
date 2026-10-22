@@ -1,6 +1,12 @@
 # Agent Flow YouTube Bridge
 
-Personal macOS + Chrome helper for pausing a playing YouTube tab while Agent Flow is recording and resuming only that same tab when recording stops.
+Optional macOS + Chrome helper for pausing a playing video while Agent Flow is recording and resuming only that same video when recording stops. Extension 0.2.6 retains the dedicated YouTube adapter and adds ordinary website video players.
+
+## Website access
+
+The extension requests access to **all HTTP/HTTPS websites**, including signed-in pages, to discover video players and embedded frames. Chrome's permission allows reading page contents; this implementation uses it to inspect and control video players. Install this optional component only if you want that access. It is not required for dictation, screenshots, the context skill, or Agent Flow itself.
+
+Generic controls cover play/pause, seeking, volume and temporary 2× speed on standard HTML video players, including accessible embedded frames and open shadow roots. Navigation, player replacement and manual playback changes invalidate saved playback ownership. Closed shadow roots, inaccessible/protected players and websites that reject standard controls are not guaranteed. YouTube's own Shorts, Jump ahead and seek-history handling remain in the dedicated YouTube adapter.
 
 ## How It Works
 
@@ -13,6 +19,8 @@ Personal macOS + Chrome helper for pausing a playing YouTube tab while Agent Flo
 ## Agent Flow dictation auto-pause
 
 The menu bar app also pauses a playing YouTube tab while you dictate with Agent Flow and resumes it when you finish:
+
+The extension popup's **Pause YouTube for VoiceInk** switch controls automatic recording pause/resume and is saved locally by Chrome. Turning it off does not disable other controls and never changes current playback. Turning it on during a recording waits for the next recording session.
 
 - Compatible Agent Flow versions (bundle `com.ethansk.VoiceInkPlusPlus`) broadcasts `com.ethansk.voiceink.recordingStarted`, `com.ethansk.voiceink.recordingStopped`, or the triple-click-specific `com.ethansk.voiceink.recordingStoppedPreservingPlayback` over macOS `DistributedNotificationCenter` from its recorder lifecycle.
 - On `recordingStarted`, the menu bar app sends an untargeted directional `pause-youtube`; the extension prefers PiP, then the active YouTube tab in Chrome's last-focused window, then audible/active/playback-recency fallbacks, and remembers the tab it actually paused.
@@ -121,7 +129,7 @@ Then:
 2. Enable Developer mode.
 3. Click Load unpacked.
 4. Pick the `dist/extension` folder inside this companion directory.
-5. Reload any YouTube tabs that were already open.
+5. Accept the website-access permission, then reload only the video tabs you want to control.
 
 > After changing extension JS and rebuilding (`./scripts/build.sh` refreshes `dist/extension`), go to `chrome://extensions`, click **Reload** on this extension, then reload any open YouTube tabs so the new content script is injected. A content-script-only update can also load through the existing command-time reinjection path; verify a changed result in the live page before treating that path as installed.
 
@@ -174,4 +182,6 @@ Uninstall the Chrome native messaging manifest:
 
 ## Source and license
 
-Packaged by Ethan SK from the existing YouTube bridge implementation, including its tested watch-page and Shorts support. The source is distributed under the repository’s GPL-3.0 license (also included in this directory). No browser profile, private settings, or installed binaries are included.
+Packaged by Ethan SK from the existing bridge implementation, with the author's approval. The source is distributed under the repository’s GPL-3.0 license (also included in this directory). No browser profile, private settings, credentials, private Git history or installed binaries are included.
+
+`SOURCE_SNAPSHOT.json` records the exact imported component hashes and the source checkout's base commit. That checkout contained uncommitted changes, so the file hashes—not the base commit alone—identify this snapshot. The public portable build/install wrappers and documentation are maintained here; the imported runtime source is regenerated with `python3 scripts/vendor-youtube-bridge.py --source-dir /path/to/approved/source` from the Agent Flow root. Verify it without that private source using `python3 scripts/vendor-youtube-bridge.py --check`.

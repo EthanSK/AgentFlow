@@ -72,15 +72,15 @@ While recording, press twice to finish without pasting, keeping the result on yo
 
 The **Primary button** means your normal recording shortcut. The **Next button** means macOS **Next Track**, including a keyboard media key or mapped mouse button. Next won't skip music while the recorder is visible.
 
-**Current release:** saved-input capture and the two exact Next routes are disabled. Normal finish uses the input that has keyboard focus at delivery. The table below describes the dormant exact-delivery contract, not an enabled feature.
+**Current release:** capturing the input at recording start is disabled. Normal finish uses the input that has keyboard focus at delivery. After a normal stop, the second-chance Next route can still select a newly focused input while transcription is pending.
 
 | Press | When | Text goes to |
 | --- | --- | --- |
 | Primary | While recording | The input focused when the text arrives, like base VoiceInk |
-| Next | While recording | The input where you started recording |
+| Next | While recording | No action; recording-start input capture is disabled |
 | Next | While transcribing, after a Primary stop | **Second chance:** the input focused when you press Next |
 
-Only the Next routes save an exact input together with its app's Mode and auto-send. If Agent Flow can't verify that input, it shows an error instead of pasting somewhere else. The [destination guide](RECORDING_DESTINATIONS.md) has the full contract.
+Only an eligible Next route saves an exact input together with its app's Mode and auto-send. If Agent Flow can't verify that input, it shows an error instead of pasting somewhere else. The [destination guide](RECORDING_DESTINATIONS.md) has the full contract.
 
 Primary's recording-time double-press selects **Won’t paste** and finishes to the clipboard if no third press follows; a third press in the same gesture pauses capture, and a fourth finishes with paste but no auto-send. While paused, one fresh press resumes, two select **Won’t paste** and finish to the clipboard if no third press follows, and three resume the same capture. These are recording gestures, not extra destinations. Bare Escape stays with the foreground app.
 

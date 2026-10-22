@@ -247,6 +247,8 @@ private final class MenuBarMediaKeyController {
   // last-focused active-window, audible, active, and playback-recency targeting information.
   private func observeAgenticMouseYouTubeCommands() {
     let center = DistributedNotificationCenter.default()
+    center.addObserver(self, selector: #selector(handleAgenticMouseJumpAhead(_:)),
+                       name: AgenticMouseYouTubeNotification.jumpAhead, object: nil)
     center.addObserver(
       self,
       selector: #selector(handleAgenticMouseSeekFiveSeconds(_:)),
@@ -354,6 +356,14 @@ private final class MenuBarMediaKeyController {
     message.nativeTimestamp = BridgeNotification.now()
     BridgeNotification.post(message, name: BridgeNotification.appToBridge)
     sendStatus("agenticmouse-chrome-website-requested")
+  }
+
+  @objc private func handleAgenticMouseJumpAhead(_ notification: Notification) {
+    guard notification.name == AgenticMouseYouTubeNotification.jumpAhead, isBridgeConnected else { return }
+    var message = BridgeMessage(type: "jump-ahead-youtube")
+    message.bridgeId = connectedBridgeId
+    message.nativeTimestamp = BridgeNotification.now()
+    BridgeNotification.post(message, name: BridgeNotification.appToBridge)
   }
 
   @objc private func handleAgenticMouseSeekFiveSeconds(_ notification: Notification) {
@@ -660,6 +670,9 @@ private final class MenuBarMediaKeyController {
         recordBridge(message)
         handleYouTubeResumeResult(message)
 
+      case "youtube-jump-ahead-result":
+        log("YouTube Jump ahead clicked=\(message.jumpAheadClicked == true) reason=\(message.reason ?? "")")
+
       case "youtube-seek-result":
         recordBridge(message)
         handleYouTubeSeekResult(message)
@@ -818,7 +831,7 @@ private final class MenuBarMediaKeyController {
   private func disableMediaKeyTap() {
     isAccessibilityTrusted = false
     isMediaKeyTapInstalled = false
-    mediaKeyTapError = "Hardware media-key routing is disabled by design; Agent Flow YouTube auto-pause uses recording notifications instead."
+    mediaKeyTapError = "Hardware media-key routing is disabled by design; VoiceInk YouTube auto-pause uses recording notifications instead."
   }
 
   private func handleYouTubeState(_ message: BridgeMessage) {
@@ -1073,7 +1086,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 if CommandLine.arguments.contains("--request-accessibility") {
-  print("Hardware media-key routing is disabled; Accessibility is not required for Agent Flow YouTube auto-pause.")
+  print("Hardware media-key routing is disabled; Accessibility is not required for VoiceInk YouTube auto-pause.")
   exit(0)
 }
 

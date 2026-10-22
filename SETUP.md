@@ -9,7 +9,7 @@ No private API keys, mouse profiles or personal settings are bundled.
 | Agent Flow app | Recording, live recorder, transcription and final paste | [Notarized Mac download](https://github.com/EthanSK/AgentFlow/releases/download/v2.0.458/AgentFlow-v2.0.458-mac-universal.zip); macOS 14.4+. Xcode is only needed to build from source. |
 | Your OpenAI API key and macOS grants | Recommended GPT Live transcription and input delivery | Create an [OpenAI API key](https://platform.openai.com/api-keys), enable API billing, then grant Microphone and Accessibility in macOS. A local Parakeet model remains available. |
 | [Context interpretation skill](.agents/skills/interpret-agent-flow-context/SKILL.md) | Helping local Codex and Claude Code read selection and screenshot references | Run the standalone skill installer below, before or after installing the app |
-| [Agent Flow YouTube Bridge](companions/youtube-bridge/README.md) | Pausing the YouTube tab playing when dictation starts, plus optional Agentic Mouse Chrome controls | Use the companion's own installer after installing the app download; Chrome needs one manual extension step |
+| [Agent Flow YouTube Bridge](companions/youtube-bridge/README.md) | Pausing the playing YouTube or supported website video when dictation starts, plus optional Agentic Mouse Chrome controls | Separate optional installer; Chrome requires manual extension setup and all-HTTP/HTTPS website access |
 | [Agentic Mouse](https://ethansk.github.io/agentic-mouse/) | Optional hardware control layer and extra mouse actions | Separate app and setup; not bundled with Agent Flow |
 | [Better Git VS Code](https://marketplace.visualstudio.com/items?itemName=EthanSK.better-git-vscode) 1.2.99+ | Mouse highlights in local code editors; code-editor use is confirmed, while diff editors have isolated-test coverage only | Install from the VS Code Marketplace and activate the updated extension; no extra LaunchAgent or permission grant |
 | Programmable mouse | Optional hands-free Primary and Next buttons | Map in your own mouse software; Agent Flow also works from its keyboard shortcut |
@@ -112,7 +112,8 @@ when no recording or transcription is active. The companion has its own
    does not appear. The skill helps an agent interpret inline references; screenshot tags still
    contain **paths**, not uploaded image pixels.
 5. If you want physical controls, map a mouse button to Agent Flow's configured Primary
-   shortcut. Saved-input Next routes are currently disabled; normal finish uses the keyboard-focused input.
+   shortcut. Recording-start input capture is disabled; normal finish uses the keyboard-focused input.
+   After a normal stop, Next can still select the currently focused input while transcription is pending.
    Read the [button glossary](TERMINOLOGY.md) and
    [destination guide](RECORDING_DESTINATIONS.md). Install and configure Agentic Mouse separately
    only if you want its additional controls.
