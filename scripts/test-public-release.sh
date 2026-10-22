@@ -23,17 +23,19 @@ app_build=$(grep 'CURRENT_PROJECT_VERSION = ' "$project" | head -1 | sed -E 's/.
 [[ "$app_build" =~ ^[1-9][0-9]*$ ]]
 test "$(grep -Fc "CURRENT_PROJECT_VERSION = $app_build;" "$project")" -ge 2
 
-derived="$output/TestDerivedData"
+derived="$output/TestDerivedData.noindex"
 canonical_log="$output/xcode-full-tests.log"
 canonical_result=0
 /usr/bin/python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=900, check=True)' \
   xcodebuild -project "$root/VoiceInk.xcodeproj" -scheme VoiceInk \
-  -configuration Debug -destination 'platform=macOS' \
+  -configuration Debug -destination 'platform=macOS,arch=arm64' \
   -only-testing:VoiceInkTests \
   -derivedDataPath "$derived" -resultBundlePath "$output/FullTests.xcresult" \
+  -clonedSourcePackagesDirPath "${AGENTFLOW_PACKAGES_DIR:-$output/Packages.noindex}" \
+  -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates -parallel-testing-enabled NO -jobs 4 \
   -xcconfig "$root/LocalBuild.xcconfig" \
   CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES \
-  DEVELOPMENT_TEAM= "CODE_SIGN_ENTITLEMENTS=$root/VoiceInk/VoiceInk.local.entitlements" \
+  DEVELOPMENT_TEAM= ENABLE_HARDENED_RUNTIME=NO "CODE_SIGN_ENTITLEMENTS=$root/VoiceInk/VoiceInk.local.entitlements" \
   'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) LOCAL_BUILD' \
   test >"$canonical_log" 2>&1 || canonical_result=$?
 
@@ -53,7 +55,7 @@ if ! grep -Eq '^✔ Test run with [1-9][0-9]* tests in [1-9][0-9]* suites passed
   # package resource beside a disposable framework copy so MediaRemoteAdapter can find it.
   resource_bundle="$host/Contents/Resources/MediaRemoteAdapter_MediaRemoteAdapter.bundle"
   test -d "$resource_bundle" || { echo 'MediaRemoteAdapter test resource is missing.' >&2; exit 1; }
-  staged_frameworks="$output/TestFrameworks"
+  staged_frameworks="$output/TestFrameworks.noindex"
   ditto "$host/Contents/Frameworks" "$staged_frameworks"
   ditto "$resource_bundle" \
     "$staged_frameworks/MediaRemoteAdapter.framework/Versions/A/Resources/MediaRemoteAdapter_MediaRemoteAdapter.bundle"

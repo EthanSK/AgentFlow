@@ -9,6 +9,16 @@ enum RecordingStopPlaybackDisposition: Equatable {
     case preserveCurrentPlayback
 }
 
+/// Raise only the short hardware interactions the user is waiting for. Keep the
+/// same serial queue and its idle preparation priority: promotion must not race a
+/// previous stop, bypass playback/microphone guards, or make maintenance realtime.
+/// QoS is a scheduling request, not a zero-latency or foreground-focus guarantee.
+enum RecorderWorkPriority {
+    static let idleHardware = DispatchQoS.userInitiated
+    static let captureInteraction = DispatchQoS.userInteractive
+    static let interactionFlags: DispatchWorkItemFlags = .enforceQoS
+}
+
 /// Keeps the recording-start safety boundary executable rather than relying only
 /// on source ordering. AUHAL must not open until the recording's bounded media
 /// pause/join has settled; the start sound marks that boundary for the user.
@@ -42,8 +52,9 @@ class Recorder: NSObject, ObservableObject {
     @Published var audioMeter = AudioMeter(averagePower: 0, peakPower: 0)
     private var audioMeterUpdateTimer: DispatchSourceTimer?
     private let audioMeterQueue = DispatchQueue(label: "com.prakashjoshipax.voiceink.audiometer", qos: .userInteractive)
-    /// Dedicated serial queue for hardware setup.
-    private let audioSetupQueue = DispatchQueue(label: "com.prakashjoshipax.voiceink.audioSetup", qos: .userInitiated)
+    /// Idle preparation stays below UI work; Start/first enable/Resume explicitly
+    /// request interactive scheduling on this same FIFO hardware queue.
+    private let audioSetupQueue = DispatchQueue(label: "com.prakashjoshipax.voiceink.audioSetup", qos: RecorderWorkPriority.idleHardware)
     private var audioMuteTask: Task<Void, Never>?
     private var mediaPauseTask: Task<Void, Never>?
     private var audioRestorationTask: Task<Void, Never>?
@@ -213,7 +224,7 @@ class Recorder: NSObject, ObservableObject {
             let deviceID = deviceManager.getCurrentDevice()
             let callback = onAudioChunk
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                audioSetupQueue.async {
+                audioSetupQueue.async(qos: RecorderWorkPriority.captureInteraction, flags: RecorderWorkPriority.interactionFlags) {
                     do {
                         core.onAudioChunk = callback
                         try core.startRecording(toOutputFile: url, deviceID: deviceID, initiallyPaused: true)
@@ -289,7 +300,7 @@ class Recorder: NSObject, ObservableObject {
                 startHardware: {
                     // Offload hardware start to avoid shortcut lag.
                     try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                        audioSetupQueue.async {
+                        audioSetupQueue.async(qos: RecorderWorkPriority.captureInteraction, flags: RecorderWorkPriority.interactionFlags) {
                             do {
                                 // Install this recording's callback only after every prior queued
                                 // stop has closed its input gate. MainActor assignment earlier can
@@ -320,7 +331,12 @@ class Recorder: NSObject, ObservableObject {
             return inputDeviceSnapshot
         } catch {
             logger.error("Failed to start recording deviceID=\(deviceID, privacy: .public) file=\(url.lastPathComponent, privacy: .public) error=\(error, privacy: .public)")
-            await stopRecording()
+            // VoiceInkEngine is the sole caller and owns the session's failure
+            // teardown. It revalidates the start token and current microphone
+            // owner before stopping shared capture. An unconditional second stop
+            // here could arrive after A was canceled and B opened its own WAV.
+            // CoreAudioRecorder already closes its unusable local hardware on
+            // failure; leave media/HUD/History cleanup to the owning engine start.
             throw error
         }
     }
@@ -424,7 +440,7 @@ class Recorder: NSObject, ObservableObject {
         do {
             try await withCheckedThrowingContinuation {
                 (continuation: CheckedContinuation<Void, Error>) in
-                audioSetupQueue.async {
+                audioSetupQueue.async(qos: RecorderWorkPriority.captureInteraction, flags: RecorderWorkPriority.interactionFlags) {
                     do {
                         try currentRecorder.resumeRecording()
                         continuation.resume()

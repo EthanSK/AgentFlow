@@ -1,3 +1,4 @@
+import CryptoKit
 import Darwin
 import Foundation
 
@@ -12,23 +13,29 @@ enum AuthoredTextRainbow {
         "#b570fa", "#d870fa", "#fa70fa", "#fa70d8", "#fa70b5", "#fa7093"
     ]
 
-    static func render(_ text: String, startIndex: Int, maxUTF16Count: Int = 64_000) -> String? {
+    static func render(_ text: String, startIndex: Int, maxUTF16Count: Int = 64_000,
+                       preserveWhitespace: Bool = false) -> String? {
         let start = ((startIndex % palette.count) + palette.count) % palette.count
         // One complete formula per word makes the exact original word colour
         // reusable in a reply. Long words retain one colour across short boxes;
         // reversible escaping is shared with XML, not lossy preview sanitization.
         var words: [String] = []
         var used = 0
+        var cursor = text.startIndex
         for (offset, word) in text.split(whereSeparator: \.isWhitespace).enumerated() {
             // A single huge identifier cannot fit; avoid expanding it merely to
             // discover that. Complete authored content remains in plain fallback.
             guard word.utf16.count <= maxUTF16Count - used else { return nil }
             let colored = LiveSelectionStyledMath.coloredXML(String(word), color: palette[(start + offset) % palette.count])
-            used += colored.utf16.count + (words.isEmpty ? 0 : 1)
+            let gap = preserveWhitespace ? String(text[cursor..<word.startIndex]) : (words.isEmpty ? "" : " ")
+            used += colored.utf16.count + gap.utf16.count
             guard used <= maxUTF16Count else { return nil }
-            words.append(colored)
+            words.append(gap + colored)
+            cursor = word.endIndex
         }
-        return words.joined(separator: " ")
+        let tail = preserveWhitespace ? String(text[cursor...]) : ""
+        guard used + tail.utf16.count <= maxUTF16Count else { return nil }
+        return words.joined() + tail
     }
 
     static func reserveStartIndex() -> Int {
@@ -52,7 +59,7 @@ enum AuthoredTextRainbow {
     /// Same separate .lock file and atomic replace protocol as rainbow-quote.py.
     /// Never wait for another process or repair a malformed shared counter during
     /// paste. A local offset (or zero) is harmless; delaying/dropping words is not.
-    static func reserve(at state: URL) -> Int? {
+    static func reserve(at state: URL, advancingBy positions: Int = 1) -> Int? {
         let lock = state.deletingPathExtension().appendingPathExtension("lock")
         let descriptor = Darwin.open(lock.path, O_CREAT | O_RDWR | O_NOFOLLOW, S_IRUSR | S_IWUSR)
         guard descriptor >= 0 else { return nil }
@@ -76,10 +83,58 @@ enum AuthoredTextRainbow {
             return nil
         }
         do {
-            try Data("\((index + 1) % palette.count)\n".utf8).write(to: state, options: .atomic)
+            let advance = max(0, positions) % palette.count
+            try Data("\((index + advance) % palette.count)\n".utf8).write(to: state, options: .atomic)
             return index
         } catch {
             return nil
         }
+    }
+
+    /// Viewer cursors are separate from the assistant quote counter: Ethan now
+    /// wants the next message to continue AFTER its last authored word, not shift
+    /// the starting colour by one. Context and visual wrapping consume nothing.
+    /// Opaque proven chat IDs separate chats; ambiguous/no-chat scope continues an
+    /// app-local fallback stream rather than guessing a chat or resetting to red.
+    static func reserveViewerStartIndex(chatID: String?, wordCount: Int,
+                                        directory: URL = viewerStateDirectory) -> Int {
+        let scope = chatID.flatMap { UUID(uuidString: $0)?.uuidString.lowercased() } ?? "unscoped"
+        let key = SHA256.hash(data: Data(scope.utf8)).map { String(format: "%02x", $0) }.joined()
+        guard wordCount > 0 else { return 0 }
+        // Private, bounded local state only; never touch the shared reply quote
+        // counter or consume positions again when reopening a saved viewer.
+        return viewerCursors.reserve(key: key, wordCount: wordCount, directory: directory)
+    }
+
+    private static let viewerCursors = ViewerCursors()
+
+    private final class ViewerCursors: @unchecked Sendable {
+        private let lock = NSLock()
+        private var fallbackIndexes: [String: Int] = [:]
+
+        func reserve(key: String, wordCount: Int, directory: URL) -> Int {
+            // These reservations run in the archive's utility task, never the
+            // startup/UI path. Serialize same-process writers; a busy foreign
+            // lock or unavailable disk keeps the in-memory stream moving rather
+            // than resetting every message or blocking delivery on presentation.
+            lock.lock()
+            defer { lock.unlock() }
+            let state = directory.appendingPathComponent("viewer-\(key).txt")
+            var persisted: Int?
+            if (try? FileManager.default.createDirectory(at: directory,
+                withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])) != nil,
+               (try? directory.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink != true {
+                persisted = AuthoredTextRainbow.reserve(at: state, advancingBy: wordCount)
+            }
+            let index = persisted ?? fallbackIndexes[state.path] ?? 0
+            fallbackIndexes[state.path] = (index + wordCount % AuthoredTextRainbow.palette.count)
+                % AuthoredTextRainbow.palette.count
+            return index
+        }
+    }
+
+    static var viewerStateDirectory: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/AgentFlow/Presentation", isDirectory: true)
     }
 }

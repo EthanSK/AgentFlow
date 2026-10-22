@@ -3,6 +3,27 @@ import AppKit
 import SwiftData
 import os
 
+/// A spoken personal-note prefix selects the existing raw/skip policy, never a
+/// destination. Only the start of provider speech is eligible: quoted selections,
+/// typed context and a later mention must not suppress another message's Send.
+enum NoteToSelfPrefix {
+    static func matches(_ speech: String) -> Bool {
+        let words = speech.prefix(96)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive],
+                     locale: Locale(identifier: "en_US_POSIX"))
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .prefix(3).map(String.init)
+        guard let first = words.first else { return false }
+        if ["notetoself", "note2self"].contains(first) { return true }
+        guard words.count == 3 else { return false }
+        // Bounded common recognizer/typing variants, not unrestricted fuzzy
+        // matching: “note to seller/send” and embedded mentions remain ordinary.
+        return ["note", "notes", "not", "noat"].contains(first)
+            && ["to", "too", "two", "2"].contains(words[1])
+            && ["self", "myself", "sell", "cell", "shelf", "sel", "slef", "sefl"].contains(words[2])
+    }
+}
+
 /// Chooses whether an explicit in-flight cancellation has useful text to retain.
 /// Candidates are ordered from strongest (a finished provider/enhancement result)
 /// to weakest (the last realtime HUD partial). Keeping this reducer pure makes the
@@ -10,6 +31,11 @@ import os
 enum TranscriptionCancellationRecovery: Equatable {
     case noResult
     case recover(String)
+
+    var text: String? {
+        if case .recover(let text) = self { return text }
+        return nil
+    }
 
     static func resolve(_ candidates: [String?]) -> Self {
         for candidate in candidates {
@@ -71,6 +97,9 @@ class TranscriptionPipeline {
     private let serviceRegistry: TranscriptionServiceRegistry
     private let enhancementService: AIEnhancementService?
     private let delivery: any TranscriptionDelivering
+    private let archivePrompt: (String, UUID) async throws -> URL
+    private let currentPromptRecipient: () -> AgentFlowPromptPreview.Recipient
+    private let copyCompletedText: (String) -> Bool
     private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "TranscriptionPipeline")
     // VIPPDebug: see RecorderUIManager for the filter predicate. Used to log the exact
     // transcription request/result + every cancel-discard decision on this path.
@@ -80,12 +109,39 @@ class TranscriptionPipeline {
         modelContext: ModelContext,
         serviceRegistry: TranscriptionServiceRegistry,
         enhancementService: AIEnhancementService?,
-        delivery: (any TranscriptionDelivering)? = nil
+        delivery: (any TranscriptionDelivering)? = nil,
+        archivePrompt: @escaping (String, UUID) async throws -> URL = { text, id in
+            // Presentation scope only, using existing app-owned selected-view
+            // logs. Never capture/resolve an AX input or turn this into a Primary
+            // destination. Multiple visible panes are ambiguous, not a guessed chat.
+            let processID = await MainActor.run { () -> pid_t? in
+                let frontmost = NSWorkspace.shared.frontmostApplication
+                // The typing HUD may own focus. Reuse its already maintained
+                // external-app indicator, not a recording-start input or new AX
+                // probe. A real external app switch still overrides that indicator.
+                let app = frontmost?.bundleIdentifier == Bundle.main.bundleIdentifier
+                    ? ActiveWindowService.shared.currentApplication : frontmost
+                guard let app, !app.isTerminated,
+                      CodexConversationContextReader.isSupportedCodexApplication(app, fileManager: .default)
+                else { return nil }
+                return app.processIdentifier
+            }
+            let ids = if let processID {
+                await CodexConversationContextReader.selectionThreadIDs(processIdentifier: processID)
+            } else { [String]() }
+            let chatID = ids.count == 1 ? ids[0] : nil
+            return try await AgentFlowPromptArchive.save(text, recordID: id, chatID: chatID)
+        },
+        currentPromptRecipient: (() -> AgentFlowPromptPreview.Recipient)? = nil,
+        copyCompletedText: @escaping (String) -> Bool = ClipboardManager.copyToClipboard
     ) {
         self.modelContext = modelContext
         self.serviceRegistry = serviceRegistry
         self.enhancementService = enhancementService
         self.delivery = delivery ?? TranscriptionDelivery()
+        self.archivePrompt = archivePrompt
+        self.currentPromptRecipient = currentPromptRecipient ?? { .current() }
+        self.copyCompletedText = copyCompletedText
     }
 
     /// Run the full pipeline for a given transcription record.
@@ -123,9 +179,12 @@ class TranscriptionPipeline {
         // short-circuit in TranscriptionDelivery.deliver and the resolve site in
         // VoiceInkEngine.runPipeline.
         skipPostProcessing: @escaping () -> Bool = { false },
+        onPersonalNoteDetected: @escaping () -> Void = {},
         completionPolicy: @escaping () async -> RecordingCompletionPolicy = {
             .normal
         },
+        pendingTypingClipboardOnly: @escaping () -> Bool = { false },
+        commitTypingCompletion: @escaping () async -> Bool = { false },
         recoverablePartialTranscript: @escaping () -> String = { "" },
         onStateChange: @escaping (RecordingState) -> Void,
         shouldCancel: () -> Bool,
@@ -158,13 +217,20 @@ class TranscriptionPipeline {
         onCancel: @escaping () async -> Void,
         onDismiss: @escaping () async -> Void,
         assistant: AssistantHooks = .inactive,
-        onTranscriptionFailure: ((String) -> Void)? = nil
+        onTranscriptionFailure: ((String) -> Void)? = nil,
+        onFailureCopyText: ((String) -> Void)? = nil
     ) async {
         let model = transcriptionConfiguration.model
         var finalText: String?
         var finalContextAttached = false
+        var compactPromptText: String?
+        var archivedPromptURL: URL?
+        var archiveFailed = false
+        var completePromptText: String?
         var didInsertSessionMetric = false
         var responseError: String?
+        var recoversTypedDraft = false
+        var failureCopyText: String?
         func reportTranscriptionFailure(_ title: String) {
             // The engine defers its retry offer until this failed record is saved
             // and its queue identity has retired. Other callers retain the ordinary
@@ -186,26 +252,38 @@ class TranscriptionPipeline {
         // "the script still runs when skip is engaged": even if the outputConfiguration
         // closure's rewrite were ever lost downstream, this explicit flag forces the
         // raw-paste branch at delivery.
-        let skipPostProcessingNow = skipPostProcessing()
+        // The explicit button resolves once here; a recognized speech prefix can
+        // additionally enable this same per-job policy before any Mode mutation.
+        // It is never written to shared settings or inherited by the next job.
+        var skipPostProcessingNow = skipPostProcessing()
         var completionDispositionNow = RecordingCompletionDisposition.normalDelivery
         var autoSendDispositionNow = RecordingAutoSendDisposition.configured
         let recoverablePartialTranscriptNow = recoverablePartialTranscript()
 
         func attachLiveSelectionsToFinalText(
             includeSourceContext: Bool = true,
-            presentation: LiveSelectionReference.Presentation = .plain
+            presentation: LiveSelectionReference.Presentation = .plain,
+            compactFileURL: URL? = nil
         ) {
             // Insert complete XML-escaped selections and saved screenshot paths
             // alongside the speech that preceded them in the live HUD. The
             // provider only saw a compact HUD preview, not these full texts.
             // Screenshot pixels are not sent by this path. This remains
-            // one final destination write, never a streaming composer edit.
+            // one final delivery, never a streaming composer edit. Local Codex
+            // gets the complete short timeline or a compact long preview with a
+            // durable file link in ONE paste;
+            // the failed attachment-plus-opening mechanism is deliberately retired.
             // Keep raw/skip authored prose verbatim. Source references still do
             // not enter commands or recorder-assistant responses.
-            // `.styledMath` uses a rainbow opening and fixed colours by XML type.
-            // it never adds a paste, an attachment, or a delivery route.
+            // `.styledMath` uses a rainbow opening and fixed colours by XML type
+            // for inline context. The local Codex draft remains editable plain
+            // text; this never adds a paste, an attachment, or a delivery route.
             guard !assistant.isFollowUp,
                   let current = finalText else { return }
+            // A recorder response is AI output, not another authored prose run.
+            // Its input already contained typing; never splice that typing into
+            // the answer or misattribute it to the assistant.
+            guard responseConfig == nil || responseError != nil else { return }
             // Typed words are authored input, not optional source context. Raw
             // mode excludes highlights/screenshots but must retain keyboard prose.
             let references = liveSelectionReferences().filter {
@@ -213,10 +291,10 @@ class TranscriptionPipeline {
             }
             let hasAuthoredWords = current.contains(where: { !$0.isWhitespace })
                 || references.contains(where: \.isTypedText)
-            // Reserve one shared palette offset only for this final styled AI
-            // message. The formatter itself stays pure, and plain/raw output
-            // must neither acquire a file lock nor consume a colour position.
-            let rainbowStart = presentation == .styledMath && includeSourceContext
+            // Reserve once for this final styled AI message or a local Codex
+            // inline timeline, never per section/line. The formatter stays pure;
+            // ordinary/raw recipients neither lock nor consume palette state.
+            let rainbowStart = (presentation == .styledMath || compactFileURL != nil) && includeSourceContext
                 && !skipPostProcessingNow && hasAuthoredWords ? AuthoredTextRainbow.reserveStartIndex() : 0
             let annotated = LiveSelectionReference.interleaving(
                 references,
@@ -226,6 +304,25 @@ class TranscriptionPipeline {
                 includeReadablePreview: includeSourceContext && !skipPostProcessingNow,
                 rainbowStartIndex: rainbowStart
             )
+            if includeSourceContext && !skipPostProcessingNow {
+                let authored = LiveSelectionReference.previewParts(references, with: current)
+                    .compactMap { part -> String? in
+                        switch part {
+                        case .speech(let text), .potentialTTS(let text): return text
+                        default: return nil
+                        }
+                    }.joined(separator: "\n\n")
+                if let compactFileURL {
+                    compactPromptText = AgentFlowPromptPreview.make(
+                        authoredText: authored,
+                        sections: LiveSelectionReference.compactPromptSections(references, with: current),
+                        fileURL: compactFileURL,
+                        viewerURL: AgentFlowPromptArchive.viewerURL(for: compactFileURL),
+                        completePromptText: completePromptText,
+                        rainbowStartIndex: rainbowStart
+                    )
+                }
+            }
             finalContextAttached = true
             guard annotated != current else { return }
             finalText = annotated
@@ -233,6 +330,20 @@ class TranscriptionPipeline {
                 transcription.enhancedText = annotated
             } else {
                 transcription.text = annotated
+            }
+        }
+        func preservePrompt(_ text: String) async {
+            guard archivedPromptURL == nil, !archiveFailed,
+                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+            completePromptText = text
+            do {
+                archivedPromptURL = try await archivePrompt(text, transcription.id)
+                vippLog.info("pipeline: complete prompt archived chars=\(text.count, privacy: .public) record=\(transcription.id.uuidString, privacy: .public)")
+            } catch {
+                archiveFailed = true
+                // Never log content, paths, or an error description that may
+                // contain them. Full Copy and History remain independent recovery.
+                vippLog.error("pipeline: prompt archive failed; full result retained for recovery")
             }
         }
         if transcription.recoverableRealtimeDraftText == nil,
@@ -272,7 +383,7 @@ class TranscriptionPipeline {
             // prose during cancellation. The persisted HUD snapshot already
             // contains context, so never annotate that fallback a second time.
             let completedCandidates = [
-                recoveredText, finalText, transcription.enhancedText,
+                recoveredText, finalText, responseError == nil ? transcription.enhancedText : nil,
                 storedTextCandidate == Transcription.canceledTranscriptionText
                     ? nil : storedTextCandidate
             ].map { candidate -> String? in
@@ -281,8 +392,13 @@ class TranscriptionPipeline {
                     liveSelectionReferences(), with: candidate
                 )
             }
+            // A failed/empty provider may produce no candidate at all. Keyboard
+            // prose is independently authored: retain it even without a HUD snapshot.
+            let typedOnlyRecovery = LiveSelectionReference.interleaving(
+                liveSelectionReferences().filter(\.isTypedText), with: ""
+            )
             let recovery = TranscriptionCancellationRecovery.resolve(
-                completedCandidates + [recoverablePartialTranscriptNow]
+                completedCandidates + [recoverablePartialTranscriptNow, typedOnlyRecovery]
             )
             let retainedText: String?
             switch recovery {
@@ -291,7 +407,8 @@ class TranscriptionPipeline {
                 vippLog.info("pipeline: cancellation retained no text because provider/HUD produced no usable result")
             case .recover(let text):
                 retainedText = text
-                let copied = ClipboardManager.copyToClipboard(text)
+                await preservePrompt(text)
+                let copied = copyCompletedText(text)
                 vippLog.info("pipeline: cancellation retained result chars=\(text.count, privacy: .public) digest=\(TranscriptionLineageDigest.make(text), privacy: .public) clipboard=\(copied, privacy: .public)")
                 NotificationManager.shared.showNotification(
                     title: copied
@@ -358,6 +475,11 @@ class TranscriptionPipeline {
             autoSendDispositionNow = completionPolicyNow.autoSendDisposition
             transcription.preservesOriginalAudioForRecovery = transcription.preservesOriginalAudioForRecovery || completionDispositionNow == .clipboardOnly
             text = TranscriptionOutputFilter.filter(text)
+            if hasCapturedAudio && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                // Providers differ on whether an empty 200 throws. Never silently
+                // turn lost speech into a successful typed-only auto-submission.
+                throw VoiceInkEngineError.transcriptionFailed
+            }
             let transcriptionDuration = Date().timeIntervalSince(transcriptionStart)
             vippLog.info("pipeline: transcribe SUCCESS chars=\(text.count, privacy: .public) digest=\(TranscriptionLineageDigest.make(text), privacy: .public) elapsed=\(transcriptionDuration, format: .fixed(precision: 3), privacy: .public)s \(jobIdentity.logDescription, privacy: .public)")
 
@@ -382,6 +504,17 @@ class TranscriptionPipeline {
             }
 
             text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if hasCapturedAudio, !assistant.isFollowUp, NoteToSelfPrefix.matches(text) {
+                // A note is for the input, not the agent. Preserve every spoken
+                // word (including the prefix), exclude source/XML/link formatting,
+                // bypass triggers/enhancement/scripts and force no Return even for
+                // a Next-owned Mode or a Command-Enter completion. Reuse raw/skip
+                // end-to-end so automatic paste and later clipboard copy agree.
+                skipPostProcessingNow = true
+                onPersonalNoteDetected()
+                vippLog.info("pipeline: personal-note prefix → raw paste without auto-send")
+            }
 
             // ── VIPP (skip-mode-processing feature) — trigger-word bypass ──
             // Trigger-word mode-selection can REWRITE the text (strip the trigger word) and
@@ -466,6 +599,15 @@ class TranscriptionPipeline {
                 // A `.respond` Mode normally turns enhancement into an assistant
                 // response, so suppress that request here; returning before final
                 // delivery alone would be too late because enhancement starts now.
+                // Respond enhancement itself is an output effect. Seal late
+                // Shift before its request, not afterward when paste is skipped.
+                if outputForThisDelivery.outputMode == .respond {
+                    if await commitTypingCompletion() { completionDispositionNow = .clipboardOnly }
+                    guard !shouldCancel(), isDeliveryAuthorized() else {
+                        await finishCanceledTranscription(recoveredText: text)
+                        return
+                    }
+                }
                 let suppressesModeResponse =
                     completionDispositionNow == .clipboardOnly &&
                     outputForThisDelivery.outputMode == .respond
@@ -491,7 +633,13 @@ class TranscriptionPipeline {
                 // regardless of what the enhancementConfiguration closure returned. (The closure
                 // already returns nil on skip, but gating here too makes the bypass independent
                 // of that and keeps both bypass points readable in one place.)
-                if hasCapturedAudio, !skipPostProcessingNow,
+                let textForAI = shouldRespondInRecorder
+                    ? LiveSelectionReference.interleaving(liveSelectionReferences(), with: text,
+                        includeTiming: false, includeReadablePreview: false)
+                    : text
+                if (hasCapturedAudio || shouldRespondInRecorder),
+                   !textForAI.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                   !skipPostProcessingNow,
                    !suppressesModeResponse,
                    let enhancementService,
                    let resolvedEnhancementConfiguration,
@@ -501,8 +649,8 @@ class TranscriptionPipeline {
                     if shouldCancel() { await finishCanceledTranscription(); return }
 
                     onStateChange(.enhancing)
-                    let textForAI = text
                     if shouldRespondInRecorder {
+                        transcription.text = textForAI
                         await assistant.startResponse(textForAI, resolvedEnhancementConfiguration)
                     }
 
@@ -513,6 +661,9 @@ class TranscriptionPipeline {
                             configuration: resolvedEnhancementConfiguration,
                             contextSnapshot: contextSnapshot
                         )
+                        guard !enhancedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                            throw VoiceInkEngineError.transcriptionFailed
+                        }
                         transcription.enhancedText = enhancedText
                         transcription.aiEnhancementModelName = resolvedEnhancementConfiguration.modelName ?? resolvedEnhancementConfiguration.provider?.defaultModel
                         transcription.promptName = promptName
@@ -522,7 +673,9 @@ class TranscriptionPipeline {
                         finalText = enhancedText
                     } catch {
                         let errorDescription = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-                        transcription.enhancedText = String(format: String(localized: "Enhancement failed: %@"), errorDescription)
+                        // Diagnostics belong to responseError/feedback, never the
+                        // authored result field used by Copy, History and cancellation.
+                        transcription.enhancedText = nil
                         responseError = errorDescription
                         let shortReason = String(errorDescription.prefix(80))
                         await MainActor.run {
@@ -541,6 +694,7 @@ class TranscriptionPipeline {
             let completionPolicyNow = await completionPolicy() // Provider errors must honor the same bounded pending gesture before choosing feedback/recovery behavior.
             completionDispositionNow = completionPolicyNow.completionDisposition
             autoSendDispositionNow = completionPolicyNow.autoSendDisposition
+            if await commitTypingCompletion() { completionDispositionNow = .clipboardOnly }
             transcription.preservesOriginalAudioForRecovery = transcription.preservesOriginalAudioForRecovery || completionDispositionNow == .clipboardOnly
             let errorDescription = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             // VIPPDebug: transcription threw. A URLError(.cancelled) here means the
@@ -549,7 +703,27 @@ class TranscriptionPipeline {
             // Intentional cancellation may still retain a prior HUD/final result below.
             let isCancelled = error is CancellationError ||
                 (error as? URLError)?.code == .cancelled
-            vippLog.error("pipeline: transcribe FAILED isCancelled=\(isCancelled, privacy: .public) error=\(errorDescription, privacy: .public) \(jobIdentity.logDescription, privacy: .public)")
+            vippLog.error("pipeline: transcribe FAILED isCancelled=\(isCancelled, privacy: .public) \(jobIdentity.logDescription, privacy: .public)")
+
+            let typedReferences = liveSelectionReferences().filter(\.isTypedText)
+            let typedRecovery = LiveSelectionReference.interleaving(typedReferences, with: "")
+            failureCopyText = TranscriptionCancellationRecovery.resolve([
+                liveSelectionReferences().contains(where: \.isTypedText) ? typedRecovery : nil,
+                transcription.recoverableRealtimeDraftText, recoverablePartialTranscriptNow
+            ]).text
+            recoversTypedDraft = !assistant.isFollowUp && !isCancelled && !shouldCancel()
+                && !typedRecovery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if recoversTypedDraft {
+                // Voice failure is not keyboard failure. Keep `.failed` and the
+                // original WAV retryable, but carry only authored typing through
+                // the normal one-paste/compact-file path. Incomplete speech never
+                // becomes a completed result, Return, command or recorder response.
+                finalText = ""
+                let output = outputConfiguration()
+                outputForDelivery = .init(mode: output.mode, outputMode: .paste,
+                    autoSendKey: .none, customCommand: nil)
+                transcription.preservesOriginalAudioForRecovery = true
+            }
 
             let failureRecovery = TranscriptionFailureRecoveryDisposition.resolve(
                 // Won't paste can legitimately produce an empty/provider error because
@@ -560,7 +734,8 @@ class TranscriptionPipeline {
                     || completionDispositionNow == .clipboardOnly,
                 textCandidates: [
                     transcription.recoverableRealtimeDraftText,
-                    recoverablePartialTranscriptNow
+                    recoverablePartialTranscriptNow,
+                    typedRecovery
                 ]
             )
             // Unexpected failures used to live only in logs/history while the bar
@@ -573,8 +748,8 @@ class TranscriptionPipeline {
 
             case .retainAudioOnly:
                 // A provider/batch failure must not erase the original WAV. This is
-                // recovery only: `.failed` jobs never paste or auto-send through
-                // Primary or either Next route.
+                // Audio-only failure never pastes. Independently authored typing
+                // has a separate explicit, no-Return recovery gate below.
                 transcription.preservesOriginalAudioForRecovery = true
                 vippLog.info("pipeline: failed transcription retained original audio but no realtime draft was available")
                 let shortReason = String(errorDescription.prefix(120))
@@ -588,9 +763,12 @@ class TranscriptionPipeline {
                 }
 
             case .retainAudioAndText(let text):
+                if !recoversTypedDraft { await preservePrompt(text) }
                 transcription.preservesOriginalAudioForRecovery = true
                 transcription.snapshotRealtimeDraft(text)
-                let copied = ClipboardManager.copyToClipboard(text)
+                // Typed fallback owns its later clipboard/paste. Do not first
+                // overwrite it with provisional speech or duplicate context.
+                let copied = !recoversTypedDraft && copyCompletedText(text)
                 vippLog.info("pipeline: failed transcription retained realtime draft chars=\(text.count, privacy: .public) digest=\(TranscriptionLineageDigest.make(text), privacy: .public) clipboard=\(copied, privacy: .public) audio=true")
                 let shortReason = String(errorDescription.prefix(120))
                 let recoverySummary = copied
@@ -633,6 +811,39 @@ class TranscriptionPipeline {
             }
         }
 
+        // A pure voice failure has no delivery work. Do not resolve a saved
+        // editor or wait on another capture merely to discover nil finalText.
+        if transcription.transcriptionStatus == TranscriptionStatus.failed.rawValue,
+           !recoversTypedDraft {
+            if shouldCancel() || Task.isCancelled {
+                await finishCanceledTranscription()
+            } else {
+                // Won't paste is not Cancel. Preserve its failure status and copy
+                // any saved draft, silently, without a second banner or destination.
+                transcription.preservesOriginalAudioForRecovery = true
+                if completionDispositionNow == .clipboardOnly, let failureCopyText {
+                    _ = copyCompletedText(failureCopyText)
+                }
+                if let failureCopyText { onFailureCopyText?(failureCopyText) }
+                saveTranscriptionAndPostCompletion()
+                await onDismiss()
+            }
+            return
+        }
+
+        if (transcription.transcriptionStatus == TranscriptionStatus.completed.rawValue || recoversTypedDraft),
+           !assistant.isFollowUp, let current = finalText {
+            // Archive before any asynchronous destination/queue wait, independent
+            // of the later recipient filter. The timed authored sections are the
+            // canonical request: the readable opening belongs only in the chat
+            // preview, not a second copy in the saved file or its viewer. Raw
+            // mode keeps its explicit no-optional-context contract.
+            let references = liveSelectionReferences().filter { !skipPostProcessingNow || $0.isTypedText }
+            let complete = responseConfig != nil && responseError == nil ? transcription.text : LiveSelectionReference.interleaving(references, with: current,
+                includeTiming: !skipPostProcessingNow, includeReadablePreview: false)
+            await preservePrompt(complete)
+        }
+
         // FINAL pre-delivery cancel gate. Same defensive logic as the post-transcribe
         // gate: only discard if there is NO usable text to deliver. If we have a real
         // finalText, deliver it even if a late cancel raced in — discarding a completed
@@ -664,25 +875,62 @@ class TranscriptionPipeline {
         // paste destination. Finish the ordinary transcription/format/enhancement
         // work, then copy once and return before resolving any Accessibility target,
         // mode output action, custom command, paste, or Return key.
-        if completionDispositionNow == .clipboardOnly {
-            attachLiveSelectionsToFinalText()
+        func finishClipboardOnlyCompletion() {
+            transcription.preservesOriginalAudioForRecovery = true
+            // Won't paste changes the action, not the saved prompt format. There
+            // is no recipient yet: the HUD or a source app may still be focused
+            // when capture ends, and manual Cmd-V happens elsewhere later. Never
+            // use that incidental app to downgrade the clipboard to raw text.
+            // Use only the already-resolved Mode;
+            // never resolve an AX input, execute the Mode's output, acquire a paste
+            // lease, or monitor where a future manual Cmd-V goes. Normal automatic
+            // paste first filters ordinary apps, then selects agent presentation;
+            // explicit raw/skip stays verbatim.
+            let usesCompactPrompt = !skipPostProcessingNow && !assistant.isFollowUp
+                && outputForDelivery?.outputMode == .paste
+            let presentation: LiveSelectionReference.Presentation = usesCompactPrompt
+                && outputForDelivery?.mode?.isEnabled == true
+                && outputForDelivery?.mode?.isStyledContextEnabled == true
+                ? .styledMath : .plain
+            attachLiveSelectionsToFinalText(
+                presentation: presentation,
+                compactFileURL: usesCompactPrompt ? archivedPromptURL : nil
+            )
             FocusLockService.shared.clearLock()
             SoundManager.shared.playStopSound()
-            let clipboardText = finalText?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if transcription.transcriptionStatus == TranscriptionStatus.completed.rawValue,
+            // The compact copy is safe only after the complete archive exists.
+            // On save/preview failure copy every original word instead of a broken
+            // link or an empty clipboard; History always keeps the full result.
+            let clipboardText = (usesCompactPrompt
+                ? (compactPromptText ?? completePromptText ?? finalText)
+                : finalText)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if recoversTypedDraft { onFailureCopyText?(clipboardText) }
+            if (transcription.transcriptionStatus == TranscriptionStatus.completed.rawValue || recoversTypedDraft),
                !clipboardText.isEmpty {
-                let copied = ClipboardManager.copyToClipboard(clipboardText)
+                let copied = copyCompletedText(clipboardText)
                 // The mirrored Won’t paste recorder state is the complete expected-route
                 // feedback. The old completion banner made this deliberate gesture look
                 // like an error and played the error sound if the clipboard was busy;
                 // History still retains the result and genuine transcription failures
                 // continue through their separate error path.
-                vippLog.info("pipeline: clipboard-only completion chars=\(clipboardText.count, privacy: .public) digest=\(TranscriptionLineageDigest.make(clipboardText), privacy: .public) clipboard=\(copied, privacy: .public) paste=false autoSend=false")
+                vippLog.notice("pipeline: clipboard-only completion chars=\(clipboardText.count, privacy: .public) digest=\(TranscriptionLineageDigest.make(clipboardText), privacy: .public) clipboard=\(copied, privacy: .public) compact=\(compactPromptText != nil, privacy: .public) styled=\(presentation == .styledMath, privacy: .public) raw=\(skipPostProcessingNow, privacy: .public) paste=false autoSend=false")
             } else {
                 vippLog.info("pipeline: clipboard-only completion had no completed usable text to copy")
             }
             saveTranscriptionAndPostCompletion()
+        }
+
+        // A late Shift may arrive after the Primary policy froze while archiving
+        // or formatting. Already-selected clipboard results need no target/lease.
+        if completionDispositionNow == .clipboardOnly || pendingTypingClipboardOnly() {
+            _ = await commitTypingCompletion()
+            if shouldCancel() {
+                await finishCanceledTranscription(recoveredText: finalText)
+            } else if isDeliveryAuthorized() {
+                finishClipboardOnlyCompletion()
+            } else {
+                saveTranscriptionAndPostCompletion()
+            }
             return
         }
 
@@ -708,23 +956,27 @@ class TranscriptionPipeline {
             routeResolvedOutput = OutputRuntimeConfiguration(
                 mode: pipelineOutput.mode,
                 outputMode: pipelineOutput.outputMode,
-                autoSendKey: autoSendDispositionNow == .suppressOnce
-                    ? .none
-                    : pasteTargetForDelivery.resolvedAutoSendKey(
+                autoSendKey: autoSendDispositionNow.resolvedKey(
+                    destination: pasteTargetForDelivery.destination,
+                    configuredKey: pasteTargetForDelivery.resolvedAutoSendKey(
                         currentInputKey: pipelineOutput.autoSendKey
-                    ),
+                    )
+                ),
                 customCommand: pipelineOutput.customCommand
             )
         }
 
-        let outputForPasteTarget = routeResolvedOutput
+        let outputForPasteTarget = recoversTypedDraft
+            ? OutputRuntimeConfiguration(mode: routeResolvedOutput.mode,
+                outputMode: .paste, autoSendKey: .none, customCommand: nil)
+            : routeResolvedOutput
         // Styled highlight previews are a presentation choice of the Mode this
         // route already resolved: Primary's current Mode at delivery, or a Next
         // route's frozen destination Mode. This never selects an app-specific
         // delivery mechanism, probes a target, or adds a paste. Every other case
         // keeps the plain canonical XML (subject to the recipient filter below): other
-        // Modes, raw/skip, clipboard-only (it returned above without resolving a
-        // Mode), earlier cancellation, and HUD recovery drafts. A cancel after this
+        // Modes, raw/skip, earlier cancellation, and HUD recovery drafts. Clipboard-only
+        // above shares local-Codex presentation without resolving a destination. A cancel after this
         // point retains exactly the text that would have been pasted.
         let contextPresentation: LiveSelectionReference.Presentation =
             outputForPasteTarget.outputMode == .paste
@@ -753,6 +1005,21 @@ class TranscriptionPipeline {
         }
         defer { releaseDeliveryLease() }
 
+        // Keep Shift eligible across this queue wait. Commit only after it, and
+        // recheck lifecycle authorization below after the human reaction grace.
+        // A selected result reuses the identical clipboard/archive path above;
+        // it never reaches delivery, Return, custom commands or assistant output.
+        if await commitTypingCompletion() {
+            if shouldCancel() {
+                await finishCanceledTranscription(recoveredText: finalText)
+            } else if isDeliveryAuthorized() {
+                finishClipboardOnlyCompletion()
+            } else {
+                saveTranscriptionAndPostCompletion()
+            }
+            return
+        }
+
         // The lease rechecks cancellation/reset before any paste/Return/command or
         // response. A Primary cohort paste may coexist with the current capture, but
         // its Return resolver still sees that capture owner at the final boundary.
@@ -767,24 +1034,36 @@ class TranscriptionPipeline {
             return
         }
 
-        // Ethan only wants captured selections/screenshots in native Codex,
-        // ChatGPT and Claude messages. Decide after the async delivery-queue wait,
-        // not from the source of a highlight or a stale recording-start app.
-        // This changes optional TEXT CONTENT only: no input capture, AX probe,
-        // app-specific paste, saved Primary destination or new delivery route.
-        // Next uses its existing saved recipient even when another app is frontmost.
-        // Typed prose survives this filter in every app. Retained clipboard/history
-        // recovery above remains complete and plain; it is not an automatic paste.
+        // Ordinary apps receive only authored speech/typing. Supported native
+        // agent apps receive context; the local Codex hosts use compact links and
+        // explicit remote-context recipients retain inline XML. Decide after the
+        // queue wait: Primary uses the current app and Next its saved recipient,
+        // never the source of a highlight or Primary's recording-start app.
+        // This filters TEXT CONTENT only: no AX capture, focus, app-specific
+        // paste, saved Primary destination or extra delivery. The immutable
+        // archive retains the complete context; Won't paste is separate because
+        // a later manual paste has no known recipient at completion time.
+        let recipient = currentPromptRecipient()
         let includesSourceContext = outputForPasteTarget.outputMode == .paste
             && LiveContextPastePolicy.includesSourceContext(
                 destination: pasteTargetForDelivery.destination,
-                currentApplicationBundleIdentifier: NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+                currentApplicationBundleIdentifier: recipient.bundleID,
                 savedTargetBundleIdentifier: pasteTargetForDelivery.focusedInput?.bundleIdentifier
             )
+        let presentationRecipient = pasteTargetForDelivery.destination.usesBaseCurrentInputDelivery
+            ? recipient.bundleID : pasteTargetForDelivery.focusedInput?.bundleIdentifier
+        let usesCompactPrompt = includesSourceContext && !skipPostProcessingNow && !assistant.isFollowUp
+            && AgentFlowPromptPreview.supportsLocalFilePrompt(bundleID: presentationRecipient,
+                bundleURL: recipient.bundleURL)
         attachLiveSelectionsToFinalText(
             includeSourceContext: includesSourceContext,
-            presentation: contextPresentation
+            presentation: contextPresentation,
+            compactFileURL: usesCompactPrompt ? archivedPromptURL : nil
         )
+        if recoversTypedDraft {
+            onFailureCopyText?(usesCompactPrompt ? (compactPromptText ?? completePromptText ?? finalText ?? "")
+                : (finalText ?? failureCopyText ?? ""))
+        }
         guard let completedText = finalText,
               !completedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             // Opening and finishing an empty typing session is a no-op, not an
@@ -792,12 +1071,22 @@ class TranscriptionPipeline {
             saveTranscriptionAndPostCompletion()
             return
         }
+        if usesCompactPrompt && compactPromptText == nil {
+            // A missing archive must never produce a broken link, truncated
+            // "success", attachment retry, or Return. Keep the entire result.
+            saveTranscriptionAndPostCompletion()
+            await onDismiss()
+            NotificationManager.shared.showNotification(
+                title: "Couldn’t save the prompt file — full text saved in History",
+                type: .error, copyText: completePromptText ?? completedText)
+            return
+        }
         vippLog.info("pipeline: captured context paste included=\(includesSourceContext, privacy: .public) destination=\(String(describing: pasteTargetForDelivery.destination), privacy: .public)")
         vippLog.info("pipeline: about to DELIVER finalChars=\(finalText?.count ?? -1, privacy: .public) finalDigest=\(TranscriptionLineageDigest.make(finalText ?? ""), privacy: .public) outputMode=\(String(describing: outputForPasteTarget.outputMode), privacy: .public) targetAutoSend=\(outputForPasteTarget.autoSendKey.rawValue, privacy: .public) autoSendDisposition=\(String(describing: autoSendDispositionNow), privacy: .public) queuedPrimaryDecision=deferredUntilReturnBoundary leasePolicy=\(String(describing: deliveryLeasePolicy), privacy: .public) destination=\(String(describing: pasteTargetForDelivery.destination), privacy: .public) skip=\(skipPostProcessingNow, privacy: .public) \(jobIdentity.logDescription, privacy: .public)")
         await delivery.deliver(
             TranscriptionDelivery.Request(
                 transcription: transcription,
-                text: finalText,
+                text: usesCompactPrompt ? compactPromptText : finalText,
                 output: outputForPasteTarget,
                 responseConfig: responseConfig,
                 responseError: responseError,
@@ -814,7 +1103,8 @@ class TranscriptionPipeline {
                 // VIPP (skip-mode-processing): pass the resolved one-shot flag so delivery
                 // can make the raw-paste guarantee at the routing point itself (belt-and-
                 // braces on top of the already-forced .paste output above).
-                skipPostProcessing: skipPostProcessingNow
+                skipPostProcessing: skipPostProcessingNow,
+                recoversTypedDraft: recoversTypedDraft
             ),
             actions: TranscriptionDelivery.Actions(
                 setState: onStateChange,

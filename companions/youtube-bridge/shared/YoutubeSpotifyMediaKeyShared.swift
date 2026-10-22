@@ -27,6 +27,7 @@ struct BridgeMessage: Codable {
   var resumed: Bool?
   // A directional browser seek is deliberately explicit rather than a playback toggle. `seekSeconds`
   // is negative for backwards movement; Agentic Mouse emits exactly -5 or +5.
+  var jumpAheadClicked: Bool?
   var sought: Bool?
   var seekSeconds: Double?
   // Agentic Mouse emits only fixed five-percentage-point YouTube volume steps.
@@ -116,6 +117,7 @@ enum VoiceInkRecordingNotification {
 // Agentic Mouse never needs to focus Chrome or learn a tab id. The surface remains deliberately
 // narrow: exactly five seconds backward or forward, never arbitrary page control.
 enum AgenticMouseYouTubeNotification {
+  static let jumpAhead = Notification.Name("com.ethansk.agenticmouse.youtube.jumpAhead")
   static let seekBackwardFiveSeconds = Notification.Name(
     "com.ethansk.agenticmouse.youtube.seekBackwardFiveSeconds"
   )

@@ -10,6 +10,7 @@ import AppKit
 import Carbon.HIToolbox
 import CoreAudio
 import CoreGraphics
+import IOKit.hidsystem
 import Darwin
 import Foundation
 import ApplicationServices
@@ -254,6 +255,71 @@ private final class PrimaryShortcutHandlerTestState {
 }
 
 struct VoiceInkTests {
+    @Test @MainActor func agenticMouseMediaNextBypassesRecorderWithoutChangingPhysicalPressOwnership() throws {
+        let mousePID: pid_t = 4201
+        var routeRequests = 0
+        let monitor = ShortcutMonitor(sourceApplicationBundleID: {
+            $0 == mousePID ? "com.ethan.agentic-mouse" : nil
+        })
+        defer { monitor.stop() }
+        #expect(monitor.start(
+            shortcuts: [.primaryRecording: .modifierOnly(keyCode: nil, modifierFlags: [.control, .option])],
+            onKeyDown: { _, _ in }, onKeyUp: { _, _ in },
+            onNextTrackKeyDown: { routeRequests += 1; return true },
+            installSystemEventTap: false
+        ))
+
+        func event(_ state: Int, sourcePID: pid_t) throws -> CGEvent {
+            let native = try #require(NSEvent.otherEvent(
+                with: .systemDefined, location: .zero, modifierFlags: [], timestamp: 0,
+                windowNumber: 0, context: nil, subtype: Int16(NX_SUBTYPE_AUX_CONTROL_BUTTONS),
+                data1: (Int(NX_KEYTYPE_NEXT) << 16) | (state << 8), data2: -1
+            ))
+            let event = try #require(native.cgEvent)
+            event.setIntegerValueField(.eventSourceUnixProcessID, value: Int64(sourcePID))
+            return event
+        }
+        let type = try #require(CGEventType(rawValue: UInt32(NSEvent.EventType.systemDefined.rawValue)))
+        // An ordinary physical Next still owns its complete press while the HUD is visible.
+        #expect(monitor.handleCGEvent(type: type, event: try event(Int(NX_KEYDOWN), sourcePID: 0)))
+        #expect(routeRequests == 1)
+        // Explicit media wheel/click cycles pass through even inside that physical press.
+        for _ in 0..<3 {
+            #expect(!monitor.handleCGEvent(type: type, event: try event(Int(NX_KEYDOWN), sourcePID: mousePID)))
+            #expect(!monitor.handleCGEvent(type: type, event: try event(Int(NX_KEYUP), sourcePID: mousePID)))
+        }
+        #expect(routeRequests == 1)
+        #expect(monitor.handleCGEvent(type: type, event: try event(Int(NX_KEYDOWN), sourcePID: 0)))
+        #expect(routeRequests == 1) // Physical repeat, not another latch request.
+        #expect(monitor.handleCGEvent(type: type, event: try event(Int(NX_KEYUP), sourcePID: 0)))
+        #expect(!monitor.handleCGEvent(type: type, event: try event(Int(NX_KEYUP), sourcePID: 0)))
+    }
+
+    @Test @MainActor func unknownMediaEmittersKeepVisibleRecorderNextOwnership() throws {
+        for bundle in [nil, "com.example.other", "com.ethan.agentic-mouse-other"] as [String?] {
+            var routeRequests = 0
+            let monitor = ShortcutMonitor(sourceApplicationBundleID: { _ in bundle })
+            defer { monitor.stop() }
+            monitor.start(
+                shortcuts: [.primaryRecording: .modifierOnly(keyCode: nil, modifierFlags: [.control, .option])],
+                onKeyDown: { _, _ in }, onKeyUp: { _, _ in },
+                onNextTrackKeyDown: { routeRequests += 1; return true }, installSystemEventTap: false
+            )
+            let type = try #require(CGEventType(rawValue: UInt32(NSEvent.EventType.systemDefined.rawValue)))
+            for state in [Int(NX_KEYDOWN), Int(NX_KEYUP)] {
+                let native = try #require(NSEvent.otherEvent(
+                    with: .systemDefined, location: .zero, modifierFlags: [], timestamp: 0,
+                    windowNumber: 0, context: nil, subtype: Int16(NX_SUBTYPE_AUX_CONTROL_BUTTONS),
+                    data1: (Int(NX_KEYTYPE_NEXT) << 16) | (state << 8), data2: -1
+                ))
+                let event = try #require(native.cgEvent)
+                event.setIntegerValueField(.eventSourceUnixProcessID, value: 4202)
+                #expect(monitor.handleCGEvent(type: type, event: event))
+            }
+            #expect(routeRequests == 1)
+        }
+    }
+
     @Test func dashboardResourcesUseForkOwnedDestinations() throws {
         let expected: [(URL, String, String)] = [
             (AgentFlowResourceURLs.website, "ethansk.github.io", "/AgentFlow"),
@@ -373,6 +439,25 @@ struct VoiceInkTests {
         }
     }
 
+    @Test @MainActor func mixedFailureRetryRetainsContextButNeverPastesOrSubmitsAgain() throws {
+        let session = RecordingSession(phase: .recording)
+        session.liveRecordingState = .recording
+        session.audioURL = URL(fileURLWithPath: "/tmp/mixed-retry.wav")
+        session.transcriptionConfiguration = .init(mode: nil,
+            model: NativeAppleModel(name: "unused", displayName: "unused", description: "test",
+                isMultilingualModel: false, supportedLanguages: [:]), language: "en",
+            isRealtimeEnabled: false, requestContext: .init(language: "en", prompt: nil))
+        session.updateTypedInput("Already pasted keyboard words")
+        session.phase = .transcribing
+        let record = Transcription(text: "typed", duration: 1,
+            audioFileURL: session.audioURL?.absoluteString, transcriptionStatus: .failed)
+        let retry = try #require(FailedTranscriptionRetry(generation: 1, session: session, transcription: record))
+        let restored = retry.makeSession(audioURL: URL(fileURLWithPath: "/tmp/retry-copy.wav"))
+        #expect(restored.completionDisposition == .clipboardOnly)
+        #expect(restored.autoSendDisposition == .suppressOnce)
+        #expect(restored.liveSelectionReferencesForDelivery.contains { $0.isTypedText })
+    }
+
     @Test func retryUsesRetiredFailureAndNormalQueueWithoutStartingCapture() throws {
         let engine = try repositorySource("VoiceInk/Transcription/Engine/VoiceInkEngine.swift")
         let retryStart = try #require(engine.range(of: "    private func retryFailedTranscription("))
@@ -410,7 +495,7 @@ struct VoiceInkTests {
     }
 
 
-    @Test func liveSelectionReferenceBoundsFinalTextAndKeepsPreviewCompact() throws {
+    @Test func liveSelectionReferencePreservesFullTextAndKeepsPreviewCompact() throws {
         let source = String(repeating: "a", count: 250)
             + "MIDDLE_WITHIN_LIMIT_MUST_SURVIVE"
             + String(repeating: "z", count: 8_000)
@@ -421,15 +506,14 @@ struct VoiceInkTests {
         )
 
         #expect(!reference.omittedMiddle)
-        #expect(reference.truncated)
+        #expect(!reference.truncated)
         #expect(reference.characterCount == source.count)
         #expect(message.hasPrefix("Please check\n\n<codex_selection index=\"1\""))
         #expect(message.hasSuffix("</codex_selection>\n\nthis section."))
         #expect(message.contains("middle_omitted=\"false\""))
-        #expect(message.contains("truncated=\"true\""))
-        #expect(message.contains("<text>\(String(source.prefix(8_000)))</text>"))
+        #expect(message.contains("truncated=\"false\""))
+        #expect(message.contains("<text>\(source)</text>"))
         #expect(message.contains("MIDDLE_WITHIN_LIMIT_MUST_SURVIVE"))
-        #expect(!message.contains("<text>\(source)</text>"))
         #expect(!message.contains("<start>"))
         #expect(!message.contains("<end>"))
         #expect(reference.preview.count < source.count)
@@ -456,7 +540,7 @@ struct VoiceInkTests {
         let exactlyAtCap = try #require(LiveSelectionReference(String(repeating: "😀", count: 8_000)))
         #expect(!exactlyAtCap.truncated)
         let overCap = try #require(LiveSelectionReference(String(repeating: "😀", count: 8_001)))
-        #expect(overCap.truncated)
+        #expect(!overCap.truncated)
         #expect(overCap.characterCount == 8_001)
     }
 
@@ -708,12 +792,16 @@ struct VoiceInkTests {
         let components = try repositorySource("VoiceInk/Views/Recorder/RecorderComponents.swift")
         let mini = try repositorySource("VoiceInk/Views/Recorder/MiniRecorderView.swift")
         let notch = try repositorySource("VoiceInk/Views/Recorder/NotchRecorderView.swift")
-        #expect(components.contains(".onChange(of: previewParts)"))
+        // Rendering and scroll updates must observe the same cached chronological
+        // preview, not independently rebuild it for every meter-driven redraw.
+        #expect(components.contains("let parts = cachedPreviewParts ?? LiveSelectionReference.previewParts"))
+        #expect(components.contains(".onChange(of: parts)"))
         #expect(!components.contains("if let selectionPreview"))
         for source in [mini, notch] {
             // The active typed run has its own editable field; sealed prose and
             // source references remain in the same chronological preview.
             #expect(source.contains("selectionReferences: stateProvider.liveContextPreviewReferences"))
+            #expect(source.contains("cachedPreviewParts: stateProvider.liveContextPreviewParts"))
             #expect(source.contains("get: { stateProvider.typedInput }"))
             #expect(!source.contains("speech + \"\\n\" + selection"))
         }
@@ -817,10 +905,27 @@ struct VoiceInkTests {
         #expect(!LiveSelectionCapture.isNativeScreenshot(
             screenshot, since: Date().addingTimeInterval(10)
         ))
+        // Measure from the file's actual timestamp, not how long this test took
+        // to write it. The inclusive five-second window is anchored to shortcut
+        // activation even when capture attaches after the start handshake.
+        let created = try #require(screenshot.resourceValues(forKeys: [.creationDateKey]).creationDate)
+        for age in [1.0, 3.0, 4.9, 5.0] {
+            #expect(LiveSelectionCapture.findNativeScreenshots(
+                in: directory, activatedAt: created.addingTimeInterval(age)
+            ).map(\.0.lastPathComponent) == [screenshot.lastPathComponent])
+        }
+        #expect(LiveSelectionCapture.findNativeScreenshots(
+            in: directory, activatedAt: created.addingTimeInterval(5.01)
+        ).isEmpty)
+        let ordinaryImage = directory.appendingPathComponent("Screenshot not-native.png")
+        try Data([0x89, 0x50, 0x4e, 0x47]).write(to: ordinaryImage)
+        #expect(!LiveSelectionCapture.findNativeScreenshots(
+            in: directory, activatedAt: Date()
+        ).map(\.0.lastPathComponent).contains(ordinaryImage.lastPathComponent))
     }
 
     @Test func recorderContextGrowsBeforeItsScreenBound() throws {
-        #expect(MiniRecorderLayoutMetrics.liveTranscriptWidth == 688)
+        #expect(MiniRecorderLayoutMetrics.liveTranscriptWidth == 1100)
         #expect(MiniRecorderLayoutMetrics.liveTranscriptFontSize == 18)
         #expect(MiniRecorderLayoutMetrics.notchTranscriptSideExpansion == 360)
         let short = MiniRecorderLayoutMetrics.transcriptHeight(
@@ -841,14 +946,16 @@ struct VoiceInkTests {
             showsRealtimeTranscript: true,
             sessionCount: 1,
             realtimeTranscriptHeight: long
-        ) == 24 + long + 1 + 40)
+        ) == long + 1 + 40)
         let stacks = try repositorySource("VoiceInk/Views/Recorder/RecorderStackView.swift")
         #expect(stacks.contains(".onReceive((baseSession?.objectWillChange ?? ObservableObjectPublisher()).receive(on: RunLoop.main))"))
         #expect(stacks.contains(".onReceive((pillSession?.objectWillChange ?? ObservableObjectPublisher()).receive(on: RunLoop.main))"))
         #expect(stacks.components(separatedBy: "let _ = layoutTick").count == 3)
         #expect(stacks.contains("RecorderPanelHeightSync("))
         let components = try repositorySource("VoiceInk/Views/Recorder/RecorderComponents.swift")
-        #expect(components.contains(".foregroundColor(.purple.opacity(0.95))"))
+        // Screenshot color now acknowledges live recognition; preserve its
+        // normal purple/pink style without requiring it before provider words.
+        #expect(components.contains(".foregroundColor(dimsContextUntilSpeechArrives ? waitingContext : .purple.opacity(0.95))"))
         #expect(components.contains(".font(.system(size: MiniRecorderLayoutMetrics.liveTranscriptFontSize))"))
     }
 
@@ -909,14 +1016,14 @@ struct VoiceInkTests {
             realtimeTranscriptHeight: 200,
             scale: 0.5
         )
-        let expectedReserved: CGFloat = 24 + (200 + 1 + 40 + 46) * 0.5
+        let expectedReserved: CGFloat = (200 + 1 + 40 + 46) * 0.5
         #expect(reserved == expectedReserved)
         let mini = MiniRecorderPanel.calculateWindowMetrics(for: nil, scale: 0.5)
         let notch = NotchRecorderPanel.calculateWindowMetrics(for: nil, scale: 0.5)
-        #expect(mini.width == 360 && mini.height == 215)
+        #expect(mini.width == 566 && mini.height == 215)
         #expect(notch.frame.width == 140 && notch.frame.height == 12)
         let sourceSize = ScaledRecorderHostingView.sourceSize(for: mini.size, scale: 0.5)
-        #expect(sourceSize.width == 720 && sourceSize.height == 430)
+        #expect(sourceSize.width == 1132 && sourceSize.height == 430)
     }
 
     @Test @MainActor func abandonedShortcutCaptureRestoresItsPreviousBinding() {
@@ -1512,9 +1619,15 @@ struct VoiceInkTests {
         ]
         #expect(presentationGuardBody.contains("reason: \"recording start\""))
         #expect(presentationGuardBody.contains("rearmFailureNotification: true"))
+        // Presentation now resolves a reservation even when the caller did not
+        // supply one. Failure must release that exact resolved token, not only
+        // the optional incoming token, and success must forward the same value.
+        #expect(toggleBody.contains("guard let id = reservedStartRequestID ?? engine.reserveRecordingStart()"))
+        #expect(toggleBody.contains("startRequestID = id"))
         #expect(presentationGuardBody.contains(
-            "engine.cancelRecordingStartReservation(reservedStartRequestID)"
+            "if let startRequestID { engine.cancelRecordingStartReservation(startRequestID) }"
         ))
+        #expect(toggleBody[visibleClaim.upperBound...].contains("reservedStartRequestID: startRequestID"))
         #expect(presentationGuardBody.contains("return"))
         #expect(presentationGuard.lowerBound < visibleClaim.lowerBound)
 
@@ -2151,7 +2264,8 @@ struct VoiceInkTests {
 
         // Keyboard prose and source context are part of the recovery draft too;
         // a speech-only snapshot would silently lose them on failure or exit.
-        #expect(stopBody.contains("active.liveSelectionReferences, with: active.partialTranscript"))
+        #expect(stopBody.contains("active.liveSelectionReferencesForDelivery, with: active.partialTranscript"))
+        #expect(stopBody.contains("includeTiming: true"))
 
         #expect(stopBody.contains(
             "realtimeDraftText: active.recoverablePartialTranscript"
@@ -2171,8 +2285,9 @@ struct VoiceInkTests {
         ))
         #expect(cancelSnapshot.lowerBound < canceledPersistence.lowerBound)
         #expect(source[cancelSnapshot.lowerBound..<canceledPersistence.lowerBound].contains(
-            "session.liveSelectionReferences, with: session.partialTranscript"
+            "session.liveSelectionReferencesForDelivery, with: session.partialTranscript"
         ))
+        #expect(source[cancelSnapshot.lowerBound..<canceledPersistence.lowerBound].contains("includeTiming: true"))
     }
 
     @Test func clipboardOnlyCompletionReturnsBeforeAnyPasteTargetResolution() throws {
@@ -2186,7 +2301,7 @@ struct VoiceInkTests {
             encoding: .utf8
         )
         let clipboardBranch = try #require(source.range(
-            of: "        if completionDispositionNow == .clipboardOnly {"
+            of: "        func finishClipboardOnlyCompletion() {"
         ))
         let pasteTargetResolution = try #require(source.range(
             of: "        let pasteTargetForDelivery = await resolvePasteTarget()",
@@ -2196,10 +2311,18 @@ struct VoiceInkTests {
             clipboardBranch.lowerBound..<pasteTargetResolution.lowerBound
         ]
 
-        #expect(clipboardBody.contains("ClipboardManager.copyToClipboard"))
+        #expect(clipboardBody.contains("copyCompletedText(clipboardText)"))
+        #expect(source.contains("copyCompletedText: @escaping (String) -> Bool = ClipboardManager.copyToClipboard"))
+        #expect(!clipboardBody.contains("outputConfiguration()"))
+        #expect(!clipboardBody.contains("acquireDeliveryLease"))
         #expect(clipboardBody.contains("paste=false autoSend=false"))
         #expect(!clipboardBody.contains("delivery.deliver"))
         #expect(!clipboardBody.contains("resolvePasteTarget"))
+        #expect(clipboardBody.contains(
+            "if completionDispositionNow == .clipboardOnly || pendingTypingClipboardOnly() {"
+        ))
+        #expect(clipboardBody.contains("finishClipboardOnlyCompletion()"))
+        #expect(clipboardBody.contains("return\n        }"))
 
         // `.respond` enhancement begins earlier than final delivery. Clipboard-only
         // must suppress it there so the copied result remains the transcription.
@@ -2208,7 +2331,9 @@ struct VoiceInkTests {
             "                    outputForThisDelivery.outputMode == .respond"
         ))
         #expect(source.contains(
-            "if hasCapturedAudio, !skipPostProcessingNow,\n" +
+            "if (hasCapturedAudio || shouldRespondInRecorder),\n" +
+            "                   !textForAI.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,\n" +
+            "                   !skipPostProcessingNow,\n" +
             "                   !suppressesModeResponse,"
         ))
     }
@@ -2401,7 +2526,7 @@ struct VoiceInkTests {
             bottomReservedHeight: reservedHeight
         )
 
-        #expect(reservedHeight == 121)
+        #expect(reservedHeight == 97)
         #expect(origin.y == recorderTop + 16)
     }
 
@@ -2411,7 +2536,7 @@ struct VoiceInkTests {
             showsRealtimeTranscript: true,
             sessionCount: 3
         )
-        #expect(reservedHeight == 213)
+        #expect(reservedHeight == 189)
     }
 
     @Test func clipboardOnlySelectionRendersAsRedNoPasteHUDState() throws {
@@ -2455,7 +2580,7 @@ struct VoiceInkTests {
             "VoiceInk/Transcription/Engine/TranscriptionPipeline.swift"
         )
         let branchStart = try #require(pipelineSource.range(
-            of: "if completionDispositionNow == .clipboardOnly {"
+            of: "func finishClipboardOnlyCompletion() {"
         ))
         let branchRemainder = pipelineSource[branchStart.lowerBound...]
         let branchEnd = try #require(branchRemainder.range(
@@ -2464,7 +2589,7 @@ struct VoiceInkTests {
         let clipboardOnlyBranch = branchRemainder[..<branchEnd.lowerBound]
 
         #expect(clipboardOnlyBranch.contains(
-            "ClipboardManager.copyToClipboard(clipboardText)"
+            "copyCompletedText(clipboardText)"
         ))
         #expect(clipboardOnlyBranch.contains(
             "SoundManager.shared.playStopSound()"
@@ -2494,9 +2619,10 @@ struct VoiceInkTests {
         #expect(!coordinator.hasPendingClipboardFinish)
     }
 
-    @Test func primaryDoublePressWhilePausedFinishesClipboardOnly() {
+    @Test func primaryDoublePressWhilePausedWaitsForPossibleTripleResume() {
         var coordinator = PrimaryRecordingPressCoordinator(
-            doublePressInterval: 0.5
+            normalStopDecisionInterval: 0.45,
+            triplePressContinuationInterval: 0.8
         )
 
         #expect(coordinator.registerPress(
@@ -2506,17 +2632,47 @@ struct VoiceInkTests {
         #expect(coordinator.registerPress(
             recordingState: .paused,
             eventTime: 30.2
-        ) == .finishPausedClipboardImmediately)
+        ) == .deferClipboardFinish(generation: 2))
         #expect(!coordinator.hasPendingPausedResume)
         #expect(!coordinator.hasPendingNormalStop)
-        #expect(!coordinator.hasPendingClipboardFinish)
+        #expect(coordinator.hasPendingClipboardFinish)
 
-        // A bounce after the consumed paused double cannot begin another route,
-        // even before asynchronous finalization has changed the paused state.
+        // A deliberate third press reverses the temporary Won't paste choice.
         #expect(coordinator.registerPress(
             recordingState: .paused,
-            eventTime: 30.25
+            eventTime: 30.7
+        ) == .togglePause)
+        #expect(!coordinator.hasPendingClipboardFinish)
+        let canceledClipboardFinish = coordinator.consumeDeferredClipboardFinish(generation: 2)
+        #expect(!canceledClipboardFinish)
+        #expect(coordinator.registerPress(
+            recordingState: .recording,
+            eventTime: 30.75
         ) == .ignoreCompletedGesture)
+
+        var doubleOnly = PrimaryRecordingPressCoordinator(
+            normalStopDecisionInterval: 0.45,
+            triplePressContinuationInterval: 0.8
+        )
+        #expect(doubleOnly.registerPress(recordingState: .paused, eventTime: 40)
+            == .deferPausedResume(generation: 1))
+        #expect(doubleOnly.registerPress(recordingState: .paused, eventTime: 40.2)
+            == .deferClipboardFinish(generation: 2))
+        let committedClipboardFinish = doubleOnly.consumeDeferredClipboardFinish(generation: 2)
+        let repeatedClipboardFinish = doubleOnly.consumeDeferredClipboardFinish(generation: 2)
+        #expect(committedClipboardFinish)
+        #expect(!repeatedClipboardFinish)
+
+        var overdue = PrimaryRecordingPressCoordinator(
+            normalStopDecisionInterval: 0.45,
+            triplePressContinuationInterval: 0.8
+        )
+        #expect(overdue.registerPress(recordingState: .paused, eventTime: 50)
+            == .deferPausedResume(generation: 1))
+        #expect(overdue.registerPress(recordingState: .paused, eventTime: 50.2)
+            == .deferClipboardFinish(generation: 2))
+        #expect(overdue.registerPress(recordingState: .paused, eventTime: 51.01)
+            == .performOverdueClipboardFinish)
     }
 
     @Test func primarySinglePressCommitsExactlyOneDeferredStop() {
@@ -3511,10 +3667,67 @@ struct VoiceInkTests {
             )
         }
 
-        #expect(finishCallCount == 1)
+        #expect(finishCallCount == 0)
         #expect(state.pauseCallCount == 0)
         #expect(state.toggleDestinations.isEmpty)
         #expect(state.completionDispositions == [.clipboardOnly])
+        try? await Task.sleep(nanoseconds: 130_000_000)
+        #expect(finishCallCount == 1)
+        handler.reset()
+    }
+
+    @MainActor
+    @Test func pausedPrimaryTripleClickResumesWithoutFinishingOrPasting() async {
+        let state = PrimaryShortcutHandlerTestState(
+            recordingState: .paused,
+            isRecorderVisible: true
+        )
+        var finishCallCount = 0
+        let handler = RecordingShortcutModeHandler(
+            canHandleShortcutAction: { true },
+            isRecorderVisible: { state.isRecorderVisible },
+            recordingState: { state.recordingState },
+            toggleRecorderPanel: { _, destination in
+                state.toggle(destination: destination)
+            },
+            toggleRecordingPause: {
+                state.pauseCallCount += 1
+                state.recordingState = .recording
+                return true
+            },
+            setActiveRecordingCompletionDisposition: { disposition in
+                state.setCompletionDisposition(disposition)
+            },
+            finishRecordingToClipboard: { _ in
+                finishCallCount += 1
+                return true
+            },
+            cancelRecording: {},
+            primaryDoublePressInterval: 0.05,
+            primaryTriplePressInterval: 0.1,
+            primaryDuplicateChordInterval: 0.005
+        )
+
+        for eventTime in [110.0, 110.02, 110.06] {
+            await handler.handleKeyDown(
+                action: .primaryRecording,
+                eventTime: eventTime,
+                mode: .toggle
+            )
+            await handler.handleKeyUp(
+                action: .primaryRecording,
+                eventTime: eventTime + 0.001,
+                mode: .toggle
+            )
+        }
+
+        #expect(state.recordingState == .recording)
+        #expect(state.pauseCallCount == 1)
+        #expect(finishCallCount == 0)
+        #expect(state.toggleDestinations.isEmpty)
+        #expect(state.completionDispositions == [.clipboardOnly, .normalDelivery])
+        try? await Task.sleep(nanoseconds: 130_000_000)
+        #expect(finishCallCount == 0)
         handler.reset()
     }
 
@@ -7571,7 +7784,7 @@ struct VoiceInkTests {
             separatedBy: "await delivery.deliver("
         ).count - 1 == 1)
         #expect(pipelineSource.contains(
-            "text: finalText"
+            "text: usesCompactPrompt ? compactPromptText : finalText"
         ))
     }
 
@@ -8276,9 +8489,9 @@ struct VoiceInkTests {
         let scan = try #require(source.range(of: "    private func contextAnchors("))
         let region = try #require(source.range(of: "    private func contentRegion("))
         let scanBody = String(source[scan.lowerBound..<region.lowerBound])
-        #expect(scanBody.contains("let elements = descendants(of: window)"))
+        #expect(scanBody.contains("let elements = contextAnchorNodes(in: window)"))
         #expect(scanBody.contains("let windowFrame = region == nil ? nil : frame(of: window)"))
-        #expect(scanBody.contains("self.relativeFrame(of: $0, in: window, windowFrame: windowFrame)"))
+        #expect(scanBody.contains("self.relativeFrame(of: $0.element, in: window, windowFrame: windowFrame)"))
         #expect(!scanBody.contains("cachedContext"))
         let owningWindow = try #require(source.range(of: "    private func owningWindow("))
         let regionBody = String(source[region.lowerBound..<owningWindow.lowerBound])
@@ -8325,30 +8538,36 @@ struct VoiceInkTests {
             "\"VIPPDailyUpdateChecksEnabled\": true"
         ))
         #expect(
-            VoiceInkUpdatePolicy.automaticCheckInterval == 24 * 60 * 60
+            AgentFlowUpdatePolicy.automaticCheckInterval == 24 * 60 * 60
         )
-        #expect(VoiceInkUpdatePolicy.isAutomaticCheckDue(
+        #expect(AgentFlowUpdatePolicy.isAutomaticCheckDue(
             lastCheck: nil,
             now: Date(timeIntervalSince1970: 100_000)
         ))
-        #expect(!VoiceInkUpdatePolicy.isAutomaticCheckDue(
+        #expect(!AgentFlowUpdatePolicy.isAutomaticCheckDue(
             lastCheck: Date(timeIntervalSince1970: 100_000),
             now: Date(timeIntervalSince1970: 100_000 + 86_399)
         ))
-        #expect(VoiceInkUpdatePolicy.isAutomaticCheckDue(
+        #expect(AgentFlowUpdatePolicy.isAutomaticCheckDue(
             lastCheck: Date(timeIntervalSince1970: 100_000),
             now: Date(timeIntervalSince1970: 100_000 + 86_400)
         ))
 
         #expect(appSource.contains(
-            "https://api.github.com/repos/Beingpax/VoiceInk/releases/latest"
+            "https://api.github.com/repos/EthanSK/AgentFlow/releases/latest"
         ))
-        #expect(appSource.contains("There’s a VoiceInk update"))
+        #expect(!appSource.contains("Beingpax/VoiceInk/releases/latest"))
+        #expect(appSource.contains("There’s an Agent Flow update"))
+        #expect(appSource.contains("Agent Flow is up to date"))
+        #expect(appSource.contains("Couldn’t check for Agent Flow updates"))
+        #expect(!appSource.contains("integratedUpstreamReleaseTag"))
+        #expect(appSource.contains("AgentFlowLastDailyUpdateCheck"))
+        #expect(appSource.contains("AgentFlowLastNotifiedRelease"))
         #expect(!appSource.contains("SPUStandardUpdaterController"))
         #expect(!appSource.contains("updaterController.checkForUpdates"))
-        #expect(settingsSource.contains("Daily Upstream VoiceInk Checks"))
+        #expect(settingsSource.contains("Daily Agent Flow Update Checks"))
         #expect(settingsSource.contains(
-            "never installs or merges upstream updates automatically"
+            "Updates are not installed automatically."
         ))
     }
 
@@ -8370,41 +8589,80 @@ struct VoiceInkTests {
         ))
     }
 
-    @Test func dailyUpdateNotificationDeduplicatesNewUpstreamReleases() {
-        #expect(VoiceInkUpdatePolicy.isNewerRelease(
-            "v2.0.1",
-            than: "v2.0"
+    @Test func dailyUpdateNotificationDeduplicatesOwnReleasesAgainstInstalledBuild() {
+        #expect(AgentFlowUpdatePolicy.installedReleaseTag(version: "2.0", build: "398") == "v2.0.398")
+        #expect(AgentFlowUpdatePolicy.installedReleaseTag(version: nil, build: "398") == nil)
+        #expect(AgentFlowUpdatePolicy.installedReleaseTag(version: "2.0", build: "bad") == nil)
+        #expect(AgentFlowUpdatePolicy.isNewerRelease(
+            "v2.0.399",
+            than: "v2.0.398"
         ))
-        #expect(VoiceInkUpdatePolicy.isNewerRelease(
+        #expect(AgentFlowUpdatePolicy.isNewerRelease(
             "V2.1",
-            than: "2.0.9"
+            than: "2.0.398"
         ))
-        #expect(!VoiceInkUpdatePolicy.isNewerRelease(
-            "v2.0",
-            than: "2.0"
+        #expect(!AgentFlowUpdatePolicy.isNewerRelease(
+            "v2.0.398",
+            than: "2.0.398"
         ))
-        #expect(!VoiceInkUpdatePolicy.isNewerRelease(
-            "v1.99",
-            than: "v2.0"
+        #expect(!AgentFlowUpdatePolicy.isNewerRelease(
+            "v2.0.366",
+            than: "v2.0.398"
         ))
-        #expect(VoiceInkUpdatePolicy.shouldNotify(
-            releaseTag: "v2.1",
-            integratedUpstreamTag: "v2.0",
+        #expect(!AgentFlowUpdatePolicy.isNewerRelease("v2.0.399-beta", than: "v2.0.398"))
+        #expect(!AgentFlowUpdatePolicy.isNewerRelease("v2..399", than: "v2.0.398"))
+        #expect(!AgentFlowUpdatePolicy.isNewerRelease("v2.0.399", than: "unknown"))
+        #expect(!AgentFlowUpdatePolicy.isNewerRelease("v2.0.9999999999999999999999999", than: "v2.0.398"))
+        #expect(AgentFlowUpdatePolicy.shouldNotify(
+            releaseTag: "v2.0.399",
+            installedTag: "v2.0.398",
             lastNotifiedTag: nil,
             checksEnabled: true
         ))
-        #expect(!VoiceInkUpdatePolicy.shouldNotify(
-            releaseTag: "v2.1",
-            integratedUpstreamTag: "v2.0",
-            lastNotifiedTag: "v2.1",
+        #expect(!AgentFlowUpdatePolicy.shouldNotify(
+            releaseTag: "v2.0.399",
+            installedTag: "v2.0.398",
+            lastNotifiedTag: "v2.0.399",
             checksEnabled: true
         ))
-        #expect(!VoiceInkUpdatePolicy.shouldNotify(
-            releaseTag: "v2.1",
-            integratedUpstreamTag: "v2.0",
+        #expect(!AgentFlowUpdatePolicy.shouldNotify(
+            releaseTag: "v2.0.399",
+            installedTag: "v2.0.398",
             lastNotifiedTag: nil,
             checksEnabled: false
         ))
+        #expect(!AgentFlowUpdatePolicy.shouldNotify(
+            releaseTag: "v2.0.366", installedTag: "v2.0.398", lastNotifiedTag: nil, checksEnabled: true
+        ))
+    }
+
+    @Test func agentFlowUpdateRejectsForeignDraftPrereleaseAndMalformedReleaseLinks() throws {
+        let ownURL = try #require(URL(string: "https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.399"))
+        let release = AgentFlowRelease(tagName: "v2.0.399", name: "Agent Flow v2.0.399",
+                                       htmlURL: ownURL, draft: false, prerelease: false)
+        #expect(AgentFlowUpdatePolicy.isPublishedOwnRelease(release))
+        #expect(!AgentFlowUpdatePolicy.isPublishedOwnRelease(
+            AgentFlowRelease(tagName: release.tagName, name: nil, htmlURL: ownURL, draft: true, prerelease: false)
+        ))
+        #expect(!AgentFlowUpdatePolicy.isPublishedOwnRelease(
+            AgentFlowRelease(tagName: release.tagName, name: nil, htmlURL: ownURL, draft: false, prerelease: true)
+        ))
+        for value in [
+            "https://github.com/Beingpax/VoiceInk/releases/tag/v2.0.399",
+            "https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.398",
+            "http://github.com/EthanSK/AgentFlow/releases/tag/v2.0.399",
+            "https://github.com.evil.example/EthanSK/AgentFlow/releases/tag/v2.0.399",
+            "https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.399?redirect=evil",
+            "https://user@github.com/EthanSK/AgentFlow/releases/tag/v2.0.399"
+        ] {
+            #expect(!AgentFlowUpdatePolicy.isOwnReleaseURL(try #require(URL(string: value)), tag: release.tagName))
+        }
+        let data = Data(#"{"tag_name":"v2.0.399","name":"Agent Flow v2.0.399","html_url":"https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.399","draft":false,"prerelease":false}"#.utf8)
+        #expect(try JSONDecoder().decode(AgentFlowRelease.self, from: data) == release)
+        let content = AgentFlowUpdateNotificationDelegate.content(for: release)
+        #expect(content.title == "There’s an Agent Flow update")
+        #expect(content.body == "v2.0.399 is available. Open the release to download it.")
+        #expect(content.userInfo["agentFlowReleaseURL"] as? String == ownURL.absoluteString)
     }
 
     @Test func mainWindowFirstRunPlacementUsesTopRightOfChosenScreen() {

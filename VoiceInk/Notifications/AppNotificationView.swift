@@ -9,6 +9,8 @@ struct AppNotificationView: View {
     let onTap: (() -> Void)?
     var actionButton: (label: String, action: () -> Void)? = nil
     var secondaryActionButton: (label: String, action: () -> Void)? = nil
+    var copyText: String? = nil
+    var dismissesAutomatically = true
     
     @State private var progress: Double = 1.0
     @State private var timer: Timer?
@@ -61,9 +63,9 @@ struct AppNotificationView: View {
                     .textSelection(.enabled)
                     .contextMenu {
                         Button(String(localized: "Copy")) {
-                            let pasteboard = NSPasteboard.general
-                            pasteboard.clearContents()
-                            pasteboard.setString(title, forType: .string)
+                            // Match the visible Copy button: delivery recovery
+                            // copies the message; ordinary errors copy diagnostics.
+                            NotificationManager.makeCopyAction(title: title, copyText: copyText).action()
                         }
                     }
                 
@@ -136,21 +138,23 @@ struct AppNotificationView: View {
             RoundedRectangle(cornerRadius: AppTheme.Radius.card, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.1), lineWidth: 0.5)
         )
-        .overlay(
-            VStack {
-                Spacer()
-                GeometryReader { geometry in
-                    Rectangle()
-                        .fill(type.iconColor.opacity(0.8))
-                        .frame(width: geometry.size.width * max(0, progress), height: 2)
-                        .animation(.linear(duration: 0.1), value: progress)
+        .overlay {
+            if dismissesAutomatically {
+                VStack {
+                    Spacer()
+                    GeometryReader { geometry in
+                        Rectangle()
+                            .fill(type.iconColor.opacity(0.8))
+                            .frame(width: geometry.size.width * max(0, progress), height: 2)
+                            .animation(.linear(duration: 0.1), value: progress)
+                    }
+                    .frame(height: 2)
                 }
-                .frame(height: 2)
+                .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.card, style: .continuous))
             }
-            .clipShape(RoundedRectangle(cornerRadius: AppTheme.Radius.card, style: .continuous))
-        )
+        }
         .onAppear {
-            startProgressTimer()
+            if dismissesAutomatically { startProgressTimer() }
         }
         .onDisappear {
             timer?.invalidate()

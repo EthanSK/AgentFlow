@@ -58,6 +58,13 @@ const context = vm.createContext({
 
 vm.runInContext(source, context, { filename: 'content-script.js' });
 assert.equal(typeof runtimeListener, 'function');
+for (const type of ['pause-youtube', 'resume-youtube']) {
+  let expiredResponse;
+  runtimeListener({ type, expiresAt: Date.now() - 1 }, null, value => { expiredResponse = value; });
+  assert.equal(expiredResponse.reason, 'playback-command-expired');
+  assert.equal(video.paused, true, 'expired directional commands cannot mutate the YouTube player');
+}
+console.log('PASS delayed YouTube pause/resume messages expire before playback mutation');
 
 const seek = (seekSeconds) => {
   let response;

@@ -5,8 +5,9 @@
 	<!-- Public display name only: keep the executable, bundle ID and storage identity stable. -->
 	<key>CFBundleName</key>
 	<string>Agent Flow</string>
-	<!-- Agent Flow never installs upstream VoiceInk binaries. UpdaterViewModel
-	     only notifies about upstream releases for manual review and porting. -->
+	<!-- UpdaterViewModel checks only our published Agent Flow releases and notifies
+	     about newer versions. It never installs upstream VoiceInk binaries or
+	     replaces the running app automatically. -->
 	<key>LSUIElement</key>
 	<false/>
 	<key>NSMicrophoneUsageDescription</key>

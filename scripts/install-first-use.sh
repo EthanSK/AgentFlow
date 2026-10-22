@@ -93,13 +93,18 @@ if "$with_bridge"; then
   fi
 fi
 
-if "$with_skill" && [[ -e "$skill_target" || -L "$skill_target" ]]; then
-  echo "A personal context skill already exists at $skill_target; refusing to overwrite it." >&2
-  exit 1
+if "$with_skill"; then
+  command -v python3 >/dev/null || { echo 'Python 3 is required to install the context skill.' >&2; exit 1; }
+  # Exit 2 means not installed yet; a conflicting user skill fails before the app build.
+  skill_check=0
+  python3 "$repo_root/scripts/install-context-skill.py" --check || skill_check=$?
+  [[ "$skill_check" = 0 || "$skill_check" = 2 ]] || exit "$skill_check"
 fi
 
 mkdir -p "$HOME/Applications"
-stage_dir="$(mktemp -d "$HOME/Applications/.agentflow-install.XXXXXX")"
+stage_parent="$HOME/Applications/.agentflow-install.noindex"
+mkdir -p "$stage_parent"
+stage_dir="$(mktemp -d "$stage_parent/stage.XXXXXX")"
 candidate="$stage_dir/AgentFlow.app"
 echo "Building Agent Flow from this checkout into $stage_dir..."
 make -C "$repo_root" local "LOCAL_APP_OUTPUT=$candidate"
@@ -114,7 +119,9 @@ if [[ "$bundle_id" != "com.ethansk.VoiceInkPlusPlus" ]]; then
 fi
 codesign --verify --deep --strict "$candidate"
 
-if [[ -e "$app_target" || -L "$app_target" ]]; then
+if [[ -e "$app_target" || -L "$app_target" || -e "$system_app" || -L "$system_app" || \
+      -e "$legacy_user_app" || -L "$legacy_user_app" || -e "$legacy_system_app" || -L "$legacy_system_app" ]] || \
+   pgrep -x VoiceInkPlusPlus >/dev/null 2>&1 || pgrep -x AgentFlow >/dev/null 2>&1; then
   echo "Destination appeared during build. Staged app retained at $stage_dir; no replacement made." >&2
   exit 1
 fi
@@ -123,9 +130,7 @@ rmdir "$stage_dir"
 echo "Installed Agent Flow at $app_target"
 
 if "$with_skill"; then
-  mkdir -p "$HOME/.agents/skills"
-  ditto "$repo_root/.agents/skills/interpret-agent-flow-context" "$skill_target"
-  echo "Installed the Codex context skill at $skill_target"
+  python3 "$repo_root/scripts/install-context-skill.py"
 fi
 
 if "$with_bridge"; then
@@ -152,7 +157,7 @@ if ! wait_for_process "$app_target/Contents/MacOS/AgentFlow" AgentFlow; then
 fi
 echo "Agent Flow is running from $app_target"
 echo
-echo "Next: grant Agent Flow Microphone and Accessibility access, add your OpenAI API key for GPT Live, and verify one short recording."
+echo "Next: grant Microphone and Accessibility access, choose your microphone and a local or cloud voice model, then verify one short recording."
 if "$with_bridge"; then
   echo "In Chrome, load $repo_root/companions/youtube-bridge/dist/extension at chrome://extensions and test one disposable YouTube video."
 fi

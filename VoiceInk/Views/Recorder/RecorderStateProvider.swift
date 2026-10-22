@@ -8,14 +8,20 @@ protocol RecorderStateProvider: AnyObject {
     var completionDisposition: RecordingCompletionDisposition { get }
     var liveSelectionReferences: [LiveSelectionReference] { get }
     var liveContextPreviewReferences: [LiveSelectionReference] { get }
+    var liveContextPreviewParts: [LiveSelectionReference.PreviewPart] { get }
     var canTypeInHUD: Bool { get }
     var typedInput: String { get }
     var typingFocusController: RecorderTypingFocus? { get }
+    var typingUndoController: RecorderTypingUndoController? { get }
     var microphoneOff: Bool { get }
+    var potentialTTSActive: Bool { get }
     var microphoneTransitionPending: Bool { get }
     func toggleMicrophone()
+    func togglePause()
     func updateTypedInput(_ value: String)
     func endTypingRun()
+    func submitTypedInput()
+    func finishTypedInputWithoutPasting()
     // A realtime provider owns a live-text HUD from recording start, even before
     // its first partial arrives. This is presentation state only: the placeholder
     // never enters the transcript or either Primary/Next delivery route.
@@ -41,18 +47,38 @@ protocol RecorderStateProvider: AnyObject {
 }
 
 extension RecorderStateProvider {
+    // Context colors acknowledge provider words, not microphone intent, a moving
+    // meter, typing, or captured selections. This is only HUD presentation: batch
+    // capture/realtime fallback stays unconfirmed until stop, and saved context
+    // plus the single Primary/Next delivery remain unchanged. Typing-only and
+    // retained/transcribing cards are not waiting for live microphone recognition.
+    var dimsContextUntilSpeechArrives: Bool {
+        guard !microphoneOff,
+              recordingState == .starting || recordingState == .recording else { return false }
+        return !showsRealtimeTranscriptHUD
+            || !partialTranscript.contains(where: { !$0.isWhitespace })
+    }
+
     var showsRealtimeTranscriptHUD: Bool { false }
     var completionDisposition: RecordingCompletionDisposition { .normalDelivery }
     var liveSelectionReferences: [LiveSelectionReference] { [] }
     var liveContextPreviewReferences: [LiveSelectionReference] { liveSelectionReferences }
+    var liveContextPreviewParts: [LiveSelectionReference.PreviewPart] {
+        LiveSelectionReference.previewParts(liveContextPreviewReferences, with: partialTranscript)
+    }
     var canTypeInHUD: Bool { false }
     var typedInput: String { "" }
     var typingFocusController: RecorderTypingFocus? { nil }
+    var typingUndoController: RecorderTypingUndoController? { nil }
     var microphoneOff: Bool { recordingState == .paused }
+    var potentialTTSActive: Bool { false }
     var microphoneTransitionPending: Bool { false }
     func toggleMicrophone() {}
+    func togglePause() {}
     func updateTypedInput(_ value: String) {}
     func endTypingRun() {}
+    func submitTypedInput() {}
+    func finishTypedInputWithoutPasting() {}
 
     var currentFocusIconActionPulseID: UUID? {
         guard let pulse = iconActionPulse, pulse.icon == .currentFocus else { return nil }

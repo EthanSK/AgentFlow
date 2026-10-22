@@ -36,6 +36,7 @@ final class FailedTranscriptionRetry {
     let context: RecordingContextSnapshot?
     let skipPostProcessing: Bool
     let autoSendDisposition: RecordingAutoSendDisposition
+    let completionDisposition: RecordingCompletionDisposition
     private(set) var wasClaimed = false
 
     init?(
@@ -64,7 +65,13 @@ final class FailedTranscriptionRetry {
         pasteTarget = session.pasteTarget
         context = session.retryContextSnapshot ?? session.contextStore?.snapshot
         skipPostProcessing = session.skipPostProcessing
-        autoSendDisposition = session.autoSendDisposition
+        // Mixed-input failure may already have pasted a reviewable typed draft.
+        // Explicit retry retains the original context, but must not submit a
+        // duplicate/recombined request automatically after that partial delivery.
+        autoSendDisposition = liveContextReferences.contains(where: \.isTypedText)
+            ? .suppressOnce : session.autoSendDisposition
+        completionDisposition = liveContextReferences.contains(where: \.isTypedText)
+            ? .clipboardOnly : .normalDelivery
     }
 
     static func isEligible(
@@ -97,6 +104,7 @@ final class FailedTranscriptionRetry {
         session.retryContextSnapshot = context
         session.skipPostProcessing = skipPostProcessing
         session.autoSendDisposition = autoSendDisposition
+        session.completionDisposition = completionDisposition
         // No microphone, provider/socket reuse, new context capture, tentative
         // start target, or media lifecycle ownership belongs to a saved-file retry.
         return session
@@ -105,6 +113,7 @@ final class FailedTranscriptionRetry {
 
 private struct TranscriptionFailureNotice {
     let title: String
+    let copyText: String?
     let retry: FailedTranscriptionRetry?
 }
 
@@ -235,6 +244,8 @@ class VoiceInkEngine: NSObject, ObservableObject {
 
     private struct PreparedRecordingStart {
         let requestID: UUID
+        let activationTime: Date
+        let activationUptime: TimeInterval
         let focusedInput: FocusLockService.Target?
     }
 
@@ -244,6 +255,27 @@ class VoiceInkEngine: NSObject, ObservableObject {
     private var recordingStartReservation = RecordingStartReservation()
     private var preparedRecordingStart: PreparedRecordingStart?
     private var typingFocusStartID: UUID?
+
+    // HUD acknowledgement is deliberately independent of recordingState and the
+    // reservation/barrier. It cannot own audio, a destination, Mode or delivery.
+    @Published private(set) var startupPresentation = RecorderStartupPresentation()
+
+    @discardableResult
+    func commitRecordingStartPresentation(_ requestID: UUID) -> Bool {
+        guard canCommitRecordingStartReservation(requestID),
+              let preparedRecordingStart else { return false }
+        if startupPresentation.requestID != requestID {
+            startupPresentation.commit(requestID, activationUptime: preparedRecordingStart.activationUptime)
+        }
+        return true
+    }
+
+    func recordStartupPlaceholderDraw(requestID: UUID, uptime: TimeInterval) {
+        guard let milliseconds = startupPresentation.firstDraw(requestID, uptime: uptime) else { return }
+        // Counts/timing only. A drawn shell proves acknowledgement, not PCM or
+        // provider health, and the compositor's physical display remains separate.
+        vippLog.info("record start: HUD placeholder drawn sinceReservationMs=\(milliseconds, privacy: .public) requestID=\(requestID.uuidString, privacy: .public)")
+    }
 
     /// Typing intent is keyed to an already-owned start; it cannot retarget or
     /// focus a newer session. A late Command in the same chord closes capture
@@ -260,9 +292,10 @@ class VoiceInkEngine: NSObject, ObservableObject {
                     }
                 }
             } else if session.liveRecordingState == .starting {
-                typingFocusStartID = requestID
+                typingFocusStartID = nil
                 session.microphoneOff = true
                 session.hasCapturedAudio = false
+                session.typingFocus.requestInitialFocus()
             }
         } else if recordingStartReservation.pendingID == requestID {
             typingFocusStartID = requestID
@@ -273,11 +306,15 @@ class VoiceInkEngine: NSObject, ObservableObject {
     /// Keyboard-only composing still uses normal Primary finish while its mic is off.
     func toggleSessionMicrophone(_ session: RecordingSession) async {
         guard activeRecordingSession === session, session.canTypeInHUD,
+              session.liveRecordingState.isRecordingOrPaused,
               !session.microphoneTransitionPending else { return }
         session.microphoneTransitionPending = true
         defer { session.finishMicrophoneTransition() }
         do {
             if session.microphoneOff || session.liveRecordingState == .paused {
+                // Typing may coexist with a reminder, but actual capture may not.
+                // Revoke our admitted child before the hardware-start await.
+                CodexSpeechPlaybackReceiver.shared.silenceBeforeRecording()
                 try await recorder.enableMicrophoneCapture()
                 // Stop can publish .transcribing while waiting for this transition.
                 // Retain the fact that AUHAL captured audio before the live-UI guard,
@@ -288,7 +325,10 @@ class VoiceInkEngine: NSObject, ObservableObject {
                 session.liveRecordingState = .recording
                 let prepare = session.prepareMicrophoneTranscription
                 session.prepareMicrophoneTranscription = nil
-                try await prepare?()
+                // Realtime setup cannot throw: a provider failure keeps this enabled
+                // capture on its completed-WAV fallback, so derived state below is always
+                // recomputed instead of reporting a false microphone failure.
+                await prepare?()
             } else {
                 try await recorder.pauseRecording()
                 guard activeRecordingSession === session, session.phase == .recording else { return }
@@ -320,6 +360,20 @@ class VoiceInkEngine: NSObject, ObservableObject {
     /// closes the tiny consumed-reservation-to-session-card boundary for UI decisions.
     var hasActiveCaptureOwner: Bool {
         activeRecordingDeliveryBarrier.isDeliveryBlocked
+    }
+
+    var blocksSpokenReminders: Bool {
+        let session = activeRecordingSession
+        return CodexSpeechCapturePolicy.blocksReminder(
+            hasCaptureOwner: hasActiveCaptureOwner,
+            pendingStart: hasPendingRecordingStart,
+            pendingTypingStart: recordingStartReservation.pendingID != nil
+                && typingFocusStartID == recordingStartReservation.pendingID,
+            liveState: session?.liveRecordingState,
+            microphoneOff: session?.microphoneOff == true,
+            beganMicrophoneOff: session?.beganMicrophoneOff == true,
+            microphoneTransitionPending: session?.microphoneTransitionPending == true
+        )
     }
 
     let recorder = Recorder()
@@ -476,6 +530,24 @@ class VoiceInkEngine: NSObject, ObservableObject {
         return session.id
     }
 
+    var pendingTypingClipboardOnlySessionID: UUID? {
+        guard activeRecordingSession == nil,
+              let session = topInFlightSession,
+              session.acceptsTypingClipboardOnlyCompletion else { return nil }
+        return session.id
+    }
+
+    func armTypingClipboardOnlyCompletion(sessionID: UUID) {
+        guard let session = activeRecordingSession, session.id == sessionID else { return }
+        session.armTypingClipboardOnlyCompletion()
+    }
+
+    func selectTypingClipboardOnlyCompletion(sessionID: UUID) -> Bool {
+        guard pendingTypingClipboardOnlySessionID == sessionID,
+              let session = topInFlightSession else { return false }
+        return session.selectTypingClipboardOnlyCompletion()
+    }
+
     /// Applies Won't paste to the first click's result, never an older replacement.
     @discardableResult
     func selectPendingClipboardOnlyCompletion(sessionID: UUID) -> Bool {
@@ -582,11 +654,25 @@ class VoiceInkEngine: NSObject, ObservableObject {
     /// Remove a finished/aborted session from the collection + recompute derived state.
     /// SwiftUI animates the card out (transition on the `sessions` array).
     private func removeSession(_ session: RecordingSession) {
+        startupPresentation.clear(session.startID)
         session.phase = .done
         session.endLiveSelectionCapture()
         session.clearContext()
         sessions.removeAll { $0.id == session.id }
         recomputeDerivedState()
+    }
+
+    var onHUDPauseRequested: (() -> Void)?
+
+    func toggleRecordingPauseFromHUD(_ session: RecordingSession) async {
+        guard activeRecordingSession === session, session.phase == .recording,
+              session.liveRecordingState.isRecordingOrPaused,
+              !session.microphoneTransitionPending, !session.shouldCancel else { return }
+        // An explicit UI pause supersedes an undecided Primary click sequence.
+        // Otherwise its delayed stop could finalize the session just paused here.
+        // Do not put this cancellation inside the gesture's own pause path.
+        onHUDPauseRequested?()
+        await toggleRecordingPause()
     }
 
     /// Toggles capture for the existing mic-owning session without finalizing its
@@ -620,6 +706,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
                 vippLog.info("recording pause toggle: session \(session.id.uuidString, privacy: .public) capture=paused playback=unchanged")
 
             case .paused:
+                CodexSpeechPlaybackReceiver.shared.silenceBeforeRecording()
                 try await recorder.enableMicrophoneCapture()
                 // The stop path waits for this transition; it still owns the audio
                 // even if it has already moved this session out of recording.
@@ -634,7 +721,9 @@ class VoiceInkEngine: NSObject, ObservableObject {
                 session.microphoneOff = false
                 let prepare = session.prepareMicrophoneTranscription
                 session.prepareMicrophoneTranscription = nil
-                try await prepare?()
+                // Non-throwing realtime setup: resume must not report failure, or leave the
+                // engine's derived state paused, after capture has already restarted.
+                await prepare?()
                 vippLog.info("recording pause toggle: session \(session.id.uuidString, privacy: .public) capture=resumed playback=unchanged")
 
             default:
@@ -733,16 +822,33 @@ class VoiceInkEngine: NSObject, ObservableObject {
         return true
     }
 
+    /// The focused HUD editor keeps both finishes on existing session routes:
+    /// Command+Enter uses Primary with one-shot send/steer; Esc uses clipboard-only
+    /// recovery. Neither captures a composer, changes Mode or bypasses the barrier.
+    private func finishTypedInput(_ session: RecordingSession, withoutPasting: Bool = false) async {
+        guard activeRecordingSession === session,
+              session.liveRecordingState.isRecordingOrPaused,
+              !session.shouldCancel else { return }
+        await toggleRecord(
+            stopPasteDestination: .primaryCurrentInput,
+            // Esc reuses clipboard/History finalization, including recovery and
+            // normal formatting. It must never become Cancel or paste-only Return.
+            completionDisposition: withoutPasting ? .clipboardOnly : .normalDelivery,
+            autoSendDisposition: withoutPasting ? .configured : .commandEnterOnce,
+            stopPlaybackDisposition: .restoreOwnedPlayback
+        )
+    }
+
     // MARK: - Toggle Record
 
     /// Reserve one prospective recording before the idle-only Primary debounce yields.
     /// The delivery barrier must begin at the physical single-press candidate, not
     /// 0.45 seconds later, so an older FIFO transcript cannot press Return underneath
-    /// the user's new capture intent. Capture the passive Next-only input now as well:
-    /// Electron's exact pre-chord snapshot expires before the debounce timer does.
+    /// the user's new capture intent. Original-input capture is now unused/off;
+    /// reserve lifecycle ownership without reading or saving the current composer.
     /// A matching second click cancels this token without showing UI, touching audio,
     /// pausing media, or posting the YouTube recording-start notification.
-    func reserveRecordingStart() -> UUID? {
+    func reserveRecordingStart(microphoneOff: Bool = false) -> UUID? {
         assert(activeRecordingSession == nil, "one-active-recording invariant violated")
         guard !isResettingRecordingSession else {
             vippLog.notice("record start reservation ignored while a full recording reset is draining old jobs")
@@ -753,21 +859,37 @@ class VoiceInkEngine: NSObject, ObservableObject {
             return nil
         }
 
+        // The four-key typing chord reserves delivery, not microphone capture.
+        // Bind its intent before this boundary so starting typing neither kills
+        // admitted speech nor makes the receiver mistake it for a voice start.
+        if microphoneOff { typingFocusStartID = requestID }
+        else { CodexSpeechPlaybackReceiver.shared.silenceBeforeRecording() }
         activeRecordingDeliveryBarrier.beginCapture(owner: requestID)
+        let activationTime = Date()
         let captureStartedAt = ProcessInfo.processInfo.systemUptime
-        let focusedInput = FocusLockService.shared.captureRecordingStartInputSnapshot()
+        let focusedInput: FocusLockService.Target?
+        if FocusLockService.recordingStartInputCaptureEnabled {
+            focusedInput = FocusLockService.shared.captureRecordingStartInputSnapshot()
+        } else {
+            // Primary deliberately follows keyboard focus at final delivery. The
+            // unused Next-start feature must not pay for an original-input scan.
+            focusedInput = nil
+        }
         let captureMilliseconds = Int(
             (ProcessInfo.processInfo.systemUptime - captureStartedAt) * 1_000
         )
         vippLog.info("record start reservation: passive Next capture durationMs=\(captureMilliseconds, privacy: .public) requestID=\(requestID.uuidString, privacy: .public) targetCaptured=\(focusedInput != nil, privacy: .public)")
         preparedRecordingStart = PreparedRecordingStart(
             requestID: requestID,
+            activationTime: activationTime,
+            activationUptime: captureStartedAt,
             focusedInput: focusedInput
         )
         return requestID
     }
 
     func cancelRecordingStartReservation(_ requestID: UUID) {
+        startupPresentation.clear(requestID)
         if typingFocusStartID == requestID { typingFocusStartID = nil }
         guard recordingStartReservation.pendingID == requestID else { return }
         if preparedRecordingStart?.requestID == requestID {
@@ -885,7 +1007,8 @@ class VoiceInkEngine: NSObject, ObservableObject {
             // genuine Primary double-click therefore leaves a reopenable draft even
             // if the provider or app exits before the final clipboard result arrives.
             active.recoverablePartialTranscript = LiveSelectionReference.interleaving(
-                active.liveSelectionReferences, with: active.partialTranscript
+                active.liveSelectionReferencesForDelivery, with: active.partialTranscript,
+                includeTiming: true
             )
             active.partialTranscript = ""
             active.startID = UUID() // invalidate the start handshake token (it has fully started)
@@ -981,6 +1104,21 @@ class VoiceInkEngine: NSObject, ObservableObject {
                 vippLog.notice("toggleRecord: stale reserved START refused requestID=\(startRequestID.uuidString, privacy: .public)")
                 return
             }
+            // Commit only after the pending-result gesture decision has accepted
+            // Start. Render acknowledgement before costly setup, without faking
+            // .starting. Unused original-input capture remains disabled.
+            guard commitRecordingStartPresentation(startRequestID) else {
+                cancelRecordingStartReservation(startRequestID)
+                return
+            }
+            await recorderUIManager?.flushStartupPresentation(requestID: startRequestID)
+            // Rendering yields: reset, a disabled mouse gate or a stale callback
+            // must not resurrect a canceled request or consume a newer one.
+            guard canCommitRecordingStartReservation(startRequestID) else {
+                cancelRecordingStartReservation(startRequestID)
+                await recorderUIManager?.dismissRecorderPanel()
+                return
+            }
             self.preparedRecordingStart = nil
 
             let canContinueAssistantSession = isAssistantFollowUp && assistantSession.canSendFollowUp
@@ -990,10 +1128,11 @@ class VoiceInkEngine: NSObject, ObservableObject {
                 assistantSession.reset()
             }
 
-            // This passive recording-start capture exists solely for a possible Next
-            // stop. A normal Primary stop discards it structurally and never enters an
-            // app-specific resolver, even though the user could choose Next later.
+            // This is nil while original-input capture is unused/off. Primary
+            // continues to own no saved input or destination Mode; it follows the
+            // current system-focused input when the final paste is issued.
             let recordingStartFocusedInput = preparedRecordingStart.focusedInput
+            let activationTime = preparedRecordingStart.activationTime
             let recordingStartIdentityTask: Task<
                 FocusLockService.Target,
                 Never
@@ -1021,6 +1160,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
                     if granted {
                         await self.startNewSession(
                             startRequestID: startRequestID,
+                            activationTime: activationTime,
                             modeId: modeId,
                             useCase: useCase,
                             recordingStartFocusedInput:
@@ -1030,9 +1170,8 @@ class VoiceInkEngine: NSObject, ObservableObject {
                         )
                     } else {
                         recordingStartIdentityTask?.cancel()
-                        self.recordingStartReservation.cancel(startRequestID)
-                        self.activeRecordingDeliveryBarrier.endCapture(owner: startRequestID)
-                        self.reportUnresolvedPrimaryAutoSendIfQueueDrained()
+                        self.cancelRecordingStartReservation(startRequestID)
+                        await self.recorderUIManager?.dismissRecorderPanel()
                         self.logger.error("Recording permission denied")
                     }
                 }
@@ -1047,6 +1186,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
     // session prepare, model preload), and appends it to `sessions` with phase .recording.
     private func startNewSession(
         startRequestID: UUID,
+        activationTime: Date,
         modeId: UUID?,
         useCase: RecordingSession.UseCase,
         recordingStartFocusedInput: FocusLockService.Target?,
@@ -1070,9 +1210,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
         }
         guard captureMayStart else {
             recordingStartIdentityTask?.cancel()
-            recordingStartReservation.cancel(startRequestID)
-            activeRecordingDeliveryBarrier.endCapture(owner: startRequestID)
-            reportUnresolvedPrimaryAutoSendIfQueueDrained()
+            cancelRecordingStartReservation(startRequestID)
             vippLog.notice("startNewSession: START reservation canceled while waiting for an older delivery requestID=\(startRequestID.uuidString, privacy: .public)")
             return
         }
@@ -1081,7 +1219,10 @@ class VoiceInkEngine: NSObject, ObservableObject {
         // reservation owned across that wait so no second start can overtake it, then
         // revalidate the token before creating a session or touching shared resources.
         if let resourceCleanupTask {
+            let cleanupWaitStarted = ProcessInfo.processInfo.systemUptime
             await resourceCleanupTask.value
+            let cleanupWaitMs = Int((ProcessInfo.processInfo.systemUptime - cleanupWaitStarted) * 1_000)
+            vippLog.info("record start: cleanup wait completed durationMs=\(cleanupWaitMs, privacy: .public) requestID=\(startRequestID.uuidString, privacy: .public)")
         }
 
         // Consume the exact reservation before creating the session. MainActor isolation
@@ -1089,6 +1230,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
         // events cannot append another mic owner.
         guard recordingStartReservation.consume(startRequestID),
               activeRecordingSession == nil else {
+            startupPresentation.clear(startRequestID)
             recordingStartIdentityTask?.cancel()
             activeRecordingDeliveryBarrier.endCapture(owner: startRequestID)
             reportUnresolvedPrimaryAutoSendIfQueueDrained()
@@ -1107,6 +1249,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
             from: startRequestID,
             to: session.id
         ) else {
+            startupPresentation.clear(startRequestID)
             recordingStartIdentityTask?.cancel()
             // Normally a failed transfer means reset already removed the reservation.
             // Defensively release it anyway: a duplicate destination owner must not
@@ -1119,19 +1262,42 @@ class VoiceInkEngine: NSObject, ObservableObject {
         // Born .recording but we drive it through .starting → .recording during the handshake.
         session.liveRecordingState = .starting
         session.microphoneOff = typingFocusStartID == startID
+        session.beganMicrophoneOff = session.microphoneOff
         session.hasCapturedAudio = !session.microphoneOff
+        session.onTypingSubmit = { [weak self, weak session] in
+            guard let self, let session else { return }
+            Task { @MainActor in await self.finishTypedInput(session) }
+        }
+        session.onTypingFinishWithoutPasting = { [weak self, weak session] in
+            guard let self, let session else { return }
+            Task { @MainActor in await self.finishTypedInput(session, withoutPasting: true) }
+        }
         session.onMicrophoneToggle = { [weak self, weak session] in
             guard let self, let session else { return }
             Task { @MainActor in await self.toggleSessionMicrophone(session) }
         }
+        session.onPauseToggle = { [weak self, weak session] in
+            guard let self, let session else { return }
+            Task { @MainActor in await self.toggleRecordingPauseFromHUD(session) }
+        }
 
         // Append to the collection so the card appears immediately (shows the .starting state).
+        // One synchronous handoff: the real card replaces acknowledgement without
+        // a fake session, empty frame or second entrance animation.
+        startupPresentation.handoff(startRequestID)
         sessions.append(session)
         recomputeDerivedState()
         // The user's composing session starts now, not after the microphone
         // handshake. Catch first highlights during startup and before explicit
         // typing focus moves into our panel. removeSession owns cancellation.
-        session.beginLiveSelectionCapture()
+        session.beginLiveSelectionCapture(activationTime: activationTime)
+        if session.microphoneOff {
+            // The explicit keyboard chord owns focus as soon as its editor
+            // mounts, not after the microphone/WAV handshake. Capture the
+            // pre-existing selection first; never focus a different session.
+            typingFocusStartID = nil
+            session.typingFocus.requestInitialFocus()
+        }
 
         if let recordingStartIdentityTask,
            let recordingStartFocusedInput {
@@ -1249,11 +1415,16 @@ class VoiceInkEngine: NSObject, ObservableObject {
             session.liveRecordingState = .recording
             session.phase = .recording
             recomputeDerivedState()
+            session.dispatchPendingTypingSubmit()
             if typingFocusStartID == startID {
                 typingFocusStartID = nil
                 session.typingFocus.requestInitialFocus()
             }
-            if session.recordingStartFocusedInput == nil {
+            // Do not silently revive unused original-input capture after audio
+            // starts. That retry otherwise scans the chat again (or even the HUD)
+            // despite deliberately skipping the shortcut/reservation reads.
+            if FocusLockService.recordingStartInputCaptureEnabled,
+               session.recordingStartFocusedInput == nil {
                 let retryTarget = FocusLockService.shared
                     .captureFocusedInputSnapshot(
                         allowApplicationFallback: true
@@ -1335,7 +1506,10 @@ class VoiceInkEngine: NSObject, ObservableObject {
                             session.partialTranscript = partial
                             self.persistRecoveryJournal(
                                 for: session,
-                                realtimeDraftText: partial
+                                realtimeDraftText: LiveSelectionReference.interleaving(
+                                    session.liveSelectionReferencesForRecovery, with: partial,
+                                    includeTiming: true
+                                )
                             )
                             // Mirror to the engine's derived partial only while this is the
                             // active recording session (it always is here, but be explicit).
@@ -1346,56 +1520,31 @@ class VoiceInkEngine: NSObject, ObservableObject {
                     }
                 )
                 session.transcriptionSession = streamingSession
-                let realCallback = try await streamingSession.prepare(
-                    configuration: transcriptionConfiguration
-                )
-
-                // `prepare` is async. Session A may have stopped and session B may now
-                // own the shared Recorder while this await was suspended. Never install
-                // A's callback into B's recorder: that would route B's microphone chunks
-                // into A's streaming provider and is a direct old/new transcript race.
-                guard session.liveRecordingState.isRecordingOrPaused,
-                      self.activeRecordingSession === session,
-                      session.startID == startID,
-                      !session.shouldCancel else {
-                    streamingSession.cancel()
-                    return
-                }
-
-                if let realCallback {
-                    switch startupAudioRouter.activate(realCallback) {
-                    case .connected(let replayedChunks, let replayedBytes):
-                        vippLog.info("streaming startup audio connected replayedChunks=\(replayedChunks, privacy: .public) replayedBytes=\(replayedBytes, privacy: .public)")
-                    case .fallbackRequired(let droppedChunks, let droppedBytes):
-                        // The WAV has every frame. Keep the recording usable by disabling
-                        // only its incomplete realtime session; normal stop will use the
-                        // same frozen OpenAI prompt/Vocabulary with completed-file audio.
-                        streamingSession.cancel()
-                        session.transcriptionSession = nil
-                        session.showsRealtimeTranscriptHUD = false
-                        startupAudioRouter.close()
-                        self.recorder.onAudioChunk = nil
-                        recomputeDerivedState()
-                        vippLog.warning("streaming startup audio exceeded its bound; using complete WAV fallback droppedChunks=\(droppedChunks, privacy: .public) droppedBytes=\(droppedBytes, privacy: .public)")
-                        NotificationManager.shared.showNotification(
-                            title: String(localized: "Realtime startup took too long; this recording will transcribe after stop"),
-                            type: .warning
-                        )
-                    case .closed:
-                        streamingSession.cancel()
-                        session.transcriptionSession = nil
-                        session.showsRealtimeTranscriptHUD = false
-                        self.recorder.onAudioChunk = nil
-                        recomputeDerivedState()
+                // Realtime is an optional accelerator on top of capture that is already
+                // live (WAV open, microphone capturing). Resolve every provider outcome
+                // without throwing: connect, keep this still-live recording on its
+                // complete-WAV fallback, or release a superseded attempt. A thrown
+                // preparation must never reach the hardware-start catch below, which stops
+                // the shared Recorder, deletes the WAV/journal and dismisses the HUD.
+                // Ownership is re-evaluated after the await, so A's late result can never
+                // install a callback into, or detach, B's Recorder.
+                let outcome = await RealtimeTranscriptionStartup.prepare(
+                    streamingSession: streamingSession,
+                    configuration: transcriptionConfiguration,
+                    session: session,
+                    startupAudioRouter: startupAudioRouter,
+                    ownsLiveCapture: { [weak self, weak session] in
+                        guard let self, let session else { return false }
+                        return session.liveRecordingState.isRecordingOrPaused
+                            && self.activeRecordingSession === session
+                            && session.startID == startID
+                            && !session.shouldCancel
+                    },
+                    detachRecorderAudio: { [weak self] in
+                        self?.recorder.onAudioChunk = nil
                     }
-                } else {
-                    streamingSession.cancel()
-                    session.transcriptionSession = nil
-                    session.showsRealtimeTranscriptHUD = false
-                    startupAudioRouter.close()
-                    self.recorder.onAudioChunk = nil
-                    recomputeDerivedState()
-                }
+                )
+                self.applyRealtimeStartupOutcome(outcome, sessionID: session.id)
             } else {
                 session.transcriptionSession = nil
                 startupAudioRouter.close()
@@ -1408,7 +1557,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
             if session.microphoneOff { return }
             let prepare = session.prepareMicrophoneTranscription
             session.prepareMicrophoneTranscription = nil
-            try await prepare?()
+            await prepare?()
 
             // Best-effort model preload so the eventual transcribe is fast. Use this
             // recording's frozen model; rereading the global Mode here lets a newer
@@ -1443,10 +1592,49 @@ class VoiceInkEngine: NSObject, ObservableObject {
 
         } catch {
             activeModeTask.cancel()
+            // A recorder-start failure may tear down shared capture only while this same
+            // start still owns its session. Cancel, an overlapping normal stop and reset
+            // replace the token or remove the session and already own teardown; repeating
+            // it here could stop a newer session's Recorder, release its media/mute
+            // leases, delete audio an enqueued pipeline owns, or claim a failed start.
+            guard RecorderPanelLifecyclePolicy.startFailureOwnsCaptureTeardown(
+                startTokenIsCurrent: session.startID == startID,
+                sessionIsRegistered: self.sessions.contains(where: { $0 === session }),
+                sessionStillOwnsMic: self.activeRecordingSession === session
+            ) else {
+                vippLog.info("startNewSession: start failure arrived after its lifecycle was superseded; shared Recorder, audio, History and HUD left to their owner sessionID=\(session.id.uuidString, privacy: .public)")
+                return
+            }
             self.logger.error("Recording failed to start: \(error, privacy: .public)")
             await self.recorder.stopRecording()
             session.transcriptionSession?.cancel()
-            discardUnusableRecordingAndJournal(for: session)
+            // Keyboard input can now precede the audio handshake. A failed
+            // microphone start must not discard prose already authored here.
+            // Preserve it locally; never paste or submit from an error path.
+            // The recovery view includes a still-editable, uncommitted run.
+            if !session.shouldCancel,
+               session.liveSelectionReferencesForRecovery.contains(where: \.isTypedText) {
+                RecorderTypingTextView.releaseKeyboardBeforeFinish()
+                session.endLiveSelectionCapture()
+                let draft = LiveSelectionReference.interleaving(
+                    session.liveSelectionReferencesForDelivery, with: session.partialTranscript,
+                    includeTiming: true
+                )
+                let record = Transcription(text: draft, duration: 0,
+                    realtimeDraftText: draft, preservesOriginalAudioForRecovery: true,
+                    transcriptionStatus: .recoverableDraft)
+                modelContext.insert(record)
+                do {
+                    try modelContext.save()
+                    discardUnusableRecordingAndJournal(for: session)
+                    NotificationCenter.default.post(name: .transcriptionCreated, object: record)
+                } catch {
+                    persistRecoveryJournal(for: session, realtimeDraftText: draft)
+                    logger.error("Could not save typing after startup failure: \(error, privacy: .public)")
+                }
+            } else if !session.shouldCancel {
+                discardUnusableRecordingAndJournal(for: session)
+            }
             self.removeSession(session)
             self.activeRecordingDeliveryBarrier.endCapture(owner: session.id)
             self.reportUnresolvedPrimaryAutoSendIfQueueDrained()
@@ -1471,6 +1659,39 @@ class VoiceInkEngine: NSObject, ObservableObject {
 
     private func requestRecordPermission(response: @escaping (Bool) -> Void) {
         response(true)
+    }
+
+    /// Present one realtime startup decision. RealtimeTranscriptionStartup has already
+    /// changed only this session's optional realtime state. A superseded result must not
+    /// notify or recompute on behalf of a newer recording.
+    private func applyRealtimeStartupOutcome(
+        _ outcome: RealtimeTranscriptionStartup.Outcome,
+        sessionID: UUID
+    ) {
+        switch outcome {
+        case .connected(let replayedChunks, let replayedBytes):
+            vippLog.info("streaming startup audio connected replayedChunks=\(replayedChunks, privacy: .public) replayedBytes=\(replayedBytes, privacy: .public)")
+        case .completedFileFallback(let reason):
+            recomputeDerivedState()
+            switch reason {
+            case .startupAudioOverflow(let droppedChunks, let droppedBytes):
+                vippLog.warning("streaming startup audio exceeded its bound; using complete WAV fallback droppedChunks=\(droppedChunks, privacy: .public) droppedBytes=\(droppedBytes, privacy: .public)")
+                NotificationManager.shared.showNotification(
+                    title: String(localized: "Realtime startup took too long; this recording will transcribe after stop"),
+                    type: .warning
+                )
+            case .providerPreparationFailed:
+                vippLog.warning("streaming provider preparation failed; capture continues with complete WAV fallback session=\(sessionID.uuidString, privacy: .public)")
+                NotificationManager.shared.showNotification(
+                    title: String(localized: "Realtime unavailable — recording continues"),
+                    type: .warning
+                )
+            case .startupRouterClosed, .noLiveAudioCallback:
+                vippLog.info("streaming startup has no live audio route reason=\(String(describing: reason), privacy: .public); capture continues with complete WAV fallback session=\(sessionID.uuidString, privacy: .public)")
+            }
+        case .supersededAttemptReleased:
+            vippLog.info("streaming startup superseded after its recording stopped or was canceled; newer capture, audio and HUD untouched session=\(sessionID.uuidString, privacy: .public)")
+        }
     }
 
     // MARK: - Recording Context
@@ -1571,7 +1792,8 @@ class VoiceInkEngine: NSObject, ObservableObject {
                     Task { @MainActor in await self.retryFailedTranscription(retry) }
                 })
             },
-            preservesErrorCopyAction: true
+            preservesErrorCopyAction: true,
+            copyText: notice.copyText
         )
     }
 
@@ -1787,6 +2009,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
         session.phase = .delivering // pipeline is running; mark past pure-transcribing
         session.liveRecordingState = .transcribing
         var failureTitle: String?
+        var failureCopyText: String?
 
         let jobIsCurrent: @MainActor () -> Bool = { [weak self, weak session, weak transcription] in
             guard let self, let session, let transcription else { return false }
@@ -1895,8 +2118,21 @@ class VoiceInkEngine: NSObject, ObservableObject {
             skipPostProcessing: { [weak session] in
                 session?.skipPostProcessing == true
             },
+            onPersonalNoteDetected: { [weak session] in
+                // The spoken note joins the existing per-session raw/skip policy.
+                // Queue-tail eligibility must see it too: a personal note is not
+                // an ordinary Primary successor that may eventually press Return.
+                // Never mutate the global Mode or the next recording's defaults.
+                session?.skipPostProcessing = true
+            },
             completionPolicy: { [weak session] in
                 await session?.freezeCompletionPolicy() ?? .normal
+            },
+            pendingTypingClipboardOnly: { [weak session] in
+                session?.typingClipboardOnlySelected == true
+            },
+            commitTypingCompletion: { [weak session] in
+                await session?.commitTypingCompletion() == true
             },
             recoverablePartialTranscript: { [weak session] in
                 session?.recoverablePartialTranscript ?? ""
@@ -1991,7 +2227,8 @@ class VoiceInkEngine: NSObject, ObservableObject {
                     self.assistantSession.fail(message)
                 }
             ),
-            onTranscriptionFailure: { failureTitle = $0 }
+            onTranscriptionFailure: { failureTitle = $0 },
+            onFailureCopyText: { failureCopyText = $0 }
         )
 
         vippLog.info("pipeline run END \(job.identity.logDescription, privacy: .public) status=\(transcription.transcriptionStatus ?? "nil", privacy: .public) finalChars=\(transcription.text.count, privacy: .public) finalDigest=\(TranscriptionLineageDigest.make(transcription.enhancedText ?? transcription.text), privacy: .public)")
@@ -2004,6 +2241,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
         let failureNotice = (shouldPresentFailure ? failureTitle : nil).map {
             TranscriptionFailureNotice(
                 title: $0,
+                copyText: failureCopyText,
                 retry: FailedTranscriptionRetry(generation: job.identity.generation, session: session, transcription: transcription)
             )
         }
@@ -2096,11 +2334,12 @@ class VoiceInkEngine: NSObject, ObservableObject {
             // delete action removes the file.
             session.startID = UUID() // invalidate start handshake
             RecorderTypingTextView.releaseKeyboardBeforeFinish()
+            session.endLiveSelectionCapture()
             session.recoverablePartialTranscript = LiveSelectionReference.interleaving(
-                session.liveSelectionReferences, with: session.partialTranscript
+                session.liveSelectionReferencesForDelivery, with: session.partialTranscript,
+                includeTiming: true
             )
             session.partialTranscript = ""
-            session.endLiveSelectionCapture()
             session.clearContext()
             await session.waitForMicrophoneTransition()
             await recorder.stopRecording()
@@ -2146,6 +2385,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
         // jobs still recheck generation after their previous tail returns, and a running
         // pipeline must pass isDeliveryAuthorized before it can paste completed text.
         preparedRecordingStart = nil
+        startupPresentation = RecorderStartupPresentation()
         recordingStartReservation.invalidate()
         activeRecordingDeliveryBarrier.reset()
         primaryQueuedAutoSendTracker.reset()

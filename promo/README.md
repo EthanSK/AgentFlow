@@ -14,7 +14,10 @@ Source for the narrated video on the [Agent Flow website](https://ethansk.github
 - `render.mjs` renders the frames in headless Google Chrome, mixes the voice over the music,
   normalizes loudness and writes `docs/assets/agentflow-promo.mp4` (H.264 video, AAC audio),
   the captions `docs/assets/agentflow-promo.vtt` and the poster
-  `docs/assets/agentflow-promo-poster.jpg`.
+  `docs/assets/agentflow-promo-poster.jpg`. With `--reuse-audio` it instead keeps the
+  published soundtrack and captions and redraws only the picture (see below).
+- `published-video.json` is written by every publishing render: the soundtrack's audio-packet
+  hash, where its timing came from, and hashes of the files that drew the picture.
 
 ## narration.json
 
@@ -56,12 +59,54 @@ the published video. `--draft` and `--stills` only write where `--out` points. F
 a work folder (`--work DIR`, default in the system temp folder) as an encoded picture cache and reused when the timing hasn't
 changed, so remixing a new voice take is quick.
 
+### Redraw the picture over the published soundtrack
+
+The original voice takes aren't in the repository. When only the picture changes, `--reuse-audio`
+renders the current `scene.html` onto the published video's own timeline and copies its audio
+packets unchanged, so the voice, music and interface sounds stay exactly as published:
+
+```sh
+cd promo
+npm ci
+W=/path/to/task/work          # explicit work folder: frame cache and a private copy of the source
+node render.mjs --plan --reuse-audio --work "$W"                        # measured timing, no writes outside $W
+node render.mjs --stills --reuse-audio --work "$W" --out "$W/stills"    # frames to inspect
+node render.mjs --reuse-audio --work "$W" --out "$W/promo-preview.mp4"  # full preview, outside docs/
+node render.mjs --reuse-audio --work "$W"                               # publish into docs/assets
+```
+
+- **Timing comes from the published captions**, which were written from the measured voice takes:
+  each cue starts at its line's real start and ends 0.35 s after its last sound. Every caption
+  must match `narration.json` word for word, and the render stops instead of guessing if a cue's
+  end was clipped by the next line or the video's end. Starts that differ from `narration.json`
+  are used as measured and reported, never snapped to the beat.
+- The video's length and frame count come from the published MP4 (30 fps), and the new video
+  must have exactly the same number of frames.
+- Within a dictation line, words appear by syllable across its measured length; per-word timing
+  from the original takes isn't recoverable. The recorder waveform follows the published mix
+  inside the dictation lines only.
+- The audio is muxed with `-c copy` in the work folder and published only if its packet hash
+  (ffmpeg `streamhash`, SHA-256) equals the source's. The captions are kept byte for byte. If
+  `published-video.json` records a different soundtrack, the render refuses to continue.
+- Interface sounds (clicks, keystrokes, chimes, shutter, whoosh) are baked into that audio at the
+  moments in `timeline.mjs`. Only move the camera or silent motion; changing a sounding moment's
+  offset would put the picture out of sync with its own sounds. Before the first reuse, check
+  with `git log` that the sounding moments in `timeline.mjs` and `music.mjs` are unchanged since
+  the published MP4 was committed, and watch the clicks against the preview.
+- A preview (`--out`) writes `<name>.mp4`, `.vtt`, `-poster.jpg` and `.receipt.json` beside it.
+  Without `--out`, the video and poster in `docs/assets` are replaced, the captions are left
+  as they are, and `promo/published-video.json` is updated. Needs ffmpeg/ffprobe 4.4 or later.
+- `docs/index.html` already asks for the video and poster as `?v=458-plain-opening` for this
+  redraw; the captions keep their query because they don't change. A later re-render needs a new
+  value there, and that is a website change (Opus-authored, see `AGENTS.md`).
+
 ## Story
 
 Talk, highlight a function, take a screenshot, then type an exact name in the recorder's
 "Click to type" line during the pause after the screenshot line (no one speaks it; soft
-keystrokes mark it). Codex comes forward, the stop sends one short message, and the full-prompt
-link opens Agent Flow's prompt viewer under "…so your agent can see what you were looking at."
+keystrokes mark it). Codex comes forward from the Dock on the left edge (the recorder sits on
+the screen's bottom edge), the stop sends one message, and its ↗ full-prompt link opens Agent
+Flow's prompt viewer under "…so your agent can see what you were looking at."
 
 ## Sound
 
@@ -86,15 +131,20 @@ link opens Agent Flow's prompt viewer under "…so your agent can see what you w
 - The narration makes only claims the website already makes. The dictation, selection and
   screenshot path are the website demo's invented example; never put real selections, paths or
   messages in the scene.
-- The recorder is the website's stylized recorder (black panel, live words, stop control, mint
-  waveform), not a pixel copy of the app. Codex appears only as a plain text label, with no logo.
-- After the stop, Codex's single message and the prompt viewer mirror `AgentFlowPromptPreview`
-  and `AgentFlowPromptViewer` in the local build after public v2.0.366: rainbow authored words
-  (Colored context on) with `<selection>` and `<screenshot>` markers, then
-  `Read the full prompt before answering.`, whose "full prompt" is the only link. The Codex Mode
-  shown has auto-send on, so the raw paste is visible for an instant before it renders. The link
-  is a local file; nothing is uploaded.
-- While the public download is older than that build, the website keeps its "Next release" fact
-  beside the demo. Remove that fact when the download includes the short preview.
+- The recorder is the website's stylized recorder (black panel, live words, Stop and Pause
+  controls, mint waveform), not a pixel copy of the app. Like the native panel since build 457,
+  its bottom edge sits on the screen's bottom edge. Codex appears only as a plain text label,
+  with no logo.
+- After the stop, Codex's message and the prompt viewer mirror `AgentFlowPromptPreview.make`
+  and `AgentFlowPromptViewer.html` in v2.0.458. The opening is plain and editable: a `↗` link to
+  the full prompt, every authored word, and `<selection>`/`<screenshot>` as inline code. A
+  message this short then gets the canonical timeline underneath (italic tags in fixed colours,
+  rainbow authored words); only a message of 5,000 UTF-16 units or more ends with the
+  `Read the full prompt before answering.` link instead. The viewer has no "Your words" or
+  "Full source" copy. Timing attributes in the message are drawn as `…`, as on the website.
+  The Codex Mode shown has auto-send on, so the raw paste is visible for an instant before it
+  renders. Both links are local files; nothing is uploaded.
+- The published MP4 must be re-rendered from this scene (`--reuse-audio` keeps its soundtrack)
+  before it represents v2.0.458; until then it shows the earlier rainbow opening.
 - When the site's demo or those claims change, update `narration.json` and the scene to match,
   then re-render.

@@ -1,9 +1,34 @@
 /* global chrome, createChromeTabHistoryController, createChromeWebsiteOpener */
 
-importScripts('tab-history.js', 'website-opener.js');
+importScripts('tab-history.js', 'website-opener.js', 'generic-video-router.js');
 
 const nativeHostName = 'com.ethan.youtube_spotify_media_key';
-const youtubeUrlPatterns = ['*://youtube.com/*', '*://*.youtube.com/*'];
+// IPC names stay stable for the installed native helper, but the browser owns ordinary HTTP(S)
+// videos too. Restricted Chrome pages and file URLs are deliberately outside this permission.
+const youtubeUrlPatterns = ['http://*/*', 'https://*/*'];
+const genericVideoRouter = typeof createGenericVideoRouter === 'function' ? createGenericVideoRouter(chrome) : null;
+// The router owns the shared Chrome wait bound. Legacy isolated fixtures omit imported modules;
+// production always loads it above. Timeouts identify the exact phase without logging page text.
+const browserCall = async (operation, phase) => {
+  const started = Date.now();
+  try {
+    return await (genericVideoRouter ? genericVideoRouter.waitForBrowser(operation, phase) : operation());
+  } finally {
+    const elapsed = Date.now() - started;
+    // Report real slow waits, without adding a timer or delaying healthy calls.
+    if (elapsed >= 250) clog('background', `slow browser phase=${phase} elapsedMs=${elapsed}`);
+  }
+};
+const usesGenericVideo = async tabId => {
+  if (!genericVideoRouter) return false; // Legacy source-test harnesses omit imported modules.
+  if (await genericVideoRouter.owns(tabId)) return true;
+  // Preserve an existing generic lease across navigation, but never let an ad
+  // or embedded frame in a YouTube tab replace its accepted top-level adapter.
+  try {
+    const tab = await browserCall(() => chrome.tabs.get(tabId), 'tab-adapter-read');
+    return typeof tab.url === 'string' && /^https?:\/\//.test(tab.url) && !isYouTubeUrl(tab.url);
+  } catch { return false; }
+};
 
 /** @type {chrome.runtime.Port | null} */
 let nativePort = null;
@@ -64,6 +89,9 @@ const chromeWebsiteOpener = createChromeWebsiteOpener({
 const RECENT_PLAY_FALLBACK_MS = 60000;
 const TAB_PLAY_STATE_STORAGE_KEY = 'tabPlayState';
 const DICTATION_PAUSED_TAB_STORAGE_KEY = 'dictationPausedTabId';
+const AUTO_PAUSE_STORAGE_KEY = 'voiceInkAutoPauseEnabled';
+let voiceInkAutoPauseEnabled;
+let autoPausePreferenceLoad;
 const AGENTIC_MOUSE_SPEED_HOLD_STORAGE_KEY = 'agenticMouseYouTubeSpeedHold';
 
 // -- Manual-pause ADOPT feature -------------------------------------------------------------------
@@ -161,6 +189,9 @@ let dictationLastActivityAt = 0;
 // if the token has since changed (a new session began), so a slow retry can't fight the new session.
 let dictationSessionToken = 0;
 let dictationPlaybackRelinquished = false; // Only a genuine manual Play/Pause after recording starts sets this; stop then balances state without touching playback. Timeouts, reloads, and bridge-owned commands never set it. (Codex task: 01a039f7-873c-7c30-b3dc-af8a6724ace5)
+// Explicitly disabling automation relinquishes this whole recording cohort, independently of
+// manual Play/Pause. Re-enabling never takes ownership midway through an existing recording.
+let dictationAutoPauseSuppressed = false;
 
 // Derived convenience: is a dictation session currently in progress? (Replaces the old standalone
 // `dictationActive` boolean — same meaning, single source of truth = the ref count.)
@@ -207,7 +238,10 @@ let pendingPauseCommandCount = 0;
  * @returns {Promise<void>}
  */
 const enqueueDictationOp = (label, op) => {
+  const queuedAt = Date.now();
   dictationOpChain = dictationOpChain.then(async () => {
+    const queuedMs = Date.now() - queuedAt;
+    if (queuedMs >= 250) clog('background', `slow dictation queue label=${label} queuedMs=${queuedMs}`);
     try {
       await op();
     } catch (error) {
@@ -227,11 +261,13 @@ const enqueueDictationOp = (label, op) => {
  * @param {string} why  Diagnostic reason.
  */
 const resetDictationSession = (why) => {
+  void genericVideoRouter?.clearPause();
   dictationDepth = 0;
   dictationStartedAt = null;
   dictationLastActivityAt = 0;
   dictationPausedTabId = null;
   dictationPlaybackRelinquished = false;
+  dictationAutoPauseSuppressed = false;
   dictationSessionToken += 1;
   recentManualPauses.clear();
   persistDictationPausedTabId();
@@ -270,6 +306,7 @@ const persistDictationState = () => {
         // Persist the token too so a woken worker doesn't reuse an id an old retry still holds.
         token: dictationSessionToken,
         playbackRelinquished: dictationPlaybackRelinquished,
+        autoPauseSuppressed: dictationAutoPauseSuppressed,
       },
     });
   } catch {
@@ -287,6 +324,54 @@ const persistRecentManualPauses = () => {
   }
 };
 
+// Read once per worker lifetime, before any recording actuation. Missing means the historical
+// enabled behavior; failed/invalid reads must not silently enable a setting the user turned off.
+const loadAutoPausePreference = async () => {
+  if (typeof voiceInkAutoPauseEnabled === 'boolean') return;
+  if (!autoPausePreferenceLoad) {
+    autoPausePreferenceLoad = (async () => {
+      const stored = await browserCall(() => chrome.storage.local.get(AUTO_PAUSE_STORAGE_KEY), 'auto-pause-preference-read');
+      const value = stored[AUTO_PAUSE_STORAGE_KEY];
+      if (value !== undefined && typeof value !== 'boolean') {
+        throw new Error('invalid-auto-pause-preference');
+      }
+      voiceInkAutoPauseEnabled = value !== false;
+    })().finally(() => { autoPausePreferenceLoad = null; });
+  }
+  await autoPausePreferenceLoad;
+};
+
+// Called only inside the same serial queue as recording edges. Persist preference + ownership
+// together before acknowledging the switch. Never play/resume merely because a setting changed,
+// and keep depth balanced so disabled starts cannot strand or prematurely finish later recordings.
+const setAutoPausePreference = async (enabled) => {
+  await loadAutoPausePreference();
+  await hydrateFromStorage();
+  const suppressed = dictationAutoPauseSuppressed || (!enabled && isDictationActive());
+  const target = enabled ? dictationPausedTabId : null;
+  await chrome.storage.local.set({
+    [AUTO_PAUSE_STORAGE_KEY]: enabled,
+    [DICTATION_PAUSED_TAB_STORAGE_KEY]: target,
+    [DICTATION_STATE_STORAGE_KEY]: {
+      depth: dictationDepth,
+      startedAt: dictationStartedAt,
+      lastActivityAt: dictationLastActivityAt,
+      token: dictationSessionToken,
+      playbackRelinquished: dictationPlaybackRelinquished,
+      autoPauseSuppressed: suppressed,
+    },
+    ...(!enabled ? { [RECENT_MANUAL_PAUSES_STORAGE_KEY]: {} } : {}),
+  });
+  voiceInkAutoPauseEnabled = enabled;
+  dictationAutoPauseSuppressed = suppressed;
+  dictationPausedTabId = target;
+  if (!enabled) {
+    recentManualPauses.clear();
+    postPauseResult(null, null, false, 'auto-pause-disabled');
+  }
+  clog('background', `auto-pause setting enabled=${enabled} suppressedUntilIdle=${suppressed} playbackCommand=none`);
+};
+
 /**
  * Rehydrate the most-recently-played map + the remembered dictation-paused tab from
  * chrome.storage.local. Called before handling any pause/resume command because the MV3 service
@@ -297,12 +382,12 @@ const persistRecentManualPauses = () => {
  */
 const hydrateFromStorage = async () => {
   try {
-    const stored = await chrome.storage.local.get([
+    const stored = await browserCall(() => chrome.storage.local.get([
       TAB_PLAY_STATE_STORAGE_KEY,
       DICTATION_PAUSED_TAB_STORAGE_KEY,
       DICTATION_STATE_STORAGE_KEY,
       RECENT_MANUAL_PAUSES_STORAGE_KEY,
-    ]);
+    ]), 'dictation-state-read');
 
     const storedMap = stored[TAB_PLAY_STATE_STORAGE_KEY];
     if (storedMap && typeof storedMap === 'object') {
@@ -360,6 +445,7 @@ const hydrateFromStorage = async () => {
         dictationSessionToken = storedDictationState.token;
       }
       dictationPlaybackRelinquished = storedDictationState.playbackRelinquished === true;
+      dictationAutoPauseSuppressed = storedDictationState.autoPauseSuppressed === true;
     }
 
     // Merge the persisted manual-pause records (keeping the newest timestamp per tab) so a manual
@@ -436,13 +522,13 @@ const orderedDictationCandidates = async () => {
   let lastFocusedWindowId = null;
 
   try {
-    liveTabs = await chrome.tabs.query({ url: youtubeUrlPatterns });
+    liveTabs = await browserCall(() => chrome.tabs.query({ url: youtubeUrlPatterns }), 'candidate-tabs');
   } catch {
     // The tracked-state tiers below still provide a safe fallback if the live query fails.
   }
 
   try {
-    const lastFocusedWindow = await chrome.windows.getLastFocused();
+    const lastFocusedWindow = await browserCall(() => chrome.windows.getLastFocused(), 'candidate-window');
     if (typeof lastFocusedWindow?.id === 'number') {
       lastFocusedWindowId = lastFocusedWindow.id;
     }
@@ -465,6 +551,9 @@ const orderedDictationCandidates = async () => {
   // live-only tabs as safe candidates: directional pause will confirm whether they are really playing.
   for (const [tabId, liveTab] of liveTabsById) {
     if (!entriesById.has(tabId)) {
+      // Generic content scripts already report real players. Do not inject every ordinary
+      // text page merely because broad host permission makes it a possible video URL.
+      if (!isYouTubeUrl(liveTab.url || '') && !liveTab.audible && !genericVideoRouter?.aggregate(tabId)) continue;
       entriesById.set(tabId, {
         tabId,
         lastPlayedAt: 0,
@@ -602,6 +691,7 @@ const recordManualPause = (tabId, timestamp) => {
  * @returns {Promise<boolean>} true if a manual pause was adopted on THIS call.
  */
 const maybeAdoptManualPause = async () => {
+  if (voiceInkAutoPauseEnabled !== true || dictationAutoPauseSuppressed) return false;
   // (b) No active dictation → these are ordinary manual pauses Ethan wants to keep paused. Leave them.
   if (!isDictationActive() || typeof dictationStartedAt !== 'number') {
     return false;
@@ -762,6 +852,10 @@ const statusResponse = () => {
   try {
     return {
       ...JSON.parse(JSON.stringify(statusState)),
+      autoPause: {
+        enabled: voiceInkAutoPauseEnabled,
+        suppressedUntilIdle: dictationAutoPauseSuppressed,
+      },
       backgroundTimestamp: Date.now(),
     };
   } catch {
@@ -957,6 +1051,10 @@ const handleNativeMessage = (message) => {
       return;
     }
 
+    case 'jump-ahead-youtube':
+      void jumpAheadYouTube();
+      return;
+
     case 'seek-youtube': {
       // Keep the native IPC narrow: Agentic Mouse sends exactly one five-second scrub ratchet, not
       // arbitrary page control. Ignore malformed/other values rather than extending the surface.
@@ -1095,12 +1193,14 @@ const toggleYouTubeTab = async (preferredTabId) => {
  * @param {number} tabId
  * @returns {Promise<boolean>}
  */
-const sendToggleToTab = (tabId) =>
-  new Promise((resolve) => {
+const sendToggleToTab = async (tabId) => {
+  if (await usesGenericVideo(tabId)) return (await genericVideoRouter.send(tabId, { type: 'toggle-youtube' })).response?.ok === true;
+  return new Promise((resolve) => {
     chrome.tabs.sendMessage(tabId, { type: 'toggle-youtube' }, () => {
       resolve(!chrome.runtime.lastError);
     });
   });
+};
 
 // -- VoiceInk directional pause/resume (extension-owned target selection) -----------------------
 //
@@ -1114,9 +1214,12 @@ const sendToggleToTab = (tabId) =>
  * @param {'pause-youtube' | 'resume-youtube'} type
  * @returns {Promise<{ delivered: boolean; response: Record<string, unknown> | null; reason: string }>}
  */
-const sendDirectionalToTab = (tabId, type) =>
-  new Promise((resolve) => {
-    chrome.tabs.sendMessage(tabId, { type }, (response) => {
+const sendDirectionalToTab = async (tabId, type, canSend = () => true) => {
+  const generic = await usesGenericVideo(tabId);
+  if (!canSend()) return { delivered: false, response: null, reason: 'playback-command-superseded' };
+  if (generic) return genericVideoRouter.send(tabId, { type }, canSend);
+  try { return await browserCall(() => new Promise((resolve) => {
+    chrome.tabs.sendMessage(tabId, { type, expiresAt: Date.now() + (genericVideoRouter?.browserTimeoutMs ?? 2000) }, (response) => {
       if (chrome.runtime.lastError) {
         resolve({
           delivered: false,
@@ -1135,34 +1238,32 @@ const sendDirectionalToTab = (tabId, type) =>
         reason: '',
       });
     });
-  });
+  }), 'youtube-directional-message');
+  } catch (error) { return { delivered: false, response: null, reason: String(error.message || error) }; }
+};
 
 // Sleep helper for the resume backoff / settle windows. Kept local (background.js has no shared util).
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Send a directional command to a tab, injecting the content script FIRST (so a tab whose content-
- * script context was torn down — worker slept / tab frozen — still has a live listener), and if the
- * send reports no receiver, RE-INJECT and retry the SAME tab once before giving up on it.
- *
- * WHY (FIX 4 — pause-path resilience parity): the resume path already re-injects before every attempt,
- * but the PAUSE path used to message the candidate WITHOUT pre-injecting, and a tab whose context was
- * invalidated was silently skipped and permanently excluded from the fallback. So an invalidated script
- * on the CORRECT (currently-playing) tab could make pause skip it forever = "dictation didn't pause".
- * Pre-injecting (idempotent — content-script self-cleans its prior listeners) also nudges a frozen tab
- * awake. This brings pause to the same resilience as resume.
+ * Use an existing video listener first so normal recording pause does not wait
+ * for content-script reinjection. A missing receiver still gets one injection
+ * and same-tab retry; bounded browser calls retain their stale-command guards.
  * @param {number} tabId
  * @param {'pause-youtube' | 'resume-youtube'} type
  * @returns {Promise<{ delivered: boolean; response: Record<string, unknown> | null; reason: string }>}
  */
 const sendDirectionalWithReinject = async (tabId, type) => {
-  await injectContentScript(tabId);
+  if (await usesGenericVideo(tabId)) return genericVideoRouter.send(tabId, { type });
+  // A healthy player already has its listener. Reinjecting before every recording
+  // start needlessly waits for script evaluation and tears down the old listener.
+  // Send first; retain the same bounded recovery when a receiver is actually missing.
   let result = await sendDirectionalToTab(tabId, type);
 
   // No receiver ⇒ the content-script context was likely invalidated (extension reload / tab churn).
   // Re-inject a fresh listener and retry the same tab ONCE — don't abandon the correct target on a
   // single transient "no receiving end" error.
-  if (!result.delivered) {
+  if (!result.delivered && !result.reason.startsWith('browser-timeout:')) {
     clog('background', `${type} tab=${tabId} not delivered ("${result.reason}") — re-injecting + retrying once`);
     await injectContentScript(tabId);
     result = await sendDirectionalToTab(tabId, type);
@@ -1173,13 +1274,13 @@ const sendDirectionalWithReinject = async (tabId, type) => {
 };
 
 /**
- * Send one Agentic Mouse five-second scrub command. Reuse the content-script reinjection resilience used
- * by the dictation path, but keep it separate from dictation ownership/state.
+ * Send one Agentic Mouse command to the existing content script. Inject only when there is no receiver:
+ * reinjecting a healthy tab runs the old script's cleanup and ends any active 2× speed hold.
  * @param {number} tabId
  * @returns {Promise<{ delivered: boolean; response: Record<string, unknown> | null; reason: string }>}
  */
 const sendAgenticMouseOneShotWithReinject = async (tabId, message) => {
-  await injectContentScript(tabId);
+  if (await usesGenericVideo(tabId)) return genericVideoRouter.send(tabId, message);
   const send = () => new Promise((resolve) => {
     chrome.tabs.sendMessage(tabId, message, (response) => {
       if (chrome.runtime.lastError) {
@@ -1201,6 +1302,19 @@ const sendAgenticMouseOneShotWithReinject = async (tabId, message) => {
 // Select a YouTube target exactly as the dictation bridge does: PiP, then the active tab in the
 // last-focused Chrome window, audible, active, and true playback-start recency. Seeking never
 // changes play state or activates a tab/window, and is deliberately not queued with dictation work.
+// One selected target only: absence of Jump ahead must never jump a different video.
+const jumpAheadYouTube = async () => {
+  const [candidate] = await orderedDictationCandidates();
+  if (!candidate) {
+    postNativeMessage({ type: 'youtube-jump-ahead-result', jumpAheadClicked: false, reason: 'no-youtube-target' });
+    return;
+  }
+  const result = await sendAgenticMouseOneShotWithReinject(candidate.tabId, { type: 'jump-ahead-youtube' });
+  postNativeMessage({ type: 'youtube-jump-ahead-result', tabId: candidate.tabId,
+    jumpAheadClicked: result.response?.jumpAheadClicked === true,
+    reason: result.response?.reason || result.reason || candidate.why });
+};
+
 const seekYouTubeFiveSeconds = async (seekSeconds) => {
   const candidates = await orderedDictationCandidates();
   for (const candidate of candidates) {
@@ -1300,6 +1414,9 @@ const sendYouTubeSpeedHoldToTab = async (
   injectFirst,
   restorePlaybackRate,
 ) => {
+  if (await usesGenericVideo(tabId)) return genericVideoRouter.send(tabId, {
+    type, holdToken: token, playbackRate, holdLeaseMilliseconds, restorePlaybackRate,
+  });
   if (injectFirst) {
     await injectContentScript(tabId);
   }
@@ -1394,6 +1511,13 @@ const beginYouTubeSpeedHold = async (token, playbackRate, holdLeaseMilliseconds)
       });
       return;
     }
+    if (result.response?.reason === 'incompatible-speed-controller') {
+      // A real selected player that rejects a temporary hold is not an absent player.
+      // Do not turn that rejection into a speed change on another background video.
+      postNativeMessage({type: 'youtube-speed-hold-result', tabId: candidate.tabId,
+        speedHeld: false, playbackRate, reason: result.response.reason});
+      return;
+    }
   }
 
   clog('background', 'youtube-speed-hold found no currently playing video');
@@ -1486,13 +1610,13 @@ const endYouTubeSpeedHold = async (
 // Does this tab still exist? Used by the resume path to distinguish "delivery failed, retry" from
 // "the tab Ethan paused was closed/navigated away, stop chasing it".
 const isTabAlive = (tabId) =>
-  new Promise((resolve) => {
+  browserCall(() => new Promise((resolve) => {
     try {
       chrome.tabs.get(tabId, () => resolve(!chrome.runtime.lastError));
     } catch {
       resolve(false);
     }
-  });
+  }), 'resume-tab-alive').catch(() => false);
 
 // Arm/clear the chrome.alarms watchdog that force-heals a stranded dictation (a dropped
 // recordingStopped). chrome.alarms is the MV3-correct timer: unlike setTimeout it survives the
@@ -1582,9 +1706,11 @@ const resumeTabWithConfirmation = async (tabId, sessionToken, reason) => {
 
     // Guarantee a live content-script listener before sending resume (idempotent — the script self-
     // cleans its prior listeners on re-inject). This is what makes resume survive worker/tab churn.
-    await injectContentScript(tabId);
+    if (!(await usesGenericVideo(tabId))) await injectContentScript(tabId);
 
-    const result = await sendDirectionalToTab(tabId, 'resume-youtube');
+    // Recheck after asynchronous injection/adapter reads too, not just before them.
+    const result = await sendDirectionalToTab(tabId, 'resume-youtube', () =>
+      sessionToken === dictationSessionToken && pendingPauseCommandCount === 0 && !dictationPlaybackRelinquished);
     const resumed = result.response?.resumed === true;
     const responseReason = result.response?.reason ?? result.reason ?? '';
     const alreadyPlaying = responseReason === 'already-playing';
@@ -1592,6 +1718,10 @@ const resumeTabWithConfirmation = async (tabId, sessionToken, reason) => {
       'background',
       `resume attempt=${attempt + 1}/${RESUME_RETRY_DELAYS_MS.length} tab=${tabId} reason="${reason}" delivered=${result.delivered} resumed=${resumed} respReason="${responseReason}"`,
     );
+    // An unanswered request has an unknown outcome. Do not stack more play requests behind it.
+    if (result.reason.startsWith('browser-timeout:') || result.reason === 'playback-command-superseded') {
+      return { resumed: false, reason: result.reason, attempts: attempt + 1 };
+    }
 
     // Confirmed playing now, OR it was already playing (Ethan resumed it himself, or it never paused)
     // — both mean "the video is playing", which is the goal. Not a failure.
@@ -1634,13 +1764,13 @@ const pauseAnyPlayingYouTubeTab = async (alreadyTriedTabIds) => {
   let tabs = [];
   let lastFocusedWindowId = null;
   try {
-    tabs = await chrome.tabs.query({ url: youtubeUrlPatterns });
+    tabs = await browserCall(() => chrome.tabs.query({ url: youtubeUrlPatterns }), 'fallback-tabs');
   } catch {
     return null;
   }
 
   try {
-    const lastFocusedWindow = await chrome.windows.getLastFocused();
+    const lastFocusedWindow = await browserCall(() => chrome.windows.getLastFocused(), 'fallback-window');
     if (typeof lastFocusedWindow?.id === 'number') {
       lastFocusedWindowId = lastFocusedWindow.id;
     }
@@ -1651,6 +1781,7 @@ const pauseAnyPlayingYouTubeTab = async (alreadyTriedTabIds) => {
   // Bug fix: chrome.tabs.query order is unspecified. The old fallback could therefore pause any
   // playing tab when cached state was missing; rank the same live attention signals as the main path.
   const candidateIds = tabs
+    .filter(tab => isYouTubeUrl(tab.url || '') || tab.audible === true || genericVideoRouter?.aggregate(tab.id))
     .sort((a, b) => {
       const attentionScore = (tab) =>
         (tab.active === true && tab.windowId === lastFocusedWindowId ? 4 : 0) +
@@ -1691,6 +1822,7 @@ const pauseAnyPlayingYouTubeTab = async (alreadyTriedTabIds) => {
  */
 const pauseYouTubeForDictation = async (reason) => {
   await hydrateFromStorage(); // MV3 worker may have slept since the last report — restore the map + session.
+  await loadAutoPausePreference();
 
   // Self-heal: if we still think a session is active but it started implausibly long ago, the previous
   // recordingStopped was almost certainly dropped — reset before starting fresh so its stale target /
@@ -1709,10 +1841,16 @@ const pauseYouTubeForDictation = async (reason) => {
   if (wasIdle) {
     dictationStartedAt = now;
     dictationPlaybackRelinquished = false;
+    dictationAutoPauseSuppressed = !voiceInkAutoPauseEnabled;
   }
   dictationLastActivityAt = now;
   persistDictationState();
   armDictationWatchdog(); // Ensure the stranded-session force-heal timer is running for this session.
+
+  if (!voiceInkAutoPauseEnabled || dictationAutoPauseSuppressed) {
+    postPauseResult(null, null, false, 'auto-pause-disabled-for-recording');
+    return;
+  }
 
   // Overlap case: we already paused a tab for this session. The video should already be paused; do a
   // defensive re-pause pass (in case a stray resume let it drift back to playing) but NEVER clobber
@@ -1811,6 +1949,7 @@ const pauseYouTubeForDictation = async (reason) => {
  */
 const resumeYouTubeForDictation = async (reason) => {
   await hydrateFromStorage(); // The worker may have slept between pause and resume — restore the session + target.
+  await loadAutoPausePreference();
 
   // Balance the ref count. Floor at 0 so a stray/duplicate stop (or a stop whose start was dropped)
   // can't drive it negative and defer a real resume forever.
@@ -1824,6 +1963,15 @@ const resumeYouTubeForDictation = async (reason) => {
     'background',
     `resume-for-dictation reason="${reason}" depthWas=${previousDepth} depthNow=${dictationDepth} target=${tabId ?? 'nil'}`,
   );
+
+  if (!voiceInkAutoPauseEnabled || dictationAutoPauseSuppressed) {
+    if (dictationDepth === 0) {
+      resetDictationSession('auto-pause-disabled-for-recording');
+      clearDictationWatchdog();
+    }
+    postResumeResult(null, false, 'auto-pause-disabled-for-recording');
+    return;
+  }
 
   // Overlap: another dictation is still recording → keep the video paused, defer resume until it ends.
   if (dictationDepth > 0) {
@@ -1958,10 +2106,14 @@ const postResumeResult = (tabId, resumed, reason) => {
  */
 const injectContentScript = async (tabId) => {
   try {
-    await chrome.scripting.executeScript({
+    if (await usesGenericVideo(tabId)) {
+      await genericVideoRouter.discover(tabId);
+      return;
+    }
+    await browserCall(() => chrome.scripting.executeScript({
       target: { tabId },
-      files: ['content-script.js'],
-    });
+      files: ['seek-history.js', 'content-script.js'],
+    }), 'youtube-content-injection');
   } catch (error) {
     console.debug('Could not inject YouTube media-key content script.', error);
   }
@@ -2024,9 +2176,54 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return false;
   }
 
-  const typedMessage = /** @type {{ type?: unknown; refreshYouTube?: unknown; text?: unknown; playing?: unknown; isPiP?: unknown; reason?: unknown; title?: unknown; url?: unknown; action?: unknown; contentTimestamp?: unknown }} */ (message);
+  const typedMessage = /** @type {{ type?: unknown; enabled?: unknown; refreshYouTube?: unknown; text?: unknown; playing?: unknown; isPiP?: unknown; reason?: unknown; title?: unknown; url?: unknown; action?: unknown; contentTimestamp?: unknown }} */ (message);
 
   switch (typedMessage.type) {
+    case 'generic-video-state': {
+      if (isYouTubeUrl(sender.tab?.url)) return false;
+      const selected = genericVideoRouter?.accept(message, sender);
+      if (!Number.isInteger(sender.tab?.id) || sender.id !== chrome.runtime.id) return false;
+      // Keep one aggregate report per tab for the existing native IPC. The router separately
+      // retains per-frame/document identity; a paused root frame must not overwrite a playing embed.
+      if (selected) {
+        recordTabPlayState(sender.tab.id, selected.playing, sender.tab.title ?? '', sender.tab.url ?? '',
+          selected.isPiP, message.reason, message.contentTimestamp);
+        const report = { type: 'youtube-state', tabId: sender.tab.id, playing: selected.playing,
+          isPiP: selected.isPiP, url: sender.tab.url ?? '', title: sender.tab.title ?? '',
+          contentTimestamp: Date.now() };
+        rememberStatus('lastYouTubeState', report);
+        postNativeMessage(report);
+      } else if (genericVideoRouter && /^https?:\/\//.test(sender.url || '') && Number.isInteger(sender.frameId)) {
+        recordTabPlayState(sender.tab.id, false, sender.tab.title ?? '', sender.tab.url ?? '', false, 'no-video', Date.now());
+      }
+      return false;
+    }
+    case 'generic-video-manual-control': {
+      if (sender.id === chrome.runtime.id && Number.isInteger(sender.tab?.id) && Number.isInteger(sender.frameId) &&
+          !isYouTubeUrl(sender.tab?.url) && /^https?:\/\//.test(sender.url || '') && (message.action === 'play' || message.action === 'pause')) {
+        void handleManualPlaybackControl(sender.tab.id, message.action, message.contentTimestamp);
+      }
+      return false;
+    }
+    case 'set-voiceink-auto-pause': {
+      // Only the extension's own popup/settings page may persist this user choice; a YouTube
+      // content script or unrelated extension page cannot turn automation back on.
+      if (sender.id !== chrome.runtime.id || sender.url !== chrome.runtime.getURL('status.html') ||
+          typeof typedMessage.enabled !== 'boolean') {
+        sendResponse({ ok: false });
+        return false;
+      }
+      void enqueueDictationOp('auto-pause-setting', async () => {
+        try {
+          await setAutoPausePreference(typedMessage.enabled);
+          sendResponse({ ok: true, ...statusResponse() });
+        } catch {
+          sendResponse({ ok: false, ...statusResponse() });
+        }
+      });
+      return true;
+    }
+
     case 'youtube-manual-playback-control': {
       const tabId = typeof sender.tab?.id === 'number' ? sender.tab.id : undefined;
       if (typedMessage.action !== 'play' && typedMessage.action !== 'pause') {
@@ -2051,7 +2248,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case 'status-request':
       void (async () => {
+        try { await loadAutoPausePreference(); } catch { /* Popup shows setting unavailable. */ }
         try {
+          // Read-only status does not hydrate/mutate recording ownership concurrently with the
+          // serial operation queue. The live flag is populated by its next recording edge.
           connectNativeHost();
           const nativeStatusWait = nativePort ? waitForNextNativeStatus() : Promise.resolve(); // Prevents the popup from rendering the stale startup permission status before the host reply arrives.
           postNativeMessage({
@@ -2167,6 +2367,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
+  genericVideoRouter?.removed(tabId);
   void chromeTabHistory.removed(tabId);
   // Drop the closed tab from the most-recently-played tracker so it can never be picked as a
   // dictation target (and a recycled tab id can't inherit its stale lastPlayedAt).
@@ -2208,7 +2409,8 @@ chrome.windows.onRemoved.addListener((windowId) => {
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete' && isYouTubeUrl(tab.url)) {
+  if (changeInfo.url) genericVideoRouter?.navigated(tabId);
+  if (changeInfo.status === 'complete' && /^https?:\/\//.test(tab.url ?? '')) {
     injectContentScript(tabId);
   }
 });

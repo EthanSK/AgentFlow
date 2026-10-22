@@ -39,8 +39,8 @@ import os
 // - Never read password fields.
 // - Every query is scoped to the stable frontmost source process, limited by a
 //   per-message timeout plus a whole-attempt budget, and yields nothing rather
-//   than a guess. The XML grammar and 8,000-character cap are owned by
-//   LiveSelectionReference and are unchanged by which tier produced the text.
+//   than a guess. LiveSelectionReference owns the XML grammar and preserves the
+//   full captured text independently of the compact HUD/message preview.
 
 /// Which read-only mechanism produced a live highlight. Diagnostic only: the
 /// final `<app_selection>`/`<codex_selection>` grammar deliberately omits it.
@@ -50,6 +50,7 @@ enum LiveSelectionTier: String, Equatable, Sendable {
     case focusedElement
     case pointerElement
     case browserScript
+    case telegramRegionImage
 }
 
 enum LiveSelectionTextSource: String, Equatable, Sendable {
@@ -62,6 +63,21 @@ enum LiveSelectionTextSource: String, Equatable, Sendable {
     case textMarkers
 }
 
+/// Resolve the host's own selected range, never surrounding AXValue text or
+/// inferred glyphs. Some web accessibility providers expose only an attributed
+/// substring for the same token. Read that representation only after the plain
+/// accessor fails; keep its original whitespace and the original token's bounds.
+enum LiveSelectionRangeTextReader {
+    static func read(plain: () -> Any?, attributed: () -> Any?) -> String? {
+        if let text = plain() as? String, text.contains(where: { !$0.isWhitespace }) {
+            return text
+        }
+        guard let value = attributed() as? NSAttributedString,
+              value.string.contains(where: { !$0.isWhitespace }) else { return nil }
+        return value.string
+    }
+}
+
 /// Whether a selection's on-screen bounds tie it to the gesture just made.
 enum LiveSelectionBoundsEvidence: String, Equatable, Sendable {
     /// The selection rect (plus tolerance) contains a gesture endpoint.
@@ -72,6 +88,14 @@ enum LiveSelectionBoundsEvidence: String, Equatable, Sendable {
     /// in a focused field, or an older web selection after a scroll-bar or
     /// window drag. Never emitted as a fresh highlight.
     case elsewhere
+}
+
+/// A consistency filter, not proof of exact glyph-level selection. Chromium may
+/// expose a paragraph-wide range when a drag ends inside rendered mathematics.
+enum LiveSelectionSpanEvidence: String, Equatable, Sendable {
+    case consistent
+    case overextended
+    case unverifiable
 }
 
 enum LiveSelectionReadPolicy {
@@ -117,6 +141,10 @@ struct LiveSelectionGesture: Equatable, Sendable {
     let mouseDown: CGPoint
     let mouseUp: CGPoint
     let displays: [CGRect]
+    var clickCount = 1
+    /// Pointer coordinates are sampled at the callback, not at event creation.
+    /// Missing or delayed samples cannot justify clipping/rejecting a range.
+    var callbackLagMilliseconds: Int? = nil
 
     /// NSEvent/NSScreen report Cocoa global coordinates (origin at the primary
     /// display's bottom-left, y up). `screenFrames.first` must be the primary
@@ -124,7 +152,9 @@ struct LiveSelectionGesture: Equatable, Sendable {
     static func fromCocoa(
         mouseDown: CGPoint,
         mouseUp: CGPoint,
-        screenFrames: [CGRect]
+        screenFrames: [CGRect],
+        clickCount: Int = 1,
+        callbackLagMilliseconds: Int? = nil
     ) -> Self? {
         guard let primary = screenFrames.first, primary.height > 0 else { return nil }
         let top = primary.maxY
@@ -133,7 +163,9 @@ struct LiveSelectionGesture: Equatable, Sendable {
             mouseUp: CGPoint(x: mouseUp.x, y: top - mouseUp.y),
             displays: screenFrames.map {
                 CGRect(x: $0.minX, y: top - $0.maxY, width: $0.width, height: $0.height)
-            }
+            },
+            clickCount: clickCount,
+            callbackLagMilliseconds: callbackLagMilliseconds
         )
     }
 
@@ -165,13 +197,53 @@ struct LiveSelectionGesture: Equatable, Sendable {
         return zone.contains(mouseDown) || zone.contains(mouseUp) ? .atGesture : .elsewhere
     }
 
+    func coversBothEndpoints(_ bounds: CGRect?) -> Bool {
+        guard evidence(for: bounds) == .atGesture, let bounds else { return false }
+        let zone = bounds.standardized.insetBy(dx: -LiveSelectionReadPolicy.boundsTolerance,
+                                               dy: -LiveSelectionReadPolicy.boundsTolerance)
+        return zone.contains(mouseDown) && zone.contains(mouseUp)
+    }
+
+    /// Reject only clear over-extension of a fresh single-drag range. Multi-click
+    /// word/paragraph selection, delayed callbacks, tiny math rectangles and
+    /// autoscroll do not describe glyph endpoints, so remain unverifiable.
+    /// The existing 32-point margin absorbs ordinary glyph-edge overshoot. This
+    /// never trims text, reconstructs it from pixels, or reads whole documents.
+    func spanEvidence(for bounds: CGRect?, in window: CGRect?) -> LiveSelectionSpanEvidence {
+        let dx = mouseUp.x - mouseDown.x
+        let dy = mouseUp.y - mouseDown.y
+        // AppKit's global monitor reports zero clicks for real drags as well as
+        // one. Only explicit double/triple-click counts select word/paragraph
+        // units; treating zero as unknown disabled this guard on the live host.
+        guard (0...1).contains(clickCount), dx * dx + dy * dy >= 16,
+              let lag = callbackLagMilliseconds, lag >= 0, lag <= 50,
+              let bounds, evidence(for: bounds) != .unverifiable else { return .unverifiable }
+        let rect = bounds.standardized
+        guard rect.width > 2, rect.height > 2 else { return .unverifiable }
+        if let window, !window.insetBy(dx: -LiveSelectionReadPolicy.windowTolerance,
+                                      dy: -LiveSelectionReadPolicy.windowTolerance).contains(rect) {
+            return .unverifiable
+        }
+        let slack = LiveSelectionReadPolicy.boundsTolerance
+        let minY = min(mouseDown.y, mouseUp.y) - slack
+        let maxY = max(mouseDown.y, mouseUp.y) + slack
+        guard rect.minY >= minY, rect.maxY <= maxY else { return .overextended }
+        // A multiline union rectangle cannot identify the selected columns on
+        // its first/last lines. Do not pretend horizontal clipping can do that.
+        if abs(dy) <= 8 {
+            guard rect.minX >= min(mouseDown.x, mouseUp.x) - slack,
+                  rect.maxX <= max(mouseDown.x, mouseUp.x) + slack else { return .overextended }
+        }
+        return .consistent
+    }
+
     /// Whether either endpoint lies over an on-screen window owned by the
     /// source process. `nil` means the window list was unavailable, so this
     /// check neither proves nor disproves the source.
     func touchesWindow(ownedBy pid: pid_t, in windows: [LiveSelectionWindow]) -> Bool? {
         guard !windows.isEmpty else { return nil }
         return windows.contains { window in
-            guard window.ownerPID == pid, window.alpha > 0, !window.bounds.isEmpty else {
+            guard window.ownerPID == pid, window.isContentWindow, window.alpha > 0, !window.bounds.isEmpty else {
                 return false
             }
             let zone = window.bounds.insetBy(
@@ -190,6 +262,11 @@ struct LiveSelectionWindow: Equatable, Sendable {
     let bounds: CGRect
     let alpha: Double
     var windowID: CGWindowID? = nil
+    var layer: Int = 0
+
+    // Preserve floating/modal content panels (including ChatGPT's floating
+    // window); only menu/tooltip-level overlays are excluded as source identity.
+    var isContentWindow: Bool { layer < Int(CGWindowLevelForKey(.popUpMenuWindow)) }
 
     static func onScreen() -> [LiveSelectionWindow] {
         guard let entries = CGWindowListCopyWindowInfo(
@@ -207,7 +284,8 @@ struct LiveSelectionWindow: Equatable, Sendable {
                 ownerPID: pid_t(truncatingIfNeeded: owner),
                 bounds: bounds,
                 alpha: entry[kCGWindowAlpha as String] as? Double ?? 1,
-                windowID: (entry[kCGWindowNumber as String] as? NSNumber)?.uint32Value
+                windowID: (entry[kCGWindowNumber as String] as? NSNumber)?.uint32Value,
+                layer: entry[kCGWindowLayer as String] as? Int ?? 0
             )
         }
     }
@@ -223,10 +301,15 @@ struct LiveSelectionReadIdentity: Sendable {
 
     init(processIdentifier: pid_t, gesture: LiveSelectionGesture?, windows: [LiveSelectionWindow]) {
         self.processIdentifier = processIdentifier
-        window = windows.first { candidate in
-            candidate.ownerPID == processIdentifier && candidate.windowID != nil && candidate.alpha > 0
+        let eligible = windows.filter { candidate in
+            // Tooltips and selection overlays can disappear during the bounded
+            // read. Preserve front-to-back ordering among real content windows:
+            // a floating panel above the main window owns its own gesture.
+            candidate.ownerPID == processIdentifier && candidate.isContentWindow
+                && candidate.windowID != nil && candidate.alpha > 0
                 && gesture.map { candidate.bounds.contains($0.mouseUp) } == true
         }
+        window = eligible.first
     }
 
     func isValid(frontmostPID: pid_t?, windows: [LiveSelectionWindow]) -> Bool {
@@ -234,7 +317,7 @@ struct LiveSelectionReadIdentity: Sendable {
         guard let window else { return frontmostPID == processIdentifier }
         return windows.contains {
             $0.windowID == window.windowID && $0.ownerPID == processIdentifier
-                && $0.bounds == window.bounds && $0.alpha > 0
+                && $0.isContentWindow && $0.bounds == window.bounds && $0.alpha > 0
         }
     }
 }
@@ -244,6 +327,15 @@ struct LiveSelectionCandidate: Equatable, Sendable {
     let tier: LiveSelectionTier
     let source: LiveSelectionTextSource
     let evidence: LiveSelectionBoundsEvidence
+    var spanEvidence: LiveSelectionSpanEvidence = .unverifiable
+}
+
+/// Text and geometry from the same AX selection representation. Mixing an
+/// integer range's text with unrelated web-marker bounds can reject a genuine
+/// highlight after the host changes chats (or accept an old selection instead).
+struct LiveSelectionSnapshot {
+    let text: String
+    let bounds: CGRect?
 }
 
 /// Counts-only outcome for one Accessibility attempt. It never carries the
@@ -258,8 +350,14 @@ struct LiveSelectionResolution: Equatable, Sendable {
     var emptyHitTests = 0
     var rejectedUnverifiable = 0
     var incompleteMessages = 0
+    var missingMarkerRanges = 0
+    var unavailableMarkerText = 0
+    var degenerateBounds = 0
     var budgetExhausted = false
     var hasGesture = false
+    var observedOverextended = 0
+    var preventedWidening = 0
+    var acceptedMarkerExpansion = 0
 }
 
 /// Read-only Accessibility surface for one source process. The live
@@ -276,10 +374,7 @@ protocol LiveSelectionAccessibilityProbe {
     func parent(of element: Element) -> Element?
     func role(of element: Element) -> String?
     func subrole(of element: Element) -> String?
-    func selectedText(of element: Element) -> String?
-    func selectedRangeText(of element: Element) -> String?
-    func selectedMarkerText(of element: Element) -> String?
-    func selectionBounds(of element: Element, source: LiveSelectionTextSource) -> CGRect?
+    func selection(of element: Element, source: LiveSelectionTextSource) -> LiveSelectionSnapshot?
     func isSame(_ lhs: Element, _ rhs: Element) -> Bool
 }
 
@@ -294,6 +389,11 @@ struct LiveSelectionAccessibilityResolver<Probe: LiveSelectionAccessibilityProbe
     /// it; bounds-less candidates must not contradict it.
     let gestureInSourceWindow: Bool?
     var requiresGestureBounds = false
+    /// Codex's marker rectangles may describe the entire rendered paragraph,
+    /// not the highlighted glyphs. Use them as diagnostic evidence and prefer
+    /// the pointer's actual selection before an aggregate focused marker.
+    var checksDragSpan = false
+    var sourceWindowBounds: CGRect? = nil
 
     func resolve() -> LiveSelectionResolution {
         var resolution = LiveSelectionResolution()
@@ -301,6 +401,7 @@ struct LiveSelectionAccessibilityResolver<Probe: LiveSelectionAccessibilityProbe
         var visited: [Probe.Element] = []
         var focused: Probe.Element?
         var focusedCandidate: LiveSelectionCandidate?
+        var pointerFallback: LiveSelectionCandidate?
 
         if let element = probe.focusedElement() {
             focused = element
@@ -317,8 +418,13 @@ struct LiveSelectionAccessibilityResolver<Probe: LiveSelectionAccessibilityProbe
             if let candidate = read(
                 element, role: focusedRole, tier: .focusedElement, into: &resolution
             ) {
-                // Bounds prove this is the gesture's own selection; skip the walk.
-                if candidate.evidence == .atGesture {
+                // A nearby Codex marker is not proof of glyph-level selection:
+                // the live 414 trace repeatedly returned a whole sentence here
+                // before the pointer leaf was examined. Editors and other hosts
+                // retain the fast path; Codex markers get the bounded pointer
+                // comparison, without focus changes or document-wide reads.
+                if candidate.evidence == .atGesture
+                    && !(checksDragSpan && candidate.source == .textMarkers && gesture != nil) {
                     resolution.candidate = candidate
                     return resolution
                 }
@@ -349,7 +455,10 @@ struct LiveSelectionAccessibilityResolver<Probe: LiveSelectionAccessibilityProbe
                         // The gesture landed inside the focused element, so its
                         // selection is the nearest one to the pointer.
                         if let focusedCandidate {
-                            resolution.candidate = focusedCandidate
+                            // Do not walk past an actual focused editor into
+                            // unrelated aggregate text. A nearer pointer fallback
+                            // still wins within this editor's own boundary.
+                            resolution.candidate = pointerFallback ?? focusedCandidate
                             return resolution
                         }
                     } else if !visited.contains(where: { probe.isSame($0, element) }) {
@@ -357,9 +466,23 @@ struct LiveSelectionAccessibilityResolver<Probe: LiveSelectionAccessibilityProbe
                         if let candidate = read(
                             element, role: role, tier: .pointerElement, into: &resolution
                         ) {
-                            // Nearest selection-bearing ancestor of the gesture wins.
-                            resolution.candidate = candidate
-                            return resolution
+                            if candidate.evidence == .atGesture {
+                                // A foreground pointer leaf's AXSelectedText is
+                                // the app's explicit highlight. Do not replace it
+                                // with an ancestor marker that merely contains it.
+                                // Background capture still requires range geometry.
+                                if prefersPointerSelection(pointerFallback, over: candidate) {
+                                    resolution.preventedWidening += 1
+                                    resolution.candidate = pointerFallback
+                                } else {
+                                    resolution.candidate = candidate
+                                }
+                                return resolution
+                            }
+                            // A boundless leaf fragment must not hide a complete
+                            // range proved at this gesture by its parent. Keep the
+                            // nearest fallback if bounded walking finds no proof.
+                            if pointerFallback == nil { pointerFallback = candidate }
                         }
                     }
                     guard let parent = probe.parent(of: element) else { break }
@@ -371,7 +494,7 @@ struct LiveSelectionAccessibilityResolver<Probe: LiveSelectionAccessibilityProbe
         // Bounds-less focused selection: today's baseline behavior, kept only
         // when the pointer found nothing nearer and the gesture was not shown
         // to be outside the source app.
-        resolution.candidate = focusedCandidate
+        resolution.candidate = pointerFallback ?? focusedCandidate
         return resolution
     }
 
@@ -390,36 +513,91 @@ struct LiveSelectionAccessibilityResolver<Probe: LiveSelectionAccessibilityProbe
             return nil
         }
 
-        let text: String
-        let source: LiveSelectionTextSource
-        if let value = Self.meaningful(probe.selectedText(of: element)) {
-            text = value
-            source = .selectedText
-        } else if let value = Self.meaningful(probe.selectedRangeText(of: element)) {
-            text = value
-            source = .selectedRange
-        } else if let value = Self.meaningful(probe.selectedMarkerText(of: element)) {
-            text = value
-            source = .textMarkers
-        } else {
-            return nil
+        var unproven: LiveSelectionCandidate?
+        var proven: LiveSelectionCandidate?
+        var provenBounds: CGRect?
+        // Chromium can expose a leaf-local integer selection and a complete
+        // cross-element marker selection on the same non-editable text node.
+        // Editors retain their own range; never replace one with aggregate text.
+        let mayPreferCompleteMarker = ["AXStaticText", "AXGroup", "AXWebArea", "AXLink",
+                                       "AXHeading", "AXMathElement"].contains(role ?? "")
+        for source in [LiveSelectionTextSource.selectedText, .selectedRange, .textMarkers] {
+            guard !probe.isExpired else { break }
+            guard let snapshot = probe.selection(of: element, source: source),
+                  let text = Self.meaningful(snapshot.text) else { continue }
+            let evidence = gesture?.evidence(for: snapshot.bounds) ?? .unverifiable
+            let span = (mayPreferCompleteMarker || source == .textMarkers)
+                ? gesture?.spanEvidence(for: snapshot.bounds, in: sourceWindowBounds) ?? .unverifiable
+                : .unverifiable
+            if checksDragSpan && span == .overextended {
+                resolution.observedOverextended += 1
+                // Diagnostic only. Build 414's live trace includes repeated
+                // overextended-range refusals while highlights were missed.
+                // An aggregate rectangle cannot infer the selected glyphs.
+                // Keep the existing elsewhere/window/password safety guards.
+            }
+            if let bounds = snapshot.bounds, !bounds.isNull, !bounds.isInfinite,
+               bounds.width >= 0, bounds.height >= 0, bounds.width <= 2, bounds.height <= 2 {
+                resolution.degenerateBounds += 1
+            }
+            switch evidence {
+            case .elsewhere:
+                resolution.rejectedElsewhere += 1
+                // A nonempty stale accessor must not mask a fresh, independently
+                // bounded selection exposed by another accessor on this element.
+                continue
+            case .unverifiable where gestureInSourceWindow == false:
+                resolution.rejectedOutsideSourceWindow += 1
+            case .unverifiable where requiresGestureBounds:
+                resolution.rejectedUnverifiable += 1
+            case .atGesture:
+                let candidate = LiveSelectionCandidate(text: text, tier: tier, source: source,
+                                                       evidence: evidence, spanEvidence: span)
+                if source == .textMarkers && prefersPointerSelection(unproven, over: candidate) {
+                    resolution.preventedWidening += 1
+                    continue
+                }
+                guard mayPreferCompleteMarker else { return candidate }
+                if let first = proven {
+                    // Containment alone can turn one highlighted address into a
+                    // whole sentence. Expand only when the earlier range misses
+                    // a drag endpoint and this independently consistent marker
+                    // covers both. Equal/broader boxes are not exactness proof.
+                    if source == .textMarkers, text.utf16.count > first.text.utf16.count,
+                       text.contains(first.text) {
+                        if span == .consistent,
+                           gesture?.coversBothEndpoints(provenBounds) == false,
+                           gesture?.coversBothEndpoints(snapshot.bounds) == true {
+                            proven = candidate
+                            provenBounds = snapshot.bounds
+                            resolution.acceptedMarkerExpansion += 1
+                        } else {
+                            resolution.preventedWidening += 1
+                        }
+                    }
+                } else {
+                    proven = candidate
+                    provenBounds = snapshot.bounds
+                }
+            case .unverifiable:
+                // Preserve the foreground best-effort fallback, but prefer an
+                // actually gesture-proven range before emitting boundless text.
+                if unproven == nil {
+                    unproven = LiveSelectionCandidate(text: text, tier: tier, source: source, evidence: evidence)
+                }
+            }
         }
+        return proven ?? unproven
+    }
 
-        let evidence = gesture?.evidence(for: probe.selectionBounds(of: element, source: source))
-            ?? .unverifiable
-        switch evidence {
-        case .elsewhere:
-            resolution.rejectedElsewhere += 1
-            return nil
-        case .unverifiable where gestureInSourceWindow == false:
-            resolution.rejectedOutsideSourceWindow += 1
-            return nil
-        case .unverifiable where requiresGestureBounds:
-            resolution.rejectedUnverifiable += 1
-            return nil
-        case .atGesture, .unverifiable:
-            return LiveSelectionCandidate(text: text, tier: tier, source: source, evidence: evidence)
-        }
+    private func prefersPointerSelection(
+        _ pointer: LiveSelectionCandidate?, over marker: LiveSelectionCandidate
+    ) -> Bool {
+        guard checksDragSpan, !requiresGestureBounds, gestureInSourceWindow == true,
+              let pointer, pointer.tier == .pointerElement, pointer.source == .selectedText,
+              marker.source == .textMarkers,
+              marker.text.utf16.count > pointer.text.utf16.count else { return false }
+        return marker.text.contains(pointer.text)
     }
 
     private static func meaningful(_ text: String?) -> String? {
@@ -437,13 +615,17 @@ final class LiveAccessibilitySelectionProbe: LiveSelectionAccessibilityProbe {
     // beyond the app answering an Accessibility query.
     private static let selectedTextMarkerRange = "AXSelectedTextMarkerRange"
     private static let stringForTextMarkerRange = "AXStringForTextMarkerRange"
+    private static let attributedStringForTextMarkerRange = "AXAttributedStringForTextMarkerRange"
     private static let boundsForTextMarkerRange = "AXBoundsForTextMarkerRange"
 
     private let application: AXUIElement
     private let deadline: UInt64
+    private var snapshots: [(AXUIElement, LiveSelectionTextSource, LiveSelectionSnapshot?)] = []
     // One probe belongs to one serial attempt. Counts only: never retain failed
     // attribute values or selected text for diagnostics.
     private(set) var incompleteMessages = 0
+    private(set) var missingMarkerRanges = 0
+    private(set) var unavailableMarkerText = 0
 
     init(processIdentifier: pid_t, budget: TimeInterval) {
         application = AXUIElementCreateApplication(processIdentifier)
@@ -486,31 +668,60 @@ final class LiveAccessibilitySelectionProbe: LiveSelectionAccessibilityProbe {
         copy(kAXSubroleAttribute, of: element) as? String
     }
 
-    func selectedText(of element: AXUIElement) -> String? {
-        copy(kAXSelectedTextAttribute, of: element) as? String
-    }
-
-    func selectedRangeText(of element: AXUIElement) -> String? {
-        guard let range = selectedRange(of: element) else { return nil }
-        return parameterized(kAXStringForRangeParameterizedAttribute, of: element, parameter: range)
-            as? String
-    }
-
-    func selectedMarkerText(of element: AXUIElement) -> String? {
-        guard let markers = copy(Self.selectedTextMarkerRange, of: element) else { return nil }
-        return parameterized(Self.stringForTextMarkerRange, of: element, parameter: markers)
-            as? String
-    }
-
-    func selectionBounds(of element: AXUIElement, source: LiveSelectionTextSource) -> CGRect? {
-        // Text-marker bounds are VoiceOver's own highlight path in web engines,
-        // so prefer them wherever they exist, including web text fields.
-        if let markers = copy(Self.selectedTextMarkerRange, of: element),
-           let rect = Self.rect(parameterized(Self.boundsForTextMarkerRange, of: element, parameter: markers)) {
-            return rect
+    func selection(of element: AXUIElement, source: LiveSelectionTextSource) -> LiveSelectionSnapshot? {
+        if let cached = snapshots.first(where: { CFEqual($0.0, element) && $0.1 == source }) {
+            return cached.2
         }
-        guard source != .textMarkers, let range = selectedRange(of: element) else { return nil }
-        return Self.rect(parameterized(kAXBoundsForRangeParameterizedAttribute, of: element, parameter: range))
+        let snapshot = readSelection(of: element, source: source)
+        // One bounded attempt only. Reuse each exact range token's text/bounds
+        // rather than rereading the same representations for every fallback.
+        snapshots.append((element, source, snapshot))
+        return snapshot
+    }
+
+    private func readSelection(of element: AXUIElement, source: LiveSelectionTextSource) -> LiveSelectionSnapshot? {
+        switch source {
+        case .selectedRange:
+            guard let range = selectedRange(of: element),
+                  let text = LiveSelectionRangeTextReader.read(
+                    plain: { self.parameterized(kAXStringForRangeParameterizedAttribute,
+                                                of: element, parameter: range) },
+                    attributed: { self.parameterized(kAXAttributedStringForRangeParameterizedAttribute,
+                                                     of: element, parameter: range) }
+                  ) else { return nil }
+            return LiveSelectionSnapshot(text: text, bounds: Self.rect(parameterized(
+                kAXBoundsForRangeParameterizedAttribute, of: element, parameter: range)))
+        case .textMarkers:
+            guard !isExpired else { return nil }
+            guard let markers = copy(Self.selectedTextMarkerRange, of: element) else {
+                missingMarkerRanges += 1
+                return nil
+            }
+            guard let text = LiveSelectionRangeTextReader.read(
+                plain: { self.parameterized(Self.stringForTextMarkerRange,
+                                            of: element, parameter: markers) },
+                attributed: { self.parameterized(Self.attributedStringForTextMarkerRange,
+                                                 of: element, parameter: markers) }
+            ) else {
+                unavailableMarkerText += 1
+                return nil
+            }
+            return LiveSelectionSnapshot(text: text, bounds: Self.rect(parameterized(
+                Self.boundsForTextMarkerRange, of: element, parameter: markers)))
+        case .selectedText:
+            guard let text = copy(kAXSelectedTextAttribute, of: element) as? String,
+                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+            // AXSelectedText has no range token. Borrow geometry only from a
+            // representation whose exact text agrees; never pair it blindly
+            // with the host's possibly stale web-marker selection.
+            for source in [LiveSelectionTextSource.selectedRange, .textMarkers] {
+                if let correlated = selection(of: element, source: source),
+                   correlated.text == text, correlated.bounds != nil {
+                    return correlated
+                }
+            }
+            return LiveSelectionSnapshot(text: text, bounds: nil)
+        }
     }
 
     func isSame(_ lhs: AXUIElement, _ rhs: AXUIElement) -> Bool {
@@ -595,7 +806,9 @@ enum LiveSelectionTextReader {
     static func resolveAccessibility(
         processIdentifier: pid_t,
         gesture: LiveSelectionGesture?,
-        requiresGestureBounds: Bool = false
+        requiresGestureBounds: Bool = false,
+        checksDragSpan: Bool = false,
+        sourceWindowBounds: CGRect? = nil
     ) async -> LiveSelectionResolution {
         await Task.detached(priority: .userInitiated) { () -> LiveSelectionResolution in
             guard AXIsProcessTrusted() else {
@@ -612,9 +825,12 @@ enum LiveSelectionTextReader {
             )
             var resolution = LiveSelectionAccessibilityResolver(
                 probe: probe, gesture: gesture, gestureInSourceWindow: inSourceWindow,
-                requiresGestureBounds: requiresGestureBounds
+                requiresGestureBounds: requiresGestureBounds,
+                checksDragSpan: checksDragSpan, sourceWindowBounds: sourceWindowBounds
             ).resolve()
             resolution.incompleteMessages = probe.incompleteMessages
+            resolution.missingMarkerRanges = probe.missingMarkerRanges
+            resolution.unavailableMarkerText = probe.unavailableMarkerText
             resolution.budgetExhausted = probe.isExpired
             return resolution
         }.value
@@ -730,10 +946,19 @@ enum LiveSelectionDiagnostics {
         evidence: LiveSelectionBoundsEvidence?,
         attempt: Int,
         bundleID: String?,
-        startedAt: UInt64
+        startedAt: UInt64,
+        span: LiveSelectionSpanEvidence = .unverifiable,
+        length: Int = 0,
+        observedOverextended: Int = 0,
+        preventedWidening: Int = 0,
+        acceptedMarkerExpansion: Int = 0,
+        clickCount: Int? = nil,
+        callbackLagMilliseconds: Int? = nil
     ) {
-        logger.info(
-            "Live selection captured tier=\(tier.rawValue, privacy: .public) source=\(source?.rawValue ?? "none", privacy: .public) evidence=\(evidence?.rawValue ?? "none", privacy: .public) attempt=\(attempt, privacy: .public) bundle=\(bundleID ?? "unknown", privacy: .public) durationMs=\(elapsedMilliseconds(since: startedAt), privacy: .public)"
+        // Historical .info captures were not retained, leaving real overcapture
+        // untraceable. Persist only enum/count decisions, never text or geometry.
+        logger.notice(
+            "Live selection captured tier=\(tier.rawValue, privacy: .public) source=\(source?.rawValue ?? "none", privacy: .public) evidence=\(evidence?.rawValue ?? "none", privacy: .public) span=\(span.rawValue, privacy: .public) chars=\(length, privacy: .public) overextended=\(observedOverextended, privacy: .public) preventedWidening=\(preventedWidening, privacy: .public) markerExpansion=\(acceptedMarkerExpansion, privacy: .public) clicks=\(clickCount ?? 0, privacy: .public) maxCallbackLagMs=\(callbackLagMilliseconds ?? -1, privacy: .public) attempt=\(attempt, privacy: .public) bundle=\(bundleID ?? "unknown", privacy: .public) durationMs=\(elapsedMilliseconds(since: startedAt), privacy: .public)"
         )
     }
 
@@ -744,7 +969,16 @@ enum LiveSelectionDiagnostics {
         startedAt: UInt64
     ) {
         logger.notice(
-            "Live selection unavailable trusted=\(resolution.accessibilityTrusted, privacy: .public) attempts=\(attempts, privacy: .public) examined=\(resolution.examinedElements, privacy: .public) elsewhere=\(resolution.rejectedElsewhere, privacy: .public) outsideSourceWindow=\(resolution.rejectedOutsideSourceWindow, privacy: .public) secure=\(resolution.refusedSecure, privacy: .public) hasGesture=\(resolution.hasGesture, privacy: .public) emptyHitTests=\(resolution.emptyHitTests, privacy: .public) unverifiable=\(resolution.rejectedUnverifiable, privacy: .public) cannotComplete=\(resolution.incompleteMessages, privacy: .public) budgetExhausted=\(resolution.budgetExhausted, privacy: .public) bundle=\(bundleID ?? "unknown", privacy: .public) durationMs=\(elapsedMilliseconds(since: startedAt), privacy: .public)"
+            "Live selection unavailable trusted=\(resolution.accessibilityTrusted, privacy: .public) attempts=\(attempts, privacy: .public) examined=\(resolution.examinedElements, privacy: .public) elsewhere=\(resolution.rejectedElsewhere, privacy: .public) overextended=\(resolution.observedOverextended, privacy: .public) preventedWidening=\(resolution.preventedWidening, privacy: .public) outsideSourceWindow=\(resolution.rejectedOutsideSourceWindow, privacy: .public) secure=\(resolution.refusedSecure, privacy: .public) hasGesture=\(resolution.hasGesture, privacy: .public) emptyHitTests=\(resolution.emptyHitTests, privacy: .public) unverifiable=\(resolution.rejectedUnverifiable, privacy: .public) cannotComplete=\(resolution.incompleteMessages, privacy: .public) missingMarkers=\(resolution.missingMarkerRanges, privacy: .public) unavailableMarkerText=\(resolution.unavailableMarkerText, privacy: .public) degenerateBounds=\(resolution.degenerateBounds, privacy: .public) budgetExhausted=\(resolution.budgetExhausted, privacy: .public) bundle=\(bundleID ?? "unknown", privacy: .public) durationMs=\(elapsedMilliseconds(since: startedAt), privacy: .public)"
+        )
+    }
+
+    /// The watcher intentionally samples the current pointer, not reconstructed
+    /// event geometry. Report delayed callbacks and pre-read drops without
+    /// logging pointer coordinates, application text or performing extra reads.
+    static func gesture(outcome: String, clickCount: Int, callbackLagMilliseconds: Int) {
+        logger.notice(
+            "Live selection gesture outcome=\(outcome, privacy: .public) clicks=\(clickCount, privacy: .public) callbackLagMs=\(callbackLagMilliseconds, privacy: .public)"
         )
     }
 

@@ -7,8 +7,9 @@
 
   The hero sets that HUD on an abstract Mac screen (wallpaper, menu bar, one
   TextEdit window) so visitors can see it is a floating macOS panel, not a web
-  widget. The scene stays quieter than the HUD: its only macOS system colours
-  are the window's traffic lights and the orange microphone-in-use dot.
+  widget. Like the native panel, the HUD sits on the screen's bottom edge. The
+  scene stays quieter than the HUD: its only macOS system colours are the
+  window's traffic lights and the orange microphone-in-use dot.
 
   Type roles
     display  Avenir Next Condensed: headings only
@@ -355,7 +356,8 @@ main:focus {
   items and tighten the window/HUD spacing instead of scaling the picture down:
   HUD text never drops below 0.9rem, and the highlighted line still fits on one
   line at a 320px viewport. Everything stays in normal flow, so nothing is
-  clipped; the HUD's negative top margin is the only overlap.
+  clipped; the HUD's negative top margin is the only overlap. The screen has
+  no bottom padding: the HUD is the last item and rests on its bottom edge.
 */
 
 .mac {
@@ -419,7 +421,7 @@ main:focus {
 }
 
 .mac-screen {
-  padding: 0.8rem 0.7rem 0.55rem;
+  padding: 0.8rem 0.7rem 0;
 }
 
 .mac-window {
@@ -488,8 +490,9 @@ main:focus {
   transition: background-size 0.3s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
 
-/* The recorder is bottom-centred like the real panel. Keep equal side margins
-   at every breakpoint, and overlap only the document's blank page. */
+/* The recorder is centred with its bottom edge on the screen's bottom edge, like
+   the real panel since build 457 (it floats over the Dock area). Keep equal side
+   margins at every breakpoint, and overlap only the document's blank page. */
 .hud {
   position: relative;
   z-index: 1;
@@ -512,66 +515,13 @@ main:focus {
   overflow-wrap: anywhere;
 }
 
-/* Decorative Dock: subdued, inert icons establish the desktop context without
-   suggesting that the website is a functional macOS simulator. */
-.mac-dock {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  width: fit-content;
-  margin: 0.95rem auto 0;
-  padding: 0.35rem 0.45rem;
-  border: 1px solid rgba(255, 255, 255, 0.45);
-  border-radius: 11px;
-  background: rgba(231, 240, 248, 0.42);
-  box-shadow: 0 3px 9px rgba(29, 49, 74, 0.13);
-}
-
-.mac-dock i {
-  position: relative;
-  display: block;
-  width: 1.45rem;
-  height: 1.45rem;
-  border-radius: 5px;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
-}
-
-.dock-finder { background: linear-gradient(90deg, #64b9ec 50%, #d3eafa 50%); }
-.dock-finder::after {
-  position: absolute;
-  inset: 25% 25% 24%;
-  border-bottom: 1px solid #295476;
-  border-radius: 0 0 45% 45%;
-  content: "";
-}
-.dock-browser { background: radial-gradient(circle, #5ca9dc 52%, #e9f3f8 55% 66%, #a0c7dd 69%); }
-.dock-browser::after {
-  position: absolute;
-  inset: 21% 43%;
-  background: linear-gradient(#e4776e 50%, #f7fbff 50%);
-  transform: rotate(35deg);
-  content: "";
-}
-.dock-notes { background: linear-gradient(#e4bd60 0 28%, #f6f2e5 29% 100%); }
-.dock-notes::after {
-  position: absolute;
-  inset: 44% 22% 22%;
-  background: repeating-linear-gradient(transparent 0 3px, #c5c8c8 3px 4px);
-  content: "";
-}
-.dock-photos { background: conic-gradient(#e6a876, #e3cb77, #83b9a5, #7ea8d1, #b599c9, #da9cac, #e6a876); }
-.dock-settings { background: radial-gradient(circle, #87939d 0 18%, #d7dfe4 20% 34%, #8f9da8 36% 49%, #d2dce3 51%); }
-.dock-divider { width: 1px; height: 1.3rem; margin-inline: 0.05rem; background: rgba(58, 82, 103, 0.2); }
-.mac-dock .dock-trash { width: 1.05rem; margin-inline: 0.1rem; border-radius: 3px 3px 5px 5px; background: repeating-linear-gradient(90deg, #cedae3 0 3px, #e7edf2 3px 5px); }
-
 @container mac (min-width: 26rem) {
   .mac-mid {
     display: block;
   }
 
   .mac-screen {
-    padding: 1.1rem 1rem 0.65rem;
+    padding: 1.1rem 1rem 0;
   }
 
   .mac-window {
@@ -605,7 +555,7 @@ main:focus {
   }
 
   .mac-screen {
-    padding: 1.35rem 1.25rem 0.75rem;
+    padding: 1.35rem 1.25rem 0;
   }
 
   .mac-window {
@@ -692,6 +642,31 @@ main:focus {
   content: "";
 }
 
+/* The recorder's Pause/Resume control, grouped beside Stop. Decorative only. */
+.hud-pause {
+  position: relative;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  margin-left: -0.45rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.hud-pause::before,
+.hud-pause::after {
+  position: absolute;
+  top: 9px;
+  bottom: 9px;
+  width: 3px;
+  border-radius: 1px;
+  background: #fff;
+  content: "";
+}
+
+.hud-pause::before { left: 9px; }
+.hud-pause::after { right: 9px; }
+
 .wave {
   display: flex;
   flex: 1;
@@ -748,6 +723,31 @@ main:focus {
   font-size: 0.975rem;
 }
 
+/* Codex's editable opening stays plain: the ↗ full-prompt link, then every
+   authored word with the markers rendered as Codex's ordinary inline code. */
+.prompt-link {
+  margin-right: 0.15em;
+  color: var(--mint-ink);
+  font-weight: 600;
+}
+
+.marker {
+  padding: 0.05em 0.35em;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: #f1f4f3;
+  color: var(--ink);
+  font-size: 0.82em;
+  white-space: nowrap;
+}
+
+/* The full timeline appended under a short message, one block per section. */
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
 .msg-xml {
   margin: 0;
   padding: 0.55rem 0.75rem;
@@ -760,6 +760,16 @@ main:focus {
 }
 
 .msg-xml .a {
+  color: var(--graphite);
+}
+
+/* Speech and typing keep neutral tags: cyan and violet stay reserved for references. */
+.xml-speech {
+  border-color: var(--rule);
+  background: #f4f6f5;
+}
+
+.xml-speech .t {
   color: var(--graphite);
 }
 
@@ -1254,7 +1264,8 @@ kbd {
 }
 
 .build-notes code,
-.note code {
+.note code,
+.pieces code {
   font-size: 0.88em;
 }
 

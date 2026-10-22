@@ -1236,17 +1236,17 @@ final class CoreAudioRecorder: @unchecked Sendable {
             )
         )
 
+        // Reminders annotate speech downstream; retain Ethan's overlapping words in both
+        // sinks. Only the existing manual Pause gates microphone PCM.
         let writeStatus = ExtAudioFileWrite(file, outputFrameCount, &outputBufferList)
+        if let audioChunk = onAudioChunk {
+            let byteCount = Int(outputFrameCount) * MemoryLayout<Int16>.size
+            audioChunk(Data(bytes: outputBuffer, count: byteCount))
+        }
         if writeStatus != noErr {
             logger.error("🎙️ ExtAudioFileWrite failed with status: \(writeStatus, privacy: .public)")
         }
 
-        // Send the same PCM data to the streaming callback if set.
-        if let audioChunk = onAudioChunk {
-            let byteCount = Int(outputFrameCount) * MemoryLayout<Int16>.size
-            let data = Data(bytes: outputBuffer, count: byteCount)
-            audioChunk(data)
-        }
         if writeStatus == noErr {
             captureStartConfirmation.noteAudio(frameCount: outputFrameCount)
         }

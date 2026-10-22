@@ -92,6 +92,7 @@ let playbackPosition = video.currentTime;
 Object.defineProperty(video, 'currentTime', {
   get: () => playbackPosition,
   set: () => assert.fail('Speed hold must never seek the video'),
+  configurable: true,
 });
 
 let response = send('begin-youtube-speed-hold');
@@ -110,6 +111,27 @@ assert.equal(response.speedHeld, false);
 assert.equal(response.previousPlaybackRate, 1.25);
 assert.equal(video.playbackRate, 1.25);
 assert.equal(video.currentTime, 44);
+
+// Agentic Mouse's held wheel seeks the same player without ending its speed lease.
+Object.defineProperty(video, 'currentTime', {
+  get: () => playbackPosition,
+  set: (value) => { playbackPosition = value; },
+});
+response = send('begin-youtube-speed-hold', 'scrub-token');
+assert.equal(response.speedHeld, true);
+for (const seekSeconds of [5, -5, 5]) {
+  let seekResponse;
+  runtimeListener({ type: 'seek-youtube', seekSeconds }, null, (value) => {
+    seekResponse = value;
+  });
+  assert.equal(seekResponse.sought, true);
+  assert.equal(video.playbackRate, 2);
+}
+assert.equal(video.currentTime, 49);
+response = send('end-youtube-speed-hold', 'scrub-token');
+assert.equal(response.speedHeld, false);
+assert.equal(video.playbackRate, 1.25);
+assert.equal(video.currentTime, 49);
 
 response = send('begin-youtube-speed-hold', 'locked-token');
 assert.equal(response.speedHeld, true);

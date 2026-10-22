@@ -17,7 +17,7 @@ whisper_repo="$HOME/VoiceInk-Dependencies/whisper.cpp"
 whisper_framework="$whisper_repo/build-apple/whisper.xcframework"
 
 if test "$mode" != --sign-prebuilt; then
-  test "$(hostname)" = Ethans-Mac-mini-6.local || {
+  [[ "$(hostname)" =~ ^Ethans-Mac-mini-[0-9]+\.local$ ]] || {
     echo 'Public Agent Flow builds must run on the dedicated Mac Mini.' >&2
     exit 1
   }
@@ -68,14 +68,16 @@ mkdir -p "$output"
 "$root/scripts/test-public-release.sh" "$output" | tee "$output/test-summary.txt"
 # Keep the named test logs, then reclaim only this release's generated test host before building
 # a separate universal Release app. The Mini can run out of space when both DerivedData trees coexist.
-test -d "$output/TestDerivedData"
-rm -rf "$output/TestDerivedData" "$output/TestFrameworks"
+test -d "$output/TestDerivedData.noindex"
+rm -rf "$output/TestDerivedData.noindex" "$output/TestFrameworks.noindex"
 
 build_log="$output/xcode-release-build.log"
-derived="$output/ReleaseDerivedData"
+derived="$output/ReleaseDerivedData.noindex"
 xcodebuild -project "$root/VoiceInk.xcodeproj" -scheme VoiceInk \
   -configuration Release -destination 'generic/platform=macOS' \
   -derivedDataPath "$derived" -xcconfig "$root/LocalBuild.xcconfig" \
+  -clonedSourcePackagesDirPath "${AGENTFLOW_PACKAGES_DIR:-$output/Packages.noindex}" \
+  -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates -jobs 4 \
   CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES \
   DEVELOPMENT_TEAM= "CODE_SIGN_ENTITLEMENTS=$root/VoiceInk/VoiceInk.local.entitlements" \
   'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) LOCAL_BUILD' \
@@ -102,8 +104,8 @@ if test "$mode" = --build-only; then
   ditto -c -k --keepParent "$app" "$prebuilt"
   prebuilt_sha=$(shasum -a 256 "$prebuilt" | awk '{print $1}')
   summary_sha=$(shasum -a 256 "$output/test-summary.txt" | awk '{print $1}')
-  printf '{"sourceCommit":"%s","version":"%s","build":"%s","sha256":"%s","testSummarySha256":"%s","builder":"Ethans-Mac-mini-6.local"}\n' \
-    "$source_sha" "$source_version" "$source_build" "$prebuilt_sha" "$summary_sha" >"$output/build-receipt.json"
+  printf '{"sourceCommit":"%s","version":"%s","build":"%s","sha256":"%s","testSummarySha256":"%s","builder":"%s"}\n' \
+    "$source_sha" "$source_version" "$source_build" "$prebuilt_sha" "$summary_sha" "$(hostname)" >"$output/build-receipt.json"
   echo 'Mini build and full tests finished. Transfer AgentFlow-prebuilt.zip, build-receipt.json and test-summary.txt to a fresh signing directory.'
   exit 0
 fi
@@ -114,7 +116,7 @@ else
   test "$receipt_source" = "$source_sha"
   test "$receipt_version" = "$source_version"
   test "$receipt_build" = "$source_build"
-  test "$builder" = Ethans-Mac-mini-6.local
+  [[ "$builder" =~ ^Ethans-Mac-mini-[0-9]+\.local$ ]]
   test "$(shasum -a 256 "$output/AgentFlow-prebuilt.zip" | awk '{print $1}')" = "$expected_sha"
   test "$(shasum -a 256 "$output/test-summary.txt" | awk '{print $1}')" = "$expected_summary_sha"
   grep -Eq "^Full release suite passed: [1-9][0-9]* named tests, [1-9][0-9]* suites; source $source_sha, build $source_build\\.$" "$output/test-summary.txt"
@@ -168,5 +170,6 @@ out.write_text(json.dumps({"version": os.environ["VERSION"], "build": os.environ
   "sha256": os.environ["ARCHIVE_SHA"], "cdhash": os.environ["CDHASH"],
   "architectures": ["arm64", "x86_64"], "developerIdTeam": "T34G959ZG8",
   "notarized": True}, indent=2) + "\n")'
-shasum -a 256 "$archive" >"$output/SHA256SUMS"
+# Public checksums must work after download, not refer to a private builder path.
+(cd "$output" && shasum -a 256 "$(basename "$archive")" >SHA256SUMS)
 printf 'Notarized release ready: %s\nSource: %s\nSHA-256: %s\n' "$archive" "$source_sha" "$archive_sha"

@@ -100,16 +100,25 @@ final class RecorderControlsHostingView: NSHostingView<AnyView> {
 }
 
 /// Explicit nonactivating drag space: the hosting view must not reinterpret a
-/// Stop/Mic/editor click as a window drag. Put this only in blank control-bar
-/// space, not over buttons or the selectable typing editor.
+/// Stop/Mic/editor click as a window drag. Put this in blank control-bar space
+/// or the read-only transcript, never over buttons or the selectable editor.
+/// Transcript instances live inside the scroll document so wheel/trackpad input
+/// can still reach that exact scroll view without a global mouse monitor.
 struct RecorderPanelDragSurface: NSViewRepresentable {
-    func makeNSView(context: Context) -> RecorderPanelDragView { RecorderPanelDragView() }
-    func updateNSView(_ view: RecorderPanelDragView, context: Context) {}
+    var onClick: (() -> Void)? = nil
+    func makeNSView(context: Context) -> RecorderPanelDragView {
+        let view = RecorderPanelDragView()
+        view.onClick = onClick
+        return view
+    }
+    func updateNSView(_ view: RecorderPanelDragView, context: Context) { view.onClick = onClick }
 }
 
 final class RecorderPanelDragView: NSView {
+    var onClick: (() -> Void)?
     private var pointerStart: NSPoint?
     private var windowStart: NSPoint?
+    private var hasDragged = false
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override var mouseDownCanMoveWindow: Bool { false }
 
@@ -117,19 +126,35 @@ final class RecorderPanelDragView: NSView {
         guard let panel = window as? MiniRecorderPanel else { return }
         pointerStart = panel.convertPoint(toScreen: event.locationInWindow)
         windowStart = panel.frame.origin
+        hasDragged = false
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard let panel = window as? MiniRecorderPanel,
               let pointerStart, let windowStart else { return }
         let current = panel.convertPoint(toScreen: event.locationInWindow)
+        // Preserve click-to-type; tiny pointer jitter is not an intended move.
+        guard hasDragged || hypot(current.x - pointerStart.x, current.y - pointerStart.y) >= 3 else { return }
+        hasDragged = true
         panel.wasDraggedByUser = true
         panel.setFrameOrigin(NSPoint(x: windowStart.x + current.x - pointerStart.x,
                                      y: windowStart.y + current.y - pointerStart.y))
     }
 
     override func mouseUp(with event: NSEvent) {
+        let clicked = pointerStart != nil && !hasDragged
+            && bounds.contains(convert(event.locationInWindow, from: nil))
         pointerStart = nil
         windowStart = nil
+        hasDragged = false
+        if clicked { onClick?() }
+    }
+
+    override func scrollWheel(with event: NSEvent) {
+        if let scroll = enclosingScrollView {
+            scroll.scrollWheel(with: event)
+        } else {
+            super.scrollWheel(with: event)
+        }
     }
 }

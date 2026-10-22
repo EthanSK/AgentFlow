@@ -3,6 +3,20 @@ import Testing
 @testable import VoiceInkPlusPlus
 
 struct VSCodeSelectionBridgeTests {
+    @Test func keyboardBridgeRequiresMatchingInputKindAndPreservesOldMouseReplies() {
+        let keyboard = VSCodeSelectionBridge.Request(nonce: "12345678-1234-1234-1234-123456789012",
+            sourcePID: 42, gestureStartedAt: 9000, requestedAt: 10_000, inputKind: "keyboard")
+        let response = VSCodeSelectionBridge.Response(version: 1, nonce: keyboard.nonce,
+            sourcePID: 42, changedAt: 9500, text: "selected", inputKind: "keyboard")
+        #expect(VSCodeSelectionBridge.validatedText(response, for: keyboard, now: 10_050) == "selected")
+        var wrong = response
+        wrong.inputKind = "mouse"
+        #expect(VSCodeSelectionBridge.validatedText(wrong, for: keyboard, now: 10_050) == nil)
+        wrong.inputKind = nil
+        #expect(VSCodeSelectionBridge.validatedText(wrong, for: keyboard, now: 10_050) == nil)
+        #expect(VSCodeSelectionBridge.validatedText(response, for: request, now: 10_050) == nil)
+    }
+
     private let request = VSCodeSelectionBridge.Request(
         nonce: "12345678-1234-1234-1234-123456789012", sourcePID: 42,
         gestureStartedAt: 9000, requestedAt: 10_000
@@ -30,6 +44,7 @@ struct VSCodeSelectionBridgeTests {
         #expect(!VSCodeSelectionBridge.supports(nil))
         let reference = try #require(LiveSelectionReference("let selected = true"))
         #expect(reference.scopedToApplication(name: "Code", bundleID: "com.microsoft.VSCode").preview == reference.preview)
-        #expect(LiveSelectionReference.maxSelectionCharacters == 8_000)
+        // Transport limits belong to the bridge, not the canonical archive.
+        #expect(try #require(LiveSelectionReference(String(repeating: "a", count: 20_000))).truncated == false)
     }
 }

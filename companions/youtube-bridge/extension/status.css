@@ -5,6 +5,8 @@
 
 body {
   width: 560px;
+  max-height: 600px;
+  overflow-y: auto;
   margin: 0;
   color: #f5f7fb;
   background: #14161a;
@@ -48,12 +50,56 @@ h1 {
   gap: 6px;
 }
 
+.automation-setting {
+  padding: 12px;
+  margin-bottom: 12px;
+  border: 1px solid #35463c;
+  border-radius: 8px;
+  background: #1b231e;
+}
+
+.automation-heading, .switch-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.automation-heading { font-size: 13px; font-weight: 650; }
+.switch-control { flex-shrink: 0; font-size: 12px; cursor: pointer; }
+.automation-setting p { margin: 7px 0 0; color: #b2bbba; font-size: 11px; line-height: 1.4; }
+#auto-pause-detail:empty { display: none; }
+#auto-pause-detail.is-error { color: #ffc0c0; }
+#auto-pause {
+  appearance: none;
+  width: 36px;
+  height: 21px;
+  margin: 0;
+  border: 1px solid #65716b;
+  border-radius: 12px;
+  background: #37413b;
+  cursor: pointer;
+}
+#auto-pause::before {
+  content: '';
+  display: block;
+  width: 15px;
+  height: 15px;
+  margin: 2px;
+  border-radius: 50%;
+  background: #f5f7fb;
+}
+#auto-pause:checked { background: #25804b; border-color: #35c275; }
+#auto-pause:checked::before { transform: translateX(15px); }
+#auto-pause:disabled { opacity: .55; cursor: wait; }
+#auto-pause:focus-visible, button:focus-visible { outline: 2px solid #8ce3ad; outline-offset: 3px; }
+
 .check-row {
   display: grid;
   grid-template-columns: 10px 128px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
-  min-height: 36px;
+  min-height: 26px;
   border: 1px solid #2b3039;
   border-radius: 7px;
   padding: 7px 8px;

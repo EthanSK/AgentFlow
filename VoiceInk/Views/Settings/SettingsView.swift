@@ -16,6 +16,7 @@ struct SettingsView: View {
     @AppStorage("hasCompletedOnboardingV2") private var hasCompletedOnboardingV2 = true
     @AppStorage("restoreClipboardAfterPaste") private var restoreClipboardAfterPaste = true
     @AppStorage("clipboardRestoreDelay") private var clipboardRestoreDelay = 2.0
+    @AppStorage(TelegramSelectionImageCapture.preferenceKey) private var telegramHighlightImages = false
     @AppStorage(PasteMethod.userDefaultsKey) private var pasteMethodRawValue = PasteMethod.standard.rawValue
     @State private var showResetOnboardingAlert = false
     @State private var hasCancelRecordingShortcut = ShortcutStore.shortcut(for: .cancelRecorder) != nil
@@ -179,6 +180,13 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Selection Context") {
+                Toggle("Telegram highlight images", isOn: $telegramHighlightImages)
+                Text("Save an image of the area I highlight when Telegram cannot provide selected text. Nearby messages may be included. Images are saved locally.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Interface") {
                 Picker("Recorder Style", selection: $recorderUIManager.recorderPanelStyle) {
                     ForEach(RecorderPanelStyle.allCases) { style in
@@ -214,8 +222,8 @@ struct SettingsView: View {
                     set: { updaterViewModel.setAutomaticallyChecksForUpdates($0) }
                 )) {
                     HStack(spacing: 4) {
-                        Text("Daily Upstream VoiceInk Checks")
-                        InfoTip("Checks official VoiceInk releases once a day. Agent Flow never installs or merges upstream updates automatically.")
+                        Text("Daily Agent Flow Update Checks")
+                        InfoTip("Checks our Agent Flow releases once a day and notifies you about newer versions. Updates are not installed automatically.")
                     }
                 }
 

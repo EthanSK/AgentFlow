@@ -182,9 +182,13 @@ class RecordingShortcutManager: ObservableObject {
                 await recorderUIManager.finishRecordingWithoutAutoSend(modeId: modeId)
             },
             pendingClipboardOnlySessionID: { engine.pendingClipboardOnlySessionID },
+            activeRecordingSessionID: { engine.activeRecordingSession?.id },
             selectPendingClipboardOnlyCompletion: { sessionID in
                 engine.selectPendingClipboardOnlyCompletion(sessionID: sessionID)
             },
+            armTypingClipboardOnlyCompletion: { engine.armTypingClipboardOnlyCompletion(sessionID: $0) },
+            pendingTypingClipboardOnlySessionID: { engine.pendingTypingClipboardOnlySessionID },
+            selectTypingClipboardOnlyCompletion: { engine.selectTypingClipboardOnlyCompletion(sessionID: $0) },
             applyPendingPrimaryCompletionGesture: { sessionID, action in
                 engine.applyPendingPrimaryCompletionGesture(
                     sessionID: sessionID,
@@ -196,6 +200,9 @@ class RecordingShortcutManager: ObservableObject {
             },
             reserveRecordingStart: {
                 await recorderUIManager.reserveRecordingStartAfterLaunchReset()
+            },
+            reserveTypingRecordingStart: {
+                await recorderUIManager.reserveRecordingStartAfterLaunchReset(microphoneOff: true)
             },
             cancelRecordingStartReservation: { requestID in
                 engine.cancelRecordingStartReservation(requestID)
@@ -216,6 +223,9 @@ class RecordingShortcutManager: ObservableObject {
         self.recorderUIManager = recorderUIManager
         self.recorderPanelShortcutManager = RecorderPanelShortcutManager(recorderUIManager: recorderUIManager)
         self.shortcutModeHandler = shortcutModeHandler
+        engine.onHUDPauseRequested = { [weak shortcutModeHandler] in
+            shortcutModeHandler?.cancelPendingPrimaryDecisions()
+        }
         self.primaryRecordingShortcutModeSource = primaryRecordingShortcutModeSource
         self.modeShortcutManager = ModeShortcutManager(
             modeProvider: {
@@ -302,7 +312,8 @@ class RecordingShortcutManager: ObservableObject {
             )
             shortcutModeHandler.logPrimaryMouseReadiness(enabled)
         } catch {
-            logger.error("Primary mouse receiver unavailable; existing keyboard shortcut unchanged")
+            let reason = (error as? PrimaryMouseCommandReceiver.Failure)?.diagnostic ?? "filesystem"
+            logger.error("Primary mouse receiver unavailable reason=\(reason, privacy: .public); existing keyboard shortcut unchanged")
         }
     }
 
@@ -473,6 +484,15 @@ class RecordingShortcutManager: ObservableObject {
         shortcutMonitor.start(
             shortcuts: shortcuts,
             interruptibleActions: interruptibleRecordingActions,
+            // A clean three-key tap is voice; extending it to both Command and
+            // Option keys belongs to typing/Won't paste instead. Keep the normal
+            // Shift-Control-Option Primary and every hold shortcut unchanged.
+            deferredModifierToggleActions: Set(interruptibleRecordingActions.filter {
+                primaryRecordingShortcutMode == .toggle
+                    && recordingMode(for: $0) == .toggle
+                    && shortcuts[$0]?.isModifierOnly == true
+                    && shortcuts[$0]?.modifierFlags == [.shift, .option, .command]
+            }),
             onKeyDown: { [weak self] action, eventTime in
                 // Bind presentation intent to the reservation made by this exact
                 // keyboard press. Mouse starts and active-session stop presses
@@ -536,9 +556,18 @@ class RecordingShortcutManager: ObservableObject {
                 MainActor.assumeIsolated {
                     guard let self,
                           action == .primaryRecording,
-                          self.engine.recordingState == .idle else {
+                          self.engine.recordingState == .idle,
+                          !self.engine.hasPendingRecordingStart else {
                         return
                     }
+                    // Original-input capture is unused/off. Do not let partial
+                    // keyboard modifiers scan a chat before the HUD can appear.
+                    guard FocusLockService.recordingStartInputCaptureEnabled else {
+                        return
+                    }
+                    // Once Start owns a reservation, its Next-only target is already
+                    // frozen. Late modifier callbacks must not scan again ahead of
+                    // the committed HUD/audio startup, even while state is still idle.
                     // Read only. Partial modifiers and every release still pass to the
                     // foreground app unchanged; this merely preserves the exact
                     // composer before Electron transiently reports an ancestor at the
@@ -552,6 +581,16 @@ class RecordingShortcutManager: ObservableObject {
             onNextTrackKeyDown: { [weak self] in
                 MainActor.assumeIsolated {
                     guard let self else { return false }
+                    // No original composer is captured anymore. This retired
+                    // recording-time Next route is a consumed no-op, not a stop
+                    // into a missing target or a fallback to some other input.
+                    // Check before canceling Primary's pending normal-stop gesture.
+                    if self.engine.recordingState.isRecordingOrPaused,
+                       self.recorderUIManager.isRecorderPanelVisible,
+                       !FocusLockService.recordingStartInputCaptureEnabled {
+                        self.logger.info("Next Track key-down consumed route=recordingStart result=unusedCaptureDisabled")
+                        return true
+                    }
                     // Next owns a different physical gesture and destination route.
                     // Cancel the delayed single-Primary decision first so it cannot
                     // fire after Next has already stopped the same recording.
@@ -604,12 +643,17 @@ class RecordingShortcutManager: ObservableObject {
                     }
                 }
             },
-            onTypingStart: { [weak self] in
+            onTypingStart: { [weak self] clipboardOnly in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
-                    await self.shortcutModeHandler.handleTypingToggle { [weak self] requestID in
+                    await self.shortcutModeHandler.handleTypingToggle(clipboardOnly: clipboardOnly) { [weak self] requestID in
                         self?.engine.requestTypingFocus(forStart: requestID)
                     }
+                }
+            },
+            onStandaloneShift: { [weak self] in
+                MainActor.assumeIsolated {
+                    _ = self?.shortcutModeHandler.handleTypingStopSecondChanceShift()
                 }
             }
         )
@@ -870,8 +914,9 @@ struct PrimaryIdleStartPressCoordinator {
 /// third press also arms one full-system-interval continuation: a fourth press
 /// finalizes the same session through normal Primary paste with auto-send suppressed.
 /// A
-/// press while already paused waits through only the short second-press window: one
-/// press resumes, while two presses finish the same session as clipboard-only.
+/// press while already paused waits through the short second-press window: one
+/// press resumes; two show Won't paste but wait through the full continuation
+/// window so a third can resume the same capture instead of finalizing it.
 /// Once an interval expires, the next press begins a fresh gesture, so two separate
 /// double-clicks can never be bridged into a triple-click. This coordinator never
 /// chooses a paste target; the eventual single stop remains `.primaryCurrentInput`.
@@ -923,7 +968,6 @@ struct PrimaryRecordingPressCoordinator {
         case deferNormalStop(generation: Int)
         case deferPausedResume(generation: Int)
         case deferClipboardFinish(generation: Int)
-        case finishPausedClipboardImmediately
         case togglePause
         case finishWithoutAutoSend
         case ignoreCompletedGesture
@@ -1013,15 +1057,30 @@ struct PrimaryRecordingPressCoordinator {
         }
 
         if recordingState == .paused {
+            if let pendingClipboardFinish {
+                let elapsed = eventTime - pendingClipboardFinish.eventTime
+                self.pendingClipboardFinish = nil
+                if elapsed >= 0, elapsed <= triplePressContinuationInterval {
+                    // The paused-state double only proposed Won't paste. A genuine
+                    // third press reverses that proposal and resumes the same WAV
+                    // and realtime session; it must not become a clipboard finish.
+                    completedMultiPressAt = eventTime
+                    return .togglePause
+                }
+                // Preserve the promised double-click finish if MainActor delayed
+                // its timer; a late press is not permission to resume instead.
+                return .performOverdueClipboardFinish
+            }
             if let pendingPausedResume {
                 let elapsed = eventTime - pendingPausedResume.eventTime
                 self.pendingPausedResume = nil
                 if elapsed >= 0, elapsed <= normalStopDecisionInterval {
-                    // Paused capture already expresses the triple-click action, so
-                    // click two can finalize Won't paste immediately. Suppress any
-                    // bounce/extra press after that consumed double gesture.
-                    completedMultiPressAt = eventTime
-                    return .finishPausedClipboardImmediately
+                    nextGeneration += 1
+                    pendingClipboardFinish = PendingClipboardFinish(
+                        eventTime: eventTime,
+                        generation: nextGeneration
+                    )
+                    return .deferClipboardFinish(generation: nextGeneration)
                 }
                 // The timer should normally have resumed capture already. If the
                 // MainActor was delayed, honor the promised single-press Resume
@@ -1166,13 +1225,18 @@ final class RecordingShortcutModeHandler {
     private let finishRecordingToClipboard: @MainActor (UUID?) async -> Bool
     private let finishRecordingWithoutAutoSend: @MainActor (UUID?) async -> Bool
     private let pendingClipboardOnlySessionID: @MainActor () -> UUID?
+    private let activeRecordingSessionID: @MainActor () -> UUID?
     private let selectPendingClipboardOnlyCompletion: @MainActor (UUID) -> Bool
+    private let armTypingClipboardOnlyCompletion: @MainActor (UUID) -> Void
+    private let pendingTypingClipboardOnlySessionID: @MainActor () -> UUID?
+    private let selectTypingClipboardOnlyCompletion: @MainActor (UUID) -> Bool
     private let applyPendingPrimaryCompletionGesture: @MainActor (
         UUID,
         PendingPrimaryCompletionGestureAction
     ) -> Bool
     private let cancelRecording: @MainActor () async -> Void
     private let reserveRecordingStart: @MainActor () async -> UUID?
+    private let reserveTypingRecordingStart: (@MainActor () async -> UUID?)?
     private let cancelRecordingStartReservation: @MainActor (UUID) -> Void
     private let startReservedRecording: (@MainActor (UUID, UUID?) async -> Void)?
     private let primaryStartDecisionClock: @MainActor () -> ContinuousClock.Instant
@@ -1232,6 +1296,7 @@ final class RecordingShortcutModeHandler {
     private var primaryPauseTransitionTask: Task<Bool, Never>?
     private var suppressPrimaryIdlePressUntil: TimeInterval?
     private var isHandlingTypingToggle = false
+    private var typingStopSecondChanceSessionID: UUID?
 
     // Feature A (focus lock) — NEW START→STOP DECISION MODEL (2026-06-21).
     //
@@ -1279,13 +1344,18 @@ final class RecordingShortcutModeHandler {
         finishRecordingToClipboard: @escaping @MainActor (UUID?) async -> Bool = { _ in false },
         finishRecordingWithoutAutoSend: @escaping @MainActor (UUID?) async -> Bool = { _ in false },
         pendingClipboardOnlySessionID: @escaping @MainActor () -> UUID? = { nil },
+        activeRecordingSessionID: @escaping @MainActor () -> UUID? = { nil },
         selectPendingClipboardOnlyCompletion: @escaping @MainActor (UUID) -> Bool = { _ in false },
+        armTypingClipboardOnlyCompletion: @escaping @MainActor (UUID) -> Void = { _ in },
+        pendingTypingClipboardOnlySessionID: @escaping @MainActor () -> UUID? = { nil },
+        selectTypingClipboardOnlyCompletion: @escaping @MainActor (UUID) -> Bool = { _ in false },
         applyPendingPrimaryCompletionGesture: @escaping @MainActor (
             UUID,
             PendingPrimaryCompletionGestureAction
         ) -> Bool = { _, _ in false },
         cancelRecording: @escaping @MainActor () async -> Void,
         reserveRecordingStart: @escaping @MainActor () async -> UUID? = { UUID() },
+        reserveTypingRecordingStart: (@MainActor () async -> UUID?)? = nil,
         cancelRecordingStartReservation: @escaping @MainActor (UUID) -> Void = { _ in },
         startReservedRecording: (@MainActor (UUID, UUID?) async -> Void)? = nil,
         shortcutForAction: @escaping @MainActor (ShortcutAction) -> Shortcut? = { _ in nil },
@@ -1312,10 +1382,15 @@ final class RecordingShortcutModeHandler {
         self.finishRecordingToClipboard = finishRecordingToClipboard
         self.finishRecordingWithoutAutoSend = finishRecordingWithoutAutoSend
         self.pendingClipboardOnlySessionID = pendingClipboardOnlySessionID
+        self.activeRecordingSessionID = activeRecordingSessionID
         self.selectPendingClipboardOnlyCompletion = selectPendingClipboardOnlyCompletion
+        self.armTypingClipboardOnlyCompletion = armTypingClipboardOnlyCompletion
+        self.pendingTypingClipboardOnlySessionID = pendingTypingClipboardOnlySessionID
+        self.selectTypingClipboardOnlyCompletion = selectTypingClipboardOnlyCompletion
         self.applyPendingPrimaryCompletionGesture = applyPendingPrimaryCompletionGesture
         self.cancelRecording = cancelRecording
         self.reserveRecordingStart = reserveRecordingStart
+        self.reserveTypingRecordingStart = reserveTypingRecordingStart
         self.cancelRecordingStartReservation = cancelRecordingStartReservation
         self.startReservedRecording = startReservedRecording
         self.primaryStartDecisionClock = primaryStartDecisionClock
@@ -1338,6 +1413,7 @@ final class RecordingShortcutModeHandler {
     }
 
     func reset() {
+        typingStopSecondChanceSessionID = nil
         cancelPendingPrimaryDecisions()
         isShortcutPressed = false
         shortcutPressStartTime = nil
@@ -1644,7 +1720,8 @@ final class RecordingShortcutModeHandler {
         // ShortcutMonitor's reducer. Only a released-and-pressed-again Primary
         // toggle bypasses the legacy cooldown so a recording-time second click can
         // select Won't paste and a third can Pause; while already paused, the
-        // second click selects Won't paste without first resuming capture.
+        // second click selects provisional Won't paste without first resuming
+        // capture, and a third click can clear it to resume the same session.
         !(action == .primaryRecording && mode == .toggle)
     }
 
@@ -1656,6 +1733,7 @@ final class RecordingShortcutModeHandler {
         decisionRegistered: @escaping @MainActor () -> Void = {}
     ) async {
         guard isCurrent() else { return }
+        typingStopSecondChanceSessionID = nil // A new Primary gesture takes ownership; never return to an older keyboard-stopped result.
         if recordingState() == .idle {
             if let suppressPrimaryIdlePressUntil {
                 if eventTime <= suppressPrimaryIdlePressUntil {
@@ -1712,13 +1790,6 @@ final class RecordingShortcutModeHandler {
                 modeId: modeId
             )
 
-        case .finishPausedClipboardImmediately:
-            primaryGestureDecisionTask?.cancel()
-            primaryGestureDecisionTask = nil
-            setActiveRecordingCompletionDisposition(.clipboardOnly)
-            setActiveRecordingAutoSendDisposition(.configured)
-            await finishPrimaryRecordingToClipboard(modeId: modeId)
-
         case .togglePause:
             primaryGestureDecisionTask?.cancel()
             primaryGestureDecisionTask = nil
@@ -1733,7 +1804,7 @@ final class RecordingShortcutModeHandler {
             if primaryPauseTransitionTask != nil {
                 primaryPauseTransitionTask = nil
             }
-            vippLog.info("shortcut: genuine Primary triple-click pause success=\(didPause, privacy: .public) state=\(String(describing: self.recordingState()), privacy: .public)")
+            vippLog.info("shortcut: genuine Primary triple-click capture toggle success=\(didPause, privacy: .public) state=\(String(describing: self.recordingState()), privacy: .public)")
 
         case .finishWithoutAutoSend:
             primaryGestureDecisionTask?.cancel()
@@ -2072,7 +2143,7 @@ final class RecordingShortcutModeHandler {
     ) {
         primaryGestureDecisionTask?.cancel()
         let delay = primaryPressCoordinator.triplePressContinuationInterval
-        vippLog.info("shortcut: Primary double-click deferred for \(delay, privacy: .public)s awaiting possible pause triple-click")
+        vippLog.info("shortcut: Primary double-click deferred for \(delay, privacy: .public)s awaiting possible pause/resume triple-click")
         primaryGestureDecisionTask = Task { @MainActor [weak self] in
             let nanoseconds = UInt64(delay * 1_000_000_000)
             do {
@@ -2112,22 +2183,40 @@ final class RecordingShortcutModeHandler {
         vippLog.info("shortcut: Primary quadruple-click finish success=\(didFinish, privacy: .public) destination=primaryCurrentInput paste=true autoSend=false playback=restoredIfOwned")
     }
 
-    /// Both Command AND both Option keys are a complete Start/Finish control, not
+    /// Both Command AND both Option keys are a Start/Finish control, not
     /// a Primary multi-click gesture. The earlier both-Command chord was start-only;
     /// Ethan corrected that and then moved it to four keys to avoid another shortcut.
-    /// Finish recording OR paused composition through the normal
-    /// current-input route, never resume the mic or select a saved destination.
-    func handleTypingToggle(requestTypingFocus: @MainActor (UUID) -> Void) async {
+    /// An active recording or paused composition finishes through the normal
+    /// current-input route regardless of floating-editor focus. Focus return after
+    /// captured context is separate; this shortcut never refocuses.
+    /// Shift still explicitly requests Won't paste.
+    func handleTypingToggle(clipboardOnly: Bool = false,
+                            requestTypingFocus: @MainActor (UUID) -> Void) async {
         guard !isHandlingTypingToggle else { return }
         isHandlingTypingToggle = true
         defer { isHandlingTypingToggle = false }
         switch recordingState() {
         case .recording, .paused:
             cancelPendingPrimaryDecisions()
-            await toggleRecorderPanel(nil, .primaryCurrentInput)
+            // Bind before the asynchronous stop: looking up "newest" afterward
+            // could select another result. Only this normal four-key finish arms
+            // Shift's second chance; Primary/Next stops and clipboard finishes do not.
+            typingStopSecondChanceSessionID = clipboardOnly ? nil : activeRecordingSessionID()
+            if let sessionID = typingStopSecondChanceSessionID {
+                armTypingClipboardOnlyCompletion(sessionID)
+            }
+            if clipboardOnly {
+                // Reuse the recovery/clipboard route, never Cancel or a paste
+                // with Return disabled. Authored text and context must survive.
+                await finishPrimaryRecordingToClipboard(modeId: nil)
+            } else {
+                await toggleRecorderPanel(nil, .primaryCurrentInput)
+            }
         case .idle:
-            guard let startReservedRecording,
-                  let requestID = await reserveRecordingStart() else { return }
+            typingStopSecondChanceSessionID = nil
+            // Shift is a finish-only variant, not a new kind of idle recording.
+            guard !clipboardOnly, let startReservedRecording,
+                  let requestID = await (reserveTypingRecordingStart ?? reserveRecordingStart)() else { return }
             requestTypingFocus(requestID)
             await startReservedRecording(requestID, nil)
         case .starting, .transcribing, .enhancing, .busy:
@@ -2137,6 +2226,25 @@ final class RecordingShortcutModeHandler {
         }
     }
 
+    @discardableResult
+    func handleTypingStopSecondChanceShift() -> Bool {
+        guard let sessionID = typingStopSecondChanceSessionID else { return false }
+        // An overlapping new capture, a newer pending result, Cancel, and the
+        // irreversible output boundary all reject this exact one-shot request.
+        // Never search backward or undo an issued paste/Return. The existing
+        // session clipboard route retains formatting, prompt files and History.
+        guard !recordingState().isRecordingOrPaused,
+              recordingState() != .starting,
+              pendingTypingClipboardOnlySessionID() == sessionID else {
+            typingStopSecondChanceSessionID = nil
+            return false
+        }
+        typingStopSecondChanceSessionID = nil
+        let selected = selectTypingClipboardOnlyCompletion(sessionID)
+        vippLog.info("shortcut: typing stop second-chance Shift selected=\(selected, privacy: .public) session=\(sessionID.uuidString, privacy: .public) paste=false autoSend=false")
+        return selected
+    }
+
     func cancelPendingPrimaryMouseDecisions() {
         // The native readiness gate must not rewrite an independently accepted
         // keyboard gesture merely because the mouse transport became unavailable.
@@ -2144,6 +2252,7 @@ final class RecordingShortcutModeHandler {
     }
 
     func cancelPendingPrimaryDecisions() {
+        typingStopSecondChanceSessionID = nil
         lastPrimaryGestureWasMouse = false
         cancelPendingPrimaryStartDecision()
         primaryGestureDecisionTask?.cancel()

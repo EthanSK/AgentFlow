@@ -25,7 +25,7 @@
       "kind": "narration",
       "start": 4.8,
       "text": "Press your shortcut and just talk.",
-      "picture": "Mac desktop. The recorder rises above the Dock."
+      "picture": "Mac desktop. The recorder rises from the bottom edge of the screen."
     },
     {
       "id": "dictate1",
@@ -60,7 +60,7 @@
       "kind": "narration",
       "start": 24,
       "text": "Press again, and Agent Flow pastes it all in one go, so your agent can see what you were looking at.",
-      "picture": "Stop. Codex receives one short coloured message linking to the full prompt, which then opens with the selection and the screenshot."
+      "picture": "Stop. Codex receives one message: the plain words with inline selection and screenshot markers, then the full timeline. Its link opens the full prompt with the selection and the screenshot."
     },
     {
       "id": "outro",

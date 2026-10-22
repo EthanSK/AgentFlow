@@ -114,6 +114,9 @@ private final class NativeBridgeController {
         log("Chrome→app youtube-resume-result tab=\(message.tabId.map { String($0) } ?? "nil") resumed=\(message.resumed.map { String($0) } ?? "nil") reason=\(message.reason ?? "")")
         postBridgeMessage(message)
 
+      case "youtube-jump-ahead-result":
+        postBridgeMessage(message)
+
       case "youtube-seek-result":
         log("Chrome→app youtube-seek-result tab=\(message.tabId.map { String($0) } ?? "nil") sought=\(message.sought.map { String($0) } ?? "nil") seconds=\(message.seekSeconds.map { String($0) } ?? "nil") reason=\(message.reason ?? "")")
         postBridgeMessage(message)
@@ -187,6 +190,9 @@ private final class NativeBridgeController {
       // resume would violate playback preservation, while omitting it would strand bridge ownership.
       case "finish-dictation-preserving-playback":
         log("app→Chrome finish-dictation-preserving-playback reason=\(message.reason ?? "")")
+        sendNativeMessage(message)
+
+      case "jump-ahead-youtube":
         sendNativeMessage(message)
 
       case "seek-youtube":

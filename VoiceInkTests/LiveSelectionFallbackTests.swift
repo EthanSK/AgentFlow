@@ -15,6 +15,8 @@ private final class FakeSelectionProbe: LiveSelectionAccessibilityProbe {
         var rangeText: String?
         var markerText: String?
         var bounds: CGRect?
+        var rangeBounds: CGRect?
+        var markerBounds: CGRect?
     }
 
     var nodes: [Int: Node] = [:]
@@ -46,29 +48,402 @@ private final class FakeSelectionProbe: LiveSelectionAccessibilityProbe {
 
     func subrole(of element: Int) -> String? { nodes[element]?.subrole }
 
-    func selectedText(of element: Int) -> String? {
+    func selection(of element: Int, source: LiveSelectionTextSource) -> LiveSelectionSnapshot? {
         selectionReads.append(element)
-        return nodes[element]?.selectedText
-    }
-
-    func selectedRangeText(of element: Int) -> String? {
-        selectionReads.append(element)
-        return nodes[element]?.rangeText
-    }
-
-    func selectedMarkerText(of element: Int) -> String? {
-        selectionReads.append(element)
-        return nodes[element]?.markerText
-    }
-
-    func selectionBounds(of element: Int, source: LiveSelectionTextSource) -> CGRect? {
-        nodes[element]?.bounds
+        guard let node = nodes[element] else { return nil }
+        let text: String?
+        let bounds: CGRect?
+        switch source {
+        case .selectedText: text = node.selectedText; bounds = node.bounds
+        case .selectedRange: text = node.rangeText; bounds = node.rangeBounds ?? node.bounds
+        case .textMarkers: text = node.markerText; bounds = node.markerBounds ?? node.bounds
+        }
+        return text.map { LiveSelectionSnapshot(text: $0, bounds: bounds) }
     }
 
     func isSame(_ lhs: Int, _ rhs: Int) -> Bool { lhs == rhs }
 }
 
 struct LiveSelectionFallbackTests {
+    @Test func selectedRangeAttributedFallbackPreservesExactTextAndWhitespace() {
+        let text = "  selected \\textsf{symbol} 👨🏽‍💻\n"
+        var attributedCalls = 0
+        #expect(LiveSelectionRangeTextReader.read(plain: { nil }, attributed: {
+            attributedCalls += 1
+            return NSAttributedString(string: text)
+        }) == text)
+        #expect(attributedCalls == 1)
+        #expect(LiveSelectionRangeTextReader.read(plain: { " \n" }, attributed: {
+            NSAttributedString(string: "fresh selection")
+        }) == "fresh selection")
+    }
+
+    @Test func selectedRangePlainSuccessNeverQueriesAttributedOrWholeDocument() {
+        #expect(LiveSelectionRangeTextReader.read(plain: { "exact selection" }, attributed: {
+            Issue.record("Plain success must not request a second representation")
+            return NSAttributedString(string: "different range")
+        }) == "exact selection")
+    }
+
+    @Test func selectedRangeFallbackRefusesMissingEmptyAndWrongTypes() {
+        let values: [Any?] = [nil, "not an attributed range", NSAttributedString(string: " \n")]
+        for value in values {
+            #expect(LiveSelectionRangeTextReader.read(plain: { nil }, attributed: { value }) == nil)
+        }
+    }
+
+    @Test func provenAncestorBeatsNearerBoundlessPointerFragment() {
+        let probe = FakeSelectionProbe()
+        let g = gesture(CGPoint(x: 100, y: 100), CGPoint(x: 200, y: 100))
+        probe.hitTargets = [(g.mouseDown, 1)]
+        probe.nodes[1] = .init(role: "AXStaticText", parent: 2, selectedText: "symbol")
+        probe.nodes[2] = .init(role: "AXWebArea", markerText: "full symbol selection",
+            markerBounds: CGRect(x: 90, y: 90, width: 160, height: 30))
+        #expect(resolve(probe, g).candidate?.text == "full symbol selection")
+        probe.nodes[2]?.markerBounds = CGRect(x: 700, y: 700, width: 100, height: 30)
+        #expect(resolve(probe, g).candidate?.text == "symbol")
+        #expect(LiveSelectionAccessibilityResolver(probe: probe, gesture: g,
+            gestureInSourceWindow: true, requiresGestureBounds: true).resolve().candidate == nil)
+    }
+
+    @Test func budgetExpiryKeepsNearestPointerFallback() {
+        let probe = FakeSelectionProbe()
+        let g = gesture(CGPoint(x: 100, y: 100), CGPoint(x: 200, y: 100))
+        probe.hitTargets = [(g.mouseDown, 1)]
+        probe.nodes[1] = .init(role: "AXStaticText", parent: 2, selectedText: "chosen text")
+        probe.nodes[2] = .init(role: "AXWebArea", selectedText: "must not read")
+        probe.expireAfterRoleReads = 2
+        #expect(resolve(probe, g).candidate?.text == "chosen text")
+        #expect(!probe.selectionReads.contains(2))
+    }
+
+    @Test func containingMarkerWithTheSameBoundsDoesNotWidenTheSelection() {
+        let probe = FakeSelectionProbe()
+        probe.focused = 1
+        let bounds = CGRect(x: 90, y: 90, width: 130, height: 30)
+        var g = gesture(CGPoint(x: 100, y: 100), CGPoint(x: 200, y: 100))
+        g.callbackLagMilliseconds = 0
+        #expect(g.spanEvidence(for: bounds, in: display) == .consistent)
+        probe.nodes[1] = .init(role: "AXStaticText", selectedText: "α + β", rangeText: "α + β",
+            markerText: "  before α + β after\n", bounds: bounds, markerBounds: bounds)
+        #expect(resolve(probe, g).candidate?.text == "α + β")
+        #expect(resolve(probe, g).candidate?.source == .selectedText)
+        #expect(resolve(probe, g).preventedWidening == 1)
+        probe.nodes[1]?.role = "AXTextArea"
+        #expect(resolve(probe, g).candidate?.text == "α + β")
+        probe.nodes[1]?.role = "AXStaticText"
+        probe.nodes[1]?.markerText = "longer unrelated selection"
+        #expect(resolve(probe, g).candidate?.text == "α + β")
+        probe.nodes[1]?.markerText = "before α + β after"
+        probe.nodes[1]?.markerBounds = CGRect(x: 700, y: 700, width: 100, height: 30)
+        #expect(resolve(probe, g).candidate?.text == "α + β")
+        probe.nodes[1]?.markerBounds = nil
+        probe.nodes[1]?.bounds = nil
+        probe.nodes[1]?.rangeBounds = bounds
+        #expect(resolve(probe, g).candidate?.text == "α + β")
+    }
+
+    @Test func aggregateGeometryIsDiagnosticNotAGlyphSelectionVeto() {
+        for text in ["t: ethaneus99@gmail.com‾ or ethaneustg@gmail.com‾?",
+                     "Which support account should I select: ethaneus99@gmail.com‾ or ethaneustg@gmail.com‾?"] {
+            for (role, clicks) in [("AXStaticText", 0), ("AXStaticText", 1),
+                                   ("AXWebArea", 0), ("AXWebArea", 1),
+                                   ("AXTextArea", 0), ("AXTextArea", 1)] {
+                let probe = FakeSelectionProbe()
+                probe.focused = 1
+                probe.nodes[1] = .init(role: role, markerText: text,
+                    markerBounds: CGRect(x: 80, y: 100, width: 678, height: 22))
+                var g = gesture(CGPoint(x: 402, y: 110), CGPoint(x: 558, y: 110))
+                g.callbackLagMilliseconds = 6
+                g.clickCount = clicks
+                let result = precisionResolve(probe, g)
+                // With no competing exact selection, do not guess a glyph cut
+                // or discard the host's only reported range based on its box.
+                #expect(result.candidate?.text == text)
+                #expect(result.observedOverextended == 1)
+            }
+        }
+    }
+
+    @Test func narrowerAddressRangeBeatsBroadMarkerInEitherDragDirection() {
+        let selected = "  ethaneus99@gmail.com‾\n"
+        for points in [(402.0, 558.0), (558.0, 402.0)] {
+            let probe = FakeSelectionProbe()
+            probe.focused = 1
+            probe.nodes[1] = .init(role: "AXStaticText", rangeText: selected,
+                markerText: "before \(selected) or ethaneustg@gmail.com‾?",
+                rangeBounds: CGRect(x: 400, y: 100, width: 160, height: 22),
+                markerBounds: CGRect(x: 80, y: 100, width: 678, height: 22))
+            var g = gesture(CGPoint(x: points.0, y: 110), CGPoint(x: points.1, y: 110))
+            g.callbackLagMilliseconds = 6
+            let result = precisionResolve(probe, g)
+            #expect(result.candidate?.text == selected)
+            #expect(result.candidate?.source == .selectedRange)
+            #expect(result.candidate?.spanEvidence == .consistent)
+            #expect(result.observedOverextended == 1)
+        }
+    }
+
+    @Test func genuineCrossElementMarkerStillWinsWhenTheLeafMissesADragEndpoint() {
+        for points in [(382.0, 756.0), (756.0, 382.0)] {
+            let probe = FakeSelectionProbe()
+            probe.focused = 1
+            probe.nodes[1] = .init(role: "AXStaticText", selectedText: "α + β",
+                markerText: "  before α + β after\n",
+                bounds: CGRect(x: 380, y: 100, width: 180, height: 22),
+                markerBounds: CGRect(x: 380, y: 100, width: 378, height: 22))
+            var g = gesture(CGPoint(x: points.0, y: 110), CGPoint(x: points.1, y: 110))
+            g.callbackLagMilliseconds = 6
+            let result = precisionResolve(probe, g)
+            #expect(result.candidate?.text == "  before α + β after\n")
+            #expect(result.candidate?.source == .textMarkers)
+            #expect(result.acceptedMarkerExpansion == 1)
+        }
+    }
+
+    @Test func broadFocusedParagraphDoesNotHideTheNarrowPointerRange() {
+        let probe = FakeSelectionProbe()
+        probe.focused = 1
+        probe.nodes[1] = .init(role: "AXWebArea", markerText: "whole question",
+            markerBounds: CGRect(x: 80, y: 100, width: 678, height: 22))
+        probe.nodes[2] = .init(role: "AXStaticText", rangeText: "first address",
+            rangeBounds: CGRect(x: 400, y: 100, width: 160, height: 22))
+        var g = gesture(CGPoint(x: 402, y: 110), CGPoint(x: 558, y: 110))
+        g.callbackLagMilliseconds = 6
+        probe.hitTargets = [(g.mouseDown, 2)]
+        let result = precisionResolve(probe, g)
+        #expect(result.candidate?.text == "first address")
+        #expect(result.candidate?.tier == .pointerElement)
+        #expect(result.observedOverextended == 1)
+    }
+
+    @Test func matchingTokenlessTextIsNotDiscardedByAnAggregateBox() {
+        let probe = FakeSelectionProbe()
+        probe.focused = 1
+        probe.nodes[1] = .init(role: "AXStaticText", selectedText: "whole question",
+            markerText: "whole question", markerBounds: CGRect(x: 80, y: 100, width: 678, height: 22))
+        var g = gesture(CGPoint(x: 402, y: 110), CGPoint(x: 558, y: 110))
+        g.callbackLagMilliseconds = 6
+        #expect(precisionResolve(probe, g).candidate?.text == "whole question")
+    }
+
+    @Test func multiclickAndLaggedGesturesNeverInventGlyphEndpointsOrWidenText() {
+        for (clicks, lag) in [(2, 0), (3, 0), (1, 51)] {
+            let probe = FakeSelectionProbe()
+            probe.focused = 1
+            probe.nodes[1] = .init(role: "AXStaticText", markerText: "whole paragraph",
+                markerBounds: CGRect(x: 80, y: 100, width: 678, height: 22))
+            var g = gesture(CGPoint(x: 402, y: 110), CGPoint(x: 558, y: 110))
+            g.clickCount = clicks
+            g.callbackLagMilliseconds = lag
+            #expect(precisionResolve(probe, g).candidate?.text == "whole paragraph")
+            #expect(precisionResolve(probe, g).candidate?.spanEvidence == .unverifiable)
+            probe.nodes[1]?.rangeText = "paragraph"
+            probe.nodes[1]?.rangeBounds = CGRect(x: 400, y: 100, width: 160, height: 22)
+            #expect(precisionResolve(probe, g).candidate?.text == "paragraph")
+            #expect(precisionResolve(probe, g).preventedWidening == 1)
+        }
+    }
+
+    @Test func multilineSpanChecksRowsButPreservesAutoscrollAndEditableRanges() {
+        var g = gesture(CGPoint(x: 402, y: 110), CGPoint(x: 100, y: 170))
+        g.callbackLagMilliseconds = 0
+        let probe = FakeSelectionProbe()
+        probe.focused = 1
+        probe.nodes[1] = .init(role: "AXStaticText", markerText: "two lines\n",
+            markerBounds: CGRect(x: 80, y: 100, width: 678, height: 82))
+        #expect(precisionResolve(probe, g).candidate?.text == "two lines\n")
+        probe.nodes[1]?.markerBounds = CGRect(x: 80, y: 100, width: 678, height: 160)
+        #expect(precisionResolve(probe, g).candidate?.text == "two lines\n")
+        #expect(precisionResolve(probe, g).candidate?.spanEvidence == .overextended)
+        probe.nodes[1]?.markerBounds = CGRect(x: 80, y: -20, width: 678, height: 280)
+        #expect(precisionResolve(probe, g).candidate?.spanEvidence == .unverifiable)
+        probe.nodes[1] = .init(role: "AXTextArea", rangeText: "ordinary editor range",
+            rangeBounds: CGRect(x: 80, y: 100, width: 678, height: 160))
+        #expect(precisionResolve(probe, g).candidate?.text == "ordinary editor range")
+    }
+
+    @Test func spanDiagnosticsNeverReplaceTheSourceSelection() {
+        let probe = FakeSelectionProbe()
+        probe.focused = 1
+        probe.nodes[1] = .init(role: "AXStaticText", markerText: "host selection",
+            markerBounds: CGRect(x: 80, y: 100, width: 678, height: 22))
+        var g = gesture(CGPoint(x: 402, y: 110), CGPoint(x: 558, y: 110))
+        g.callbackLagMilliseconds = 0
+        #expect(resolve(probe, g).candidate?.text == "host selection")
+        #expect(precisionResolve(probe, g).candidate?.text == "host selection")
+        #expect(precisionResolve(probe, g).observedOverextended == 1)
+        g.callbackLagMilliseconds = nil
+        #expect(precisionResolve(probe, g).candidate?.spanEvidence == .unverifiable)
+        #expect(precisionResolve(probe, nil).candidate?.text == "host selection")
+    }
+
+    private func precisionResolve(_ probe: FakeSelectionProbe, _ gesture: LiveSelectionGesture?) -> LiveSelectionResolution {
+        LiveSelectionAccessibilityResolver(probe: probe, gesture: gesture, gestureInSourceWindow: true,
+            checksDragSpan: true, sourceWindowBounds: display).resolve()
+    }
+
+    @Test func partialWordPointerTextBeatsAContainingFocusedMarkerEvenWithLag() {
+        for lag in [6, 68] {
+            for points in [(402.0, 426.0), (426.0, 402.0)] {
+                let probe = FakeSelectionProbe()
+                probe.focused = 1
+                probe.nodes[1] = .init(role: "AXWebArea", markerText: "I'll keep new coverage small",
+                    markerBounds: CGRect(x: 80, y: 100, width: 678, height: 22))
+                probe.nodes[2] = .init(role: "AXStaticText", parent: 1, selectedText: "ll keep")
+                var g = gesture(CGPoint(x: points.0, y: 110), CGPoint(x: points.1, y: 110))
+                g.callbackLagMilliseconds = lag
+                g.clickCount = 0
+                probe.hitTargets = [(g.mouseDown, 2)]
+                let result = precisionResolve(probe, g)
+                #expect(result.candidate?.text == "ll keep")
+                #expect(result.candidate?.tier == .pointerElement)
+                #expect(result.candidate?.source == .selectedText)
+                #expect(probe.hitTests == [g.mouseDown])
+            }
+        }
+    }
+
+    @Test func pointerTokenlessSelectionDoesNotLoseToItsOwnContainingMarker() {
+        let probe = FakeSelectionProbe()
+        probe.nodes[2] = .init(role: "AXStaticText", selectedText: "sym", markerText: "symbol boundary",
+            markerBounds: CGRect(x: 380, y: 100, width: 170, height: 22))
+        var g = gesture(CGPoint(x: 402, y: 110), CGPoint(x: 426, y: 110))
+        g.callbackLagMilliseconds = 5
+        probe.hitTargets = [(g.mouseDown, 2)]
+        let result = precisionResolve(probe, g)
+        #expect(result.candidate?.text == "sym")
+        #expect(result.preventedWidening == 1)
+        // Never carry a boundless foreground fallback into a background read.
+        let background = LiveSelectionAccessibilityResolver(probe: probe, gesture: g,
+            gestureInSourceWindow: true, requiresGestureBounds: true, checksDragSpan: true).resolve()
+        #expect(background.candidate?.text == "symbol boundary")
+    }
+
+    @Test func unrelatedPointerTextAndFocusedEditorsKeepTheirExistingSafety() {
+        let probe = FakeSelectionProbe()
+        probe.focused = 1
+        probe.nodes[1] = .init(role: "AXTextArea", rangeText: "editor selection",
+            rangeBounds: CGRect(x: 400, y: 100, width: 80, height: 22))
+        probe.nodes[2] = .init(role: "AXStaticText", selectedText: "other")
+        let g = gesture(CGPoint(x: 402, y: 110), CGPoint(x: 426, y: 110))
+        probe.hitTargets = [(g.mouseDown, 2)]
+        #expect(precisionResolve(probe, g).candidate?.text == "editor selection")
+        #expect(probe.hitTests.isEmpty)
+    }
+
+    @Test func degenerateFarMathGeometryIsCountedAndStillRejected() {
+        let probe = FakeSelectionProbe()
+        probe.focused = 1
+        probe.nodes[1] = .init(role: "AXMathElement", markerText: "far math",
+            markerBounds: CGRect(x: 700, y: 700, width: 1, height: 1))
+        let result = resolve(probe, gesture(CGPoint(x: 100, y: 100), CGPoint(x: 200, y: 100)))
+        #expect(result.candidate == nil)
+        #expect(result.degenerateBounds == 1)
+        #expect(result.rejectedElsewhere == 1)
+    }
+
+    @Test func sourceIdentityIgnoresTransientOverlayButStillRejectsResizedWindow() {
+        let window = LiveSelectionWindow(ownerPID: 42, bounds: CGRect(x: 0, y: 0, width: 500, height: 500),
+            alpha: 1, windowID: 99)
+        let overlay = LiveSelectionWindow(ownerPID: 42, bounds: CGRect(x: 90, y: 90, width: 200, height: 100),
+            alpha: 1, windowID: 100, layer: 101)
+        let g = gesture(CGPoint(x: 100, y: 100), CGPoint(x: 200, y: 100))
+        let identity = LiveSelectionReadIdentity(processIdentifier: 42, gesture: g, windows: [overlay, window])
+        #expect(identity.window?.windowID == 99)
+        #expect(identity.isValid(frontmostPID: 7, windows: [window]))
+        let resized = LiveSelectionWindow(ownerPID: 42, bounds: CGRect(x: 0, y: 0, width: 600, height: 500),
+            alpha: 1, windowID: 99)
+        #expect(!identity.isValid(frontmostPID: 42, windows: [resized]))
+        #expect(g.touchesWindow(ownedBy: 42, in: [overlay]) == false)
+        let floating = LiveSelectionWindow(ownerPID: 42, bounds: window.bounds,
+            alpha: 1, windowID: 101, layer: 3)
+        let floatingIdentity = LiveSelectionReadIdentity(processIdentifier: 42, gesture: g,
+            windows: [overlay, floating])
+        #expect(floatingIdentity.window?.windowID == 101)
+        #expect(floatingIdentity.isValid(frontmostPID: 7, windows: [floating]))
+        #expect(g.touchesWindow(ownedBy: 42, in: [floating]) == true)
+        // CGWindow inventory is front-to-back: a real floating panel above a
+        // same-app main window owns this gesture, not the window underneath it.
+        let overlapping = LiveSelectionReadIdentity(processIdentifier: 42, gesture: g,
+            windows: [overlay, floating, window])
+        #expect(overlapping.window?.windowID == 101)
+        #expect(!overlapping.isValid(frontmostPID: 42, windows: [window]))
+        #expect(overlapping.isValid(frontmostPID: 7, windows: [floating, window]))
+    }
+
+    @Test func cachedSpeechAnchorsPreserveUnicodeRevisionsAndCopies() throws {
+        let original = try #require(LiveSelectionReference("selected words"))
+        #expect(original.spokenWordCount == 0)
+        let prefix = "  First\tsecond\nthird\u{00a0}fourth\u{2003}👩🏽‍💻  "
+        let anchored = original.anchored(after: prefix)
+        #expect(anchored.spokenWordCount == 5)
+        #expect(anchored.timed(at: Date()).identifiedForCapture(UUID()).spokenWordCount == 5)
+        #expect(anchored.scopedToApplication(name: "ChatGPT", bundleID: "com.openai.codex").spokenWordCount == 5)
+        #expect(anchored.anchored(after: "revised").spokenWordCount == 1)
+        #expect(anchored.anchored(after: "\n\t").spokenWordCount == 0)
+        #expect(anchored != original.anchored(after: "different five words right here"))
+        let refs = [original.anchored(after: "one two"), original.anchored(after: "one"),
+                    original.anchored(after: "one two three four five six")]
+        #expect(LiveSelectionReference.previewParts(refs, with: "one two three four") == [
+            .speech("one two"), .selection(original.preview), .selection(original.preview),
+            .speech("three four"), .selection(original.preview)
+        ])
+    }
+
+    @Test func longTimelineAnchorReadsAvoidRescanningCumulativeSpeech() throws {
+        let original = try #require(LiveSelectionReference("selection"))
+        let prefixes = (1...100).map { String(repeating: "spoken word ", count: $0 * 10) }
+        let refs = prefixes.map { original.anchored(after: $0) }
+        let cachedStart = Date()
+        var cached = 0
+        for _ in 0..<100 { cached += refs.reduce(0) { $0 + $1.spokenWordCount } }
+        let cachedTime = Date().timeIntervalSince(cachedStart)
+        let uncachedStart = Date()
+        var uncached = 0
+        for _ in 0..<100 { uncached += prefixes.reduce(0) { $0 + $1.split(whereSeparator: \.isWhitespace).count } }
+        let uncachedTime = Date().timeIntervalSince(uncachedStart)
+        #expect(cached == uncached && cached == 10_100_000)
+        print("HUD anchor benchmark: cached=\(cachedTime)s uncached=\(uncachedTime)s sameWords=\(cached)")
+    }
+
+    @Test func staleAccessorDoesNotMaskFreshMarkerSelectionOnTheSameElement() {
+        let probe = FakeSelectionProbe()
+        probe.focused = 1
+        probe.nodes[1] = .init(role: "AXWebArea", selectedText: "old chat", rangeText: "old range",
+            markerText: "new chat highlight", bounds: CGRect(x: 700, y: 700, width: 50, height: 20),
+            markerBounds: CGRect(x: 90, y: 90, width: 160, height: 30))
+        let result = resolve(probe, gesture(CGPoint(x: 100, y: 100), CGPoint(x: 200, y: 100)))
+        #expect(result.candidate?.text == "new chat highlight")
+        #expect(result.candidate?.source == .textMarkers)
+        #expect(result.candidate?.evidence == .atGesture)
+        #expect(result.rejectedElsewhere == 2)
+    }
+
+    @Test func provenRangeWinsOverBoundlessSelectedTextWithoutWeakeningBackgroundGuard() {
+        let probe = FakeSelectionProbe()
+        probe.focused = 1
+        probe.nodes[1] = .init(role: "AXWebArea", selectedText: "unproven", rangeText: "proven",
+            rangeBounds: CGRect(x: 90, y: 90, width: 160, height: 30))
+        let g = gesture(CGPoint(x: 100, y: 100), CGPoint(x: 200, y: 100))
+        #expect(resolve(probe, g).candidate?.text == "proven")
+        #expect(LiveSelectionAccessibilityResolver(probe: probe, gesture: g, gestureInSourceWindow: true,
+            requiresGestureBounds: true).resolve().candidate?.text == "proven")
+        probe.nodes[1]?.rangeBounds = nil
+        #expect(LiveSelectionAccessibilityResolver(probe: probe, gesture: g, gestureInSourceWindow: true,
+            requiresGestureBounds: true).resolve().candidate == nil)
+    }
+
+    @Test func allStaleAccessorsRemainRejected() {
+        let probe = FakeSelectionProbe()
+        probe.focused = 1
+        probe.nodes[1] = .init(role: "AXWebArea", selectedText: "old", rangeText: "old", markerText: "old",
+            bounds: CGRect(x: 700, y: 700, width: 50, height: 20))
+        let result = resolve(probe, gesture(CGPoint(x: 100, y: 100), CGPoint(x: 200, y: 100)))
+        #expect(result.candidate == nil)
+        #expect(result.rejectedElsewhere == 3)
+    }
+
     @Test func backgroundSelectionRequiresTheSameVisibleWindowAndRangeBounds() {
         let window = LiveSelectionWindow(ownerPID: 42, bounds: CGRect(x: 0, y: 0, width: 500, height: 500), alpha: 1, windowID: 99)
         let g = gesture(CGPoint(x: 100, y: 100), CGPoint(x: 200, y: 100))

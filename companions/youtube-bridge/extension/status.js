@@ -40,6 +40,12 @@ const rows = {
 const summary = document.getElementById('summary');
 const refreshButton = document.getElementById('refresh');
 const lastRefresh = document.getElementById('last-refresh');
+const autoPauseSwitch = document.getElementById('auto-pause');
+const autoPauseState = document.getElementById('auto-pause-state');
+const autoPauseDetail = document.getElementById('auto-pause-detail');
+let isSavingAutoPause = false;
+let autoPauseSaveError = '';
+let autoPauseRevision = 0;
 
 let isRefreshing = false;
 let lastRenderedStatus = {};
@@ -179,6 +185,7 @@ const requestBackgroundStatus = (refreshYouTube) =>
  * @returns {Record<string, unknown>}
  */
 const mergeStatus = (cachedStatus, backgroundStatus, requestError) => ({
+  autoPause: backgroundStatus.autoPause,
   extensionStatus: backgroundStatus.extensionStatus,
   nativeConnection:
     backgroundStatus.nativeConnection ?? cachedStatus.nativeConnection,
@@ -194,6 +201,22 @@ const mergeStatus = (cachedStatus, backgroundStatus, requestError) => ({
  * @param {Record<string, unknown>} status
  */
 const render = (status) => {
+  const autoPause = record(status.autoPause);
+  const settingKnown = typeof autoPause.enabled === 'boolean';
+  if (autoPauseSwitch && !isSavingAutoPause) {
+    autoPauseSwitch.checked = autoPause.enabled === true;
+    autoPauseSwitch.disabled = !settingKnown;
+  }
+  if (autoPauseState) {
+    autoPauseState.textContent = isSavingAutoPause ? 'Saving...' :
+      settingKnown ? (autoPause.enabled ? 'On' : 'Off') : 'Unavailable';
+  }
+  if (autoPauseDetail) {
+    autoPauseDetail.textContent = autoPauseSaveError || (!settingKnown ? 'Failed to load setting' :
+      !autoPause.enabled ? "YouTube won't pause or resume for VoiceInk." :
+        autoPause.suppressedUntilIdle ? 'Applies from the next recording.' : '');
+    autoPauseDetail.classList.toggle('is-error', !!autoPauseSaveError || !settingKnown);
+  }
   const nativeConnection = record(status.nativeConnection);
   const nativeStatus = record(status.nativeStatus);
   const lastYouTubeState = record(status.lastYouTubeState);
@@ -206,7 +229,7 @@ const render = (status) => {
   const voiceInkPausePending = nativeStatus.voiceInkPausePending === true;
   const voiceInkResumePending =
     typeof nativeStatus.voiceInkResumePendingTabId === 'number';
-  const youtubePausedForDictation =
+  const youtubePausedForDictation = autoPause.enabled !== false && !autoPause.suppressedUntilIdle &&
     typeof nativeStatus.youtubePausedForDictationTabId === 'number';
   const youtubeAge = age(
     lastYouTubeState.contentTimestamp ?? lastYouTubeState.extensionTimestamp,
@@ -296,7 +319,7 @@ const render = (status) => {
     } else if (voiceInkResumePending) {
       label = `${label}, resume pending`;
     } else if (youtubePausedForDictation) {
-      label = `${label}, paused for Agent Flow`;
+      label = `${label}, paused for VoiceInk`;
     }
 
     setRow(
@@ -371,16 +394,20 @@ const refresh = async (requestFreshStatus) => {
   }
 
   isRefreshing = requestFreshStatus;
+  const settingRevision = autoPauseRevision;
   refreshButton?.toggleAttribute('disabled', requestFreshStatus);
 
   const cachedStatus = await getCachedStatus();
   const backgroundResult = await requestBackgroundStatus(requestFreshStatus);
 
-  lastRenderedStatus = mergeStatus(
+  const nextStatus = mergeStatus(
     cachedStatus,
     backgroundResult.response,
     backgroundResult.error,
   );
+  // A poll that began before a switch acknowledgement must not flash the old saved value.
+  if (settingRevision !== autoPauseRevision) nextStatus.autoPause = lastRenderedStatus.autoPause;
+  lastRenderedStatus = nextStatus;
 
   render(lastRenderedStatus);
 
@@ -390,6 +417,30 @@ const refresh = async (requestFreshStatus) => {
 
 refreshButton?.addEventListener('click', () => {
   window.location.reload(); // The status page can show stale service-worker state after extension reloads; make the button do the same full reload the user expects.
+});
+
+autoPauseSwitch?.addEventListener('change', async () => {
+  if (isSavingAutoPause) return;
+  const enabled = autoPauseSwitch.checked;
+  autoPauseRevision += 1;
+  isSavingAutoPause = true;
+  autoPauseSwitch.disabled = true;
+  autoPauseSaveError = '';
+  render(lastRenderedStatus);
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'set-voiceink-auto-pause', enabled });
+    if (response?.ok !== true) throw new Error('setting-not-saved');
+    lastRenderedStatus = mergeStatus({}, response, '');
+  } catch {
+    autoPauseSaveError = 'Failed to save setting';
+  } finally {
+    autoPauseRevision += 1;
+    isSavingAutoPause = false;
+    render(lastRenderedStatus);
+    // A closed popup or uncertain callback must not trigger a second write. Read back the
+    // authoritative preference; periodic refreshes never overwrite a pending user choice.
+    void refresh(false);
+  }
 });
 
 void refresh(true);

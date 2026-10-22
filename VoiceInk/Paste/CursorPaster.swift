@@ -110,6 +110,10 @@ class CursorPaster {
     private static let maximumClipboardLeaseAttempts = 2
     @MainActor
     private static let foregroundPasteCoordinator = ForegroundPasteTransactionCoordinator()
+    // A queued transaction can acquire the clipboard before its predecessor's
+    // delayed restore. Inherit that original snapshot, never the transient paste.
+    @MainActor
+    private static var pendingRestore: (lease: ForegroundPasteboardLease, contents: ClipboardSnapshot)?
 
     private enum PasteCommandResult: Equatable {
         case commandPosted
@@ -167,11 +171,11 @@ class CursorPaster {
     ) async -> PasteResult {
         let pasteboard = NSPasteboard.general
         let shouldRestoreClipboard = UserDefaults.standard.bool(forKey: "restoreClipboardAfterPaste")
-        var savedContents = shouldRestoreClipboard ? snapshotClipboard(from: pasteboard) : []
         let sessionID = UUID().uuidString
         let transactionID = UUID()
         let wasQueued = foregroundPasteCoordinator.activeLeaseID != nil
         await foregroundPasteCoordinator.acquire(transactionID)
+        var savedContents = shouldRestoreClipboard ? originalClipboardContents(on: pasteboard) : []
         var settlementNanoseconds: UInt64 = 0
         defer {
             // Keep every VoiceInk foreground paste mutation FIFO. A successful Cmd-V
@@ -253,6 +257,15 @@ class CursorPaster {
         return commandResult.publicResult
     }
 
+
+    @MainActor
+    private static func originalClipboardContents(on board: NSPasteboard) -> ClipboardSnapshot {
+        if let pendingRestore, pendingRestore.lease.isOwned(on: board) {
+            return pendingRestore.contents
+        }
+        return snapshotClipboard(from: board)
+    }
+
     static func preparePasteboardLease(
         _ text: String,
         transient: Bool,
@@ -308,11 +321,13 @@ class CursorPaster {
         }
     }
 
+    @MainActor
     private static func scheduleClipboardRestore(
         _ savedContents: ClipboardSnapshot,
         lease: ForegroundPasteboardLease,
         on pasteboard: NSPasteboard
     ) {
+        pendingRestore = (lease, savedContents)
         let delay = max(
             UserDefaults.standard.double(forKey: "clipboardRestoreDelay"),
             minimumClipboardRestoreDelay
@@ -320,6 +335,9 @@ class CursorPaster {
 
         Task { @MainActor in
             await wait(delay)
+            defer {
+                if pendingRestore?.lease == lease { pendingRestore = nil }
+            }
             guard lease.isOwned(on: pasteboard) else {
                 return
             }

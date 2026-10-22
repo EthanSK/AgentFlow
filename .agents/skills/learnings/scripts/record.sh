@@ -79,8 +79,8 @@ if [ ! -f "$LEARNINGS_FILE" ]; then
   printf 'LEARNINGS.md is missing at %s; create and review its project-specific header first\n' "$REPO_ROOT" >&2
   exit 2
 fi
-if ! grep -q '(newest first)' "$LEARNINGS_FILE"; then
-  printf 'LEARNINGS.md is missing the "(newest first)" insertion marker\n' >&2
+if ! grep -qx '# Learnings' "$LEARNINGS_FILE"; then
+  printf 'LEARNINGS.md is missing the "# Learnings" heading\n' >&2
   exit 2
 fi
 
@@ -108,7 +108,9 @@ EOF
 awk -v entry_file="$ENTRY_TMP" '
   {
     print
-    if (!inserted && $0 ~ /\(newest first\)/) {
+    # Modern dated headings precede the historical (newest first) marker.
+    # Insert after the document heading, never after a mention in prose.
+    if (!inserted && $0 == "# Learnings") {
       print ""
       while ((getline line < entry_file) > 0) {
         print line

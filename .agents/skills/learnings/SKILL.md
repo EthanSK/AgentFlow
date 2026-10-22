@@ -18,6 +18,46 @@ validation contract applies.
 
 ## Start with prior evidence
 
+Agent Flow must use Ethan's Scarlett 18i8 microphone. Warn him if another input
+is selected or used, and ask for his approval before changing it or accepting a
+changed input. Do not silently switch back to Scarlett either. Verify both the
+saved input choice and the actual recording-device metadata; the system output
+or a saved preference alone does not prove which microphone captured the audio.
+This is an agent operating rule, not a continuously running microphone monitor.
+User-requested, destination approved — 2026-10-17.
+
+Never stop, quit, terminate, or restart Ethan's running Agent Flow while he is
+mid-speech or in a recording session. Wait until his current session ends before
+an install or restart, even when the build and tests are ready. A missing recorder
+window or an apparently idle Accessibility snapshot is not proof that the session
+ended; the recorder may be hidden or recovering. Monitor safely and continue the
+authorized installation automatically when the current session finishes; do not
+ask Ethan to confirm an ordinary session end. Use cheap read-only checks every
+few seconds while this task is active, not repeated model turns or UI probes.
+Require the installed app's `applicationShouldTerminate` all-session veto at the
+final cooperative quit boundary: recording, typing, paused capture, transcription
+and delivery all count as active. Give the real five-second restart warning,
+recheck immediately afterward, and treat a refused quit as continued activity;
+never escalate to TERM, KILL or another forced exit. Keep a bounded watcher, and
+use the product's thread heartbeat only if continuation must survive yielding;
+pause that heartbeat once installation is verified. Unknown identity/state is
+not idle: preserve the app and candidate, and report a genuine verification
+blocker instead. Do not turn a release deadline into a forced stop.
+User-requested automatic safe installation — 2026-09-30; verified with the
+guarded build-390 installation recorded in `LEARNINGS.md`.
+
+For every local update, preserve rollback bundles as verified ZIP archives with
+`python3 scripts/archive-local-rollback.py /Applications/AgentFlow.app`, following
+the rollback section of `UPDATING.md`. Never leave dated launchable app backups in
+Applications, Downloads, Application Support or agent outputs: macOS registers
+bundle contents even when the folder is hidden or renamed `.bak`. Verify archive
+extraction, build, executable checksum and deep/strict signature before retiring
+the old copy; retain required checkpoints and never overwrite an archive. The
+archive helper must not quit or replace the app, so the idle-only installation
+contract above still applies. Cleanup uses exact reviewed paths and recoverable
+Trash, not recordings/settings deletion or a global LaunchServices reset.
+User-requested cleanup and recurrence prevention — 2026-10-06; see `LEARNINGS.md`.
+
 1. Resolve the repository root and read its `AGENTS.md`.
 2. Read the newest relevant entries in `LEARNINGS.md` and the matching rejected/superseded sections in `FAILED_APPROACHES.md`. For either mouse button, recording destinations, focus restoration, recorder UI, paste, or auto-send, read `TERMINOLOGY.md` and `RECORDING_DESTINATIONS.md` completely. For background insertion, auto-send, or verification, also read `BACKGROUND_DELIVERY_TEST_MATRIX.md`.
 3. Search with one to three symptom or subsystem terms:
@@ -30,6 +70,49 @@ validation contract applies.
 5. For a remembered historical rollback, never choose by version proximity or a version label alone. Correlate Ethan's timestamped acceptance/failure message with the immediately preceding verified install/restart, then require the artifact's build, CDHash or executable checksum, and delivery architecture to agree. Early build 203 was reused for materially different binaries, so its label is not an identity.
 6. State any relevant prior constraint before making a risky change.
 
+For the separate read-only Codex pane inspector, distinguish the clicked pane,
+focused pane and editable-input status; Conversation-region focus is not a caret.
+Use only reported/verified host-specific markers, bounded app-owned focus reads
+and fresh same-window evidence. Preserve explicit partial-path evidence instead
+of discarding it solely because an ancestor limit was reached; owner/focus changes
+remain fatal. Test the model and fake adapter on the Mini, exercise Demo locally,
+then leave Live for Ethan's own clicks. Never inspect its live Codex output as an
+agent workaround, add descendant scans, or turn a diagnostic classification into
+paste authority. Self-improved — 2026-10-17: the 24-ancestor/old-marker inspector
+failed against the supplied 34-deep live path; 39 bounded regression checks and
+the Demo body-click case validate the correction recorded in LEARNINGS.md.
+
+For a missing prompt link or expanded-XML regression, compare the live recipient's
+bundle URL, version and build with the compact-prompt classifier before changing
+paste delivery. Recognize the known `com.openai.codex` desktop hosts `Codex.app`
+and `ChatGPT.app` independently of release versions for presentation only; do
+not extend exact-input/AX mutation allowlists. Test the production pipeline with
+the installed host and an unknown future version, including the opening queued
+link, concise footer, inline angular markers and every authored word. Compare
+automatic and Won't paste output after normalizing only immutable archive paths;
+first filter automatic output by its actual recipient: ordinary apps such as
+Chrome, Safari, editors, terminals and unknown identities receive authored
+speech/typing only, without prompt links, XML, timestamps or math. Only Codex,
+Telegram and Claude Desktop have context overrides: local Codex hosts use compact
+file links; both Telegram identities and `com.anthropic.claudefordesktop` retain
+inline XML. Cloud ChatGPT, Slack, Discord and all other apps receive plain authored
+speech/typing. Claude Code in an ordinary terminal/editor does not identify itself
+as Claude Desktop; do not broaden those hosts automatically. Share the local
+interpretation skill with Claude Code through a symlink to the existing Codex
+skill directory, not a separately maintained copy. Local Code sessions load that
+personal skill; cloud Chat/Cowork do not load a local symlink. User-requested
+Claude exception and shared skill — 2026-10-17. Preserve raw/skip output. Do not infer local-file access from
+presentation, a browser name or Tailscale connectivity. Clipboard
+completion has no selected recipient and must never consult foreground focus.
+Self-improved — 2026-10-01: the 12553 host update repeated the stale-presentation
+gate failure despite generic/old-host coverage; see the host-update entries in
+`LEARNINGS.md`, `FAILED_APPROACHES.md` and the native pipeline regression.
+User correction — 2026-10-03: ordinary Chrome pastes must be raw authored text
+by default. The 2026-10-01 local/unknown compact default accidentally overrode
+that existing recipient filter. Keep presentation separate from context eligibility;
+test both Telegram identities, ordinary/unknown apps and complete archives through
+the production pipeline, not a classifier fixture that endorses the regression.
+
 The keyword helper supports current `##`-headed entries and older delimited entries
 after `(newest first)`. Retest both with `python3 scripts/test-check.py` from this
 skill folder when changing its parser. Self-improved — 2026-09-27: the old parser
@@ -38,6 +121,14 @@ silently skipped all newer headings; mixed-layout and literal-keyword fixtures n
 For upstream work, read `UPDATING.md` and treat upstream as a feature source, never a branch to merge wholesale. Audit in a disposable clone/worktree, obtain Ethan's approval for one user-visible feature, and manually port only that feature while preserving VoiceInk++'s destination, delivery, vocabulary, identity, and release guards.
 
 For public setup changes, keep `SETUP.md`, README, website and native Help destinations consistent. Verify that a linked repository feature is actually enabled before advertising it as a help or reporting path; VoiceInk++ GitHub Issues was disabled despite a readable `/issues` page. Treat app launch, provider/permissions, Codex skill discovery, Chrome extension loading, the YouTube helper/native host/login LaunchAgent, and optional mouse mappings as separate receipts. The public `scripts/install-first-use.sh` is only for a Mac without VoiceInk++ installed; it must refuse replacement and never impersonate the guarded Mini-to-MacBook native update. Only the optional YouTube helper installs a login LaunchAgent; the old fork auto-update LaunchAgent stays disabled. A successful build or `open` exit is not a persistent-PID or working-Chrome receipt. Self-improved — 2026-09-24: the shareable setup and disabled Issues setting exposed these distinct publication and installation boundaries.
+
+Follow every public installation link and require its advertised build to agree
+with the intended downloadable release. Run the published checksum command in an
+independent download directory; require bare distributed filenames, not builder
+paths. Keep curl integrity/signature checks separate from browser quarantine,
+first-open and isolated-user onboarding proof. Self-improved — 2026-09-30: the
+Mini reproduced stale setup links and a matching-but-unusable checksum manifest;
+see “Check public checksum manifests as a downloaded user” in `LEARNINGS.md`.
 
 VoiceInk++ is a commercial-free personal fork. Upstream license validation, trials, purchase/upgrade
 screens, Polar or other checkout clients, affiliate promotions, trial-expiry transcript injection,
@@ -126,6 +217,45 @@ updates cannot replace text/timing or reorder references. Require
 physical acceptance separate from reducer/source/fixture evidence. Self-improved —
 2026-09-27: source review found collapsed delayed drags and canceled captured text;
 see LEARNINGS.md, “Selection edges and committed text must survive delayed metadata”.
+Selection readers must preserve each Accessibility range token's own text/bounds pairing. A stale
+nonempty accessor must not mask a gesture-proven alternate accessor. Cache only
+inside one bounded attempt; do not relax background geometry or add idle polling.
+Self-improved — 2026-09-28: source inspection and stale-accessor fixtures exposed
+cross-representation bounds and premature fallback termination.
+Prefer gesture-proven ancestor text over the nearest boundless pointer fragment,
+but retain that nearest fragment when the bounded walk finds no proof. For foreground
+Codex, compare the pointer before returning a focused marker and preserve explicit
+pointer selected text over a containing broader marker. Keep aggregate rectangle
+size diagnostic-only: a hard span-size veto lost live partial-word highlights.
+Background reads still require geometry. Self-improved — 2026-10-09: retained
+build-414 misses, the focused-marker fast-return source gap and build-415 pointer
+fixtures; see LEARNINGS.md, “Drag-span size veto lost live Codex highlights”. Do not walk
+past a focused editor into unrelated aggregate text. Containment plus overlapping
+bounds is not exact-selection proof. A longer marker may replace non-editable
+leaf-local text only when a fresh single drag has usable endpoints, the earlier
+range misses an endpoint, and the consistent marker covers both. Never widen an
+editable field's selection. Preserve double/triple-click, delayed and autoscroll
+uncertainty rather than inferring glyph boundaries or trimming text. AppKit global
+drag click counts can be zero; correlate actual retained gesture diagnostics before
+assuming one. Self-improved — 2026-10-09: single-address broadening fixtures and
+the live zero-click drag trace; see LEARNINGS.md, “Overlapping ranges are not
+precise highlights”. Exclude menu/tooltip-level overlays from source identity without
+excluding real floating content windows or preferring a main window underneath
+one; preserve the content windows' front-to-back order. Keep misses diagnosable with counts-only
+marker availability, degenerate-bounds and pre-read callback-lag/drop traces; never
+log selected words or substitute guessed event routing. Self-improved — 2026-10-09:
+the resolver regression fixtures prove these traps and safety boundaries; require
+physical rendered-symbol highlighting before claiming a KaTeX-specific fix.
+
+Keep every separately highlighted block in capture order, including equal speech anchors
+and approved Telegram `app_selection_image` references. Telegram's image fallback is off
+without explicit consent, gesture-triggered only during an attached session, and permitted
+only after its trusted AX reader returns no elements or endpoint hits. Capture one exact
+window's bounded gesture area, not the screen; recheck cancellation, source identity and
+consent before committing. Retain private local pixels without Copy/OCR or selected-word
+claims. Keep this separate from metadata-only native screenshot watching and Telegram's
+non-retaining delivery-identity digest. User-approved privacy alternative — 2026-10-18.
+
 Keep every separately highlighted block in capture order, including equal speech anchors
 and a run with no recognized speech. Those cues form a best-effort reading trail, not a
 replacement for the spoken request or proof of precise timing. Require
@@ -133,26 +263,115 @@ replacement for the spoken request or proof of precise timing. Require
 `silentHighlightsProduceReferenceOnlyXMLInCaptureOrder` alongside the HUD and final-XML
 guards. Ethan explicitly reversed the earlier latest-only rule on 2026-09-25.
 
-For keyboard prose, preserve the normal finish-and-paste lifecycle: Enter inserts a
-newline and blur only seals a text segment. Measure the active editor as it changes,
-including its trailing insertion line and control gutter; do not wait for blur to
-resize the mini/notch host. Only after the user first clicks to type may an accepted
+For keyboard prose, Enter commits the current typed section at the speech position
+observed then, without finishing capture; Shift+Enter inserts a newline and
+Command+Enter keeps finish/send/steer. Blur and accepted context also commit at
+their boundary, not the first keystroke. Keep the editable run outside the committed
+timeline but include it in recovery snapshots; capture end commits it after all
+final speech, including a provider tail not streamed live. Preserve first/latest
+actual edit times, and prevent repeated or mirrored end callbacks from duplicating
+the run. Require `typedRunsLandAtCommitAcrossSpeechHighlightAndCaptureEnd`,
+`returnCommitsEachRunAtItsOwnSpeechAndRespectsIMEAndMirrors`,
+`commandReturnFinishFlushesWithoutSealingSoCaptureEndPlacesTheRun`, and
+`productionPipelineArchivesTypedRunsWhereTheyWereCommitted`.
+User correction — 2026-10-10; supersedes the older Enter-newline contract.
+Measure the active editor as it changes,
+including its trailing insertion line; do not wait for blur to
+resize the mini/notch host. Only after an explicit typing shortcut or click to type may an accepted
 highlight or screenshot return focus to that session's chosen mirrored editor.
-Unfocus and finalization disarm this; ordinary speech updates and app switches must
+Finalization disarms this; ordinary speech updates and app switches must
 not chase focus. Adding Command to the standard Shift-Control-Option start requests
 initial editor focus for that exact start reservation, never another/newer session.
 Forward modifier releases and preserve Primary/Next delivery ownership. Require
 `RecorderTypedInputTests` plus the existing shortcut and route guards; distinguish
 microphone-free editor/controller fixtures from physical shortcut/context acceptance.
-User-requested keyboard focus behaviour — 2026-09-26.
+User-requested keyboard focus behaviour — 2026-09-26; restored on 2026-09-28:
+return focus after each accepted highlight/screenshot once typing is engaged.
+Default an absent automatic-return preference to enabled, preserve an explicit
+false opt-out, and permit automatic return only while the microphone is off and
+not transitioning. Recheck that live policy at the queued focus boundary, not
+only when capturing context: a remembered typing opt-in must not steal Codex's
+caret during speech. Explicit editor clicks remain independent. User correction
+— 2026-10-17; see LEARNINGS.md, “Automatic context return is typing-only, not a
+lifetime opt-in”. Bind initial
+focus before the audio handshake, allow keyboard input during microphone-off
+startup, and preserve already-typed prose in History if startup fails.
+User correction — 2026-09-28: remove the Unfocus button and its reserved gutter.
+After accepted context, coalesce a short cancellable return that waits for mouse
+release/editor mounting and verifies key-window plus first-responder ownership;
+never drop the pending initial focus when an initial selection arrives first.
+Stop after success or expiry, and cancel on finish. Do not add idle focus polling.
 
 Keyboard-only start must remain an active composing session, not gesture-Pause:
 Primary still finishes it rather than unexpectedly enabling the microphone. Both
-Command keys AND both Option keys together are the additional Start/Finish shortcut:
-idle starts microphone-off
-typing; recording or paused composition finishes through `primaryCurrentInput`.
-Do not classify it as Primary multi-click, resume the mic, or change a pending
-transcription. Forward all modifier releases. Ethan corrected start-only behaviour
+Command keys AND both Option keys together are the additional Start/Finish
+shortcut: idle starts microphone-off typing and focuses its editor; an active
+recording or paused composition finishes through `primaryCurrentInput` regardless
+of whether that editor currently has focus. Do not consume the first active-session
+chord merely to refocus the editor. Initial focus and focus return after accepted
+selection/screenshot context remain separate behaviors. Ethan reversed the
+refocus-before-finish shortcut behavior on 2026-09-29; require
+`typingChordFinishesWithoutRefocusingUnfocusedEditor` and the shared-monitor
+finish guards.
+Holding Shift while completing the four-key chord instead finishes an active
+recording/paused session through the existing clipboard-only Won't paste route.
+Freeze Shift in the key event, not its asynchronous action; idle Shift is a no-op.
+Test all 24 key orders with and without Shift, balanced releases, shared monitor
+ownership, and no extra action when Shift changes after a consumed chord.
+User-requested Shift finish — 2026-09-28.
+User-requested late Shift — 2026-09-30: after a normal four-key finish, a fresh
+Shift-only tap (either Shift key, accepted on release) selects Won't paste for
+that exact stopped session before its first irreversible output effect. Bind its
+ID before the asynchronous stop; never search backward, affect a newer capture,
+or undo an issued paste. Ignore Shift used to type a capital or prefix a modifier
+chord, including Primary's mouse macro, and forward every Shift event. Require
+`standaloneShiftTapObservesOnlyReleasedShiftWithoutSwallowingEvents`,
+`typingStopSecondChanceShiftIsExactOneShotAndRejectsStaleResults` and
+`lateShiftClipboardCompletionRetainsFormattedPromptAndHistory` with the existing
+Primary/Next and shared-monitor guards. See LEARNINGS.md, “Late Shift belongs only
+to the exact four-key-stopped result”.
+User-requested timing correction — 2026-10-01: keep a separate typing-stop
+choice open through formatting, archiving and the asynchronous delivery-queue
+wait, with at least one second from stop for fast typed-only results. Primary's
+earlier completion-policy freeze is not this cutoff. Seal/read the choice
+atomically after the queue wait, before paste/Return/custom commands, or before
+a Respond request starts; recheck cancellation/lineage after any grace wait.
+Require `lateShiftSurvivesProviderFreezeArchiveAndDeliveryQueue`,
+`typingStopGraceKeepsFastResultsSelectableAndSealsBeforeEffects` and
+`lateShiftSuppressesRespondAndCustomCommandOutput` with the existing guards.
+For styled History retention, assert readable words through the production
+`HistoryContextPresentation` plain-text projection and independently assert exact
+canonical archive bytes and metadata. Raw producer-LaTeX can split words;
+substring failure alone does not prove text was lost. Self-improved — 2026-09-30:
+the first late-Shift release gate exposed this assertion trap; the corrected
+523-test gate passed. See the same late-Shift entry in `LEARNINGS.md`.
+
+History's **Copy** returns raw authored speech/typing; **Copy with flow markers**
+returns the entire readable XML/context, not the retired LaTeX producer bytes.
+Decode only the known presentation grammar, preserve malformed/unknown text,
+and never rewrite stored History or truncate either copy. Derive the main message
+and structured copy from one shared projection: prefer final Flow content, then
+the retained live timeline or the existing recovered-context wrapper. Show Flow
+content without expanding the row; expansion may expose authored-only raw text,
+not a second exit-draft/recovered message. Preserve provider-final words separately
+when a live snapshot is earlier; never invent missing timing or overwrite either
+source to reconcile the UI. Exercise real shared buttons in cards, compact lists
+and original/enhanced detail headers, including raw-only and recovered records.
+User correction — 2026-10-17; see LEARNINGS.md, “History's Flow timeline is the
+main message, not a second exit draft”. For Codex paste, keep the editable opening
+and full-file preview plain; complete inline context uses fixed colours for
+selection/screenshot metadata and rainbow only for authored speech/typing inside
+its later blocks. Use the shared response palette once per message and continue
+across blocks/lines; never colour the editable top paragraph. Compact generated
+tag scaffolding only, preserving payload paragraphs and indentation. This latest
+inline-rainbow clarification supersedes the earlier no-rainbow inline rule.
+Count the actual coloured UTF-16 expansion against
+the existing attachment threshold, and reject an oversized plain candidate before
+colouring it. Archives remain canonical plain XML. User correction — 2026-10-17;
+supersedes the earlier byte-for-byte formatted-copy contract.
+Do not classify the four-key chord as Primary multi-click, resume the mic, or
+reinterpret a repeated chord as a pending-result action. Forward all modifier
+releases. Ethan corrected start-only behaviour
 on 2026-09-27, then added both Option keys to avoid his existing both-Command shortcut.
 Require all four physical-side flags; aggregate Command+Option is not enough.
 Leave both Command alone and every partial/released chord untouched.
@@ -168,7 +387,7 @@ nothing, and neither calls transcription. Group speech/typed timing in XML only
 where context is allowed; recognition-activity times are approximate, not VAD.
 Test a final transcript longer than its last partial: every authored word must stay
 in a speech group without invented timestamps. For readable queue previews, exclude
-selected quotes from the raw opening and keep the duplicate-marker interpretation
+selected quotes from the raw opening and keep the duplicate-preview interpretation
 in both installed and public skills; plain-app output is unchanged.
 User-requested microphone-off typing and timing — 2026-09-27.
 
@@ -177,12 +396,26 @@ counter protocol, inert escaping, and the content-first expansion budget. Only t
 opening uses a rainbow; XML uses fixed silver speech/typing, cyan selection and
 magenta screenshot sections, as Ethan clarified on 2026-09-27. Generate colours only at final styled AI output, never through a provider
 request or on live partials. Preserve all words on a plain fallback and validate the
-complete production message with its outer context envelope, not isolated formulas:
-raw XML blocks can suppress inline math. Keep a blank line after the opening
-context envelope; the installed host's lexer reproduced the missing-boundary bug.
+complete production message, not isolated formulas: raw XML blocks can suppress
+inline math. Current output omits the outer context envelope; keep the paragraph
+boundary after the readable preview and every inner tag, timestamp and source
+attribute. Older raw context envelopes still require a following blank line;
+the installed host's lexer reproduced that missing-boundary bug.
 Rendered bubbles do not prove queued rows
 render math. Keep installed/public interpretation guides aligned, including historical
 colour decoding. See LEARNINGS.md, “Whole-message XML envelopes can suppress math rendering”.
+
+For the full-prompt viewer, continue the fixed per-word palette across wrapped
+and explicit lines, speech/typed sections, and later messages in the same proven
+chat. Never restart the gradient on every line or section. Context consumes no
+rainbow positions. Reserve the next start after the last authored word once per
+durable archive, keep it in the saved viewer, and never advance it on reopen.
+Keep viewer cursors separate from the assistant quote counter and plain editable
+Codex previews. Use only passive app-owned chat identity; ambiguous panes use an
+unscoped fallback, never AX focus or a guessed delivery destination. Verify word
+colours and whitespace, not a horizontal CSS gradient that resets by x-position.
+User-requested continuous viewer rainbow — 2026-09-30; Mini tests and browser
+rendering are recorded in LEARNINGS.md.
 
 For compact italic metadata, retain one blank-line gap between different section
 types/colours and compact only consecutive matching types. Keep literal quotes and
@@ -190,6 +423,86 @@ apostrophes in XML character data while escaping them in attributes; preserve
 ampersand/angle escaping and exact text round trips. Test valid thread identities
 when asserting task-title attributes. User-requested section spacing and readable
 apostrophes — 2026-09-27; see LEARNINGS.md, “Compact metadata needs a boundary between section types”.
+
+For default compact file-linked prompts, persist the complete canonical message before
+publishing its link, with a private directory and exclusive, synced, owner-only
+files. Never auto-expire them or replace full History/Copy recovery with a preview.
+For short local-Codex context messages, preserve the same plain editable opening
+and interleaved angular markers first, then append the exact cached canonical
+timeline underneath only when the whole paste is below 5,000 UTF-16 units. Count
+the encoded link, editable opening, paragraph separator and timeline together;
+authored words appear in both. Never replace the opening with XML or prepend a
+read-skill reminder. Do not embed the skill or reread the newly written archive.
+At 5,000 or more, retain the compact opening and its full-prompt footer. Agent
+interpretation guidance already available in a chat can be reused; it does not
+require rereading the skill every message. User correction — 2026-10-08.
+User-requested inline short prompts — 2026-10-08; see `AgentFlowPromptArchiveTests`
+and LEARNINGS.md, “A paste-event limit is not a same-draft attachment limit”. Ethan restored that
+link because queued messages hide the footer; never remove it as duplication.
+Only compact previews with hidden context include the
+separate `Read the full prompt before answering.` footer; pure speech/typing is
+already complete inline and omits the mandatory read. Retain the optional opening
+link either way. Decide from structural section tags, not authored mentions of
+captures; preserve possible TTS-overlap metadata and fail closed for unknown
+context types. When needed, the footer points to the same viewer with a literal
+`full prompt` label and no math commands. Preserve manual-paste parity.
+User-requested conditional footer — 2026-10-07; link restoration and inline angular markers
+— 2026-09-29/30; supersedes the 2026-09-28 opening-link removal.
+The optional offline HTML companion parses canonical XML into coloured sections;
+metadata stays in disclosures, but there is no second embedded Full source copy.
+The human-facing link uses that
+viewer, which must expose the exact plain archive through early `agent-flow-source`
+metadata and a visible source link. Embed only bounded decoded local raster
+screenshots, never remote URLs, SVG/HTML, pipes, devices or symlink targets; retain
+original paths and show an explicit fallback when a preview cannot be produced.
+Keep image data out of the canonical prompt and limit viewer resource usage.
+Keep file-link labels literal until a supported mechanism has actual disposable
+bubble evidence. Both normal delimiters and parser-valid dollar math displayed
+raw commands in the real recipient; a tokenizer or standalone KaTeX pass is not
+link-renderer acceptance. Preserve decoded target identity. Self-improved —
+2026-09-30: Ethan's screenshot rejected the parser-valid build-393 rainbow link;
+see the matching rejected approach and learning.
+Escape all displayed payloads,
+disable DTD/entity resolution, retain malformed/unknown text, and never silently
+truncate the canonical captured selection to meet a preview or viewer budget.
+App-specific transport limits are separate and must remain documented.
+Keep every authored word inline; never truncate it to fit a host attachment
+threshold. Only context payloads/metadata move exclusively to the archive; retain
+event markers and the single footer. Large pastes may still become host attachments.
+User correction — 2026-09-29. This is content formatting, not another delivery
+route: Primary still posts one generic paste; raw/skip and exact Next paths retain
+their contracts. Test archive failures/permissions, full metadata preservation,
+compact formatting and Primary/Next/queue/HUD guards. A cloud recipient cannot
+read an arbitrary Mac path. User-requested replacement — 2026-09-28.
+Test the native file-reference scanner/resolver as well as the Markdown href,
+then check the viewer and its canonical source and compare archived bytes. Use encoded
+absolute paths without angle delimiters. Self-improved — 2026-09-28: build 374's
+native scanner retained `<`/`>` and opened a nonexistent IDE buffer despite a
+correct Marked href; see LEARNINGS.md, “A rendered file link is not proof”.
+The earlier attachment-plus-opening exception is superseded after intermittent
+live preparation/opening failures. Its historical evidence remains in LEARNINGS
+and FAILED_APPROACHES; do not restore AX receipts or two-paste choreography merely
+because one attempt appears to work.
+
+For Won't paste in paste mode, prepare the same preview using the already-resolved
+Mode's styling and the complete saved archive, without consulting the foreground
+app: there is no manual-paste recipient yet. Keep the action strictly
+clipboard-only: no AX target mutation, paste, Return, output command or
+future-Cmd-V watcher. An already-selected result resolves no target/lease;
+a late selection during the queue wait releases the acquired lease and uses
+the identical clipboard formatter without invoking delivery. Raw/skip remains
+verbatim; automatic paste filters ordinary recipients before applying the native
+agent/known-remote presentation rules.
+On archive/preview failure, copy the complete canonical text.
+Compare normal and clipboard-only production-pipeline outputs, allowing only each
+session's unique file path and rainbow offset to differ; use an isolated pasteboard
+and prove History/archive retain all words and timestamps. Include recorder, source
+app and unknown foreground identities, not just a Codex fixture. Update the old
+plain-only style guard, not just formatter tests. Self-improved — 2026-09-28:
+the clipboard branch bypassed compact formatting; see LEARNINGS.md, “Clipboard-only
+completion must share local-Codex presentation without delivering”.
+Self-improved — 2026-09-29: the recipient guard reproduced the remaining plain
+clipboard failure; see LEARNINGS.md, “Won't paste has no recipient yet”.
 
 Never infer selection source from a global monitor's reconstructed CGEvent target
 PID: it can name the recorder itself. Sample the frontmost PID and pointer inside
@@ -225,7 +538,7 @@ For a realtime stop that pastes nothing or appears to skip Return, separate tran
 
 ## Normalize the two mouse controls before reasoning
 
-- **Primary button** is the preferred name for Ethan's normal recording control. **Normal button**, **thumb button**, **toggle button**, **recording button**, **same button**, and historical **G5** are aliases. First press starts. While recording, one press performs a base VoiceInk normal stop after the shorter of the macOS double-click interval and 0.45 seconds into whichever system keyboard input is focused at final delivery (`primaryCurrentInput`). Two presses cancel that pending stop and, if no third press arrives through the full macOS multi-click interval, finish the session to a recoverable local audio/HUD draft plus final clipboard text without paste, auto-send, Mode command/response, or playback mutation. A third press inside that interval cancels the clipboard finish and pauses capture; a fourth press inside one more full-system continuation finalizes normal Primary paste with only that session's configured auto-send suppressed. Ignore a fifth press inside the consumed gesture. While paused, one fresh press resumes after the short second-press decision window; two fresh presses inside it immediately finish through the same clipboard-only/no-paste route. Primary owns no exact input or destination Mode.
+- **Primary button** is the preferred name for Ethan's normal recording control. **Normal button**, **thumb button**, **toggle button**, **recording button**, **same button**, and historical **G5** are aliases. First press starts. While recording, one press performs a base VoiceInk normal stop after the shorter of the macOS double-click interval and 0.45 seconds into whichever system keyboard input is focused at final delivery (`primaryCurrentInput`). Two presses cancel that pending stop and, if no third press arrives through the full macOS multi-click interval, finish the session to a recoverable local audio/HUD draft plus final clipboard text without paste, auto-send, Mode command/response, or playback mutation. A third press inside that interval cancels the clipboard finish and pauses capture; a fourth press inside one more full-system continuation finalizes normal Primary paste with only that session's configured auto-send suppressed. Ignore a fifth press inside the consumed gesture. While paused, one fresh press resumes after the short second-press decision window; two fresh presses inside it propose the same clipboard-only/no-paste route, but a third inside the full continuation clears it and resumes the same capture. Primary owns no exact input or destination Mode.
 - **Next button** is the preferred name for the separate forward/secondary control. **Forward button**, macOS **Next Track**, **Next Track media key/action/event**, **secondary mouse button**, **latch button**, and **retarget button** are aliases.
 - Unqualified **toggle** means the primary button's start/stop lifecycle and corresponding shortcut mode. Never reinterpret it as a Next-button destination toggle. Commit `671b4c7` tried that and was deliberately reverted by `bed22b7`.
 - **Second chance** names only the post-primary-stop, still-transcribing retarget route. **Latch** means preserve/replace one session's destination; it never means toggle the destination off.
@@ -247,6 +560,13 @@ Require native phase/slow-start/order/session tests plus attended physical sourc
 Start-release-no-op, later release gestures, context-menu, Next, and lock-screen checks before
 physical acceptance. Preserve retired controls and the mouse owner's exact-device lease rules.
 
+For receiver startup or release readiness, read
+[Primary socket qualification](references/primary-input-socket.md). A private socket file is
+not proof of a bound receiver; require a passive datagram connect after installation, without
+sending a recording command. Self-improved — 2026-10-15: a restored socket's device-only
+marker mismatch left build 428 unbound despite its correct file permissions; see the matching
+startup-recovery entry in `LEARNINGS.md`.
+
 When several hardware controls converge through Karabiner as one modifier-only Primary chord,
 establish the ownership boundary before trying to identify the source. An exclusive HID-open failure
 such as `0xe00002c5` means VoiceInk++ cannot recover F19/F21/F22 identity after Karabiner has collapsed
@@ -260,7 +580,17 @@ triple-click, quadruple-click, fifth-click, and lock-screen checks.
 
 For modifier-only Primary regressions, inspect the complete `flagsChanged` sequence. VoiceInk++ owns and suppresses only the event that completes the configured Shift-Control-Option chord plus any full-chord repeats; partial modifiers and every release must remain downstream-balanced. Require the pure reducer test and a physical check with a context menu already open. Never swallow the entire modifier sequence to hide a menu-dismissal symptom, because that can leave the foreground app with stuck logical modifiers.
 
-For recording-start exact-input capture, remember that Ethan's G HUB Primary macro completes its
+User-requested — 2026-10-17: recording-start saved-input capture is unused/off.
+Respect `FocusLockService.recordingStartInputCaptureEnabled = false` at partial-chord
+staging, Start reservation and the post-audio retry; do not revive any of them from
+the historical guidance below. Recording-time Next is a consumed no-op before
+canceling Primary gesture decisions, while explicit post-stop second chance stays
+available. Keep the three `unusedRecordingStart...` / `disabledRecordingTimeNext...`
+regressions passing. Revisit recording-start capture only at Ethan's explicit request.
+See the current override in `RECORDING_DESTINATIONS.md` and its qualification in
+`LEARNINGS.md`; the older recording-start contract is dormant, not deleted.
+
+For explicitly re-enabled recording-start exact-input capture, remember that Ethan's G HUB Primary macro completes its
 modifiers sequentially. Electron may expose the exact composer during an earlier forwarded partial
 modifier and only an ancestor container on the completed chord. Preserve one passive, short-lived
 pre-chord snapshot, but recover it only when the completed-chord container has the same process and
@@ -279,7 +609,8 @@ Keep these three routes distinct:
 | Primary button three times in one continuous gesture | Pause capture inside the same session; no finalization or destination decision |
 | Primary button four times in one continuous recording-time gesture | Finish the same paused session through normal `primaryCurrentInput` paste, restore owned playback, and suppress only this session's configured auto-send |
 | Primary button once while paused | Resume capture after the short second-press decision window |
-| Primary button twice while paused | Immediately finish through the same clipboard-only/no-paste route |
+| Primary button twice while paused | Select Won't paste, then finish through the same clipboard-only/no-paste route only if no third press arrives through the full continuation |
+| Primary button three times while paused | Clear provisional Won't paste and resume the same capture without finalizing or pasting |
 | Next button while recording | Input captured at recording start (`recordingStart`) |
 | Primary normal stop, then Next button while the newest result is still transcribing and before post-processing | Second chance: replace that newest pending session's input and complete Mode atomically (`focusedDuringTranscription`) |
 
@@ -297,8 +628,8 @@ suppress that older Return while the new microphone handshake waits.
 
 Pause is capture state, not a fourth delivery route. The third Primary press cancels the pending
 double-click clipboard finish and pauses. While paused, one Primary press resumes after the short
-second-press window; two presses inside it finish immediately through the existing clipboard-only
-route. Pause/resume must not paste, change Mode, or change the tentative recording-start
+second-press window; two presses inside it select clipboard-only, and a third inside the full
+continuation cancels that provisional choice and resumes. Pause/resume must not paste, change Mode, or change the tentative recording-start
 target. Gate callbacks before stopping AUHAL so paused audio enters neither WAV nor realtime
 streaming, keep the mirrored HUD visible with its frozen partial and pause indicator, leave media
 playback and the YouTube helper untouched on both pause and resume, and let Ethan control playback
@@ -342,6 +673,20 @@ do not attach a mute consumer, poll ChatGPT Accessibility, move/click the pointe
 macOS input. Reconsider only when the assistant exposes a documented background API and Ethan
 explicitly asks to revisit it.
 
+For the separately existing, user-configured microphone shortcut coordinator, unreadable is not
+proof of listening and Core Audio activity is not mute state. However, a refusal-only repair can
+skip every background mute: Ethan withdrew build 413 after reporting that it no longer muted at
+all and explicitly requested the exact build-412 rollback. Do not reapply that policy automatically
+or claim its unit tests prove live suppression. Preserve the requested rollback while clearly
+retaining the older manually-muted inversion limitation. Require a supported authoritative
+same-session state/control feed and physical initially-listening/manual-mute acceptance before
+claiming reconciliation or extending to speaker output. This does not authorize AXPress, pointer
+actions, polling, notification consumers, global input mute or private app patching.
+User correction — 2026-10-09; evidence: LEARNINGS.md, “State-unreadable mute refusal was not usable
+in the live Voice workflow”, and the refusal-only withdrawal in FAILED_APPROACHES.md.
+
+Do not play Codex speech while Agent Flow records voice. Microphone-off typing may play speech; starting or resuming the microphone revokes the admitted child before hardware capture. Still send the notification and skip blocked speech without waiting or replaying it later. Keep microphone capture, manual Pause and every authored word unchanged. Stop creating live “Potential ignore” tags; retain older archives and their reader. Read `references/codex-spoken-reminder-capture.md` before changing the version-3 idle admission. User-requested — 2026-10-09; supersedes live overlap annotation. Typing-only exception requested — 2026-10-10.
+
 Keep real-time provider partials inside the black recorder HUD. The streaming callback may update only
 the active session's `partialTranscript`; it must never create or maintain provisional text ranges in
 another app. Stop finalizes once and the existing Primary or Next route performs one final delivery.
@@ -349,8 +694,14 @@ Before any real-time transcription change, search `FAILED_APPROACHES.md` for the
 `RealtimeInputDraftSession` experiment and preserve
 `realtimeStreamingRemainsRecorderHUDOnlyUntilFinalDelivery`.
 
-First check the runtime delivery-engine flag `VIPPExactInputDeliveryEnabled`. When it
-is false, VoiceInk++ deliberately uses base VoiceInk compatibility delivery: Primary
+Inspect the actual source guard before using the historical preference
+`VIPPExactInputDeliveryEnabled`: current 435/436 source has no runtime reader for
+that key, so writing it does not change delivery. The current recording-start
+off-switch is documented above and does not disable post-stop second chance.
+Self-improved — 2026-10-17: a source-wide reader check rejected the stale flag
+advice; see the retired original-input capture entry in `LEARNINGS.md`.
+On an older audited version that still reads the historical flag, false selects
+base VoiceInk compatibility delivery: Primary
 follows the current Mode and keyboard-focused input, no exact input is captured at start
 or stop, and Next Track performs no destination action. Keep the recorder's second
 destination slot visible as a warning in this state; returning a stale target would lie
@@ -389,6 +740,12 @@ Treat a UI-automation denial as a safety boundary, not an invitation to recreate
 Never launch VoiceInk++ with `open -j`: that globally hides every recorder panel even when its
 WindowServer geometry is correct. Use `open -g` for a background launch, then verify the process is
 inactive but not hidden before asking for a physical Primary test.
+
+Do not interrupt what Ethan is doing now: if an authorized update is waiting for
+his recording, typing or pending transcription, wait automatically rather than
+asking him to stop or confirm that he is using it. Preserve the live session,
+recheck quietly, and resume the safe installation when it clears; keep the required
+five-second restart warning and cooperative quit veto. User correction — 2026-10-08.
 
 Never use bare `launchctl submit` for a one-shot GUI relaunch. Launchd can infer `KeepAlive`, so an
 interrupted cleanup turns `sleep; open -a <app>` into an endless focus-stealing loop. Prefer one
@@ -430,6 +787,12 @@ Keep each field concise but specific enough to prevent rediscovery. Name the sym
    rejection of an unsigned version-B helper established this boundary; see the Sparkle
    entries in `LEARNINGS.md` and `FAILED_APPROACHES.md`.
 3. Add the newest entry with:
+
+   `record.sh` inserts immediately below `# Learnings`, above modern dated
+   headings. Review that location after each run; a quoted historical
+   `(newest first)` marker inside prose is not an insertion point.
+   Self-improved — 2026-09-29: a build-384 lesson landed inside a paragraph
+   until the insertion anchor and its regression test were corrected.
 
    ```sh
    bash .agents/skills/learnings/scripts/record.sh \

@@ -15,7 +15,7 @@ class NotchWindowManager {
     private let hudScale = RecorderHUDScaleStore.shared
     private var scaleSubscription: AnyCancellable?
 
-    private let makeView: (_ notchWidth: CGFloat, _ notchHeight: CGFloat, _ screenHeight: CGFloat) -> AnyView
+    private let makeView: (_ notchWidth: CGFloat, _ notchHeight: CGFloat, _ screenSize: CGSize) -> AnyView
 
     init(
         engine: VoiceInkEngine,
@@ -31,7 +31,7 @@ class NotchWindowManager {
         // (record-while-transcribing stack). Routed to engine.cancelSession(id:).
         onCancelSession: @escaping (UUID) -> Void
     ) {
-        self.makeView = { notchWidth, notchHeight, screenHeight in
+        self.makeView = { notchWidth, notchHeight, screenSize in
             AnyView(
                 // Host the STACK container: the active session is the notch pill, background
                 // transcribing sessions render as chips stacked beneath it.
@@ -42,7 +42,8 @@ class NotchWindowManager {
                     assistantSession: assistantSession,
                     notchWidth: notchWidth,
                     notchHeight: notchHeight,
-                    screenHeight: screenHeight,
+                    screenHeight: screenSize.height,
+                    screenWidth: screenSize.width,
                     onRecordButtonTapped: onRecordButtonTapped,
                     onCloseTapped: onCloseTapped,
                     onCancelTapped: onCancelTapped,
@@ -92,6 +93,13 @@ class NotchWindowManager {
         windows.forEach { $0.panel.orderOut(nil) }
     }
 
+    func displayIfNeeded() {
+        for entry in windows where entry.panel.isVisible {
+            entry.host.layoutSubtreeIfNeeded()
+            entry.panel.displayIfNeeded()
+        }
+    }
+
     private func refreshScale() {
         guard !windows.isEmpty else { return }
         let screens = NSScreen.screens
@@ -122,7 +130,7 @@ class NotchWindowManager {
                 for: screen, scale: CGFloat(hudScale.scale)
             )
             let panel = NotchRecorderPanel(contentRect: metrics.frame)
-            let view = makeView(metrics.notchWidth, metrics.notchHeight, screen.frame.height)
+            let view = makeView(metrics.notchWidth, metrics.notchHeight, screen.visibleFrame.size)
             let host = ScaledRecorderHostingView(rootView: view, scale: CGFloat(hudScale.scale))
             panel.contentView = host
             let windowController = NSWindowController(window: panel)

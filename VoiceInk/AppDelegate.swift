@@ -33,26 +33,49 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
-    static func shouldBlockTermination(hasInFlightSessions: Bool) -> Bool {
-        hasInFlightSessions
+    static func shouldBlockTermination(
+        hasInFlightSessions: Bool,
+        hasHistoryRetries: Bool = false,
+        hasPendingRecordingStart: Bool = false
+    ) -> Bool {
+        hasInFlightSessions || hasHistoryRetries || hasPendingRecordingStart
+    }
+
+    @MainActor
+    static func makeTerminationRetryAction(retry: @escaping () -> Void) -> (label: String, action: () -> Void) {
+        (String(localized: "I've finished"), retry)
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let hasInFlightSessions = voiceInkEngine?.sessions.isEmpty == false
+        // An accepted Primary/typing start owns its reservation, startup bar and
+        // Next-only input before its session card exists, and may still be waiting on
+        // exact-input capture, an older delivery or model cleanup. A cooperative quit
+        // (including a release swap) in that window must wait like a live recording.
+        let hasPendingRecordingStart = voiceInkEngine?.hasPendingRecordingStart == true
         guard Self.shouldBlockTermination(
-            hasInFlightSessions: hasInFlightSessions
+            hasInFlightSessions: hasInFlightSessions,
+            hasHistoryRetries: !HistoryAudioRetryState.shared.activeIDs.isEmpty,
+            hasPendingRecordingStart: hasPendingRecordingStart
         ) else {
             return .terminateNow
         }
 
         // A normal quit/release swap must never discard live microphone audio or an
-        // in-flight transcription. Returning terminateCancel also makes the external
+        // in-flight transcription, including file-only History retries which do not
+        // own a recorder session. Returning terminateCancel also makes the external
         // installer abort before it renames the bundle. Force-kill/crash recovery is a
         // separate boundary; this guard protects every cooperative app replacement.
         NotificationManager.shared.showNotification(
             title: String(localized: "Agent Flow is still recording or transcribing — finish or cancel it before quitting"),
             type: .error,
-            duration: 12
+            duration: 12,
+            // Ethan's "I've finished" retries the normal quit, not Stop/Cancel.
+            // The same live all-session veto runs again if capture/start/delivery
+            // is still active. A guarded installer waits for process exit and owns
+            // replacement/relaunch; this button never starts an independent updater.
+            actionButton: Self.makeTerminationRetryAction { sender.terminate(nil) },
+            dismissesAutomatically: false
         )
         return .terminateCancel
     }

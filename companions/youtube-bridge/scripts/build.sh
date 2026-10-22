@@ -36,14 +36,7 @@ codesign_app() {
 rm -rf "$extension_dist" "$native_dist" "$menu_bar_dist"
 mkdir -p "$extension_dist" "$native_dist" "$menu_bar_macos" "$menu_bar_resources"
 
-cp "$repo_root/extension/manifest.json" "$extension_dist/"
-cp "$repo_root/extension/background.js" "$extension_dist/"
-cp "$repo_root/extension/tab-history.js" "$extension_dist/"
-cp "$repo_root/extension/website-opener.js" "$extension_dist/"
-cp "$repo_root/extension/content-script.js" "$extension_dist/"
-cp "$repo_root/extension/status.html" "$extension_dist/"
-cp "$repo_root/extension/status.css" "$extension_dist/"
-cp "$repo_root/extension/status.js" "$extension_dist/"
+bash "$repo_root/scripts/package-extension.sh" "$extension_dist"
 
 swiftc \
   "$repo_root/shared/YoutubeSpotifyMediaKeyShared.swift" \
@@ -73,9 +66,9 @@ cat > "$menu_bar_app/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.0</string>
+  <string>0.1.1</string>
   <key>CFBundleVersion</key>
-  <string>1</string>
+  <string>2</string>
   <key>LSMinimumSystemVersion</key>
   <string>13.0</string>
   <key>LSUIElement</key>

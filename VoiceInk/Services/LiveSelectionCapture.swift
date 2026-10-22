@@ -5,14 +5,12 @@ import Foundation
 import SQLite3
 
 /// A per-recording reference to text selected in the frontmost app. The HUD
-/// shows only a compact preview; a bounded excerpt is added to the final
+/// shows only a compact preview; the full captured selection is added to the final
 /// destination message after transcription, never to live provider context.
 struct LiveSelectionReference: Equatable {
-    // Ethan wants substantial selected passages, not a five-line summary. Keep
-    // all source whitespace and hard lines until this per-highlight safety cap;
-    // the independently compact HUD must not determine final context length.
-    // `characterCount` describes the input and XML explicitly marks truncation.
-    static let maxSelectionCharacters = 8_000
+    // The durable prompt is the agent's complete input. Neither the HUD nor
+    // the short chat bubble may impose a line/character cap on captured text.
+    // Individual source transports can still have their own documented limits.
 
     private enum Source: Equatable {
         case codex
@@ -21,6 +19,7 @@ struct LiveSelectionReference: Equatable {
 
     enum PreviewPart: Equatable {
         case speech(String)
+        case potentialTTS(String)
         case selection(String)
         case screenshot(String)
     }
@@ -67,12 +66,22 @@ struct LiveSelectionReference: Equatable {
     let truncated: Bool
     private let selectedText: String
     private let screenshotPath: String?
+    private var selectionImagePath: String?
+    private var imagePath: String? { selectionImagePath ?? screenshotPath }
     private var typedText: String?
     private var capturedAt: Date?
     private var runStartedAt: Date?
     private var speechBoundary = false
     private var speechTimingSource = "approximate"
+    private var potentialTTS = false
     private var spokenPrefix = ""
+    // Anchors are immutable snapshots. Counting the entire cumulative prefix on
+    // each HUD/journal render made successive partial updates increasingly costly.
+    // Keep the prefix for identity; refresh its derived count only when anchoring.
+    private var anchoredWordCount = 0
+    // Prose committed by capture end follows every final word, including a
+    // provider tail longer than the last live partial. Not a timing claim.
+    private var followsAllSpeech = false
     private var codexThreadID: String?
     private var codexThreadTitle: String?
     private var visibleCodexThreadIDs: [String] = []
@@ -107,16 +116,15 @@ struct LiveSelectionReference: Equatable {
 
     init?(_ selectedText: String) {
         guard selectedText.contains(where: { !$0.isWhitespace }) else { return nil }
-        let excerpt = String(selectedText.prefix(Self.maxSelectionCharacters))
-        let normalized = excerpt
+        let normalized = selectedText
             .split(whereSeparator: \.isWhitespace)
             .joined(separator: " ")
 
         characterCount = selectedText.count
         screenshotPath = nil
-        self.selectedText = excerpt
+        self.selectedText = selectedText
         omittedMiddle = false
-        truncated = excerpt != selectedText
+        truncated = false
         if normalized.count <= 96 {
             preview = "“\(normalized)”"
         } else {
@@ -141,9 +149,36 @@ struct LiveSelectionReference: Equatable {
         self.selectedText = ""
     }
 
+    /// Approved Telegram fallback, distinct from a native macOS screenshot and
+    /// from exact selected words. Do not attach made-up text/character counts.
+    init?(telegramSelectionImageURL: URL) {
+        guard telegramSelectionImageURL.isFileURL,
+              telegramSelectionImageURL.path.hasPrefix("/"),
+              !telegramSelectionImageURL.path.contains(where: { $0.isNewline || $0 == "\0" }) else { return nil }
+        screenshotPath = nil
+        selectionImagePath = telegramSelectionImageURL.standardizedFileURL.path
+        preview = "Selection image"
+        characterCount = 0
+        omittedMiddle = false
+        truncated = false
+        selectedText = ""
+        source = .application(name: "Telegram", bundleID: TelegramSelectionImageCapture.bundleID)
+    }
+
     func anchored(after spokenText: String) -> Self {
         var copy = self
         copy.spokenPrefix = spokenText
+        copy.anchoredWordCount = spokenText.split(whereSeparator: \.isWhitespace).count
+        copy.followsAllSpeech = false
+        return copy
+    }
+
+    /// For a boundary known to come after all captured audio (capture end).
+    /// Interleaving clamps this to the final transcript's word count, so the
+    /// reference follows every recognized word without inventing a position.
+    func anchoredAfterAllSpeech(observed spokenText: String) -> Self {
+        var copy = anchored(after: spokenText)
+        copy.followsAllSpeech = true
         return copy
     }
 
@@ -162,6 +197,24 @@ struct LiveSelectionReference: Equatable {
         marker.speechBoundary = true
         marker.speechTimingSource = sessionWindow ? "session_window" : "approximate"
         return marker.anchored(after: transcript).timed(at: endedAt, startedAt: startedAt)
+    }
+
+    /// Recognition callbacks can be late or revised; these are conservative utterance
+    /// windows, never claimed word timestamps. Keep retry/recovery annotation intact.
+    static func annotatingSpeech(_ references: [Self], overlaps: [DateInterval],
+                                 sessionStartedAt: Date, captureEndedAt: Date?) -> [Self] {
+        let lastTiming = references.lastIndex(where: \.speechBoundary)
+        var previous = sessionStartedAt
+        return references.enumerated().map { index, reference in
+            guard reference.speechBoundary, let end = reference.capturedAt else { return reference }
+            let upper = index == lastTiming ? max(end, captureEndedAt ?? end) : end
+            var copy = reference
+            copy.potentialTTS = copy.potentialTTS || overlaps.contains {
+                $0.start < upper && $0.end > previous
+            }
+            previous = max(previous, end)
+            return copy
+        }
     }
 
     private static func timestamp(_ date: Date) -> String {
@@ -189,7 +242,13 @@ struct LiveSelectionReference: Equatable {
     var isSelection: Bool { screenshotPath == nil && !isTypedText && !speechBoundary }
 
     var spokenWordCount: Int {
-        spokenPrefix.split(whereSeparator: \.isWhitespace).count
+        anchoredWordCount
+    }
+
+    /// Timeline position among `totalWords` final words. Capture-end prose
+    /// follows all of them; every other reference uses its observed anchor.
+    private func placementWordCount(totalWords: Int) -> Int {
+        followsAllSpeech ? totalWords : anchoredWordCount
     }
 
     func scopedToCodexThread(id: String, title: String?) -> Self {
@@ -253,35 +312,56 @@ struct LiveSelectionReference: Equatable {
     }
 
     static func previewParts(_ references: [Self], with partialTranscript: String) -> [PreviewPart] {
-        // The HUD uses the same approximate cumulative-word anchor as final
-        // delivery, but never writes provisional text into another app. Keep
-        // selections in sequence with speech. Equal anchors retain their
-        // capture order: they can be a silent trail of what was being read.
-        let wordEnds = wordEndIndices(in: partialTranscript)
+        compactPromptSections(references, with: partialTranscript).map { section in
+            switch section.tag {
+            case "speech", "typed_text": return .speech(section.text)
+            case "potential_tts": return .potentialTTS(section.text)
+            case "screenshot": return .screenshot(section.text)
+            default: return .selection(section.text)
+            }
+        }
+    }
+
+    /// Reader-only timeline for the bounded message bubble. Full metadata and
+    /// exact captured excerpts still come from interleaving() into the archive.
+    /// Reuse its cumulative speech anchors, never infer order from wall clocks.
+    static func compactPromptSections(_ references: [Self], with transcript: String) -> [AgentFlowPromptPreview.Section] {
+        let wordEnds = wordEndIndices(in: transcript)
+        let speechTimings = references.filter(\.speechBoundary)
         var lastWordCount = 0
-        var previousEnd = partialTranscript.startIndex
-        var parts: [PreviewPart] = []
+        var previousEnd = transcript.startIndex
+        var parts: [AgentFlowPromptPreview.Section] = []
+        func speechSection(_ text: String, through wordCount: Int) -> AgentFlowPromptPreview.Section {
+            // Preserve first matching marker (including revised/non-monotonic
+            // provider anchors), then the last-marker fallback, without filtering
+            // the same references again for every visible speech section.
+            let timing = speechTimings.first { $0.spokenWordCount >= wordCount } ?? speechTimings.last
+            let flagged = timing?.potentialTTS == true
+            return .init(tag: flagged ? "potential_tts" : "speech", text: text,
+                         color: flagged ? LiveSelectionStyledMath.potentialTTSColor : LiveSelectionStyledMath.speechColor)
+        }
         for reference in references {
-            if reference.speechBoundary { continue }
-            let spokenWordCount = reference.spokenWordCount
-            let wordCount = min(max(lastWordCount, spokenWordCount), wordEnds.count)
-            let insertion = wordCount == 0 ? partialTranscript.startIndex : wordEnds[wordCount - 1]
-            let speech = String(partialTranscript[previousEnd..<insertion])
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            if !speech.isEmpty { parts.append(.speech(speech)) }
-            if let typedText = reference.typedText {
-                parts.append(.speech(typedText))
+            let wordCount = min(max(lastWordCount, reference.placementWordCount(totalWords: wordEnds.count)),
+                                wordEnds.count)
+            let insertion = wordCount == 0 ? transcript.startIndex : wordEnds[wordCount - 1]
+            let speech = String(transcript[previousEnd..<insertion]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !speech.isEmpty { parts.append(speechSection(speech, through: wordCount)) }
+            if reference.speechBoundary {
+                // Internal timing/annotation marker: no context row.
+            } else if let typed = reference.typedText {
+                parts.append(.init(tag: "typed_text", text: typed, color: LiveSelectionStyledMath.typedColor))
             } else if reference.screenshotPath != nil {
-                parts.append(.screenshot(reference.preview))
+                parts.append(.init(tag: "screenshot", text: reference.preview, color: LiveSelectionStyledMath.screenshotColor))
             } else {
-                parts.append(.selection(reference.hudPreview))
+                parts.append(.init(tag: "selection", text: reference.hudPreview, color: LiveSelectionStyledMath.selectionColor))
             }
             previousEnd = insertion
             lastWordCount = wordCount
         }
-        let remainingSpeech = String(partialTranscript[previousEnd...])
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if !remainingSpeech.isEmpty { parts.append(.speech(remainingSpeech)) }
+        let tail = String(transcript[previousEnd...]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !tail.isEmpty { parts.append(speechSection(tail, through: wordEnds.count)) }
+        // Keep authored-only events too: the bubble interleaves rainbow prose
+        // and context markers instead of repeating speech in a separate trail.
         return parts
     }
 
@@ -326,18 +406,21 @@ struct LiveSelectionReference: Equatable {
             // observed transcript-activity ranges, never precise audio alignment.
             // session_window explicitly means the broader composing-session bounds.
             let timingSource = timing?.speechTimingSource ?? "approximate"
-            return "<speech start_at=\"\(timestamp(started))\" end_at=\"\(timestamp(ended))\" timing=\"\(timingSource)\">\n\n"
-                + xmlEscaped(speech, attribute: false) + "\n\n</speech>"
+            let tag = timing?.potentialTTS == true ? "potential_tts" : "speech"
+            let note = timing?.potentialTTS == true
+                ? " overlap_timing=\"utterance_window\" reason=\"possible_unrelated_tts\" note=\"May include unrelated text-to-speech from another chat; ignore only words that do not fit my request. My own speech may be included.\"" : ""
+            return "<\(tag) start_at=\"\(timestamp(started))\" end_at=\"\(timestamp(ended))\" timing=\"\(timingSource)\"\(note)>\n\n"
+                + xmlEscaped(speech, attribute: false) + "\n\n</\(tag)>"
         }
         for reference in references {
-            let spokenWordCount = reference.spokenWordCount
+            let spokenWordCount = reference.placementWordCount(totalWords: wordEnds.count)
             let wordCount = min(max(lastWordCount, spokenWordCount), wordEnds.count)
             let insertion = wordCount == 0 ? transcript.startIndex : wordEnds[wordCount - 1]
             let speech = String(transcript[previousEnd..<insertion])
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             if !speech.isEmpty {
                 let text = timedSpeech(speech, through: wordCount)
-                parts.append(includeTiming ? .authoredXML(text, color: LiveSelectionStyledMath.speechColor) : .text(text))
+                parts.append(includeTiming ? .authoredXML(text, color: text.hasPrefix("<potential_tts") ? LiveSelectionStyledMath.potentialTTSColor : LiveSelectionStyledMath.speechColor) : .text(text))
             }
             if reference.isSelection { selectionIndex += 1 }
             if reference.speechBoundary {
@@ -356,7 +439,7 @@ struct LiveSelectionReference: Equatable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if !remainingSpeech.isEmpty {
             let text = timedSpeech(remainingSpeech, through: wordEnds.count)
-            parts.append(includeTiming ? .authoredXML(text, color: LiveSelectionStyledMath.speechColor) : .text(text))
+            parts.append(includeTiming ? .authoredXML(text, color: text.hasPrefix("<potential_tts") ? LiveSelectionStyledMath.potentialTTSColor : LiveSelectionStyledMath.speechColor) : .text(text))
         }
         // Untimed/plain output keeps its accepted grammar. Timed AI output uses
         // uniform start_at/end_at; the skill also accepts historical field names.
@@ -364,14 +447,17 @@ struct LiveSelectionReference: Equatable {
         var readablePreview: String?
         if includeTiming && includeReadablePreview {
             // Queue previews must begin with authored words, never a source XML tag or a
-            // highlighted quote. This is one display copy; the marked timeline
-            // below is authoritative for context placement and is not a second
-            // request. Ordinary-app paste never enters this AI-only presentation.
+            // highlighted quote. This is one display copy; the speech/typing
+            // timeline below is authoritative for context placement and is not a
+            // second request. The interpretation skill explains the duplicate
+            // without an outer envelope. Ordinary-app paste never enters this AI-only presentation.
             // Ethan now wants this opening rainbow-coloured where styled output
             // is enabled; queue surfaces that do not render math may show LaTeX.
             let readable = previewParts(references, with: transcript).compactMap { part -> String? in
-                if case .speech(let text) = part { return text }
-                return nil
+                switch part {
+                case .speech(let text), .potentialTTS(let text): return text
+                default: return nil
+                }
             }.joined(separator: " ")
             if !readable.isEmpty {
                 readablePreview = readable
@@ -383,8 +469,7 @@ struct LiveSelectionReference: Equatable {
         }
         let structured = canonical.joined(separator: "\n\n")
         if let readablePreview {
-            return readablePreview + "\n\n<agent_flow_context preview=\"authored_text_above\">\n\n"
-                + structured + "\n\n</agent_flow_context>"
+            return readablePreview + "\n\n" + structured
         }
         return structured
     }
@@ -394,9 +479,9 @@ struct LiveSelectionReference: Equatable {
     /// tag stays exactly canonical, so `display_copy="above"` never appears without
     /// the preview it described. The canonical message itself was never shortened.
     /// Styling that XML in place subsequently showed raw TeX inside the context
-    /// envelope. The blank line after the opening envelope is a parser boundary,
-    /// not just spacing: without it Markdown swallows the first coloured section
-    /// into a raw HTML block. Validate complete messages, not isolated formulas.
+    /// envelope. Current output omits that outer envelope and retains the paragraph
+    /// boundary after the readable opening. Raw XML can still swallow following
+    /// math on a plain fallback; validate complete messages, not isolated formulas.
     /// Optional colour still yields to complete source context at the paste budget; local
     /// screenshot links are part of the base output, never an attached pixel payload.
     private static func styled(_ parts: [InterleavedPart], canonical: [String],
@@ -404,26 +489,20 @@ struct LiveSelectionReference: Equatable {
                                compactMetadata: Bool = false) -> String {
         let base = parts.enumerated().map { offset, part -> String in
             guard case let .reference(reference, _) = part,
-                  let path = reference.screenshotPath else { return canonical[offset] }
+                  let path = reference.imagePath else { return canonical[offset] }
             return canonical[offset] + "\n\n" + LiveSelectionStyledMath.localImageReference(path: path)
         }
-        let beforeTimeline = "\n\n<agent_flow_context preview=\"authored_text_above\">\n\n"
-        let afterTimeline = "\n\n</agent_flow_context>"
+        let beforeTimeline = "\n\n"
         if compactMetadata {
             // Metadata is quiet scaffolding, not a paragraph per tag. Styling the
-            // envelope itself avoids the raw-HTML parser boundary that swallowed
-            // colour in build 359. Keep payload whitespace and image links intact.
+            // individual tags avoids the raw-HTML parser boundary that swallowed
+            // colour in build 359. No outer envelope is emitted; the skill owns
+            // duplicate-preview interpretation. Keep payload whitespace and image links intact.
             // Compact only contiguous sections of the same type/colour. A colour
             // change is a reading boundary and needs one visible paragraph gap;
             // otherwise a selection's closing tag touches the next speech tag.
             var timeline = ""
             var previousColor: String?
-            if readablePreview != nil {
-                timeline = LiveSelectionStyledMath.coloredXML(
-                    "<agent_flow_context preview=\"authored_text_above\">",
-                    color: LiveSelectionStyledMath.captionColor)
-                previousColor = LiveSelectionStyledMath.captionColor
-            }
             for (offset, part) in parts.enumerated() {
                 let color: String
                 var path: String?
@@ -434,7 +513,7 @@ struct LiveSelectionReference: Equatable {
                     continue
                 case .authoredXML(_, let authoredColor): color = authoredColor
                 case .reference(let reference, _):
-                    path = reference.screenshotPath
+                    path = reference.imagePath
                     color = path == nil ? LiveSelectionStyledMath.selectionColor : LiveSelectionStyledMath.screenshotColor
                 }
                 // Only whitespace BETWEEN actual tags is scaffolding. All source
@@ -450,13 +529,8 @@ struct LiveSelectionReference: Equatable {
                     timeline += "\n\n" + LiveSelectionStyledMath.localImageReference(path: path) + "\n\n"
                 }
             }
-            if readablePreview != nil {
-                if timeline.hasSuffix("\\)") { timeline += "\n\n" }
-                timeline += LiveSelectionStyledMath.coloredXML("</agent_flow_context>",
-                    color: LiveSelectionStyledMath.captionColor)
-            }
-            // A real paragraph boundary after the readable opening; unlike the
-            // old raw-HTML envelope, the italic marker now forms its own paragraph.
+            // Keep a real paragraph boundary after the readable opening even
+            // without an outer marker; each inner metadata tag remains italic.
             let opening = readablePreview.flatMap {
                 AuthoredTextRainbow.render($0, startIndex: rainbowStartIndex,
                     maxUTF16Count: LiveSelectionStyledMath.messageUTF16Budget)
@@ -469,11 +543,11 @@ struct LiveSelectionReference: Equatable {
             // Fall back as one unit. Mixing raw XML with later math can recreate
             // the host's swallowed-colour bug; never clip words to buy styling.
             let plain = base.joined(separator: "\n\n")
-            return readablePreview.map { $0 + beforeTimeline + plain + afterTimeline } ?? plain
+            return readablePreview.map { $0 + beforeTimeline + plain } ?? plain
         }
-        let envelopeSize = readablePreview.map { $0.utf16.count + beforeTimeline.utf16.count + afterTimeline.utf16.count } ?? 0
+        let previewSize = readablePreview.map { $0.utf16.count + beforeTimeline.utf16.count } ?? 0
         var remaining = LiveSelectionStyledMath.messageUTF16Budget
-            - base.joined(separator: "\n\n").utf16.count - envelopeSize
+            - base.joined(separator: "\n\n").utf16.count - previewSize
         var opening = readablePreview
         if let readablePreview, remaining > 0 {
             // The opening alone is a per-word rainbow. Timeline sections use
@@ -496,7 +570,7 @@ struct LiveSelectionReference: Equatable {
                 color = authoredColor
             case .reference(let reference, _):
                 guard !reference.isTypedText else { return base[offset] }
-                screenshotPath = reference.screenshotPath
+                screenshotPath = reference.imagePath
                 color = screenshotPath == nil ? LiveSelectionStyledMath.selectionColor : LiveSelectionStyledMath.screenshotColor
             }
             var colored = LiveSelectionStyledMath.coloredXML(canonical[offset], color: color)
@@ -509,7 +583,7 @@ struct LiveSelectionReference: Equatable {
             return colored
         }
         let timeline = output.joined(separator: "\n\n")
-        if let opening { return opening + beforeTimeline + timeline + afterTimeline }
+        if let opening { return opening + beforeTimeline + timeline }
         return timeline
     }
 
@@ -517,7 +591,7 @@ struct LiveSelectionReference: Equatable {
     /// already plain in the message, so it never gets a preview.
     private func styledDisplayCopy(index: Int) -> String? {
         guard typedText == nil else { return nil }
-        if screenshotPath != nil {
+        if imagePath != nil {
             return LiveSelectionStyledMath.screenshotPreview(fileName: preview)
         }
         // The caption names where the text was highlighted. It is never the app
@@ -542,6 +616,9 @@ struct LiveSelectionReference: Equatable {
         // Emitted only when the preview paragraph directly above was included.
         let displayCopy = hasDisplayCopy ? " display_copy=\"above\"" : ""
         let timing = capturedAt.map { " captured_at=\"\(Self.timestamp($0))\"" } ?? ""
+        if let selectionImagePath {
+            return "<app_selection_image index=\"\(index)\" source=\"Telegram\" bundle_id=\"ru.keepcoder.Telegram\" path=\"\(Self.xmlEscaped(selectionImagePath))\" scope=\"gesture_area\" exact_selection=\"false\"\(timing)/>"
+        }
         if let screenshotPath {
             return "<local_screenshot path=\"\(Self.xmlEscaped(screenshotPath))\"\(timing)\(displayCopy)/>"
         }
@@ -609,7 +686,7 @@ struct LiveSelectionReference: Equatable {
         return ends
     }
 
-    private static func xmlEscaped(_ text: String, attribute: Bool = true) -> String {
+    static func xmlEscaped(_ text: String, attribute: Bool = true) -> String {
         // A selection is untrusted page text. It must remain text even if it
         // contains tags, entities, or characters forbidden by XML 1.0.
         let xmlSafe = String(text.filter { character in
@@ -662,6 +739,7 @@ enum LiveSelectionStyledMath {
     /// Authored XML uses bright cool silver speech and warmer silver typing.
     /// Keep these near-white for dark chat bubbles without changing type colours.
     static let speechColor = "#f1f5f9"
+    static let potentialTTSColor = "#fbbf24"
     static let typedColor = "#f4f4f5"
     /// Quiet captions let the coloured source text carry the emphasis.
     static let captionColor = "#94a3b8"
@@ -927,29 +1005,22 @@ enum LiveSelectionStyledMath {
     }
 }
 
-/// Optional captured context is for native agent/chat apps only. This is text
-/// formatting, not delivery authority: Primary still owns no input or saved Mode
-/// and still posts its single generic Cmd-V. Never inspect browser URLs, window
-/// titles, AX editors or app contents to broaden this allowlist. Unknown apps and
-/// browser-hosted chats deliberately get only authored speech/typing.
+/// Format captured context only for Codex, Telegram and Claude, the approved
+/// per-app overrides. Ordinary apps (including Chrome) receive authored
+/// speech/typing without links, XML or math. Use Primary's current app after the
+/// queue wait and Next's saved app; the highlight source never owns this choice.
+/// This is text formatting only, never input capture, focus or paste authority.
 enum LiveContextPastePolicy {
-    static let recipientBundleIdentifiers: Set<String> = [
-        "com.openai.codex", "com.openai.chat", "com.anthropic.claudefordesktop",
-        // Ethan also uses Telegram chats as agent destinations. This explicit
-        // output opt-in does not authorize Telegram selection capture or change
-        // Primary/Next insertion, auto-send, focus, or exact-chat safeguards.
-        "ru.keepcoder.Telegram"
-    ]
-
     static func includesSourceContext(
         destination: RecordingPasteDestination,
         currentApplicationBundleIdentifier: String?,
         savedTargetBundleIdentifier: String?
     ) -> Bool {
         let recipient = destination.usesBaseCurrentInputDelivery
-            ? currentApplicationBundleIdentifier
-            : savedTargetBundleIdentifier
-        return recipient.map { recipientBundleIdentifiers.contains($0) } ?? false
+            ? currentApplicationBundleIdentifier : savedTargetBundleIdentifier
+        guard let recipient else { return false }
+        return recipient == "com.openai.codex"
+            || AgentFlowPromptPreview.inlineContextRecipientBundleIdentifiers.contains(recipient)
     }
 }
 
@@ -1095,6 +1166,20 @@ enum CodexSelectionThreadTitleReader {
 /// closed rather than borrowing the clipboard.
 @MainActor
 final class LiveSelectionCapture {
+    /// The independent pane helper must not clear a pre-start highlight. This
+    /// receipt acknowledges only an already committed live mouse selection;
+    /// it carries no words, AX target or paste authority and never delays Start.
+    nonisolated static let selectionCapturedNotification = Notification.Name(
+        "com.ethansk.agentflow.selectionCaptured")
+
+    nonisolated static func selectionReceipt(sourcePID: pid_t, selectedAt: Date,
+                                             precedesSpeech: Bool, hasGesture: Bool) -> [String: Any]? {
+        guard sourcePID > 0, selectedAt.timeIntervalSince1970.isFinite,
+              !precedesSpeech, hasGesture else { return nil }
+        return ["version": 1, "sourcePID": Int(sourcePID),
+                "selectedAt": selectedAt.timeIntervalSince1970]
+    }
+
     typealias MouseEdge = SelectionGestureWatcher.MouseEdge
 
     /// `precedesSpeech` is true only for a highlight made before this capture
@@ -1108,6 +1193,8 @@ final class LiveSelectionCapture {
     private var attachedAt = Date.distantFuture
     private var mouseDownPoint: NSPoint?
     private var mouseDownDate: Date?
+    private var mouseDownCallbackLag: Int?
+    private var mouseDownExtendsSelection = false
     private var captureTask: Task<Void, Never>?
     private var screenshotSource: DispatchSourceFileSystemObject?
     private var screenshotDirectory: URL?
@@ -1123,12 +1210,13 @@ final class LiveSelectionCapture {
         self.onLabels = onLabels
     }
 
-    func start() {
+    func start(activationTime: Date = Date()) {
         guard !isAttached else { return }
         isAttached = true
         attachedAt = Date()
         let watcher = SelectionGestureWatcher.shared
         watcher.start()
+        watcher.resetKeyboardGesture()
         // A drag that began before capture attached (during microphone start-up,
         // or just before the start press) finishes normally during recording.
         // Before build 349 its mouse-down was never seen, so the gesture failed.
@@ -1138,9 +1226,11 @@ final class LiveSelectionCapture {
         if let down = dragInProgress {
             mouseDownPoint = down.location
             mouseDownDate = down.occurredAt
+            mouseDownCallbackLag = down.callbackLagMilliseconds
+            mouseDownExtendsSelection = down.extendsSelection
         }
         watcher.listener = self
-        startScreenshotWatch()
+        startScreenshotWatch(activationTime: activationTime)
         // A drag in progress normally replaces the earlier highlight, and its own
         // mouse-up will be read live. Reading the earlier gesture now could catch
         // that newer selection and record it twice, so skip it.
@@ -1152,6 +1242,7 @@ final class LiveSelectionCapture {
     func stop() {
         if SelectionGestureWatcher.shared.listener === self {
             SelectionGestureWatcher.shared.listener = nil
+            SelectionGestureWatcher.shared.resetKeyboardGesture()
         }
         isAttached = false
         attachedAt = .distantFuture
@@ -1159,6 +1250,8 @@ final class LiveSelectionCapture {
         captureTask = nil
         mouseDownPoint = nil
         mouseDownDate = nil
+        mouseDownCallbackLag = nil
+        mouseDownExtendsSelection = false
         screenshotScanTask?.cancel()
         screenshotScanTask = nil
         screenshotSource?.cancel()
@@ -1168,16 +1261,16 @@ final class LiveSelectionCapture {
         screenshotStart = .distantFuture
     }
 
-    private func startScreenshotWatch() {
+    private func startScreenshotWatch(activationTime: Date) {
         let directory = Self.screenshotDirectoryURL()
         guard FileManager.default.fileExists(atPath: directory.path) else { return }
         let descriptor = open(directory.path, O_EVTONLY)
         guard descriptor >= 0 else { return }
         screenshotDirectory = directory
-        screenshotBaseline = Set((try? FileManager.default.contentsOfDirectory(
-            atPath: directory.path
-        )) ?? [])
-        screenshotStart = Date()
+        // Keep the native screenshot event time, not the later mic/AX handshake,
+        // as the five-second boundary. Never enumerate Desktop on MainActor while
+        // the newly requested recorder panel is trying to render.
+        screenshotStart = activationTime
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: descriptor,
             eventMask: [.write, .rename, .delete],
@@ -1189,6 +1282,7 @@ final class LiveSelectionCapture {
         source.setCancelHandler { [descriptor] in close(descriptor) }
         screenshotSource = source
         source.resume()
+        scheduleScreenshotScan()
     }
 
     private static func screenshotDirectoryURL() -> URL {
@@ -1205,41 +1299,46 @@ final class LiveSelectionCapture {
         screenshotScanTask?.cancel()
         screenshotScanTask = Task { @MainActor [weak self] in
             // The file and its screenshot metadata can appear in separate writes.
-            // Bounded retries catch a normal save without monitoring the folder at idle.
-            for delay in [250_000_000, 750_000_000, 1_500_000_000] as [UInt64] {
-                try? await Task.sleep(nanoseconds: delay)
-                guard !Task.isCancelled, let self else { return }
-                self.scanNewScreenshots()
+            // Search immediately for a screenshot saved just before Start, then
+            // retry boundedly for a save whose metadata is still being written.
+            for delay in [0, 250_000_000, 750_000_000, 1_500_000_000] as [UInt64] {
+                if delay > 0 { try? await Task.sleep(nanoseconds: delay) }
+                guard !Task.isCancelled, let self,
+                      self.isAttached, let directory = self.screenshotDirectory else { return }
+                let activationTime = self.screenshotStart
+                let found = await Task.detached(priority: .utility) {
+                    Self.findNativeScreenshots(in: directory, activatedAt: activationTime)
+                }.value
+                guard !Task.isCancelled, self.isAttached,
+                      self.screenshotDirectory == directory else { return }
+                for (url, created) in found {
+                    guard self.screenshotBaseline.insert(url.lastPathComponent).inserted,
+                          let reference = LiveSelectionReference(screenshotURL: url) else { continue }
+                    self.onCapture(reference.timed(at: created), created < activationTime,
+                                   created < activationTime ? "" : self.speechSnapshot())
+                }
             }
         }
     }
 
-    private func scanNewScreenshots() {
-        guard let directory = screenshotDirectory,
-              let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else {
-            return
+    nonisolated static func findNativeScreenshots(in directory: URL, activatedAt: Date) -> [(URL, Date)] {
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else {
+            return []
         }
-        let candidates = names.filter { !screenshotBaseline.contains($0) }
-            .sorted { first, second in
-                let firstURL = directory.appendingPathComponent(first)
-                let secondURL = directory.appendingPathComponent(second)
-                let firstDate = (try? firstURL.resourceValues(forKeys: [.creationDateKey]))?
-                    .creationDate ?? .distantFuture
-                let secondDate = (try? secondURL.resourceValues(forKeys: [.creationDateKey]))?
-                    .creationDate ?? .distantFuture
-                return firstDate == secondDate ? first < second : firstDate < secondDate
-            }
-        for name in candidates {
+        let cutoff = activatedAt.addingTimeInterval(-5)
+        return names.compactMap { name -> (URL, Date)? in
             let url = directory.appendingPathComponent(name)
-            guard Self.isNativeScreenshot(url, since: screenshotStart),
-                  let reference = LiveSelectionReference(screenshotURL: url) else { continue }
-            screenshotBaseline.insert(name)
-            let created = (try? url.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? Date()
-            onCapture(reference.timed(at: created), false, speechSnapshot())
+            guard let created = (try? url.resourceValues(forKeys: [.creationDateKey]))?.creationDate,
+                  created >= cutoff,
+                  Self.isNativeScreenshot(url, since: cutoff.addingTimeInterval(1)) else { return nil }
+            return (url, created)
+        }.sorted { first, second in
+            first.1 == second.1 ? first.0.lastPathComponent < second.0.lastPathComponent
+                : first.1 < second.1
         }
     }
 
-    static func isNativeScreenshot(_ url: URL, since start: Date) -> Bool {
+    nonisolated static func isNativeScreenshot(_ url: URL, since start: Date) -> Bool {
         let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .creationDateKey])
         guard values?.isRegularFile == true,
               let created = values?.creationDate,
@@ -1275,14 +1374,29 @@ final class LiveSelectionCapture {
         return isScreenshotMarker(Data(bytes))
     }
 
-    static func isScreenshotMarker(_ data: Data) -> Bool {
+    nonisolated static func isScreenshotMarker(_ data: Data) -> Bool {
         let value = try? PropertyListSerialization.propertyList(
             from: data, options: [], format: nil
         )
         return (value as? NSNumber)?.boolValue == true
     }
 
-    /// Called by `SelectionGestureWatcher` for every mouse edge while attached.
+    /// A fresh key-down cancels a pending older read before it can borrow the
+    /// range changed by typing or another keyboard selection.
+    func selectionWillChange() {
+        captureTask?.cancel()
+    }
+
+    func handle(_ gesture: SelectionGestureWatcher.KeyboardGesture) {
+        guard isAttached, Self.isFrontmost(gesture.processIdentifier),
+              let app = NSRunningApplication(processIdentifier: gesture.processIdentifier) else { return }
+        // Keyboard selection has no pointer endpoints. Read only the focused
+        // public range, never fabricate a drag from the idle mouse position.
+        beginSelectionRead(from: .zero, to: .zero, gestureStartedAt: gesture.startedAt,
+            selectedAt: gesture.endedAt, app: app, precedesSpeech: false, hasGesture: false,
+            bridgeInputKind: gesture.inputKind.rawValue, bridgeInputDirection: gesture.inputDirection)
+    }
+
     func handle(_ edge: MouseEdge, sourcePID: pid_t?) {
         guard isAttached else { return }
         switch edge.type {
@@ -1292,25 +1406,41 @@ final class LiveSelectionCapture {
             captureTask?.cancel()
             mouseDownPoint = edge.location
             mouseDownDate = edge.occurredAt
+            mouseDownCallbackLag = edge.callbackLagMilliseconds
+            mouseDownExtendsSelection = edge.extendsSelection
         case .leftMouseUp:
             let endPoint = edge.location
             let startPoint = mouseDownPoint
             let gestureStartedAt = mouseDownDate ?? edge.occurredAt
+            let callbackLag = SelectionGestureWatcher.combinedCallbackLag(
+                mouseDownCallbackLag, edge.callbackLagMilliseconds)
+            let extendsSelection = mouseDownExtendsSelection
             mouseDownPoint = nil
             mouseDownDate = nil
-            guard let startPoint,
-                  Self.isSelectionGesture(
-                      from: startPoint,
-                      to: endPoint,
-                      clickCount: edge.clickCount
-                  ),
-                  let sourcePID, sourcePID != ProcessInfo.processInfo.processIdentifier,
+            mouseDownCallbackLag = nil
+            mouseDownExtendsSelection = false
+            let disposition = Self.selectionGestureDisposition(
+                startPoint: startPoint, endPoint: endPoint, clickCount: edge.clickCount,
+                sourcePID: sourcePID, ownPID: ProcessInfo.processInfo.processIdentifier,
+                extendsSelection: extendsSelection
+            )
+            LiveSelectionDiagnostics.gesture(
+                outcome: disposition, clickCount: edge.clickCount,
+                callbackLagMilliseconds: SelectionGestureWatcher.callbackLagMilliseconds(
+                    occurredAt: edge.occurredAt, now: Date()
+                )
+            )
+            guard disposition == "read", let startPoint, let sourcePID,
                   let app = NSRunningApplication(processIdentifier: sourcePID) else {
                 return
             }
             beginSelectionRead(
                 from: startPoint, to: endPoint, gestureStartedAt: gestureStartedAt, selectedAt: edge.occurredAt,
-                app: app, precedesSpeech: false
+                app: app, precedesSpeech: false, clickCount: edge.clickCount,
+                callbackLagMilliseconds: callbackLag,
+                hasGesture: Self.usesPointerGeometry(from: startPoint, to: endPoint,
+                    clickCount: edge.clickCount, extendsSelection: extendsSelection),
+                bridgeInputKind: extendsSelection ? "mouse" : nil
             )
         default:
             break
@@ -1332,7 +1462,11 @@ final class LiveSelectionCapture {
               ) {
             beginSelectionRead(
                 from: gesture.start, to: gesture.end, gestureStartedAt: gesture.startedAt, selectedAt: gesture.endedAt,
-                app: app, precedesSpeech: true
+                app: app, precedesSpeech: true, clickCount: gesture.clickCount,
+                callbackLagMilliseconds: gesture.callbackLagMilliseconds,
+                hasGesture: Self.usesPointerGeometry(from: gesture.start, to: gesture.end,
+                    clickCount: gesture.clickCount, extendsSelection: gesture.extendsSelection),
+                bridgeInputKind: gesture.extendsSelection ? "mouse" : nil
             )
         } else {
             // A keyboard highlight or one predating the watcher has no mouse
@@ -1356,7 +1490,11 @@ final class LiveSelectionCapture {
         selectedAt: Date,
         app: NSRunningApplication,
         precedesSpeech: Bool,
-        hasGesture: Bool = true
+        clickCount: Int = 1,
+        callbackLagMilliseconds: Int? = nil,
+        hasGesture: Bool = true,
+        bridgeInputKind: String? = nil,
+        bridgeInputDirection: String? = nil
     ) {
         // A drag can activate an app that was backgrounded at mouse-down.
         // Bind to the frontmost app sampled synchronously at mouse-up and its
@@ -1369,7 +1507,8 @@ final class LiveSelectionCapture {
         let gesture = hasGesture ? LiveSelectionGesture.fromCocoa(
             mouseDown: startPoint,
             mouseUp: endPoint,
-            screenFrames: NSScreen.screens.map(\.frame)
+            screenFrames: NSScreen.screens.map(\.frame),
+            clickCount: clickCount, callbackLagMilliseconds: callbackLagMilliseconds
         ) : nil
         let identity = LiveSelectionReadIdentity(processIdentifier: sourcePID, gesture: gesture,
                                                  windows: LiveSelectionWindow.onScreen())
@@ -1409,6 +1548,7 @@ final class LiveSelectionCapture {
             let chromeContext = bundleID == "com.google.Chrome" && Self.isFrontmost(sourcePID)
                 ? await ChromeSelectionContextReader.capture() : nil
             let selectedText: String?
+            var accessibility: LiveSelectionResolution?
             if let chromeContext {
                 selectedText = chromeContext.selectedText
                 LiveSelectionDiagnostics.captured(
@@ -1416,21 +1556,41 @@ final class LiveSelectionCapture {
                     bundleID: bundleID, startedAt: startedAt
                 )
             } else {
-                selectedText = await Self.readSelectedText(
+                let result = await Self.readSelectedText(
                     sourcePID: sourcePID,
                     identity: identity,
                     bundleID: bundleID,
                     gesture: gesture,
                     gestureStartedAt: gestureStartedAt,
+                    bridgeInputKind: bridgeInputKind,
+                    bridgeInputDirection: bridgeInputDirection,
                     startedAt: startedAt
                 )
+                selectedText = result.text
+                accessibility = result.resolution
             }
             guard !Task.isCancelled else { return }
             guard Self.canRead(identity) else {
                 outcome = "source-changed-during-read"
                 return
             }
-            guard let text = selectedText, let reference = LiveSelectionReference(text) else {
+            let reference: LiveSelectionReference
+            if let text = selectedText, let textReference = LiveSelectionReference(text) {
+                reference = textReference
+            } else if TelegramSelectionImageCapture.mayCapture(
+                enabled: UserDefaults.standard.bool(forKey: TelegramSelectionImageCapture.preferenceKey),
+                sourceBundleID: bundleID, precedesSpeech: precedesSpeech,
+                gesture: gesture, resolution: accessibility), let gesture,
+                let imageURL = await TelegramSelectionImageCapture.capture(identity: identity, gesture: gesture) {
+                guard !Task.isCancelled, Self.canRead(identity), let self, self.isAttached,
+                      let imageReference = LiveSelectionReference(telegramSelectionImageURL: imageURL) else {
+                    TelegramSelectionImageCapture.discard(imageURL)
+                    return
+                }
+                reference = imageReference
+                LiveSelectionDiagnostics.captured(tier: .telegramRegionImage, source: nil,
+                    evidence: .atGesture, attempt: 1, bundleID: bundleID, startedAt: startedAt)
+            } else {
                 outcome = "selection-unavailable"
                 return
             }
@@ -1445,6 +1605,14 @@ final class LiveSelectionCapture {
             self.onCapture(captured.timed(at: selectedAt).identifiedForCapture(captureID),
                            precedesSpeech, spokenAnchor)
             outcome = "emitted-to-session"
+            if isCodex, let receipt = Self.selectionReceipt(sourcePID: sourcePID, selectedAt: selectedAt,
+                precedesSpeech: precedesSpeech, hasGesture: gesture != nil) {
+                // Focus-after-highlight is separate from Primary delivery. The
+                // helper still proves its own fresh same-pane click/focus path.
+                DistributedNotificationCenter.default().postNotificationName(
+                    Self.selectionCapturedNotification, object: nil, userInfo: receipt,
+                    deliverImmediately: true)
+            }
             guard isCodex else { return }
             let labeled: LiveSelectionReference
             if isCodex {
@@ -1490,19 +1658,27 @@ final class LiveSelectionCapture {
         bundleID: String?,
         gesture: LiveSelectionGesture?,
         gestureStartedAt: Date,
+        bridgeInputKind: String?,
+        bridgeInputDirection: String?,
         startedAt: UInt64
-    ) async -> String? {
+    ) async -> (text: String?, resolution: LiveSelectionResolution?) {
         // VS Code's default Monaco editor intentionally exposes no AX text.
-        // Better Git can prove a fresh mouse selection in the focused editor;
+        // Better Git proves a matching mouse, keyboard-extension or Select All
+        // selection in the focused editor. A stationary Shift-click's range
+        // starts at the prior caret, so it uses focused-only reading. Real
+        // Shift-drags keep the existing window and range-geometry safeguards;
         // ask only during capture, never enable screen-reader mode or copy.
         if isFrontmost(sourcePID), VSCodeSelectionBridge.supports(bundleID),
-           gesture?.touchesWindow(ownedBy: sourcePID, in: LiveSelectionWindow.onScreen()) == true,
-           let text = await VSCodeSelectionBridge.read(sourcePID: sourcePID, gestureStartedAt: gestureStartedAt) {
+           (gesture == nil ? bridgeInputKind != nil :
+               gesture?.touchesWindow(ownedBy: sourcePID, in: LiveSelectionWindow.onScreen()) == true),
+           let text = await VSCodeSelectionBridge.read(sourcePID: sourcePID,
+               gestureStartedAt: gestureStartedAt, inputKind: bridgeInputKind,
+               inputDirection: bridgeInputDirection) {
             LiveSelectionDiagnostics.captured(
                 tier: .vscodeBridge, source: nil, evidence: .atGesture, attempt: 1,
                 bundleID: bundleID, startedAt: startedAt
             )
-            return text
+            return (text, nil)
         }
         var last = LiveSelectionResolution()
         var attempts = 0
@@ -1511,28 +1687,36 @@ final class LiveSelectionCapture {
                 try? await Task.sleep(nanoseconds: delay)
             }
             guard !Task.isCancelled, canRead(identity) else {
-                return nil
+                return (nil, nil)
             }
             attempts += 1
             last = await LiveSelectionTextReader.resolveAccessibility(
                 processIdentifier: sourcePID, gesture: gesture,
-                requiresGestureBounds: !isFrontmost(sourcePID)
+                requiresGestureBounds: !isFrontmost(sourcePID),
+                checksDragSpan: bundleID == "com.openai.codex",
+                sourceWindowBounds: identity.window?.bounds
             )
             if let candidate = last.candidate,
                isFrontmost(sourcePID) || candidate.evidence == .atGesture {
                 LiveSelectionDiagnostics.captured(
                     tier: candidate.tier, source: candidate.source,
                     evidence: candidate.evidence, attempt: attempts,
-                    bundleID: bundleID, startedAt: startedAt
+                    bundleID: bundleID, startedAt: startedAt,
+                    span: candidate.spanEvidence, length: candidate.text.utf16.count,
+                    observedOverextended: last.observedOverextended,
+                    preventedWidening: last.preventedWidening,
+                    acceptedMarkerExpansion: last.acceptedMarkerExpansion,
+                    clickCount: gesture?.clickCount,
+                    callbackLagMilliseconds: gesture?.callbackLagMilliseconds
                 )
-                return candidate.text
+                return (candidate.text, last)
             }
             // Without Accessibility trust a re-read cannot succeed.
             if !last.accessibilityTrusted { break }
         }
 
         guard !Task.isCancelled, canRead(identity), isFrontmost(sourcePID) else {
-            return nil
+            return (nil, nil)
         }
         if LiveSelectionBrowserScriptReader.engine(for: bundleID) != nil,
            LiveSelectionBrowserScriptReader.mayReadForGesture(
@@ -1544,12 +1728,12 @@ final class LiveSelectionCapture {
                 tier: .browserScript, source: nil, evidence: nil, attempt: attempts,
                 bundleID: bundleID, startedAt: startedAt
             )
-            return text
+            return (text, last)
         }
         LiveSelectionDiagnostics.unavailable(
             last, attempts: attempts, bundleID: bundleID, startedAt: startedAt
         )
-        return nil
+        return (nil, last)
     }
 
     private static func isFrontmost(_ pid: pid_t) -> Bool {
@@ -1561,14 +1745,37 @@ final class LiveSelectionCapture {
                          windows: LiveSelectionWindow.onScreen())
     }
 
+    /// Counts-only rejection before any Accessibility read. Preserve the drag
+    /// threshold; frozen Shift adds the stationary caret-to-click extension.
+    static func selectionGestureDisposition(
+        startPoint: NSPoint?, endPoint: NSPoint, clickCount: Int,
+        sourcePID: pid_t?, ownPID: pid_t, extendsSelection: Bool = false
+    ) -> String {
+        guard let startPoint else { return "no-mouse-down" }
+        guard isSelectionGesture(from: startPoint, to: endPoint, clickCount: clickCount,
+                                 extendsSelection: extendsSelection) else {
+            return "not-selection-shaped"
+        }
+        guard let sourcePID, sourcePID > 0, sourcePID != ownPID else { return "no-source" }
+        return "read"
+    }
+
     static func isSelectionGesture(
         from start: NSPoint,
         to end: NSPoint,
-        clickCount: Int
+        clickCount: Int,
+        extendsSelection: Bool = false
     ) -> Bool {
         let dx = end.x - start.x
         let dy = end.y - start.y
-        return clickCount >= 2 || dx * dx + dy * dy >= 16
+        return extendsSelection || clickCount >= 2 || dx * dx + dy * dy >= 16
+    }
+
+    static func usesPointerGeometry(from start: NSPoint, to end: NSPoint,
+                                    clickCount: Int, extendsSelection: Bool) -> Bool {
+        // Only the new stationary extension lacks mouse-range evidence. Do not
+        // remove established pointer/window checks from an existing Shift-drag.
+        !extendsSelection || isSelectionGesture(from: start, to: end, clickCount: clickCount)
     }
 
     static func hasStableSource(expectedPID: pid_t?, currentPID: pid_t?) -> Bool {

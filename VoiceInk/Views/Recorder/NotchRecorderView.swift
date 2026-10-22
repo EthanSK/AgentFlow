@@ -7,6 +7,8 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     let notchWidth: CGFloat
     let notchHeight: CGFloat
     let liveTranscriptHeight: CGFloat
+    var liveTranscriptWidth: CGFloat = MiniRecorderLayoutMetrics.liveTranscriptWidth
+    var maximumContextHeight: CGFloat = MiniRecorderLayoutMetrics.assistantPanelHeight
     let onRecordButtonTapped: () -> Void
     let onCloseTapped: () -> Void
     // Exit ("X"): stop without paste, save captured audio/HUD draft in History, and
@@ -29,6 +31,13 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
         }
 
         switch stateProvider.recordingState {
+        case .starting where stateProvider.canTypeInHUD:
+            return .liveText
+        case .starting:
+            // Keep the real starting card visible after the early black shell
+            // hands off. A zero-height collapsed pill would erase acknowledgement
+            // until the microphone handshake completes. Status remains static.
+            return .active
         case .recording, .paused:
             // Keep the realtime panel visible before the provider's first partial so
             // a slow Wi-Fi/WebSocket handshake cannot make streaming mode look off.
@@ -45,12 +54,13 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
 
     // MARK: - Layout Constants
 
-    private let recordingSideExpansion: CGFloat = 180
-    private let transcriptSideExpansion = MiniRecorderLayoutMetrics.notchTranscriptSideExpansion
+    // Pause/Play adds one 24pt control plus the row's 14pt spacing.
+    private let recordingSideExpansion: CGFloat = 240
+    private var transcriptSideExpansion: CGFloat { max(0, (liveTranscriptWidth - notchWidth) / 2) }
     private let assistantSideExpansion: CGFloat = 230
     private let activeHeightBonus: CGFloat = 6
     private var transcriptPanelHeight: CGFloat { liveTranscriptHeight + 1 }
-    private let assistantPanelHeight: CGFloat = 320
+    private var assistantPanelHeight: CGFloat { min(320, maximumContextHeight) }
 
     private var mainRowHeight: CGFloat { notchHeight + activeHeightBonus }
 
@@ -212,6 +222,9 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                     // the mini panel exactly so behaviour is identical across recorder styles.
                     RecorderSkipProcessingButton(isEngaged: skipPostProcessingBinding)
                         .transition(.opacity)
+                    if stateProvider.recordingState.isRecordingOrPaused {
+                        RecorderPauseButton(stateProvider: stateProvider)
+                    }
                     if stateProvider.canTypeInHUD {
                         RecorderMicrophoneButton(stateProvider: stateProvider)
                     }
@@ -274,14 +287,20 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                 Divider().background(Color.white.opacity(0.15))
                 LiveTranscriptView(
                     text: stateProvider.partialTranscript,
+                    potentialTTSActive: stateProvider.potentialTTSActive,
+                    dimsContextUntilSpeechArrives: stateProvider.dimsContextUntilSpeechArrives,
                     selectionReferences: stateProvider.liveContextPreviewReferences,
+                    cachedPreviewParts: stateProvider.liveContextPreviewParts,
                     height: liveTranscriptHeight,
                     typedInput: stateProvider.canTypeInHUD ? Binding(
                         get: { stateProvider.typedInput },
                         set: { stateProvider.updateTypedInput($0) }
                     ) : nil,
                     onEndTyping: { stateProvider.endTypingRun() },
+                    onSubmitTyping: { stateProvider.submitTypedInput() },
+                    onFinishTypingWithoutPasting: { stateProvider.finishTypedInputWithoutPasting() },
                     typingFocus: stateProvider.typingFocusController,
+                    typingUndo: stateProvider.typingUndoController,
                     width: notchWidth + transcriptSideExpansion * 2 - 16
                 )
                     .padding(.horizontal, 8)
@@ -298,7 +317,8 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                 AssistantPanelView(
                     session: assistantSession,
                     liveFollowUpText: liveAssistantFollowUpText,
-                    onSend: onAssistantFollowUp
+                    onSend: onAssistantFollowUp,
+                    height: max(0, assistantPanelHeight - 1)
                 )
             }
         }

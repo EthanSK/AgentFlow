@@ -9,6 +9,13 @@ protocol TranscriptionDelivering {
 
 @MainActor
 final class TranscriptionDelivery: TranscriptionDelivering {
+    // Tests replace only the final OS transport. The production status/configuration
+    // gate and failure routing still execute; a fake delivery object misses those.
+    private let recoveryPasteOverride: ((Request, Actions) async -> Void)?
+
+    init(recoveryPasteOverride: ((Request, Actions) async -> Void)? = nil) {
+        self.recoveryPasteOverride = recoveryPasteOverride
+    }
     // Upstream VoiceInk waits 500 ms after Cmd-V before generic auto-send. Primary
     // keeps the same base current-input architecture, but 220 ms matches the proven
     // effective timing of the former System Events path while staying well below
@@ -342,6 +349,16 @@ final class TranscriptionDelivery: TranscriptionDelivering {
         // explicitly in deliver() so the raw-paste guarantee holds even if `output` were
         // ever wrong. Defaults to false (normal mode processing). One-shot, per-recording.
         var skipPostProcessing: Bool = false
+        // Only an independently authored keyboard draft can cross a voice-failure
+        // boundary. It stays a failed, retryable voice record and never submits.
+        var recoversTypedDraft: Bool = false
+
+        var allowsTypedRecoveryPaste: Bool {
+            recoversTypedDraft && transcription.transcriptionStatus == TranscriptionStatus.failed.rawValue
+                && !isAssistantFollowUp && output.outputMode == .paste
+                && output.autoSendKey == .none && output.customCommand == nil
+                && text?.contains(where: { !$0.isWhitespace }) == true
+        }
     }
 
     struct Actions {
@@ -354,6 +371,24 @@ final class TranscriptionDelivery: TranscriptionDelivering {
 
     func deliver(_ request: Request, actions: Actions) async {
         vippLog.info("deliver: enter status=\(request.transcription.transcriptionStatus ?? "nil", privacy: .public) outputMode=\(String(describing: request.output.outputMode), privacy: .public) textChars=\(request.text?.count ?? -1, privacy: .public) followUp=\(request.isAssistantFollowUp, privacy: .public) skip=\(request.skipPostProcessing, privacy: .public)")
+
+        if request.recoversTypedDraft {
+            guard request.allowsTypedRecoveryPaste, let text = request.text else {
+                FocusLockService.shared.clearLock()
+                await actions.dismiss()
+                return
+            }
+            // Reuse the selected Primary/Next transport, not a fourth route.
+            // Failed speech can leave a reviewable typed draft but never Return.
+            if let recoveryPasteOverride {
+                await recoveryPasteOverride(request, actions)
+                return
+            }
+            await paste(text, target: request.pasteTarget, output: request.output,
+                resolveQueuedPrimaryAutoSend: { _ in .unchanged(.none) },
+                onQueuedPrimaryAutoSendIssued: {}, actions: actions)
+            return
+        }
 
         // ── VIPP (skip-mode-processing feature) — RAW-PASTE GUARANTEE ────────────────
         // This is THE decision point the user's "skip script" button must control:
@@ -542,6 +577,7 @@ final class TranscriptionDelivery: TranscriptionDelivering {
         String(format: "%.3f", duration)
     }
 
+
     private func paste(
         _ text: String,
         target: RecordingPasteTarget,
@@ -561,7 +597,8 @@ final class TranscriptionDelivery: TranscriptionDelivering {
 
         let autoSendKey = output.outputMode == .paste ? output.autoSendKey : .none
 
-        // PRIMARY IS ALWAYS BASE VOICEINK. The normal toggle never owns a saved input
+        // PRIMARY IS BASE VOICEINK. Compact prompt/file-link formatting happens
+        // before delivery and still uses ONE paste. The normal toggle never owns a saved input
         // and never runs Telegram/OpenAI/Terminal capture, focus, insertion, Send, or
         // verification code. Ordinary system Cmd-V goes to whichever keyboard input
         // macOS owns when the command is posted, followed immediately by the current
@@ -731,7 +768,8 @@ final class TranscriptionDelivery: TranscriptionDelivering {
     /// Base VoiceInk's current-input route, intentionally free of every app-specific
     /// saved-input mechanism. The system keyboard focus at each ordinary event decides
     /// where it goes; there is no exact-wrapper fallback, semantic Send, read-back,
-    /// retry, or app allowlist. This must remain the only Primary delivery path.
+    /// retry, or app allowlist. This remains the ordinary Primary delivery path;
+    /// compact prompt/file-link content does not change this one-paste boundary.
     private func deliverPrimaryToCurrentSystemInput(
         _ pastedText: String,
         autoSendKey: AutoSendKey,
@@ -1505,7 +1543,7 @@ final class TranscriptionDelivery: TranscriptionDelivering {
         )
     }
 
-    private func showAutoSendFailure(_ title: String, detail: String) {
+    private func showAutoSendFailure(_ title: String, detail: String, copyText: String? = nil) {
         // Paste already succeeded here. Host submission verification is intentionally
         // conservative and can report a false negative after an Electron composer has
         // actually submitted, so keep the selectable warning but do not punish routine
@@ -1514,7 +1552,8 @@ final class TranscriptionDelivery: TranscriptionDelivering {
         NotificationManager.shared.showNotification(
             title: title,
             type: .error,
-            playSound: false
+            playSound: false,
+            copyText: copyText
         )
         vippLog.error("paste: auto-send failed after successful paste; \(detail, privacy: .public)")
     }

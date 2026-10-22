@@ -15,6 +15,23 @@ BLOCK = PACKAGE[START:END]
 
 
 class SparkleSigningTests(unittest.TestCase):
+    def test_public_checksum_manifest_works_in_another_download_folder(self):
+        line = next(line for line in PACKAGE.splitlines()
+                    if line.startswith('(cd "$output" && shasum'))
+        with tempfile.TemporaryDirectory(prefix="release builder ") as build, \
+                tempfile.TemporaryDirectory(prefix="user download ") as download:
+            archive = Path(build) / "AgentFlow-v2.0.458-mac-universal.zip"
+            archive.write_bytes(b"fixture archive")
+            subprocess.run(["bash", "-ec", line], check=True,
+                           env={**os.environ, "output": build, "archive": str(archive)})
+            import shutil
+            shutil.copy2(archive, download)
+            shutil.copy2(Path(build) / "SHA256SUMS", download)
+            result = subprocess.run(["shasum", "-a", "256", "-c", "SHA256SUMS"],
+                                    cwd=download, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertNotIn(build, (Path(download) / "SHA256SUMS").read_text())
+
     def test_coverage_output_stays_outside_source_checkout(self):
         source = (ROOT / "scripts/test-public-release.sh").read_text()
         lines = [line for line in source.splitlines()

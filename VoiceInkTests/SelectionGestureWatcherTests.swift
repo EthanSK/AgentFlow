@@ -7,6 +7,161 @@ import Testing
 /// reading before pressing start, or during microphone start-up) were missed
 /// because each recording owned its own mouse monitor from its start onward.
 struct SelectionGestureWatcherTests {
+    @Test func paneFocusReceiptRequiresCommittedLiveMouseContext() throws {
+        let at = Date(timeIntervalSince1970: 1_000)
+        let receipt = try #require(LiveSelectionCapture.selectionReceipt(
+            sourcePID: 7, selectedAt: at, precedesSpeech: false, hasGesture: true))
+        #expect(receipt["version"] as? Int == 1)
+        #expect(receipt["sourcePID"] as? Int == 7)
+        #expect(receipt["selectedAt"] as? Double == 1_000)
+        #expect(Set(receipt.keys) == ["version", "sourcePID", "selectedAt"])
+        #expect(LiveSelectionCapture.selectionReceipt(sourcePID: 7, selectedAt: at,
+            precedesSpeech: true, hasGesture: true) == nil)
+        #expect(LiveSelectionCapture.selectionReceipt(sourcePID: 7, selectedAt: at,
+            precedesSpeech: false, hasGesture: false) == nil)
+        #expect(LiveSelectionCapture.selectionReceipt(sourcePID: 0, selectedAt: at,
+            precedesSpeech: false, hasGesture: true) == nil)
+    }
+
+    @Test func paneFocusReceiptFollowsContextCommitAndNeverChangesDelivery() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent("VoiceInk/Services/LiveSelectionCapture.swift"), encoding: .utf8)
+        let commit = try #require(source.range(of: "self.onCapture(captured.timed"))
+        let receipt = try #require(source.range(of: "if isCodex, let receipt = Self.selectionReceipt"))
+        let labels = try #require(source.range(of: "let threadsBefore = await beforeLabels"))
+        #expect(commit.lowerBound < receipt.lowerBound && receipt.lowerBound < labels.lowerBound)
+        #expect(!source.contains("AXUIElementSetAttributeValue"))
+        #expect(!source.contains("NSPasteboard.general"))
+    }
+
+    @Test @MainActor func shiftClickRetainsDownModifierWithoutInventingADrag() {
+        let watcher = SelectionGestureWatcher()
+        let now = Date()
+        var down = edge(.leftMouseDown, 100, at: now)
+        down.extendsSelection = true
+        watcher.handle(down, frontmostPID: 7)
+        // Shift can be released before mouse-up; its selection intent is frozen.
+        watcher.handle(edge(.leftMouseUp, 100, at: now.addingTimeInterval(0.1)), frontmostPID: 7)
+        #expect(watcher.lastSelectionGesture?.extendsSelection == true)
+        #expect(watcher.lastSelectionGesture?.start == watcher.lastSelectionGesture?.end)
+        #expect(LiveSelectionCapture.selectionGestureDisposition(startPoint: .zero, endPoint: .zero,
+            clickCount: 1, sourcePID: 7, ownPID: 42, extendsSelection: true) == "read")
+        #expect(LiveSelectionCapture.selectionGestureDisposition(startPoint: .zero, endPoint: .zero,
+            clickCount: 1, sourcePID: 42, ownPID: 42, extendsSelection: true) == "no-source")
+        #expect(!LiveSelectionCapture.usesPointerGeometry(from: .zero, to: .zero,
+            clickCount: 1, extendsSelection: true))
+        #expect(LiveSelectionCapture.usesPointerGeometry(from: .zero, to: NSPoint(x: 20, y: 0),
+            clickCount: 1, extendsSelection: true))
+    }
+
+    @Test @MainActor func keyboardSelectionWaitsForReleaseAndRejectsTypingAndSourceChanges() {
+        var sequence = SelectionGestureWatcher.KeyboardSequence()
+        let now = Date(timeIntervalSince1970: 1000)
+        #expect(sequence.handle(type: .keyDown, keyCode: 0, modifiers: .command, at: now, sourcePID: 7) == nil)
+        let all = sequence.handle(type: .keyUp, keyCode: 0, modifiers: [],
+            at: now.addingTimeInterval(0.1), sourcePID: 7)
+        #expect(all?.inputKind == .selectAll && all?.startedAt == now && all?.inputDirection == nil)
+        for flags in [NSEvent.ModifierFlags.shift, [.shift, .option], [.shift, .command]] {
+            #expect(sequence.handle(type: .keyDown, keyCode: 124, modifiers: flags, at: now, sourcePID: 7) == nil)
+            #expect(sequence.handle(type: .keyUp, keyCode: 124, modifiers: [],
+                at: now.addingTimeInterval(0.2), sourcePID: 7)?.inputKind == .keyboard)
+        }
+        _ = sequence.handle(type: .keyDown, keyCode: 124, modifiers: .shift, at: now, sourcePID: 7)
+        #expect(sequence.handle(type: .keyUp, keyCode: 124, modifiers: [],
+            at: now.addingTimeInterval(0.2), sourcePID: 8) == nil)
+        _ = sequence.handle(type: .keyDown, keyCode: 124, modifiers: .shift, at: now, sourcePID: 7)
+        _ = sequence.handle(type: .keyDown, keyCode: 2, modifiers: [], at: now, sourcePID: 7)
+        #expect(sequence.handle(type: .keyUp, keyCode: 124, modifiers: [], at: now, sourcePID: 7) == nil)
+        #expect(SelectionGestureWatcher.KeyboardSequence.selectionKind(keyCode: 0, modifiers: [.command, .shift]) == nil)
+        #expect(SelectionGestureWatcher.KeyboardSequence.selectionKind(keyCode: 124, modifiers: [.control, .shift]) == nil)
+        #expect(SelectionGestureWatcher.KeyboardSequence.selectionKind(keyCode: 124, modifiers: [.command, .option, .shift]) == nil)
+        #expect(SelectionGestureWatcher.KeyboardSequence.direction(keyCode: 124) == "right")
+        #expect(SelectionGestureWatcher.KeyboardSequence.direction(keyCode: 126) == "up")
+    }
+
+    @Test @MainActor func keyboardRepeatsUseOneBoundedGestureAndNeverBorrowStaleIntent() {
+        var sequence = SelectionGestureWatcher.KeyboardSequence()
+        let now = Date(timeIntervalSince1970: 1000)
+        _ = sequence.handle(type: .keyDown, keyCode: 124, modifiers: .shift, at: now, sourcePID: 7)
+        _ = sequence.handle(type: .keyDown, keyCode: 124, modifiers: .shift,
+            at: now.addingTimeInterval(0.5), sourcePID: 7)
+        #expect(sequence.handle(type: .keyUp, keyCode: 124, modifiers: [],
+            at: now.addingTimeInterval(1), sourcePID: 7)?.startedAt == now)
+        #expect(sequence.handle(type: .keyUp, keyCode: 124, modifiers: [], at: now, sourcePID: 7) == nil)
+        _ = sequence.handle(type: .keyDown, keyCode: 0, modifiers: .command, at: now, sourcePID: 7)
+        #expect(sequence.handle(type: .keyUp, keyCode: 0, modifiers: [],
+            at: now.addingTimeInterval(11), sourcePID: 7) == nil)
+    }
+
+    @Test @MainActor func shiftNavigationCommitsOnlyWhenTheSelectionModifierIsReleased() {
+        var sequence = SelectionGestureWatcher.KeyboardSequence()
+        let now = Date(timeIntervalSince1970: 1000)
+        _ = sequence.handle(type: .keyDown, keyCode: 124, modifiers: .shift, at: now, sourcePID: 7)
+        #expect(sequence.handle(type: .keyUp, keyCode: 124, modifiers: .shift,
+            at: now.addingTimeInterval(0.1), sourcePID: 7) == nil)
+        _ = sequence.handle(type: .keyDown, keyCode: 125, modifiers: .shift,
+            at: now.addingTimeInterval(0.2), sourcePID: 7)
+        #expect(sequence.handle(type: .keyUp, keyCode: 125, modifiers: .shift,
+            at: now.addingTimeInterval(0.3), sourcePID: 7) == nil)
+        let completed = sequence.handle(type: .flagsChanged, keyCode: 56, modifiers: [],
+            at: now.addingTimeInterval(0.4), sourcePID: 7)
+        #expect(completed?.startedAt == now && completed?.inputDirection == "down")
+        #expect(completed?.endedAt == now.addingTimeInterval(0.4))
+        #expect(sequence.handle(type: .flagsChanged, keyCode: 56, modifiers: [], at: now, sourcePID: 7) == nil)
+    }
+
+    @Test @MainActor func freshAndPriorGesturesRetainBothCallbackLagsAndClickUnits() throws {
+        let watcher = SelectionGestureWatcher()
+        let now = Date()
+        var down = edge(.leftMouseDown, 10, at: now)
+        down.callbackLagMilliseconds = 60
+        var up = edge(.leftMouseUp, 80, clicks: 3, at: now.addingTimeInterval(0.4))
+        up.callbackLagMilliseconds = 2
+        watcher.handle(down, frontmostPID: 7)
+        #expect(watcher.pendingMouseDown?.callbackLagMilliseconds == 60)
+        watcher.handle(up, frontmostPID: 7)
+        #expect(watcher.lastSelectionGesture?.callbackLagMilliseconds == 60)
+        #expect(watcher.lastSelectionGesture?.clickCount == 3)
+        #expect(SelectionGestureWatcher.combinedCallbackLag(nil, 2) == nil)
+        #expect(SelectionGestureWatcher.combinedCallbackLag(2, nil) == nil)
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let capture = try String(contentsOf: root.appendingPathComponent("VoiceInk/Services/LiveSelectionCapture.swift"), encoding: .utf8)
+        #expect(capture.contains("clickCount: gesture.clickCount"))
+        #expect(capture.contains("callbackLagMilliseconds: gesture.callbackLagMilliseconds"))
+        #expect(capture.contains("mouseDownCallbackLag = down.callbackLagMilliseconds"))
+        #expect(capture.contains("checksDragSpan: bundleID == \"com.openai.codex\""))
+    }
+
+    @Test func selectionNoticesRetainDecisionsWithoutTextOrCoordinates() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let reader = try String(contentsOf: root.appendingPathComponent("VoiceInk/Services/LiveSelectionTextReader.swift"), encoding: .utf8)
+        let start = try #require(reader.range(of: "enum LiveSelectionDiagnostics {"))
+        let notices = String(reader[start.lowerBound...])
+        #expect(notices.contains("logger.notice("))
+        #expect(!notices.contains("logger.info("))
+        #expect(notices.contains("preventedWidening="))
+        #expect(notices.contains("overextended="))
+        #expect(!notices.contains("candidate.text"))
+        #expect(!notices.contains("mouseDown.x"))
+        #expect(!notices.contains("mouseUp.y"))
+    }
+    @Test @MainActor func gestureDropReasonsAndCallbackLagAreTextFreeAndBounded() {
+        let start = NSPoint(x: 100, y: 100)
+        let end = NSPoint(x: 200, y: 100)
+        #expect(LiveSelectionCapture.selectionGestureDisposition(startPoint: nil, endPoint: end,
+            clickCount: 1, sourcePID: 7, ownPID: 42) == "no-mouse-down")
+        #expect(LiveSelectionCapture.selectionGestureDisposition(startPoint: start, endPoint: start,
+            clickCount: 1, sourcePID: 7, ownPID: 42) == "not-selection-shaped")
+        #expect(LiveSelectionCapture.selectionGestureDisposition(startPoint: start, endPoint: end,
+            clickCount: 1, sourcePID: 42, ownPID: 42) == "no-source")
+        #expect(LiveSelectionCapture.selectionGestureDisposition(startPoint: start, endPoint: end,
+            clickCount: 1, sourcePID: 7, ownPID: 42) == "read")
+        let now = Date(timeIntervalSince1970: 1000)
+        #expect(SelectionGestureWatcher.callbackLagMilliseconds(occurredAt: now.addingTimeInterval(-0.125), now: now) == 125)
+        #expect(SelectionGestureWatcher.callbackLagMilliseconds(occurredAt: now.addingTimeInterval(1), now: now) == 0)
+        #expect(SelectionGestureWatcher.callbackLagMilliseconds(occurredAt: now.addingTimeInterval(-100), now: now) == 60_000)
+    }
+
     @Test @MainActor func mouseEdgesUseCallbackSnapshotNotReconstructedCGEvent() throws {
         let down = try #require(NSEvent.mouseEvent(with: .leftMouseDown,
             location: NSPoint(x: 123, y: 456), modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime - 1,
@@ -59,10 +214,11 @@ struct SelectionGestureWatcherTests {
     @Test func selectionAttachesBeforeAudioHandshakeAndTypingFocus() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         let engine = try String(contentsOf: root.appendingPathComponent("VoiceInk/Transcription/Engine/VoiceInkEngine.swift"), encoding: .utf8)
-        let capture = try #require(engine.range(of: "session.beginLiveSelectionCapture()"))
+        let capture = try #require(engine.range(of: "session.beginLiveSelectionCapture(activationTime: activationTime)"))
         let audio = try #require(engine.range(of: "session.recordingInputDevice = try await self.recorder.startRecording("))
         let focus = try #require(engine.range(of: "session.typingFocus.requestInitialFocus()", range: capture.upperBound..<engine.endIndex))
         #expect(capture.lowerBound < audio.lowerBound && capture.lowerBound < focus.lowerBound)
+        #expect(focus.lowerBound < audio.lowerBound)
     }
 
     @Test func optionalCodexLabelsNeverScanLogsOnTheMainActor() throws {

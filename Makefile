@@ -2,8 +2,11 @@
 DEPS_DIR := $(HOME)/VoiceInk-Dependencies
 WHISPER_CPP_DIR := $(DEPS_DIR)/whisper.cpp
 FRAMEWORK_PATH := $(WHISPER_CPP_DIR)/build-apple/whisper.xcframework
-LOCAL_DERIVED_DATA := $(CURDIR)/.local-build
-LOCAL_APP_OUTPUT := $(HOME)/Downloads/AgentFlow.app
+WHISPER_COMMIT := 0ec0845110dc934911dc48e8c5beb5ad3189b3f3
+BUILD_DIR := $(CURDIR)/build.noindex
+LOCAL_DERIVED_DATA := $(BUILD_DIR)/local-derived-data
+DEBUG_DERIVED_DATA := $(BUILD_DIR)/debug-derived-data
+LOCAL_APP_OUTPUT := $(BUILD_DIR)/AgentFlow.app
 
 .PHONY: all clean whisper setup build local check healthcheck help dev run
 
@@ -19,21 +22,25 @@ check:
 	@command -v git >/dev/null 2>&1 || { echo "git is not installed"; exit 1; }
 	@command -v xcodebuild >/dev/null 2>&1 || { echo "xcodebuild is not installed (need Xcode)"; exit 1; }
 	@command -v swift >/dev/null 2>&1 || { echo "swift is not installed"; exit 1; }
+	@command -v cmake >/dev/null 2>&1 || { echo "CMake 3.28+ is required for the source build. Install it first, or use the notarized app download."; exit 1; }
+	@xcodebuild -version >/dev/null 2>&1 || { echo "Select a full Xcode installation and complete its first-launch setup before building."; exit 1; }
 	@echo "Prerequisites OK"
 
 healthcheck: check
 
 # Build process
 whisper:
-	@mkdir -p $(DEPS_DIR)
+	@mkdir -p "$(DEPS_DIR)"
+	@if [ -d "$(WHISPER_CPP_DIR)" ] && [ "$$(git -C "$(WHISPER_CPP_DIR)" rev-parse HEAD)" != "$(WHISPER_COMMIT)" ]; then \
+		echo "Existing whisper.cpp is not the tested revision $(WHISPER_COMMIT); preserve it and use a separate dependency checkout."; exit 1; \
+	fi
 	@if [ ! -d "$(FRAMEWORK_PATH)" ]; then \
 		echo "Building whisper.xcframework in $(DEPS_DIR)..."; \
 		if [ ! -d "$(WHISPER_CPP_DIR)" ]; then \
-			git clone https://github.com/ggerganov/whisper.cpp.git $(WHISPER_CPP_DIR); \
-		else \
-			(cd $(WHISPER_CPP_DIR) && git pull); \
+			git clone https://github.com/ggml-org/whisper.cpp.git "$(WHISPER_CPP_DIR)" && \
+			git -C "$(WHISPER_CPP_DIR)" checkout --detach "$(WHISPER_COMMIT)" || exit 1; \
 		fi; \
-		cd $(WHISPER_CPP_DIR) && ./build-xcframework.sh; \
+		cd "$(WHISPER_CPP_DIR)" && ./build-xcframework.sh; \
 	else \
 		echo "whisper.xcframework already built in $(DEPS_DIR), skipping build"; \
 	fi
@@ -43,12 +50,11 @@ setup: whisper
 	@echo "Please ensure your Xcode project references the framework from this new location."
 
 build: setup
-	xcodebuild -project VoiceInk.xcodeproj -scheme VoiceInk -configuration Debug CODE_SIGN_IDENTITY="" build
+	xcodebuild -project VoiceInk.xcodeproj -scheme VoiceInk -configuration Debug -derivedDataPath "$(DEBUG_DERIVED_DATA)" CODE_SIGN_IDENTITY="" build
 
 # Build for local use without Apple Developer certificate
 local: check setup
 	@echo "Building Agent Flow for local use (no Apple Developer certificate required)..."
-	@rm -rf "$(LOCAL_DERIVED_DATA)"
 	xcodebuild -project VoiceInk.xcodeproj -scheme VoiceInk -configuration Debug \
 		-derivedDataPath "$(LOCAL_DERIVED_DATA)" \
 		-xcconfig LocalBuild.xcconfig \
@@ -63,8 +69,8 @@ local: check setup
 	@APP_PATH="$(LOCAL_DERIVED_DATA)/Build/Products/Debug/AgentFlow.app" && \
 	if [ -d "$$APP_PATH" ]; then \
 		echo "Copying AgentFlow.app to $(LOCAL_APP_OUTPUT)..."; \
-		mkdir -p "$(dir $(LOCAL_APP_OUTPUT))"; \
-		rm -rf "$(LOCAL_APP_OUTPUT)"; \
+		if [ -e "$(LOCAL_APP_OUTPUT)" ]; then echo "Output already exists; choose a fresh LOCAL_APP_OUTPUT path."; exit 1; fi; \
+		mkdir -p "$$(dirname "$(LOCAL_APP_OUTPUT)")"; \
 		ditto "$$APP_PATH" "$(LOCAL_APP_OUTPUT)"; \
 		xattr -cr "$(LOCAL_APP_OUTPUT)"; \
 		echo ""; \
@@ -81,13 +87,12 @@ local: check setup
 
 # Run application
 run:
-	@if [ -d "$$HOME/Downloads/AgentFlow.app" ]; then \
-		echo "Opening ~/Downloads/AgentFlow.app..."; \
-		open "$$HOME/Downloads/AgentFlow.app"; \
+	@if [ -d "$(LOCAL_APP_OUTPUT)" ]; then \
+		echo "Opening build.noindex/AgentFlow.app..."; \
+		open "$(LOCAL_APP_OUTPUT)"; \
 	else \
-		echo "Looking for AgentFlow.app in DerivedData..."; \
-		APP_PATH=$$(find "$$HOME/Library/Developer/Xcode/DerivedData" -name "AgentFlow.app" -type d | head -1) && \
-		if [ -n "$$APP_PATH" ]; then \
+		APP_PATH="$(DEBUG_DERIVED_DATA)/Build/Products/Debug/AgentFlow.app" && \
+		if [ -d "$$APP_PATH" ]; then \
 			echo "Found app at: $$APP_PATH"; \
 			open "$$APP_PATH"; \
 		else \
@@ -98,9 +103,7 @@ run:
 
 # Cleanup
 clean:
-	@echo "Cleaning build artifacts..."
-	@rm -rf $(DEPS_DIR)
-	@echo "Clean complete"
+	@echo "Build outputs live in $(BUILD_DIR). Remove only your chosen inactive output after inspecting it. Shared dependencies are preserved."
 
 # Help
 help:

@@ -1,9 +1,9 @@
 {
   "sourceLanguage": "en",
   "strings": {
-    "Rainbow speech and typed text, with one color per XML section type. For apps that render LaTeX, such as Codex.": {
+    "Colors speech, typed text, and context in compatible apps. Codex drafts stay editable plain text.": {
       "extractionState": "manual",
-      "comment": "Help for per-Mode presentation: rainbow authored opening and fixed colors by XML section type."
+      "comment": "Help for per-Mode colored presentation; local Codex compact drafts remain editable plain text."
     },
     "Colored context": {
       "extractionState": "manual",

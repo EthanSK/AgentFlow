@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import SwiftUI
 import os
 
@@ -48,6 +49,19 @@ enum RecordingCompletionDisposition: Equatable {
 enum RecordingAutoSendDisposition: Equatable {
     case configured
     case suppressOnce
+    case commandEnterOnce
+
+    func resolvedKey(destination: RecordingPasteDestination, configuredKey: AutoSendKey) -> AutoSendKey {
+        switch self {
+        case .suppressOnce: return .none
+        case .commandEnterOnce where destination.usesBaseCurrentInputDelivery:
+            // Explicit HUD submit is still Primary: it owns no app/input/Mode.
+            // Replay the user's key intent once. A subsequent physical Next
+            // retarget instead retains that exact destination's atomic Mode.
+            return .commandEnter
+        case .configured, .commandEnterOnce: return configuredKey
+        }
+    }
 }
 
 struct RecordingCompletionPolicy: Equatable {
@@ -216,11 +230,18 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     // The pipeline pushes .enhancing here via onStateChange; the card's RecorderStatusDisplay
     // reads it to show the right spinner/waveform. Conforms to RecorderStateProvider so the
     // existing MiniRecorderView / NotchRecorderView can render a single session unchanged.
-    @Published var liveRecordingState: RecordingState
+    @Published var liveRecordingState: RecordingState {
+        didSet { updateAnnotationCaptureState(at: Date()) }
+    }
     // Keyboard mode remains an active composing session, not gesture-Pause:
     // one Primary press must finish, never unexpectedly turn the microphone on.
-    @Published var microphoneOff = false
+    @Published var microphoneOff = false {
+        didSet { updateAnnotationCaptureState(at: Date()) }
+    }
     @Published var microphoneTransitionPending = false
+    // Frozen birth intent distinguishes real keyboard-only startup from a late
+    // Command edge while a voice-start hardware await may already be in flight.
+    var beganMicrophoneOff = false
     private var microphoneTransitionWaiters: [CheckedContinuation<Void, Never>] = []
     func finishMicrophoneTransition() {
         microphoneTransitionPending = false
@@ -234,57 +255,207 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     }
     var hasCapturedAudio = true
     var onMicrophoneToggle: (() -> Void)?
+    var onPauseToggle: (() -> Void)?
     var startupAudioRouter: RecordingStartupAudioRouter?
-    var prepareMicrophoneTranscription: (() async throws -> Void)?
+    // Optional realtime setup for this exact session. Deliberately non-throwing: a
+    // provider failure keeps live capture on its completed-WAV fallback and must never
+    // surface as a recorder-start or pause/resume failure that stops the recording.
+    var prepareMicrophoneTranscription: (() async -> Void)?
     func toggleMicrophone() { onMicrophoneToggle?() }
+    func togglePause() {
+        // A retained/transcribing card must never pause a newer mic-owning session.
+        guard phase == .recording, liveRecordingState.isRecordingOrPaused,
+              !microphoneTransitionPending, !shouldCancel else { return }
+        onPauseToggle?()
+    }
+
+    var onTypingSubmit: (() -> Void)?
+    var onTypingFinishWithoutPasting: (() -> Void)?
+    private(set) var typingSubmitRequested = false
+    private(set) var typingFinishWithoutPastingRequested = false
+    private var typingSubmitDispatched = false
+
+    func submitTypedInput() {
+        requestTypingFinish(withoutPasting: false)
+    }
+
+    func finishTypedInputWithoutPasting() {
+        requestTypingFinish(withoutPasting: true)
+    }
+
+    private func requestTypingFinish(withoutPasting: Bool) {
+        guard canTypeInHUD, !typingSubmitRequested else { return }
+        typingSubmitRequested = true
+        typingFinishWithoutPastingRequested = withoutPasting
+        if withoutPasting { completionDisposition = .clipboardOnly }
+        typingFocus.disable(releaseKeyboard: false)
+        dispatchPendingTypingSubmit()
+    }
+
+    func dispatchPendingTypingSubmit() {
+        // Keyboard input is available during .starting. Normal toggle would
+        // cancel startup, so retain this one session's finish intent until the
+        // audio writer is ready. No timer, global flag, or later-session replay.
+        let finish = typingFinishWithoutPastingRequested ? onTypingFinishWithoutPasting : onTypingSubmit
+        guard typingSubmitRequested, !typingSubmitDispatched,
+              phase == .recording, liveRecordingState.isRecordingOrPaused,
+              !shouldCancel, let finish else { return }
+        typingSubmitDispatched = true
+        finish()
+    }
 
     // Live streaming partial (only meaningful while phase == .recording — only this
     // session streams partials). While liveRecordingState == .paused, the last partial
     // stays frozen in the HUD and no new audio reaches the provider.
-    @Published var partialTranscript: String = ""
+    @Published var partialTranscript: String = "" {
+        didSet { hudContextPreviewCache = nil }
+    }
 
     // Only short selection boundaries and paths of screenshots saved during
     // this recording are retained. Pixels are not read; a new recording gets
     // an independent list, and cancellation never transfers these references
     // to a later transcription job.
-    @Published private(set) var liveSelectionReferences: [LiveSelectionReference] = []
+    @Published private(set) var liveSelectionReferences: [LiveSelectionReference] = [] {
+        didSet { hudContextPreviewCache = nil }
+    }
     private var liveSelectionCapture: LiveSelectionCapture?
+    // The editable prose run is NOT part of `liveSelectionReferences`. It has no
+    // timeline position until it is committed (Enter, leaving the editor, an
+    // accepted highlight/screenshot, or capture end); the commit boundary's
+    // observed speech decides where it lands. Ethan corrected the old first-edit
+    // anchor on 2026-10-10: prose typed while speaking appeared before speech he
+    // had already said. Only first/latest edit times are tracked while editing.
     @Published private(set) var typedInput = ""
-    private var typedReferenceIndex: Int?
-    private var typedSpeechAnchor: String?
     private var typedRunStartedAt: Date?
-    private var speechRunStartedAt: Date?
-    private var lastSpeechActivityAt: Date?
-    private var pendingSpeechAnchor = ""
+    private var typedRunLatestEditAt: Date?
+    private var undoneTypedRuns: [(index: Int, reference: LiveSelectionReference)] = []
+    lazy var typingUndo = RecorderTypingUndoController(session: self)
+    var typingUndoController: RecorderTypingUndoController? { typingUndo }
+    // Set only while one commit boundary seals the focused HUD editor, whose end
+    // callback synchronously re-enters `endTypingRun()` and must reuse that
+    // boundary's placement instead of a later live partial.
+    private var typedRunCommitPlacement: TypedRunPlacement?
+    private var speechRunStartedAt: Date? { didSet { hudContextPreviewCache = nil } }
+    private var lastSpeechActivityAt: Date? { didSet { hudContextPreviewCache = nil } }
+    private var pendingSpeechAnchor = "" { didSet { hudContextPreviewCache = nil } }
     private var speechTimingTask: Task<Void, Never>?
     private var contextCaptureEndedAt: Date?
+    private var hudContextPreviewCache: (references: [LiveSelectionReference], parts: [LiveSelectionReference.PreviewPart])?
+    @Published private(set) var potentialTTSActive = false
+
+    private func updateAnnotationCaptureState(at date: Date) {
+        potentialTTSActive = false
+    }
+
+    // Old exported prompts remain readable, but new recordings never manufacture
+    // Potential ignore sections: the shared speaker now waits for recording to end.
+    func receiveReminderSnapshot(_ snapshot: SpokenReminderAnnotationState.Snapshot) {}
+
+    private func annotatedReferences(_ references: [LiveSelectionReference], endedAt: Date?) -> [LiveSelectionReference] {
+        references
+    }
 
     /// A short utterance can reach its final result without a live callback.
     /// Preserve the real composing-session bounds in that case, explicitly
     /// labelled as broader than speech activity. This does not claim word/audio
     /// alignment, restart a clock at delivery, or modify the HUD's reference list.
     var liveSelectionReferencesForDelivery: [LiveSelectionReference] {
+        // Capture end normally commits the run already. A snapshot taken while it
+        // is still editable treats that snapshot as its commit boundary.
+        let references = liveSelectionReferences + uncommittedTypedRunReferences
         guard hasCapturedAudio, useCase == .newSession,
               let ended = contextCaptureEndedAt, createdAt <= ended,
-              !liveSelectionReferences.contains(where: \.hasSpeechTiming) else {
-            return liveSelectionReferences
+              !references.contains(where: \.hasSpeechTiming) else {
+            return annotatedReferences(references, endedAt: contextCaptureEndedAt)
         }
-        return liveSelectionReferences + [.speechTiming(after: partialTranscript,
-            startedAt: createdAt, endedAt: ended, sessionWindow: true)]
+        return annotatedReferences(references + [.speechTiming(after: partialTranscript,
+            startedAt: createdAt, endedAt: ended, sessionWindow: true)], endedAt: ended)
     }
-    lazy var typingFocus = RecorderTypingFocus(canFocus: { [weak self] in self?.canTypeInHUD == true })
+    // Explicit editor clicks may still mix typing into speech. Only automatic
+    // post-context focus is typing-mode-only: check live microphone state at
+    // scheduling and again before a queued return could reclaim the keyboard.
+    lazy var typingFocus = RecorderTypingFocus(canAutomaticallyReturn: { [weak self] in
+        self?.microphoneOff == true && self?.microphoneTransitionPending == false
+    }, canFocus: { [weak self] in self?.canTypeInHUD == true })
     var typingFocusController: RecorderTypingFocus? { typingFocus }
 
     var canTypeInHUD: Bool {
-        phase == .recording && liveRecordingState.isRecordingOrPaused && useCase == .newSession
+        // Explicit microphone-off typing is ready before the audio writer's
+        // asynchronous startup. Do not make keyboard input wait for Core Audio;
+        // ordinary voice startup still leaves the destination's focus alone.
+        phase == .recording && useCase == .newSession && !shouldCancel
+            && (liveRecordingState.isRecordingOrPaused
+                || (liveRecordingState == .starting && microphoneOff))
     }
 
     // The active run is shown in the editable field, not duplicated in the
     // read-only timeline. All mirrored panels share the same session value.
     var liveContextPreviewReferences: [LiveSelectionReference] {
-        liveSelectionReferences.enumerated().compactMap { index, reference in
-            index == typedReferenceIndex ? nil : reference
+        hudContextPreview().references
+    }
+
+    var liveContextPreviewParts: [LiveSelectionReference.PreviewPart] {
+        hudContextPreview().parts
+    }
+
+    private func hudContextPreview() -> (references: [LiveSelectionReference], parts: [LiveSelectionReference.PreviewPart]) {
+        // One presentation snapshot for every mirrored panel and height/warning
+        // calculation. No full selection payload is rendered; its short preview
+        // is cached separately from the unchanged recovery/delivery references.
+        // Invalidate on authored/context/timing/annotation edits, never on meter
+        // ticks. Recovery and final export must not reuse this display-only cache.
+        if let hudContextPreviewCache { return hudContextPreviewCache }
+        // The editable run is never in this committed list, so it cannot appear
+        // twice (editor plus read-only timeline) or jump while it is edited.
+        var references = liveSelectionReferences
+        if let started = speechRunStartedAt, let ended = lastSpeechActivityAt {
+            references.append(.speechTiming(after: pendingSpeechAnchor, startedAt: started, endedAt: ended))
         }
+        references = annotatedReferences(references, endedAt: nil)
+        let snapshot = (references: references,
+                        parts: LiveSelectionReference.previewParts(references, with: partialTranscript))
+        hudContextPreviewCache = snapshot
+        return snapshot
+    }
+
+    /// Crash recovery must keep the current editable typing as well as the
+    /// speech classification. The read-only HUD intentionally omits that typing
+    /// to avoid showing it twice, so it is not a durable recovery source.
+    var liveSelectionReferencesForRecovery: [LiveSelectionReference] {
+        var references = liveSelectionReferences
+        if let started = speechRunStartedAt, let ended = lastSpeechActivityAt {
+            references.append(.speechTiming(after: pendingSpeechAnchor, startedAt: started, endedAt: ended))
+        }
+        // Still-editable words are recoverable as if committed at this snapshot,
+        // i.e. after all speech the snapshot is interleaved with.
+        references += uncommittedTypedRunReferences
+        return annotatedReferences(references, endedAt: contextCaptureEndedAt)
+    }
+
+    /// Where a prose run lands when it is committed. Interleaving places it after
+    /// the observed live words of its anchor; it never claims audio/word alignment.
+    private enum TypedRunPlacement {
+        /// Enter, blur, or a highlight/screenshot: the live speech observed at that boundary.
+        case after(String)
+        /// Capture end (or a snapshot of a still-editable run): after every captured
+        /// word, including a final provider tail that never appeared as a partial.
+        case afterAllSpeech
+    }
+
+    private func typedRunReference(_ placement: TypedRunPlacement) -> LiveSelectionReference? {
+        guard let started = typedRunStartedAt, let latest = typedRunLatestEditAt,
+              let run = LiveSelectionReference(typedText: typedInput) else { return nil }
+        let placed: LiveSelectionReference
+        switch placement {
+        case .after(let speech): placed = run.anchored(after: speech)
+        case .afterAllSpeech: placed = run.anchoredAfterAllSpeech(observed: partialTranscript)
+        }
+        // First and latest real edits, never the commit/seal time.
+        return placed.timed(at: latest, startedAt: started)
+    }
+
+    private var uncommittedTypedRunReferences: [LiveSelectionReference] {
+        typedRunReference(.afterAllSpeech).map { [$0] } ?? []
     }
 
     // Keep the exact RecorderStateProvider witness. Adding a defaulted timestamp
@@ -294,33 +465,59 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     }
 
     func updateTypedInput(_ value: String, at date: Date) {
-        guard canTypeInHUD else { return }
+        // A seal/flush republishes the editor's unchanged text. That is not an
+        // edit, so it must not move the run's latest-edit time to the commit.
+        guard canTypeInHUD, value != typedInput else { return }
+        if !typingUndo.isReplaying { undoneTypedRuns.removeAll() }
         typedInput = value
-        if typedSpeechAnchor == nil { typedSpeechAnchor = partialTranscript }
         if typedRunStartedAt == nil { typedRunStartedAt = date }
-        let reference = LiveSelectionReference(typedText: value)?
-            .anchored(after: typedSpeechAnchor ?? partialTranscript)
-            .timed(at: date, startedAt: typedRunStartedAt)
-        if let index = typedReferenceIndex {
-            if let reference {
-                liveSelectionReferences[index] = reference
-            } else {
-                liveSelectionReferences.remove(at: index)
-                typedReferenceIndex = nil
-            }
-        } else if let reference {
-            typedReferenceIndex = liveSelectionReferences.count
-            liveSelectionReferences.append(reference)
-        }
+        typedRunLatestEditAt = date
     }
 
-    /// Blur seals a prose run, never a recording or delivery. A subsequent
-    /// highlight/screenshot and the next typed run keep their capture order.
+    /// Enter, leaving the editor, and a mirrored panel's end callback commit the
+    /// prose run here; none of them finishes the recording or delivers. Repeated
+    /// callbacks find no active run and do nothing, so every word lands once.
     func endTypingRun() {
-        typedReferenceIndex = nil
-        typedSpeechAnchor = nil
+        commitTypingRun(typedRunCommitPlacement ?? .after(partialTranscript))
+    }
+
+    // Enter/context capture seals an editable run, not the user's ability to
+    // undo unsent typing. Remove/restore only that exact typed reference at its
+    // original timeline slot; selections, screenshots, speech and their timing
+    // remain unchanged. Never undo a finished/pending delivery or restore words
+    // into both the editor and transcript, which would duplicate final output.
+    @discardableResult func undoCommittedTyping() -> Bool {
+        guard canTypeInHUD,
+              let index = liveSelectionReferences.lastIndex(where: \.isTypedText) else { return false }
+        undoneTypedRuns.append((index, liveSelectionReferences.remove(at: index)))
+        return true
+    }
+
+    @discardableResult func redoCommittedTyping() -> Bool {
+        guard canTypeInHUD, let run = undoneTypedRuns.popLast() else { return false }
+        liveSelectionReferences.insert(run.reference, at: min(run.index, liveSelectionReferences.count))
+        return true
+    }
+
+    private func commitTypingRun(_ placement: TypedRunPlacement) {
+        let run = typedRunReference(placement)
+        // Clear before appending so a re-entrant/duplicate end callback cannot
+        // commit the same words twice.
+        if !typedInput.isEmpty { typedInput = "" }
         typedRunStartedAt = nil
-        typedInput = ""
+        typedRunLatestEditAt = nil
+        if let run { liveSelectionReferences.append(run) }
+    }
+
+    /// Commit at a boundary that the session, not the editor, observed. A focused
+    /// HUD editor is sealed first so IME composition and its latest characters
+    /// reach this session and it is cleared locally before the run is appended
+    /// (otherwise its stale text could later republish as a duplicate run).
+    private func sealFocusedEditorAndCommitTypingRun(_ placement: TypedRunPlacement) {
+        typedRunCommitPlacement = placement
+        defer { typedRunCommitPlacement = nil }
+        RecorderTypingTextView.sealFocusedRun()
+        commitTypingRun(placement)
     }
 
     func recordSpeechActivity(_ transcript: String, at date: Date = Date()) {
@@ -393,6 +590,47 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     private(set) var acceptsCompletionDispositionChanges = true
     private var pendingPrimaryCompletionDecisionGeneration = 0
     private var pendingPrimaryCompletionDecisionTask: Task<Void, Never>?
+
+    // Four-key stop has a separate, exact-session late-Shift decision. The
+    // Primary click policy must still freeze before processing, but a typing
+    // stop must not lose its second chance merely because its provider is fast.
+    // Keep this open through preparation/queue waiting, with one second from
+    // stop for a human to release the chord and tap Shift on a typed-only result.
+    // Only the irreversible-action boundary may seal it; never undo a paste.
+    private var typingClipboardDeadline: ContinuousClock.Instant?
+    private(set) var typingClipboardOnlySelected = false
+
+    var acceptsTypingClipboardOnlyCompletion: Bool {
+        typingClipboardDeadline != nil && !shouldCancel
+            && (phase == .transcribing || phase == .delivering)
+    }
+
+    func armTypingClipboardOnlyCompletion(minimumInterval: TimeInterval = 1) {
+        guard phase == .recording, !shouldCancel else { return }
+        typingClipboardOnlySelected = false
+        typingClipboardDeadline = ContinuousClock.now.advanced(by: .seconds(max(0, minimumInterval)))
+    }
+
+    @discardableResult
+    func selectTypingClipboardOnlyCompletion() -> Bool {
+        guard acceptsTypingClipboardOnlyCompletion else { return false }
+        typingClipboardOnlySelected = true
+        completionDisposition = .clipboardOnly
+        autoSendDisposition = .configured
+        return true
+    }
+
+    /// Read and seal atomically on MainActor immediately before any output
+    /// effect (or assistant response request), after all asynchronous waits.
+    /// A preselected result finishes immediately; only a fast result waits
+    /// for the remainder of its bounded human reaction window.
+    func commitTypingCompletion() async -> Bool {
+        if let deadline = typingClipboardDeadline, !typingClipboardOnlySelected {
+            try? await Task.sleep(until: deadline, clock: .continuous)
+        }
+        typingClipboardDeadline = nil
+        return typingClipboardOnlySelected
+    }
 
     /// Changes a pending transcription to clipboard-only without canceling its provider.
     @discardableResult
@@ -573,7 +811,7 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     // Background tasks capturing the above context; cancelled when the session ends.
     var contextTasks: [Task<Void, Never>] = []
 
-    func beginLiveSelectionCapture() {
+    func beginLiveSelectionCapture(activationTime: Date = Date()) {
         guard liveSelectionCapture == nil else { return }
         let capture = LiveSelectionCapture(
             speechSnapshot: { [weak self] in self?.partialTranscript ?? "" },
@@ -585,7 +823,7 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
             }
         )
         liveSelectionCapture = capture
-        capture.start()
+        capture.start(activationTime: activationTime)
     }
 
     /// `precedesSpeech` marks a highlight made before this recording's capture
@@ -595,12 +833,17 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
                              spokenAnchor: String? = nil) {
         guard phase == .recording, !shouldCancel,
               liveRecordingState == .starting || liveRecordingState.isRecordingOrPaused else { return }
-        RecorderTypingTextView.sealFocusedRun()
-        endTypingRun()
         // Freeze the live speech visible at selection mouse-up or screenshot
         // save. Final transcription may revise words, so this is an approximate
         // insertion anchor, not an AX range or a live destination write.
-        let anchored = reference.anchored(after: precedesSpeech ? "" : (spokenAnchor ?? partialTranscript))
+        let gestureSpeech = spokenAnchor ?? partialTranscript
+        // The accepted context ends any prose still being typed. Commit that run
+        // at this gesture's frozen speech, not the later read-completion partial:
+        // interleaving keeps anchors monotonic, so a later prose anchor would push
+        // this gesture-time highlight forward. A pre-attachment highlight is placed
+        // before all speech separately, so its prose simply commits at live speech.
+        sealFocusedEditorAndCommitTypingRun(.after(precedesSpeech ? partialTranscript : gestureSpeech))
+        let anchored = reference.anchored(after: precedesSpeech ? "" : gestureSpeech)
         // Distinct highlights at the same speech anchor are still a reading
         // trail. Preserve every gesture in capture order, even across silence
         // or a screenshot; the receiving agent decides which cues matter.
@@ -623,9 +866,15 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     func endLiveSelectionCapture(at date: Date = Date()) {
         // Freeze once at capture finish, never at provider/network completion.
         if contextCaptureEndedAt == nil { contextCaptureEndedAt = date }
+        updateAnnotationCaptureState(at: date)
         flushSpeechTiming()
         typingFocus.disable(releaseKeyboard: false)
-        endTypingRun()
+        // Finishing is the commit boundary for prose still in the editor. Every
+        // captured word, including a final tail the provider never streamed as a
+        // partial, was spoken before this point, so the run follows all speech.
+        // `releaseKeyboardBeforeFinish()` flushes the editor without sealing so
+        // the run reaches this placement instead of the last observed partial.
+        commitTypingRun(.afterAllSpeech)
         liveSelectionCapture?.stop()
         liveSelectionCapture = nil
     }

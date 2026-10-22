@@ -54,7 +54,9 @@ class NotificationManager {
         playSound: Bool = true,
         onTap: (() -> Void)? = nil,
         actionButton: (label: String, action: () -> Void)? = nil,
-        preservesErrorCopyAction: Bool = false
+        preservesErrorCopyAction: Bool = false,
+        copyText: String? = nil,
+        dismissesAutomatically: Bool = true
     ) {
         dismissTimer?.invalidate()
         dismissTimer = nil
@@ -75,14 +77,7 @@ class NotificationManager {
         // visible long enough to select and copy, and provide a one-click fallback for
         // nonactivating panels where the user's current app may still own Command-C.
         let effectiveDuration = type == .error ? max(duration, 12.0) : duration
-        let copyAction: (label: String, action: () -> Void) = (
-            label: String(localized: "Copy"),
-            action: {
-                let pasteboard = NSPasteboard.general
-                pasteboard.clearContents()
-                pasteboard.setString(title, forType: .string)
-            }
-        )
+        let copyAction = Self.makeCopyAction(title: title, copyText: copyText)
         let effectiveActionButton: (label: String, action: () -> Void)?
         if let actionButton {
             effectiveActionButton = actionButton
@@ -118,7 +113,9 @@ class NotificationManager {
                     guard self?.presentationIdentity.current == presentationID else { return }
                     copyAction.action()
                 })
-                : nil
+                : nil,
+            copyText: copyText,
+            dismissesAutomatically: dismissesAutomatically
         )
         let hostingController = NSHostingController(rootView: notificationView)
         let size = hostingController.view.fittingSize
@@ -155,13 +152,29 @@ class NotificationManager {
             panel.animator().alphaValue = 1
         })
         
-        // Schedule a new timer to dismiss the new notification.
-        dismissTimer = Timer.scheduledTimer(
-            withTimeInterval: effectiveDuration,
-            repeats: false
-        ) { [weak self] _ in
-            self?.dismissNotification(presentationID: presentationID)
+        // Deferred quit is user-driven: its button must survive a long session.
+        // Ordinary notifications retain the existing bounded auto-dismiss timer.
+        if dismissesAutomatically {
+            dismissTimer = Timer.scheduledTimer(
+                withTimeInterval: effectiveDuration,
+                repeats: false
+            ) { [weak self] _ in
+                self?.dismissNotification(presentationID: presentationID)
+            }
         }
+    }
+
+    /// Capture the failed session's complete payload, not a later mutable History
+    /// selection or the diagnostic title. Explicit Copy is a user clipboard write,
+    /// so any pending automatic restore must lose its old pasteboard lease.
+    @MainActor
+    static func makeCopyAction(
+        title: String, copyText: String?, on pasteboard: NSPasteboard = .general
+    ) -> (label: String, action: () -> Void) {
+        let contents = copyText ?? title
+        return (String(localized: "Copy"), {
+            _ = ClipboardManager.setClipboard(contents, on: pasteboard)
+        })
     }
 
     @MainActor

@@ -1,9 +1,21 @@
-# Updating this fork (EthanSK/VoiceInk) against upstream
+# Updating Agent Flow against upstream VoiceInk
 
 This is Ethan's personal GPL-3.0 fork of [Beingpax/VoiceInk](https://github.com/Beingpax/VoiceInk).
 VoiceInk++ now deliberately diverges in destination routing, non-activating delivery, recorder UI,
 identity, and custom-model vocabulary handling. Treat upstream as a source of individual features,
 not as a branch to merge wholesale.
+
+## In-app Agent Flow release checks
+
+The daily and manual update checks use only
+`https://api.github.com/repos/EthanSK/AgentFlow/releases/latest`. They compare our published
+`v<marketing-version>.<build-number>` tag with the installed app's version and build, so an older
+public release is not offered to a newer local install. Drafts, prereleases, invalid versions and
+release links outside `EthanSK/AgentFlow` are rejected.
+
+The existing daily-check opt-out is preserved. Checks notify about available downloads; they do
+not install binaries, restart a recording, merge source, or fall back to upstream VoiceInk.
+Upstream feature review remains the separate manual process described below.
 
 ## Our patches (preserve these through every upstream port)
 
@@ -88,7 +100,7 @@ installed `.app`).
 # on the Mac Mini:
 cd ~/Projects/VoiceInk-build        # the Mini's clone of this fork
 make local                          # builds whisper.cpp (cached after first time) + ad-hoc-signed xcodebuild
-# output: ~/Downloads/AgentFlow.app  (quarantine already stripped by the Makefile)
+# output: build.noindex/AgentFlow.app  (quarantine already stripped by the Makefile)
 ```
 
 AgentFlow contains no commercial license, trial, purchase, affiliate-promotion, or remote
@@ -97,7 +109,7 @@ promotional-announcement runtime. Do not reintroduce those upstream systems duri
 ad-hoc `CODE_SIGN_IDENTITY = -`, so no paid Apple Developer certificate is needed. Mic /
 Accessibility / Screen-Recording are normal TCC grants on first launch.
 
-The built bundle is **`AgentFlow.app`** (output: `~/Downloads/AgentFlow.app`) — the
+The built bundle is **`AgentFlow.app`** (output: `build.noindex/AgentFlow.app`) — the
 `PRODUCT_NAME` is `AgentFlow`; the user-visible name is **AgentFlow** via
 `CFBundleDisplayName`.
 
@@ -108,7 +120,7 @@ A native AgentFlow fix is not complete when the source builds: install that exac
 replace or stop `/Applications/VoiceInk.app`, which is the separate official app.
 
 For the first AgentFlow release, `/Applications/VoiceInkPlusPlus.app` is the legacy path. After the
-idle check and restart notice, preserve the entire old bundle as a rollback, install the new-named
+idle check and restart notice, preserve the entire old bundle as a verified ZIP rollback, install the new-named
 bundle, and verify only one instance of bundle ID `com.ethansk.VoiceInkPlusPlus` is running. Keep
 that identifier, preferences, Keychain service, recordings and user settings unchanged; changing
 the app filename and display name is not a data migration. A fresh Accessibility grant may still
@@ -128,9 +140,40 @@ osascript -e 'display notification "AgentFlow will restart in 5 seconds" with ti
 sleep 5
 ```
 
-Only after that delay: quit the installed app, preserve a timestamped rollback bundle, replace it,
+Only after that delay and a fresh idle check: cooperatively quit the installed app, preserve a verified ZIP rollback, replace it,
 relaunch it, and verify the new PID plus the strict/deep code signature and stable designated
 requirement. Do not claim a live fix while an older PID/build remains running.
+
+If the all-session veto refuses, leave the running app and staged candidate
+untouched. Build 454's warning stays visible with **I've finished**: that button
+retries ordinary termination and checks all active sessions again; it does not
+stop, cancel or discard them. The waiting installer, not the button, owns the
+verified replacement and background relaunch. For a user-driven deferred update,
+wait with `python3 scripts/wait-for-agent-flow-exit.py <verified-pid>` instead of
+repeated quit attempts or model polling. It uses one bounded Darwin process-exit
+event, sends no signal and performs no install. After it wakes, recheck that no
+Agent Flow instance remains and revalidate the candidate before swapping. A
+timeout or unknown identity preserves both app and candidate. Closing the warning
+does not grant permission to force quit. Older builds have no retry button; keep
+their existing safe bounded installation procedure until this update is installed.
+
+### Keep rollback backups out of app menus
+
+Use `python3 scripts/archive-local-rollback.py /Applications/AgentFlow.app` before a guarded
+replacement. It stores a private ZIP under `~/Library/Application Support/AgentFlow/Release
+Rollbacks/Archives`, extracts it temporarily, and verifies the restored build, executable checksum
+and deep/strict signature before publishing it without overwriting an existing checkpoint.
+The helper never quits, moves or deletes the source; the installer still owns the idle check,
+cooperative termination veto, restart warning and replacement transaction.
+
+Do not leave old unpacked `.app` bundles in `/Applications`, `~/Applications`, Downloads,
+Application Support or agent output folders. Hiding them or adding `.bak` does not prevent
+LaunchServices from registering their bundle contents. Keep required historical checkpoints and
+the pre-update rollback as ZIPs, not extra launchable apps. Retire obsolete copies to Trash and
+unregister only their exact final Trash and stale original LaunchServices paths: registrations
+can follow a moved bundle. Never reset all app registrations. Do not
+delete recordings, settings, prompts, the official VoiceInk app, or Time Machine snapshots.
+User-requested backup cleanup and recurrence prevention — 2026-10-06.
 
 ## Standalone-fork identity — AgentFlow (separate app from the official VoiceInk)
 
@@ -182,7 +225,7 @@ checked-in entitlements as argument 2, refuses a missing file, and verifies Auto
 
 ```sh
 ~/Projects/VoiceInk-build/resign-local.sh \
-  ~/Downloads/AgentFlow.app \
+  build.noindex/AgentFlow.app \
   "$PWD/VoiceInk/VoiceInk.local.entitlements"
 ```
 
@@ -219,10 +262,10 @@ features and their local interaction tests are defined. Upstream licensing, tria
 affiliate, and promotional-announcement changes are intentionally rejected for this commercial-free
 fork.
 
-Sparkle installation remains disabled for local builds. VoiceInk++ instead performs a default-on,
-notification-only check of the official VoiceInk GitHub release feed at most once per day. The
-Settings toggle can disable those checks. A notification opens the upstream release for review; it
-must never install the official app, merge upstream, or reinterpret a release as approved source.
+Sparkle installation remains disabled for local builds. The current notification-only updater
+checks this repository's Agent Flow releases, as described above. It preserves the user's daily
+check preference, opens only validated Agent Flow release links, and never installs upstream VoiceInk
+or merges source automatically.
 The legacy Mini script
 `~/.claude/scripts/voiceink-fork-update.sh` still exists, but its LaunchAgent is deliberately named
 `com.ethansk.voiceink-fork-autoupdate.plist.DISABLED`; keep it disabled because its wholesale-merge

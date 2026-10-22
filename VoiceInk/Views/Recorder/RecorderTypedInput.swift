@@ -1,20 +1,25 @@
 import AppKit
 import SwiftUI
+import OSLog
 
 /// An ordinary, explicitly focused editor inside the recorder, never a global
 /// keyboard monitor. Clicking another app returns keyboard ownership to that app.
 /// Only explicit typing opt-in permits a one-shot return after accepted context;
 /// ordinary speech updates and arbitrary app switches must never chase focus.
-/// That optional return is disabled by default; explicit editor focus is separate.
+/// Context return requires both typing opt-in and microphone-off typing mode.
+/// A previous editor click must not pull the caret out of Codex during speech.
 struct RecorderTypedInput: NSViewRepresentable {
     @Binding var text: String
-    let focusRequest: UUID
+    let focusRequest: UUID?
     let onEndEditing: () -> Void
     var typingFocus: RecorderTypingFocus? = nil
+    var typingUndo: RecorderTypingUndoController? = nil
+    var onSubmit: (() -> Void)? = nil
+    var onFinishWithoutPasting: (() -> Void)? = nil
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: RecorderTypedInput
-        var focusRequest: UUID
+        var focusRequest: UUID?
         init(_ parent: RecorderTypedInput) {
             self.parent = parent
             focusRequest = parent.focusRequest
@@ -57,16 +62,23 @@ struct RecorderTypedInput: NSViewRepresentable {
         editor.setAccessibilityLabel(String(localized: "Type in dictation"))
         editor.delegate = context.coordinator
         editor.onEndEditing = onEndEditing
+        editor.onSubmit = onSubmit
+        editor.onFinishWithoutPasting = onFinishWithoutPasting
         editor.typingFocus = typingFocus
+        editor.typingUndo = typingUndo
         scroll.documentView = editor
         return scroll
     }
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
+        let sameSession = context.coordinator.parent.typingFocus === typingFocus
         context.coordinator.parent = self
         guard let editor = scroll.documentView as? RecorderTypingTextView else { return }
         editor.onEndEditing = onEndEditing
+        editor.onSubmit = onSubmit
+        editor.onFinishWithoutPasting = onFinishWithoutPasting
         editor.typingFocus = typingFocus
+        editor.typingUndo = typingUndo
         typingFocus?.register(editor)
         if editor.string != text {
             // Model changes seal a run or mirror another screen. Never let Undo
@@ -74,21 +86,44 @@ struct RecorderTypedInput: NSViewRepresentable {
             editor.string = text
             editor.undoManager?.removeAllActions()
         }
+        // SwiftUI may reuse an editor/coordinator for the next live card. Its
+        // presentation state is not a fresh click to type in that new session.
+        guard sameSession else {
+            context.coordinator.focusRequest = focusRequest
+            return
+        }
         guard context.coordinator.focusRequest != focusRequest else { return }
         context.coordinator.focusRequest = focusRequest
-        DispatchQueue.main.async { [weak editor] in
-            guard let editor, let window = editor.window else { return }
-            editor.typingFocus?.enable(editor)
-            window.makeKey()
-            window.makeFirstResponder(editor)
+        guard let focusRequest, let typingFocus else { return }
+        DispatchQueue.main.async { [weak editor, weak typingFocus, weak coordinator = context.coordinator] in
+            guard let editor, let typingFocus,
+                  coordinator?.focusRequest == focusRequest,
+                  coordinator?.parent.typingFocus === typingFocus,
+                  editor.typingFocus === typingFocus else { return }
+            // Use the same session/lifetime and mouse-release guards as explicit
+            // keyboard startup. Never focus directly from a delayed UI update.
+            typingFocus.requestInitialFocus(preferredEditor: editor)
         }
     }
 }
 
 final class RecorderTypingTextView: NSTextView {
+    // Each mirrored editor owns only its editable run. A floating non-main
+    // panel must not borrow the main window's undo history or depend on its
+    // SwiftUI Edit menu to route shortcuts. TextKit still creates/coalesces
+    // the native typing, deletion, replacement and paste undo operations.
+    private let typingUndoManager = UndoManager()
+    private static let undoLog = Logger(subsystem: "com.ethansk.VoiceInkPlusPlus", category: "TypedUndo")
+    override var undoManager: UndoManager? { typingUndoManager }
     var onEndEditing: (() -> Void)?
+    var onSubmit: (() -> Void)?
+    var onFinishWithoutPasting: (() -> Void)?
     weak var typingFocus: RecorderTypingFocus?
+    weak var typingUndo: RecorderTypingUndoController?
     private var windowResignedObserver: NSObjectProtocol?
+    // True only while `releaseKeyboardBeforeFinish()` resigns this editor. Capture
+    // end, not this blur, commits the run, so it can follow every final word.
+    private var isReleasingForCaptureEnd = false
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
@@ -119,6 +154,7 @@ final class RecorderTypingTextView: NSTextView {
     }
 
     private func sealEditingRun() {
+        guard !isReleasingForCaptureEnd else { return }
         unmarkText()
         didChangeText()
         // Clear locally before publishing the seal so repeated focus callbacks
@@ -129,6 +165,121 @@ final class RecorderTypingTextView: NSTextView {
     }
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    static func isSubmitGesture(_ event: NSEvent) -> Bool {
+        event.type == .keyDown && [36, 76].contains(event.keyCode)
+            && event.modifierFlags.intersection([.command, .control, .option, .shift]) == .command
+    }
+
+    private func submitIfOwned(_ event: NSEvent) -> Bool {
+        guard Self.isSubmitGesture(event), let window, window.isKeyWindow,
+              window.firstResponder === self, let onSubmit else { return false }
+        // AppKit routes Command shortcuts through key equivalents before keyDown.
+        // Consume the owned gesture once, not a global shortcut or a newline; an
+        // auto-repeat must not submit a second session. Flush IME/binding first.
+        if !event.isARepeat {
+            unmarkText()
+            didChangeText()
+            onSubmit()
+        }
+        return true
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        finishWithoutPastingIfOwned(event) || undoOrRedoIfOwned(event)
+            || submitIfOwned(event) || super.performKeyEquivalent(with: event)
+    }
+
+    static func isFinishWithoutPastingGesture(_ event: NSEvent) -> Bool {
+        event.type == .keyDown && event.keyCode == 53
+            && event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty
+    }
+
+    private func finishWithoutPastingIfOwned(_ event: NSEvent) -> Bool {
+        guard Self.isFinishWithoutPastingGesture(event), let window, window.isKeyWindow,
+              window.firstResponder === self, !hasMarkedText(),
+              let onFinishWithoutPasting else { return false }
+        // Esc belongs to this explicitly focused HUD editor only, never to a
+        // global recorder shortcut. Finish via the existing recoverable Won't
+        // paste policy, not Cancel; an IME keeps Esc to dismiss its candidate.
+        if !event.isARepeat {
+            didChangeText()
+            onFinishWithoutPasting()
+        }
+        return true
+    }
+
+    /// The floating window dispatches its focused editor's shortcuts before the
+    /// SwiftUI hosting/menu route. This is window-local, never a global monitor:
+    /// another app or another field keeps its ordinary Undo, Return and Esc behaviour.
+    static func handleOwnedShortcut(_ event: NSEvent, in window: NSWindow) -> Bool {
+        guard window.isKeyWindow,
+              let editor = window.firstResponder as? RecorderTypingTextView else { return false }
+        return editor.finishWithoutPastingIfOwned(event)
+            || editor.undoOrRedoIfOwned(event) || editor.submitIfOwned(event)
+    }
+
+    private func undoOrRedoIfOwned(_ event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+        guard event.type == .keyDown, event.charactersIgnoringModifiers?.lowercased() == "z",
+              modifiers == .command || modifiers == [.command, .shift],
+              let window, window.isKeyWindow, window.firstResponder === self,
+              !hasMarkedText() else { return false }
+        // Consume even an empty stack: falling through could undo unrelated
+        // History/main-window work. End TextKit's current typing group before
+        // the native undo; its didChangeText callback updates the shared draft.
+        breakUndoCoalescing()
+        let beforeCount = string.count
+        let nativeUndo = typingUndoManager.canUndo
+        let nativeRedo = typingUndoManager.canRedo
+        if let typingUndo {
+            typingUndo.perform(manager: typingUndoManager, redo: modifiers.contains(.shift))
+        } else if modifiers.contains(.shift) {
+            if typingUndoManager.canRedo { typingUndoManager.redo() }
+        } else if typingUndoManager.canUndo {
+            typingUndoManager.undo()
+        }
+        // Shortcut-only, counts-only evidence: never log authored characters or
+        // observe keys in another app. A native fixture is not physical acceptance.
+        Self.undoLog.notice("HUD typing undo accepted redo=\(modifiers.contains(.shift), privacy: .public) nativeUndo=\(nativeUndo, privacy: .public) nativeRedo=\(nativeRedo, privacy: .public) beforeCount=\(beforeCount, privacy: .public) afterCount=\(self.string.count, privacy: .public) sessionController=\(self.typingUndo != nil, privacy: .public)")
+        return true
+    }
+
+    /// Bare Return/Enter commits the current prose run into the speech/context
+    /// timeline at this moment while recording continues (Ethan, 2026-10-10).
+    static func isRunCommitGesture(_ event: NSEvent) -> Bool {
+        event.type == .keyDown && [36, 76].contains(event.keyCode)
+            && event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty
+    }
+
+    /// Shift+Return keeps one run multiline instead of committing it.
+    static func isLineBreakGesture(_ event: NSEvent) -> Bool {
+        event.type == .keyDown && [36, 76].contains(event.keyCode)
+            && event.modifierFlags.intersection([.command, .control, .option, .shift]) == .shift
+    }
+
+    private func handleReturn(_ event: NSEvent) -> Bool {
+        // An IME composition owns Return to confirm its candidate. Never commit
+        // or insert a newline over marked text; AppKit confirms it first.
+        guard !hasMarkedText() else { return false }
+        if Self.isRunCommitGesture(event) {
+            // Keep keyboard focus for the next run; only this run is sealed.
+            // Not a finish: Command+Return alone submits, via submitIfOwned.
+            sealEditingRun()
+            return true
+        }
+        if Self.isLineBreakGesture(event) {
+            insertNewline(nil)
+            return true
+        }
+        return false
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if finishWithoutPastingIfOwned(event) || undoOrRedoIfOwned(event)
+            || submitIfOwned(event) || handleReturn(event) { return }
+        super.keyDown(with: event)
+    }
 
     override func mouseDown(with event: NSEvent) {
         typingFocus?.enable(self)
@@ -158,10 +309,37 @@ final class RecorderTypingTextView: NSTextView {
         guard let window = NSApp?.keyWindow,
               let editor = window.firstResponder as? RecorderTypingTextView else { return }
         editor.typingFocus?.disable(releaseKeyboard: false)
+        // Flush IME composition and the latest characters into the session, but
+        // do not seal here: the caller's `endLiveSelectionCapture()` is this run's
+        // commit boundary and places it after every captured word. Leave the
+        // editor text intact; if no capture end followed, the run stays editable.
         editor.unmarkText()
         editor.didChangeText()
+        editor.isReleasingForCaptureEnd = true
+        defer { editor.isReleasingForCaptureEnd = false }
         window.makeFirstResponder(nil)
         window.resignKey()
+    }
+}
+
+/// One session's committed typing survives editor blur and mirrored panels;
+/// TextKit still owns the active editor's native groups and selection/caret.
+@MainActor final class RecorderTypingUndoController {
+    private weak var session: RecordingSession?
+    private(set) var isReplaying = false
+    init(session: RecordingSession) { self.session = session }
+
+    func perform(manager: UndoManager, redo: Bool) {
+        isReplaying = true
+        defer { isReplaying = false }
+        if redo {
+            // Earlier sealed runs return before the newer undone active draft.
+            if session?.redoCommittedTyping() != true, manager.canRedo { manager.redo() }
+        } else if manager.canUndo {
+            manager.undo()
+        } else {
+            session?.undoCommittedTyping()
+        }
     }
 }
 
@@ -170,53 +348,85 @@ final class RecorderTypingTextView: NSTextView {
 /// regain focus. Never activate another app, poll focus, or re-arm after finish.
 @MainActor
 final class RecorderTypingFocus: ObservableObject {
-    static let automaticReturnDefaultsKey = "VIPPAutomaticTypingFocusReturnEnabled"
+    nonisolated static let automaticReturnDefaultsKey = "VIPPAutomaticTypingFocusReturnEnabled"
     @Published private(set) var isEnabled = false
     private(set) var initialFocusPending = false
     private var generation = 0
     private weak var preferredEditor: RecorderTypingTextView?
     private let editors = NSHashTable<RecorderTypingTextView>.weakObjects()
     private let automaticReturnEnabled: () -> Bool
+    private let canAutomaticallyReturn: () -> Bool
     private let canFocus: () -> Bool
+    private let mouseButtonsPressed: () -> Bool
+    private let retryDelay: UInt64
+    private let maximumAttempts: Int
+    private var returnTask: Task<Void, Never>?
+    private static let log = Logger(subsystem: "com.ethansk.VoiceInkPlusPlus", category: "TypingFocus")
 
-    init(automaticReturnEnabled: @escaping () -> Bool = {
-        UserDefaults.standard.bool(forKey: RecorderTypingFocus.automaticReturnDefaultsKey)
-    }, canFocus: @escaping () -> Bool = { true }) {
-        self.automaticReturnEnabled = automaticReturnEnabled
-        self.canFocus = canFocus
+    nonisolated static func automaticReturnEnabled(in defaults: UserDefaults) -> Bool {
+        // Ethan wants focus back after each captured highlight/screenshot once
+        // typing is engaged. Keep an explicit false opt-out, but an absent old
+        // experiment key must not silently disable the advertised behaviour.
+        (defaults.object(forKey: automaticReturnDefaultsKey) as? Bool) ?? true
     }
 
-    // Typing opt-in is still tracked for explicit shortcut/click focus and finish
-    // cleanup. It must not silently opt users into focus theft after context.
-    var showsUnfocusControl: Bool { isEnabled && automaticReturnEnabled() }
+    init(automaticReturnEnabled: @escaping () -> Bool = {
+        RecorderTypingFocus.automaticReturnEnabled(in: .standard)
+    }, canAutomaticallyReturn: @escaping () -> Bool = { true },
+         canFocus: @escaping () -> Bool = { true },
+         mouseButtonsPressed: @escaping () -> Bool = { NSEvent.pressedMouseButtons != 0 },
+         retryDelay: UInt64 = 50_000_000, maximumAttempts: Int = 40) {
+        self.automaticReturnEnabled = automaticReturnEnabled
+        self.canAutomaticallyReturn = canAutomaticallyReturn
+        self.canFocus = canFocus
+        self.mouseButtonsPressed = mouseButtonsPressed
+        self.retryDelay = retryDelay
+        self.maximumAttempts = max(1, maximumAttempts)
+    }
+
+    // Explicit shortcut/click focus opts this session in. Finish disarms it;
+    // speech updates and arbitrary app switches cannot re-enable it. Ethan
+    // removed the old Unfocus control: leaving to highlight is not an opt-out.
 
     func register(_ editor: RecorderTypingTextView) {
         editors.add(editor)
-        if initialFocusPending { scheduleReturn(initial: true) }
+        if initialFocusPending, returnTask == nil { scheduleReturn(initial: true) }
     }
 
     func enable(_ editor: RecorderTypingTextView) {
         guard canFocus() else { return }
         generation &+= 1
+        returnTask?.cancel()
+        returnTask = nil
         preferredEditor = editor
         initialFocusPending = false
         isEnabled = true
     }
 
-    func requestInitialFocus() {
+    func requestInitialFocus(preferredEditor: RecorderTypingTextView? = nil) {
         guard canFocus() else { return }
+        if let preferredEditor {
+            self.preferredEditor = preferredEditor
+            editors.add(preferredEditor)
+        }
         isEnabled = true
         initialFocusPending = true
         scheduleReturn(initial: true)
     }
 
     func returnAfterContext() {
-        guard isEnabled, automaticReturnEnabled() else { return }
-        scheduleReturn(initial: false)
+        // Remembered typing opt-in is not current typing mode. Microphone-on
+        // speech must leave the system/Codex caret alone after every highlight.
+        guard isEnabled, automaticReturnEnabled(), canAutomaticallyReturn() else { return }
+        // An initial highlight can arrive before the editor mounts. It must not
+        // replace the pending explicit startup with a return to a nil editor.
+        scheduleReturn(initial: initialFocusPending)
     }
 
     func disable(releaseKeyboard: Bool = true) {
         generation &+= 1
+        returnTask?.cancel()
+        returnTask = nil
         isEnabled = false
         initialFocusPending = false
         if releaseKeyboard, let editor = preferredEditor,
@@ -226,43 +436,55 @@ final class RecorderTypingFocus: ObservableObject {
     }
 
     private func scheduleReturn(initial: Bool) {
+        generation &+= 1
         let expectedGeneration = generation
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.isEnabled, self.canFocus(),
-                  self.generation == expectedGeneration,
-                  NSEvent.pressedMouseButtons == 0 else { return }
-            // Recheck at the actual focus boundary: disabling the experiment
-            // invalidates an already queued return, but never an explicit start.
-            guard initial || self.automaticReturnEnabled() else { return }
-            let editor: RecorderTypingTextView?
-            if initial {
-                guard self.initialFocusPending else { return }
-                let visible = self.editors.allObjects.filter { $0.window?.isVisible == true }
-                editor = visible.first {
-                    $0.window?.screen?.frame.contains(NSEvent.mouseLocation) == true
-                } ?? visible.first
-            } else {
-                editor = self.preferredEditor
+        returnTask?.cancel()
+        let attempts = maximumAttempts
+        let delay = retryDelay
+        returnTask = Task { @MainActor [weak self] in
+            defer {
+                if self?.generation == expectedGeneration { self?.returnTask = nil }
             }
-            guard let editor, let window = editor.window, window.isVisible else { return }
-            self.preferredEditor = editor
-            self.initialFocusPending = false
-            window.makeKey()
-            window.makeFirstResponder(editor)
-        }
-    }
-}
-
-struct RecorderTypingFocusControl: View {
-    @ObservedObject var focus: RecorderTypingFocus
-    var body: some View {
-        if focus.showsUnfocusControl {
-            Button("Unfocus", systemImage: "lock.open") { focus.disable() }
-                .buttonStyle(.plain)
-                .font(.system(size: 11))
-                .foregroundStyle(.white.opacity(0.7))
-                .padding(6)
-                .background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 5))
+            // Event-driven, coalesced and bounded to two seconds, not an idle
+            // focus watcher. Mouse-up, screenshot UI teardown and editor mounting
+            // can lag the accepted-context callback. The old single async turn
+            // silently discarded those requests. Never interrupt a held drag,
+            // activate another app, or focus a session after finish/cancellation.
+            for attempt in 0..<attempts {
+                guard !Task.isCancelled, let self, self.isEnabled, self.canFocus(),
+                      self.generation == expectedGeneration else { return }
+                // Recheck the explicit opt-out at the actual focus boundary;
+                // it cannot cancel an explicitly requested keyboard-mode start.
+                guard initial || (self.automaticReturnEnabled() && self.canAutomaticallyReturn()) else { return }
+                if !self.mouseButtonsPressed() {
+                    let editor: RecorderTypingTextView?
+                    if initial {
+                        guard self.initialFocusPending else { return }
+                        let visible = self.editors.allObjects.filter { $0.window?.isVisible == true }
+                        editor = self.preferredEditor.flatMap {
+                            $0.window?.isVisible == true ? $0 : nil
+                        } ?? visible.first {
+                            $0.window?.screen?.frame.contains(NSEvent.mouseLocation) == true
+                        } ?? visible.first
+                    } else {
+                        editor = self.preferredEditor
+                    }
+                    if let editor, let window = editor.window, window.isVisible {
+                        window.makeKey()
+                        let accepted = window.makeFirstResponder(editor)
+                        if accepted, window.isKeyWindow, window.firstResponder === editor {
+                            self.preferredEditor = editor
+                            self.initialFocusPending = false
+                            Self.log.info("typing focus: restored initial=\(initial) attempt=\(attempt + 1)")
+                            return
+                        }
+                    }
+                }
+                if attempt + 1 < attempts {
+                    do { try await Task.sleep(nanoseconds: delay) } catch { return }
+                }
+            }
+            Self.log.notice("typing focus: return expired initial=\(initial) attempts=\(attempts)")
         }
     }
 }

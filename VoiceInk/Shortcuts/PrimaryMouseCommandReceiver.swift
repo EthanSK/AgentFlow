@@ -10,7 +10,16 @@ final class PrimaryMouseCommandReceiver: @unchecked Sendable {
         let receivedAt: TimeInterval
         let generation: UInt64
     }
-    enum Failure: Error { case system(String, Int32), occupied, insecureDirectory }
+    enum Failure: Error {
+        case system(String, Int32), occupied, insecureDirectory
+        var diagnostic: String {
+            switch self {
+            case .system(let operation, let code): return "\(operation) errno=\(code)"
+            case .occupied: return "occupied endpoint or marker mismatch"
+            case .insecureDirectory: return "insecure directory"
+            }
+        }
+    }
     private struct Identity: Codable, Equatable {
         let device: UInt64
         let inode: UInt64
@@ -66,7 +75,17 @@ final class PrimaryMouseCommandReceiver: @unchecked Sendable {
             do {
                 if lstat(path, &info) == 0 {
                     guard let current = Self.socketIdentity(path),
-                          current == Self.readIdentity(lockFD) else { throw Failure.occupied }
+                          let recorded = Self.readIdentity(lockFD) else { throw Failure.occupied }
+                    // A restored/remounted home can change st_dev while retaining
+                    // the recorded socket inode and owner. Recover only that narrow
+                    // mismatch, under the unchanged private lock, after a passive
+                    // connect proves no receiver is bound. Even an exact marker may
+                    // not justify unlinking a live socket. Never send a probe packet.
+                    let matches = current == recorded ||
+                        (current.device != recorded.device &&
+                         current.inode == recorded.inode && current.owner == recorded.owner)
+                    guard matches, Self.refusesConnection(path),
+                          Self.socketIdentity(path) == current else { throw Failure.occupied }
                     guard unlink(path) == 0 else { throw Failure.system("unlink stale socket", errno) }
                 } else if errno != ENOENT {
                     throw Failure.system("inspect socket", errno)
@@ -184,6 +203,33 @@ final class PrimaryMouseCommandReceiver: @unchecked Sendable {
         guard lstat(path, &info) == 0, info.st_uid == geteuid(),
               (info.st_mode & S_IFMT) == S_IFSOCK else { return nil }
         return Identity(device: UInt64(info.st_dev), inode: UInt64(info.st_ino), owner: info.st_uid)
+    }
+
+    /// Connecting a datagram socket sends no message and cannot start recording.
+    /// Only the kernel's explicit refused result proves this endpoint is unbound;
+    /// missing paths, permission errors and ambiguous failures remain fail-closed.
+    private static func refusesConnection(_ path: String) -> Bool {
+        var address = sockaddr_un()
+        address.sun_family = sa_family_t(AF_UNIX)
+        address.sun_len = UInt8(MemoryLayout<sockaddr_un>.size)
+        let capacity = MemoryLayout.size(ofValue: address.sun_path)
+        guard path.utf8CString.count <= capacity else { return false }
+        path.withCString { source in
+            withUnsafeMutablePointer(to: &address.sun_path) {
+                $0.withMemoryRebound(to: CChar.self, capacity: capacity) {
+                    _ = strncpy($0, source, capacity - 1)
+                }
+            }
+        }
+        let fd = socket(AF_UNIX, SOCK_DGRAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        let result = withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        return result < 0 && errno == ECONNREFUSED
     }
 
     private static func readIdentity(_ fd: Int32) -> Identity? {

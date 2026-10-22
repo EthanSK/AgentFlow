@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <title>Agent Flow — Drop In</title>
+  <defs>
+    <!-- macOS 824 grid tile, 100 inset; everything outside stays fully transparent -->
+    <clipPath id="tile">
+      <rect x="100" y="100" width="824" height="824" rx="185" ry="185"/>
+    </clipPath>
+
+    <linearGradient id="sky" x1="300" y1="100" x2="640" y2="720" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FF4F8B"/>
+      <stop offset="0.5" stop-color="#FF7A5A"/>
+      <stop offset="1" stop-color="#FFBE55"/>
+    </linearGradient>
+
+    <linearGradient id="sea" x1="560" y1="540" x2="440" y2="1000" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5FE8D8"/>
+      <stop offset="0.14" stop-color="#22C3C8"/>
+      <stop offset="0.4" stop-color="#0F86BF"/>
+      <stop offset="0.75" stop-color="#0B4F98"/>
+      <stop offset="1" stop-color="#0A2F6B"/>
+    </linearGradient>
+
+    <linearGradient id="board" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFE872"/>
+      <stop offset="0.5" stop-color="#FFC93F"/>
+      <stop offset="1" stop-color="#FF9B2F"/>
+    </linearGradient>
+  </defs>
+
+  <g clip-path="url(#tile)">
+    <!-- Sky -->
+    <rect x="100" y="100" width="824" height="824" fill="url(#sky)"/>
+
+    <!-- Sloping wave face (subordinate, open, no curl) -->
+    <path d="M100 452C260 470 560 560 924 664L924 924L100 924Z" fill="url(#sea)"/>
+    <path d="M100 476C260 486 560 566 924 668L924 694C560 600 260 530 100 528Z" fill="#DFFFF8" fill-opacity="0.28"/>
+    <path d="M100 444C260 460 560 550 924 656L924 668C560 566 260 486 100 476Z" fill="#F6FFFD"/>
+
+    <!-- Flow lines in the water -->
+    <g fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-opacity="0.2" stroke-width="16">
+      <path d="M240 836C420 850 600 872 770 900"/>
+      <path d="M150 760C230 764 300 772 360 782"/>
+    </g>
+
+    <!-- Rider + board -->
+    <g transform="translate(-12 -32)">
+      <!-- Tail spray -->
+      <path d="M262 700C206 690 156 650 128 586C170 626 210 648 250 652C218 622 196 586 190 536C222 580 262 628 300 676Z" fill="#F6FFFD"/>
+
+      <!-- Surfboard with planted feet -->
+      <g transform="translate(512 748) rotate(10)">
+        <path d="M-340 6C-345 -24 -320 -38 -262 -38L150 -38C262 -38 336 -20 362 -2C336 18 262 38 150 38L-262 38C-318 38 -338 30 -340 6Z" transform="translate(4 16)" fill="#062A55" fill-opacity="0.35"/>
+        <path d="M-340 6C-345 -24 -320 -38 -262 -38L150 -38C262 -38 336 -20 362 -2C336 18 262 38 150 38L-262 38C-318 38 -338 30 -340 6Z" fill="url(#board)"/>
+        <path d="M-290 -30L230 -30" fill="none" stroke="#FFF6C8" stroke-width="6" stroke-linecap="round" stroke-opacity="0.7"/>
+        <path d="M-300 -2L318 -2" fill="none" stroke="#FF4F6E" stroke-width="14" stroke-linecap="round"/>
+        <rect x="-178" y="-66" width="78" height="34" rx="17" fill="#151A40"/>
+        <rect x="80" y="-66" width="84" height="34" rx="17" fill="#151A40"/>
+      </g>
+
+      <!-- Surfer silhouette -->
+      <g fill="none" stroke="#151A40" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M494 518L452 600L384 667" stroke-width="74"/>
+        <path d="M508 512L614 580L640 712" stroke-width="82"/>
+        <path d="M528 372L432 340L352 272" stroke-width="60"/>
+        <path d="M598 386L700 420L794 470" stroke-width="60"/>
+        <path d="M588 343L604 308" stroke-width="50"/>
+      </g>
+      <g fill="#151A40">
+        <path d="M460 545C454 487 470 420 502 372C524 337 569 324 604 343C633 359 633 401 614 433L560 522C544 551 476 564 460 545Z"/>
+        <circle cx="612" cy="292" r="56"/>
+        <path d="M572 254C540 242 508 252 484 276C516 270 546 278 568 292Z"/>
+      </g>
+    </g>
+
+    <!-- Subtle inner rim -->
+    <rect x="102" y="102" width="820" height="820" rx="183" ry="183" fill="none" stroke="#FFFFFF" stroke-opacity="0.12" stroke-width="4"/>
+  </g>
+</svg>

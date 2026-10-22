@@ -357,13 +357,14 @@ struct AudioPlayerView: View {
     @State private var showModePopover = false
     @State private var showPromptPopover = false
     @State private var selectedModeId: UUID?
+    @ObservedObject private var historyRetryState = HistoryAudioRetryState.shared
     @EnvironmentObject private var engine: VoiceInkEngine
     @EnvironmentObject private var enhancementService: AIEnhancementService
     @ObservedObject private var modeManager = ModeManager.shared
     @Environment(\.modelContext) private var modelContext
 
     private var isOperationInProgress: Bool {
-        isRetranscribing || isReEnhancing
+        isRetranscribing || isReEnhancing || transcription.map { historyRetryState.activeIDs.contains($0.id) } == true
     }
 
     private var currentEnhancementConfiguration: EnhancementRuntimeConfiguration? {
@@ -644,10 +645,14 @@ struct AudioPlayerView: View {
             return
         }
 
+        if let id = transcription?.id, !historyRetryState.begin(id) { return }
         isRetranscribing = true
         operationFeedback = nil
 
         Task {
+            defer {
+                if let id = transcription?.id { historyRetryState.finish(id) }
+            }
             do {
                 let _ = try await transcriptionService.retranscribeAudio(
                     from: url,

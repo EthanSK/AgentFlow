@@ -1,5 +1,516 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-10-17 — Treat a click-pane result or Demo panel as live keyboard focus — REJECTED
+
+**Failure condition:** The first inspector only walked the clicked element's
+ancestors, so it could not establish keyboard focus. Ethan later tried clicking
+Codex while the replacement's synthetic Demo was open and reported no reaction;
+his screenshot explicitly shows Demo. That mode intentionally has no AX reader
+or global mouse monitor. Synthetic Different panes is not live reproduction.
+**Use instead:** Keep independent click and focused-editable-input readings after
+mouse release; show Live/Demo and received-event counts. Preserve explicit unknown
+and read-failure evidence. Validate Demo controls independently, then hand off
+Live for user-operated reads and an explicit sanitized Copy report. Never read
+live Codex through this helper as an agent automation workaround.
+**Reconsider only if:** A supported exact pane-to-composer identity/control path
+is independently proven on disposable main and side inputs. A pane outline,
+manual region, mock result or successful AX call is insufficient for routing.
+
+## 2026-10-17 — Sample view points directly as cached bitmap pixels — REJECTED
+
+**Failure condition:** The startup-shell pixel test passed on the Mini but failed
+twice on a Retina MacBook because AppKit's cache had more backing pixels than
+view points. Sampling the unscaled centre coordinate read black background,
+not the grey dot. The recorder's production drawing was unchanged.
+**Use instead:** Scale sample coordinates by pixelsWide/view.width and
+pixelsHigh/view.height. The corrected exact fixture passed the canonical Xcode
+action on both hosts; keep its hit-testing and offscreen-callback guards.
+**Reconsider only if:** The fixture explicitly constructs and proves a fixed
+one-pixel-per-point representation rather than assuming the display scale.
+
+## 2026-10-17 — Treat optional realtime prepare as the proven spontaneous-stop cause — REJECTED
+
+**Failure condition:** A catch around `try await prepare()` looked capable of
+tearing down a capture on a stream connection failure. Current production
+`StreamingTranscriptionSession.prepare` catches those connection errors itself
+and neither throws nor suspends. Fake delayed/throwing callbacks prove useful
+ownership safety, but cannot establish that today's production path caused a
+reported uncommanded stop. No matching incident trace was recovered.
+**Use instead:** Keep the nonthrowing optional stream setup, single Engine
+teardown ownership boundary and pending-start quit veto, test them directly,
+and report the original incident as uncorrelated. Distinguish optional streaming
+from actual microphone/WAV capture.
+**Reconsider only if:** A changed production provider can actually suspend/throw
+at that boundary, or a matched real-session trace proves that exact failure
+reaches shared recorder teardown. Never substitute a plausible catch block or
+passing regression for causal evidence.
+
+## 2026-10-17 — Infer a recorder leak from in-process text-view weak references — REJECTED
+
+**Failure condition:** A Mini test expected detached recorder editors and their
+Undo managers to disappear after an autorelease pool and a run-loop turn. It
+retained all 30 instances even after explicit responder release and Undo clearing.
+The decisive control also retained five untouched ordinary `NSTextView` objects
+and five recorder subclasses that had never been attached or edited. The fixture
+does not distinguish test/AppKit retention from a production ownership leak.
+**Use instead:** Preserve bounded live footprint trends and native leak reports,
+then establish an allocation/retention path with an independent control before
+changing native Undo or editor lifecycle. The speculative detach-time Undo clear
+and invalid regression were removed; the installed editor behavior was untouched.
+**Reconsider only if:** A disposable native harness first releases the ordinary
+AppKit control and proves a recorder-specific persistent path, or a live
+allocation backtrace independently identifies that path. A failing weak reference
+alone is not sufficient.
+
+## 2026-10-17 — Resolve SwiftUI fixture buttons from in-process AX children — REJECTED
+
+**Failure condition:** The Mini's hosted-window unit fixture rendered real Copy
+and Retry controls, but `NSWindow.accessibilityChildren` did not expose their
+identifiers. Walking ignored NSView subviews too still returned no match. A
+missing node is not proof the control is absent or broken.
+**Use instead:** Keep window-targeted native mouse events, require exact
+clipboard results and no accidental expand/select, inspect the synthetic native
+bitmap after layout, and retain source guards for full-width body/header
+separation. Never substitute direct action invocation for a real click.
+**Reconsider only if:** A disposable hosted fixture independently proves that
+the supported in-process SwiftUI accessibility tree exposes those identifiers
+and geometry without changing global Accessibility or probing Ethan's live apps.
+
+## 2026-10-15 — Infer receiver readiness from socket existence and mode — REJECTED
+
+**Failure condition:** Installed 428 had a real uid-owned mode-0600 socket but
+connect returned ECONNREFUSED. Its recorded and current device numbers differed,
+so the startup identity guard refused recovery. No live descriptor was bound.
+**Use instead:** Verify passive datagram connect success and the owning process
+after install, without sending a recording event. Recover only a recorded stale
+identity under the private lock with explicit refusal and final identity recheck.
+**Reconsider only if:** A supported read-only receiver health signal independently
+proves a live bound endpoint. A file, test pass, signature or successful launch
+does not establish transport readiness or physical button acceptance.
+
+## 2026-10-15 — Unlock the signing keychain in a separate SSH session — REJECTED
+
+**Failure condition:** The dedicated keychain's certificate was valid but its
+user Code Signing trust was missing. Restoring that trust alone did not make a
+later SSH session inherit an earlier session's unlock; codesign still failed
+with errSecInternalComponent. An SSH-only trust request could not display the
+required user authorization either.
+**Use instead:** Ask for approval to restore the existing certificate's narrow
+Code Signing trust, let the user authorize through the logged-in GUI session,
+then unlock and sign together with the restored private canonical helper.
+The same certificate successfully signed the 426 Release with deep/strict and
+designated-requirement verification; no replacement identity was necessary.
+**Reconsider only if:** Fresh keychain diagnostics establish a supported unlock
+scope shared by those sessions. Do not reset all trust, change TCC or substitute
+ad-hoc signing to work around this failure.
+
+## 2026-10-14 — Treat every keyboard extension as a labelled editor event — REJECTED
+
+**Failure condition:** In the disposable VS Code 1.139.1 editor, a window-targeted
+Option-Shift-Right selected the correct five synthetic characters but its public
+selection event omitted the kind. Requiring Mouse/Keyboard rejected that range.
+**Correction:** Keep general Command changes excluded. An unclassified extension
+must additionally retain its prior anchor and match a fresh native keyboard
+gesture's direction, source, editor/version and time. Do not accept unknown
+events on their own or loosen mouse/idle reads to make the example pass.
+**Reconsider only if:** The supported real hosts reliably label every requested
+physical word/line extension, with native installed acceptance rather than only
+an API fixture. Current bridge/controller checks pass; native acceptance is pending.
+
+## 2026-10-11 — Native draft-only Undo proves the whole HUD works — SUPERSEDED
+
+**Failure condition:** Build 420's tests passed, but Ethan reported that physical
+Undo fails both before and after Enter/highlighting. Clearing editor history at
+seal with no session-owned committed undo necessarily omits the latter case.
+The full hosted HUD's synthetic NSApplication dispatch also passes; its event-tap
+setup fails, so it does not explain the still-typing physical failure.
+**Use instead:** Keep TextKit history local, add unsent typed-reference undo/redo
+at the session boundary, route exact owned shortcuts before hosting, and obtain
+an installed physical receipt. Preserve every non-typed context reference and
+never resurrect a sealed run in both the editor and timeline.
+**Reconsider only if:** Ethan explicitly narrows Undo to the current draft, or
+new physical event-path evidence identifies a different still-typing cause.
+Passing a native-only or hosted fixture is not that evidence.
+
+## 2026-10-10 — First-keystroke anchor for later committed typing — SUPERSEDED
+
+**Failure condition:** Typing starts before subsequent speech or selections, but
+Enter/finish occurs afterward. Retaining the first edit's speech anchor incorrectly
+places the completed run before those intervening words. Blur during capture-end
+keyboard release also commits too early when final speech has not streamed yet.
+**Use instead:** Preserve first/latest edit timestamps independently; anchor a
+committed run to speech observed at Enter or its accepted context boundary. Flush
+without sealing during capture-end release and append any still-open run after all
+final speech. Keep that run in recovery while it is outside committed references.
+**Reconsider only if:** Ethan explicitly requests edit-start ordering again; exact
+audio-word placement separately requires a provider's verified alignment data.
+
+## 2026-10-10 — Fake delivery alone proves typed-error recovery — REJECTED
+
+**Failure condition:** A pipeline fake accepts a failed record while production
+delivery rejects it, or a later destination Mode restores Return/respond despite
+an earlier no-submit configuration. The initial recovery candidate had both gaps.
+**Use instead:** An explicit failed-typing-only request with a production gate that
+rejects commands/respond/Return, production pipeline tests, and a final OS-transport
+substitution only. Retries must not automatically duplicate an already pasted draft.
+**Reconsider only if:** The fake models every production authorization/configuration
+boundary and separately verified integration coverage remains; fake success alone
+never proves native paste. Missing HUD words cannot prove captured audio was silent.
+
+
+## 2026-10-09 — Hard drag-span size veto for Codex selections — WITHDRAWN
+
+**Failure condition:** Build 414's fresh-drag rectangle policy reported repeated
+overextended candidate refusals while Ethan reported missed partial-word highlights.
+Its focused-marker fast return also bypassed pointer comparison. Retained prompts
+and counts-only logs prove the misses/broad captures, not exact glyph geometry.
+**Use instead:** Keep span size diagnostic-only; compare the bounded pointer leaf
+before accepting a focused marker on Codex. Preserve an explicit foreground
+pointer selection over a containing broader marker, and retain existing background,
+elsewhere/window, password and editable-field safeguards. No inferred trimming.
+**Reconsider only if:** The exact host supplies a proven selected-glyph/range
+identity and attended partial-word, cross-symbol and cross-node checks demonstrate
+no lost highlights or whole-sentence widening; synthetic rectangles alone cannot
+justify a hard size veto.
+
+## 2026-10-09 — Containment-only marker widening — REJECTED
+
+**Failure condition:** A longer marker contains a highlighted symbol/address and
+its rectangle overlaps a drag endpoint, but encompasses text outside the drag.
+The previous same-box fixture selected the full sentence over the short symbol.
+This can fabricate a broader context even when a narrower source range exists.
+**Use instead:** Keep the narrower range unless independently consistent fresh
+drag geometry shows it misses an endpoint and the marker covers both. Treat
+aggregate span size as diagnostic, not a hard veto; never trim or OCR inferred glyphs.
+Record counts-only range decisions for physical acceptance, preserving delayed,
+multiclick and autoscroll uncertainty. Zero global-monitor clicks is a real drag,
+not sufficient reason to bypass the single-drag guard.
+**Reconsider only if:** The exact host supplies independently verified selected
+range identity/endpoints and real cross-node plus single-address tests establish
+precision without widening the user's choice. Containment/overlap alone remains
+insufficient, even if the candidate includes the desired address.
+
+
+## 2026-10-09 — Refusal-only microphone repair without live mute acceptance — WITHDRAWN
+
+**Failure condition:** Build 413 required an observed listening control at the toggle boundary and a verified mute before restoration ownership. Background Codex can expose neither state, so the repair skips muting. Ethan reported that Voice no longer muted at all and requested rollback; passing policy fixtures did not establish a usable live integration.
+**Use instead:** Honour the explicit rollback to exact signed build 412 and report its known manually-muted inversion limitation. Do not describe that rollback as state reconciliation or automatically reinstall the withdrawn refusal-only policy.
+**Reconsider only if:** An authoritative supported state/control feed and attended initially-listening/manual-mute tests establish actual suppression and owned restoration without inversion. Do not widen permissions, poll, click the pointer, use AXPress, globally mute input or patch Codex to bypass missing support.
+
+## 2026-10-09 — Paired microphone toggles with unknown state — REJECTED
+
+**Runtime exception:** Ethan explicitly requested the exact build-412 rollback after build 413 failed to mute in his workflow. That restores this historical behaviour, not acceptance of its inversion risk; never silently repeat either experiment as a new fix.
+
+**Failure condition:** ChatGPT's input stream stays active while its Voice microphone is manually muted. The old coordinator treated an unreadable control plus that active stream as permission to toggle, then remembered the accepted key event for an inverse at stop. This can unmute an already-muted call. A successful event post, retained application PID or Core Audio activity proves neither current mute state nor same-call ownership.
+**Use instead:** Unknown or already-muted start state performs no input. Require a fresh observed listening state at the event boundary and verify the resulting mute before owning restoration. Unknown restoration state relinquishes ownership without a toggle; failed restoration is never replayed in another capture. Build-413 canonical Mini tests reproduce and guard these policy conditions; the user's live Voice regression remains separate acceptance evidence.
+**Reconsider only if:** The exact host provides supported absolute mute control and authoritative same-session/manual-override state. Never restore a blind paired toggle merely because the current control is unreadable, and do not manufacture a state feed with AXPress, pointer automation, global microphone mute or private app patching.
+
+## 2026-10-09 — Conditional desktop Voice output shortcuts — UNSUPPORTED
+
+**Failure condition:** Offline inspection of ChatGPT desktop 26.1002.52244/build
+13536 found a user keymap schema containing only `command` and `key`. Its resolver
+returns accelerator strings, with no `when` expression or speaker-muted context.
+The shared catalogue's `when` field belongs to VS Code's extension bindings,
+not desktop. The Voice output handler's internal `isActive` predicate tests only
+whether a call is active and invokes `toggle-output-mute`. No binding was changed
+or event posted; this is source-proven missing support, not a failed audible test.
+**Use instead:** Require an externally supported absolute control or an observable
+same-session speaker state before automatic suppression/restoration. Do not
+invent a `when` key or treat private `set-output-muted` RPC as a public API.
+**Reconsider only if:** The exact installed desktop parser and dispatcher expose
+a documented conditional output-state binding, or a supported absolute control
+plus same-session/manual-override ownership becomes available. Verify those
+semantics before any live recording/playback test or Agent Flow integration.
+
+## 2026-10-09 — Preferring layer-zero windows under a floating selection source — REJECTED
+
+**Failure:** The uninstalled build-410 candidate preferred a same-app layer-zero
+window after filtering transient overlays. With a real floating panel above an
+overlapping main window, identity bound the main window instead and stayed valid
+after the floating panel disappeared. The canonical Mini regression executed and
+failed two assertions for this exact arrangement before the repair.
+**Use instead:** Exclude menu/tooltip-level overlays, then retain CGWindow's
+front-to-back ordering among eligible content windows. A real floating source must
+keep its own exact window identity and bounds. Preserve the overlapping-panel
+fixture in `sourceIdentityIgnoresTransientOverlayButStillRejectsResizedWindow`.
+**Reconsider only if:** An independently verified gesture-window identity replaces
+the ordering policy while still rejecting removed/replaced/resized source windows;
+layer zero alone must never stand in for the user's actual source.
+
+## 2026-10-06 — Keeping unpacked rollback apps outside Applications — REJECTED
+
+**Failure:** macOS registered dated VoiceInk/AgentFlow backup bundles in Downloads,
+Application Support and agent output directories, including hidden and `.bak` bundles.
+Moving them out of Applications did not prevent app-picker clutter. Unregistering
+only the original path before a Trash move also left some records at the new path.
+**Use instead:** Preserve required rollbacks as verified ZIPs using
+`scripts/archive-local-rollback.py`; never leave persistent launchable backup bundles.
+For an authorized cleanup, verify exact identities, retain checkpoint archives,
+move obsolete copies to recoverable Trash, then unregister their final retired
+paths and stale original paths. Do not reset all LaunchServices or touch snapshots.
+**Reconsider only if:** A documented macOS app-discovery exclusion is proven to cover
+all app menus, Spotlight and nested bundle registration without changing unrelated
+application discovery; archive storage remains the default until then.
+
+## 2026-10-05 — Hard-muting all capture during spoken reminders — SUPERSEDED
+
+**Failure:** The accepted build-403 gate removed all captured PCM during reminder
+playback, including Ethan's genuine speech. Ethan explicitly said he still wants
+to dictate during reminders, replacing muting with a Potential ignore section.
+**Use instead (2026-10-09):** Keep all captured audio and skip Codex TTS while recording, without waiting or replaying it later; still send the notification. Ethan replaced live Potential ignore annotation with recording-priority playback. Never revive microphone suppression; retain old annotation parsing only for saved archives.
+**Reconsider only if:** Ethan explicitly requests full capture suppression again
+and accepts that it also excludes his own simultaneous speech.
+
+## 2026-10-05 — Rejecting every end notice after child-death pruning — REJECTED
+
+**Failure:** The receiver's 100ms sweep can observe a reaped child before the
+sender's matching end message arrives. A plain tombstone rejected that valid end,
+leaving an inferred later overlap boundary and no usable end acknowledgement.
+**Use instead:** Retain frozen original owner/start/deadline in bounded tombstones;
+allow only the matching idempotent end to shorten an inferred completed window,
+never restart it or extend its deadline/tail. The focused end-race test passes.
+**Reconsider only if:** The transport provides a proven atomic child-exit/end
+boundary without weakening process identity or bounded replay protection.
+
+## 2026-10-03 — Treating every local app as an agent recipient — REJECTED
+
+**Failure:** Build 400 removed source-context eligibility and made compact local
+prompt links the default for Chrome, editors, terminals and unknown recipients.
+Ethan's ordinary YouTube comment therefore received an agent prompt wrapper.
+Classifier tests expecting Chrome links reinforced the regression.
+**Use instead:** Filter ordinary automatic pastes to authored speech/typing first;
+choose local-file versus inline presentation only for explicitly approved app
+overrides: Codex uses local files; Telegram and, following Ethan's explicit
+2026-10-17 request, Claude Desktop use inline XML. Other recipients remain plain
+authored text. Keep the decision after the queue wait and respect Primary/current
+versus Next/saved identity. Test the actual production pipeline with context on/off
+and styling on/off; complete archives and explicit Won't paste retain context.
+**Reconsider only if:** Ethan explicitly requests agent context in an ordinary
+app or supplies an explicit recipient opt-in. Being local, Chrome, or unknown
+is not evidence that the receiving field is an AI prompt.
+
+
+## 2026-10-01 — Reusing the early Primary freeze for late typing Shift — REJECTED
+
+**Failure:** The standalone Shift second-chance handler used
+`acceptsCompletionDispositionChanges`. The provider-boundary freeze closes that
+policy before archive preparation and delivery finish; a typed-only live trace
+froze roughly 120 ms after stop while the HUD remained visible for almost a
+second. Presence of the handler and immediate fixture success did not prove a
+usable human reaction window. Karabiner changes cannot repair this lifecycle gap.
+**Use instead:** A separate exact stopped-typing decision with a one-second
+minimum, open through preparation and queue waits, sealed before the first
+irreversible output effect. Keep Primary's existing freeze, balanced modifier
+forwarding, stale/new-session rejection, complete clipboard/History retention
+and post-wait cancellation/lineage checks. Never try to undo emitted output.
+**Reconsider only if:** The visible eligibility ends at the same boundary and
+physical evidence proves a usable released-chord Shift window for fast results;
+do not weaken the Primary contract to make an unrelated late-Shift choice work.
+
+## 2026-09-30 — Horizontal CSS gradients for continuous authored rainbows — REJECTED
+
+**Failure:** A payload-wide horizontal gradient colours screen x-coordinates,
+so wrapped lines repeat the same progression and new payload elements start
+again. Ethan explicitly requested continuation after the preceding authored word.
+**Use instead:** Fixed per-word palette spans preserving exact whitespace, one
+cursor across authored cards, and a separately persisted per-chat reservation
+for subsequent archives. Context is excluded and reopening consumes nothing.
+**Reconsider only if:** The desired design becomes a spatial paint effect rather
+than word-sequence continuity, or a renderer proves equivalent word positions
+through wrapping, explicit newlines, card boundaries and later messages.
+
+## 2026-09-30 — Checking styled History with raw plain-text substrings — REJECTED
+
+**Failure:** The first build-396 full gate failed only the new clipboard/history
+retention assertion. It searched for contiguous unformatted words inside the
+canonical styled string; producer-LaTeX formulas split those words even though
+the text and exact archive bytes were retained.
+**Use instead:** Assert readable content through the production History
+presentation's plain-text projection and independently assert canonical archive
+bytes, typed timing and context metadata. Preserve the first failed gate and run
+the corrected exact-source release gate; the corrected 523-test bundle passed.
+**Reconsider only if:** The storage contract explicitly becomes plain text;
+never remove formatting or weaken retention solely to satisfy a substring test.
+
+## 2026-09-30 — Publishing builder paths in checksum manifests — REJECTED
+
+**Mechanism:** Generate the public `SHA256SUMS` from an absolute path in the
+builder's temporary directory and accept matching hash text as sufficient.
+**Failure:** The website's build-366 ZIP matched the public hash, but the
+downloaded manifest's normal `shasum -a 256 -c SHA256SUMS` command attempted to
+open the absent builder path and failed before verifying the user's ZIP.
+**Use instead:** Publish bare distributed filenames and run the manifest check
+from a separate download directory containing the public ZIP and manifest.
+**Reconsider only if:** The published verification procedure deliberately maps
+paths and passes on an independent download without relying on builder state.
+
+## 2026-09-30 — Math inside Codex file-link labels — REJECTED
+
+**Failure:** The installed unified host's base Markdown parser accepted
+`\(...\)` in a link, but its additional user-message composer-link tokenizer
+escaped those delimiters and produced no math tokens. A base-parser-only check
+would therefore falsely accept a raw-LaTeX link label. The replacement `$$...$$`
+experiment passed that tokenizer and KaTeX, but Ethan's installed build-393
+message screenshot at 01:13:49 still displayed the complete raw LaTeX in its link.
+Token and standalone-math validity did not prove the bubble's link renderer.
+
+**Use instead:** Keep a literal `full prompt` link label and both original encoded
+absolute targets. Preserve the plain authored words and inline angular markers.
+Do not substitute another math delimiter based on parser evidence alone.
+
+**Reconsider only if:** A supported host mechanism or a disposable actual bubble
+proves a coloured clickable label renders without raw commands; then obtain
+Ethan's direction before restoring the rejected optional accent.
+
+## 2026-09-30 — Square preview markers with forced rows — SUPERSEDED
+
+**Failure:** Build 391 changed editable context cues to `[selection]` and
+`[screenshot]`, retaining an explicit Markdown hard break after every cue.
+Ethan rejected both the square brackets and forced line breaks in the compact
+message preview.
+
+**Use instead:** Keep opening-only angular markers protected by inline-code
+delimiters, join words and markers with spaces, and preserve the separate footer.
+Natural width-based wrapping is not a forced row. The canonical file remains
+unchanged and retains exact context and timing metadata.
+
+**Reconsider only if:** Ethan explicitly requests square markers or forced rows
+again; the historical newline preference is not authority to restore them.
+
+## 2026-09-30 — Testing compact prompts only with a generic Codex.app recipient — REJECTED
+
+**Failure:** The generic recipient fixture still passed after the installed
+ChatGPT.app local-Codex host updated to 26.928.20755/build 12246. A stale
+presentation allowlist bypassed the complete compact preview, losing its opening
+and footer links while delivering full styled XML. Archives themselves remained
+nonempty and intact.
+
+**Verified recurrence — 2026-10-01:** The official ChatGPT.app local-Codex host
+updated again to 26.928.31416/build 12553. Installed Agent Flow build 398 still
+recognizes only 11645 and 12246 for automatic compact presentation. Its separate
+clipboard-only branch builds the compact linked prompt without that recipient
+gate, explaining different formats from one binary depending on the completion
+gesture. One current Agent Flow process, its expected signed executable, and
+576 nonempty canonical prompt files were verified; this recurrence is not
+evidence of an app downgrade or missing archive data. No compatibility fix was
+implemented by the diagnostic sweep. Do not describe another hard-coded tuple
+addition as a durable fix for host updates.
+
+**Use instead:** Identify both known local-Codex desktop host names under
+`com.openai.codex` without pinning the presentation to release versions. Exercise
+the production pipeline with the actual installed host and an unknown future
+version. Require both links, every authored word across inline context markers,
+no XML attributes in the preview, and parity with Won't paste after normalizing
+only the immutable file paths. Keep foreign/cloud-only app identities rejected,
+raw output unchanged and exact-input mutation tuple gates separate.
+
+**Reconsider only if:** A host actually loses local-file prompt support or the
+user requests version-specific presentation. A renamed release string alone
+must not change the generic Primary paste payload; bundle-ID-only fixtures still
+cannot substitute for a production unified-host pipeline test.
+
+## 2026-09-29 — Finishing immediately on paused Primary click two — REJECTED
+
+- The paused-state double-click called clipboard-only finalization immediately.
+  A following third click therefore could not resume the existing capture.
+- Use instead: click two shows provisional Won't paste, then waits through the
+  full macOS multi-click continuation for click three to resume. If no third
+  click arrives, finalize clipboard-only once; a late click cannot undo it.
+- Reconsider only if Ethan explicitly replaces paused triple-click Resume and
+  accepts that the second press irreversibly ends the current recording.
+
+## 2026-09-29 — Refocus on the active four-modifier typing chord — REJECTED
+
+- The chord's active-session branch consumed the first press to restore the
+  floating editor when it lacked focus, requiring another press to finish.
+  Ethan explicitly disliked and reversed that behavior.
+- Use instead: make both Command plus both Option finish the active session
+  regardless of floating-editor focus. Preserve separate initial typing focus,
+  context-capture focus return, and Shift plus chord for Won't paste.
+- Reconsider only if Ethan explicitly asks to restore refocus-on-shortcut.
+
+## 2026-09-29 — Embedding Full source after the rendered prompt — REJECTED
+
+- The offline HTML viewer already renders each prompt event and points to its
+  adjacent canonical Markdown through early `agent-flow-source` metadata and
+  a Source link. Its collapsed Full source disclosure duplicated the complete
+  prompt in the HTML bytes; collapsing hid text from people, not from a tool
+  reading the file.
+- Use instead: keep the human timeline and exact Markdown pointer, but store the
+  full XML only in the canonical `.md`. Agents read that file once, never the
+  whole rendered HTML or embedded image data.
+- Reconsider only if a future offline viewer must remain complete after its
+  separate canonical prompt has been deliberately removed, with an explicit
+  user decision to trade storage and agent-reading cost for self-containment.
+
+## 2026-09-29 — Gating Won't paste formatting on the current foreground app — REJECTED
+
+- Build 381 prepared a compact prompt only when Codex was frontmost at clipboard
+  completion. The HUD/source app can be focused then, while the actual manual
+  paste happens later; the guard caused plain output with no prompt link. Mini
+  production-pipeline tests reproduced it across five other app identities for
+  typed-only and mixed input.
+- Use instead: prepare the paste-mode clipboard prompt without a recipient lookup;
+  retain raw/skip, archive-failure recovery and the normal-delivery filter.
+- Reconsider only if Ethan explicitly requests destination-aware manual clipboard
+  formatting and supplies a way to select that destination. Never infer the future
+  recipient or add an unsolicited clipboard watcher.
+
+## 2026-09-28 — Angle-wrapped prompt-file destinations — REJECTED
+
+**Mechanism:** Emit `[label](<absolute path with spaces>)` and accept the Markdown
+lexer's clean href as proof that the native file button resolves correctly.
+**Failure:** The audited host's native scanner reparses raw Markdown, preserves
+the angle brackets, and resolves the target relative to the current workspace.
+The editor opens an empty untitled buffer while the actual archive remains intact.
+VS Code's saved buffer URI and logs reproduce the reported build-374 failure.
+**Replacement:** Percent-encoded absolute paths without angle delimiters; validate
+the real native target and exact file contents as well as Markdown rendering.
+**Reconsider only if:** A later host's native scanner demonstrably strips delimiters
+and both generated links resolve to the existing canonical file end to end.
+
+## 2026-09-28 — One-turn context refocus — REJECTED
+
+**Mechanism:** Dispatch once to the main queue, abandon if a mouse button is held,
+the preferred editor is unavailable or the window cannot take keyboard ownership.
+**Failure:** A captured selection/screenshot can reach the controller during those
+transitions. Source also let an initial capture replace pending explicit startup
+focus with a nil preferred editor. No later callback repaired the discarded request.
+**Replacement:** One coalesced, cancellable two-second retry tied to the active
+session, verifying actual key-window/first-responder state and never dragging focus
+during a held mouse gesture. No idle polling or recorder startup is introduced.
+**Reconsider only if:** An event-based AppKit ownership callback is proven to cover
+mouse release, delayed editor mounting and screenshot UI teardown without lost events.
+
+## 2026-09-28 — Automatic full-attachment plus opening — SUPERSEDED
+
+**Mechanism:** Paste a full long payload, require a new ready AX attachment card,
+paste the short opening, then verify the editor before optional Return.
+**Evidence:** Build 372 sometimes produced a ready card but timed out with
+`openingUnconfirmed`; other normal-use attempts still refused the initial editor
+capture. The user reported one successful-looking attempt and then explicitly
+confirmed the split remained unreliable. Automated receipt fixtures did not prove
+the live editor/card boundary. Never reinterpret that partial success as acceptance.
+**Replacement:** One bounded compact preview with an explicit link to a durable
+full-prompt file; no AX attachment inventory, second paste or retry.
+**Reconsider only if:** The user explicitly requests actual attachment delivery
+again and a permitted, representative host fixture proves both parts end to end,
+including side chats, existing cards, focus changes and late user input.
+
+## 2026-09-28 — One AX ancestor per pasted-text card — REJECTED
+
+**Mechanism:** Ascend from each removal button until one parent contains exactly
+one removal button and a ready/pending label.
+**Failure:** A flattened shared attachment row can contain several removal buttons;
+the scanner rejects the entire inventory rather than recognizing two ready cards.
+The live build-371 failure independently reached `attachmentUnconfirmed`; its
+transient logs do not establish that this tree shape was the exact live cause.
+**Correction:** Count semantic controls in the already bounded single-editor
+composer and require one ready receipt per card, no pending cards, exactly one
+new card and all original identities retained. Never infer readiness from a timer.
+**Reconsider only if:** The audited host exposes stable per-card AX containers and
+an actual host fixture proves their identity with multiple existing attachments.
+
 ## 2026-09-27 — Reconstructed global-monitor CGEvent PID as source — REJECTED
 
 **Mechanism:** Prefer `event.cgEvent.eventTargetUnixProcessID` over the foreground app.

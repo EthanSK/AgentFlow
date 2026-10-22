@@ -12,6 +12,7 @@ struct MenuBarView: View {
     @EnvironmentObject var enhancementService: AIEnhancementService
     @EnvironmentObject var aiService: AIService
     @ObservedObject private var modeManager = ModeManager.shared
+    @ObservedObject private var speechPlayback = CodexSpeechPlaybackReceiver.shared
     @ObservedObject var audioDeviceManager = AudioDeviceManager.shared
     @AppStorage("hasCompletedOnboardingV2") private var hasCompletedOnboardingV2 = false
     // Do not read `LaunchAtLogin.isEnabled` from a stored-property initializer. SwiftUI creates
@@ -28,6 +29,10 @@ struct MenuBarView: View {
                 completedOnboardingMenu
             } else {
                 onboardingMenu
+            }
+
+            Menu("App Zoom") {
+                MainWindowZoomMenu()
             }
         }
     }
@@ -51,6 +56,16 @@ struct MenuBarView: View {
             Button("Toggle Recorder") {
                 recorderUIManager.handleToggleRecorderPanelNotification()
             }
+
+            Button(speechPlayback.announcementOverrideArmed
+                   ? "Cancel Announcement Override" : "Allow Next Announcement Once") {
+                if speechPlayback.announcementOverrideArmed {
+                    speechPlayback.cancelAnnouncementOverride()
+                } else {
+                    speechPlayback.allowNextAnnouncementOnce()
+                }
+            }
+            .help("Allow one announcement during recording. Expires in 30 seconds. Speech may appear in your transcript.")
 
             Divider()
 

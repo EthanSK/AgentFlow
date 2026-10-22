@@ -1,10 +1,50 @@
 import AppKit
 import SwiftUI
 
-/// Read-only presentation for the small LaTeX vocabulary Agent Flow emits. History
-/// is not a TeX interpreter: arbitrary commands, HTML and selected source stay inert.
-/// Stored output and Copy remain byte-for-byte unchanged; no migration or API call.
+/// Lossless decoding for Agent Flow's retired presentation vocabulary. History
+/// now uses the same neutral text appearance as the current Codex paste; recognizing
+/// an old colour wrapper must not revive its rainbow or metadata colours.
+/// Arbitrary commands stay inert and stored source remains unchanged.
 enum HistoryContextPresentation {
+    /// One read-only projection owns each History message and its copy actions.
+    /// Never hide a retained timeline in a second exit-draft message, or mutate
+    /// the provider result / recovery snapshot just to arrange the History UI.
+    struct Message {
+        let text: String
+        let rawText: String
+        let hasFlowMarkers: Bool
+    }
+
+    static func hasFlowMarkers(_ source: String) -> Bool {
+        guard source.contains("<") else { return false }
+        return AgentFlowPromptViewer.events(source).contains {
+            ["speech", "speech_segment", "typed_text", "potential_tts",
+             "app_selection", "codex_selection", "app_selection_image", "local_screenshot"].contains($0.tag)
+        }
+    }
+
+    static func message(for transcription: Transcription, enhanced: Bool = false) -> Message {
+        let original = transcription.historyDisplayText
+        let selected = enhanced ? transcription.enhancedText ?? original : original
+        let readable = document(selected).plainText
+        let source: String
+        if hasFlowMarkers(readable) {
+            source = readable
+        } else if !enhanced, let draft = transcription.recoverableRealtimeDraftText,
+                  hasFlowMarkers(document(draft).plainText) {
+            source = document(draft).plainText
+        } else if !enhanced, let recovered = recoveredCodexText(for: transcription) {
+            source = document(recovered).plainText
+        } else {
+            source = readable
+        }
+        // Final authored words remain available independently of a possibly
+        // earlier live snapshot. Do not invent timing or replace corrections
+        // in the provider result with guesses from the retained timeline.
+        return Message(text: source, rawText: copyText(selected, format: .plain),
+                       hasFlowMarkers: hasFlowMarkers(source))
+    }
+
     struct Run: Equatable {
         var text: String
         var colorHex: String?
@@ -26,6 +66,26 @@ enum HistoryContextPresentation {
     ]
 
     static func document(_ source: String) -> Document {
+        // New recovery journals preserve canonical metadata rather than only
+        // raw HUD words. Colour the known overlap fragment without interpreting
+        // arbitrary markup or altering any stored source byte.
+        if !source.contains(prefix), source.contains("<potential_tts "),
+           let expression = try? NSRegularExpression(pattern: #"(?ms)^[\t ]*<potential_tts\b[^>]*>.*?</potential_tts>"#) {
+            let ns = source as NSString
+            let matches = expression.matches(in: source, range: NSRange(location: 0, length: ns.length))
+            if !matches.isEmpty {
+                var spans: [Run] = [], end = 0
+                for match in matches {
+                    if match.range.location > end {
+                        spans.append(Run(text: ns.substring(with: NSRange(location: end, length: match.range.location - end))))
+                    }
+                    spans.append(Run(text: ns.substring(with: match.range), colorHex: LiveSelectionStyledMath.potentialTTSColor))
+                    end = NSMaxRange(match.range)
+                }
+                if end < ns.length { spans.append(Run(text: ns.substring(from: end))) }
+                return Document(runs: spans, hasFormatting: true)
+            }
+        }
         var runs: [Run] = []
         var cursor = source.startIndex
         var search = cursor
@@ -95,22 +155,106 @@ enum HistoryContextPresentation {
         return readable.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    static func attributed(_ document: Document, fontSize: CGFloat, foreground: Color) -> AttributedString {
-        let result = NSMutableAttributedString(string: "")
-        for run in document.runs {
-            let regular = NSFont.systemFont(ofSize: fontSize)
-            let font = run.italic ? NSFontManager.shared.convert(regular, toHaveTrait: .italicFontMask) : regular
-            let color = run.colorHex.flatMap(nsColor) ?? NSColor(foreground)
-            result.append(NSAttributedString(string: run.text, attributes: [.font: font, .foregroundColor: color]))
+    enum CopyFormat { case plain, formatted }
+
+    static func copyText(_ source: String, format: CopyFormat) -> String {
+        let readable = document(source).plainText
+        switch format {
+        case .plain:
+            // Normal Copy means the user's words, not captured source material
+            // or our XML/timing scaffolding. Parse only known timeline events;
+            // malformed/unrecognised source stays literal rather than vanishing.
+            // Legacy producers sometimes joined two sections without a newline
+            // and wrapped the timeline after an opening preview. Normalize only
+            // these known structural boundaries for extraction, not stored/XML
+            // copy bytes or escaped tags inside selected/typed payloads.
+            let timeline = readable
+                .replacingOccurrences(of: "<agent_flow_context preview=\"authored_text_above\">", with: "")
+                .replacingOccurrences(of: "</agent_flow_context>", with: "")
+                .replacingOccurrences(of: #"(</(?:speech|speech_segment|typed_text|potential_tts)>)(?=<(?:speech|speech_segment|typed_text|potential_tts)\b)"#,
+                                      with: "$1\n", options: .regularExpression)
+            let events = AgentFlowPromptViewer.events(timeline)
+            let authoredTags: Set<String> = ["speech", "speech_segment", "typed_text", "potential_tts"]
+            guard events.contains(where: { authoredTags.contains($0.tag)
+                || ["app_selection", "codex_selection", "app_selection_image", "local_screenshot"].contains($0.tag) }) else { return readable }
+            let authored = events.filter { authoredTags.contains($0.tag) }
+                .map { unframed($0.text) }
+            let normalizedAuthored = authored.joined(separator: " ").split(whereSeparator: \.isWhitespace).joined(separator: " ")
+            return events.compactMap { event -> String? in
+                if authoredTags.contains(event.tag) { return unframed(event.text) }
+                guard event.tag == "opening" || event.tag == "text" else { return nil }
+                // Older records repeat the same words before their timeline.
+                if event.tag == "opening", !normalizedAuthored.isEmpty,
+                   event.text.split(whereSeparator: \.isWhitespace).joined(separator: " ") == normalizedAuthored { return nil }
+                return event.text.trimmingCharacters(in: .newlines)
+            }.filter { !$0.isEmpty }.joined(separator: "\n\n")
+        case .formatted:
+            // Match the complete readable History, including XML/context, not
+            // the retired producer-LaTeX hidden by its renderer. Never truncate
+            // this copy or rewrite the saved record. Recipient-specific colour
+            // belongs only to the actual inline Codex paste, not the clipboard.
+            return readable
         }
-        return AttributedString(result)
     }
 
-    private static func nsColor(_ hex: String) -> NSColor? {
-        guard let rgb = UInt32(hex.dropFirst(), radix: 16) else { return nil }
-        return NSColor(srgbRed: CGFloat((rgb >> 16) & 255) / 255,
-                       green: CGFloat((rgb >> 8) & 255) / 255,
-                       blue: CGFloat(rgb & 255) / 255, alpha: 1)
+    private static func unframed(_ text: String) -> String {
+        var text = text
+        if text.hasPrefix("\n\n") { text.removeFirst(2) }
+        else if text.hasPrefix("\n") { text.removeFirst() }
+        if text.hasSuffix("\n\n") { text.removeLast(2) }
+        else if text.hasSuffix("\n") { text.removeLast() }
+        return text
+    }
+
+    static func recoveredCodexText(for transcription: Transcription) -> String? {
+        guard transcription.transcriptionStatus == TranscriptionStatus.recoveredAfterInterruption.rawValue,
+              let draft = transcription.recoverableRealtimeDraftText else { return nil }
+        // New journals retain a canonical timeline, including overlap and typed
+        // words. Do not escape that complete source inside a second speech tag.
+        // Old raw-only journals still need the unavailable-time wrapper; neither
+        // path invents provider-final words, events or precise audio timestamps.
+        let events = AgentFlowPromptViewer.events(draft)
+        if events.contains(where: { ["speech", "potential_tts", "typed_text"].contains($0.tag)
+            && ($0.attributes["start_at"] != nil || $0.attributes["timing"] == "unavailable") }) {
+            return draft
+        }
+        return LiveSelectionReference.interleaving([], with: draft, includeTiming: true)
+    }
+
+    static func attributed(_ document: Document, fontSize: CGFloat, foreground: Color) -> AttributedString {
+        // Old History retains its exact producer markup for recovery. Decode
+        // those wrappers for reading, but never apply their retired colours or
+        // italics to the native UI. A single neutral attributed run also avoids
+        // rebuilding a separate native font/colour span for every rainbow word.
+        AttributedString(NSAttributedString(string: document.plainText, attributes: [
+            .font: NSFont.systemFont(ofSize: fontSize),
+            .foregroundColor: NSColor(foreground),
+        ]))
+    }
+}
+
+/// Both choices stay outside disclosure/scrolling content. Formatting runs only
+/// on click, not on every History render; neither choice rewrites the saved row.
+struct HistoryCopyButtons: View {
+    let text: String
+    var identifier: String = "history-copy"
+    var showsFormattingTitle: Bool = true
+    var rawText: String? = nil
+
+    var body: some View {
+        HStack(spacing: 6) {
+            CopyIconButton(textToCopy: rawText ?? text, textTransform: {
+                rawText == nil ? HistoryContextPresentation.copyText($0, format: .plain) : $0
+            })
+            .accessibilityIdentifier(identifier)
+            CopyIconButton(textToCopy: text, systemImage: "doc.on.doc",
+                           title: showsFormattingTitle ? "Copy with flow markers" : nil,
+                           accessibilityTitle: "Copy with flow markers", textTransform: {
+                HistoryContextPresentation.copyText($0, format: .formatted)
+            })
+            .accessibilityIdentifier(identifier + "-formatted")
+        }
+        .fixedSize()
     }
 }
 
@@ -124,12 +268,79 @@ struct HistoryMessageContentView: View {
 
     var body: some View {
         let document = HistoryContextPresentation.document(text)
-        if document.hasFormatting {
+        if document.hasFormatting || HistoryContextPresentation.hasFlowMarkers(document.plainText) {
             Text(HistoryContextPresentation.attributed(document, fontSize: fontSize, foreground: foregroundColor))
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: alignment)
         } else {
             MarkdownContentView(text, fontSize: fontSize, foregroundColor: foregroundColor, alignment: alignment)
+        }
+    }
+}
+
+/// Authored words are the only alternate representation inside expanded History.
+struct HistoryRawTextView: View {
+    let text: String
+    var identifier: String = "history-raw-copy"
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Raw text")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
+                Spacer()
+                CopyIconButton(textToCopy: text)
+                    .accessibilityIdentifier(identifier)
+            }
+            Text(text)
+                .font(.system(size: 13))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+/// The recovered draft is already shown as speech in History. This separate
+/// copy surface formats that same saved draft for Codex without changing it,
+/// sending it, or claiming to restore context that the crash journal never held.
+struct HistoryRecoveredCodexView: View {
+    let text: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HistoryDraftHeader(title: "Codex", text: text,
+                               copyIdentifier: "history-recovered-codex-copy")
+            ScrollView {
+                Text(text)
+                    .font(.system(size: 13, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(10)
+            }
+            .frame(maxHeight: 220)
+            .background(
+                RoundedRectangle(cornerRadius: AppTheme.Radius.card, style: .continuous)
+                    .fill(AppTheme.Surface.subtle)
+            )
+        }
+    }
+}
+
+/// The XML Copy action belongs beside the heading, never underneath a long
+/// scrolling draft. Both exit drafts and the recovered Codex surface use it.
+struct HistoryDraftHeader: View {
+    let title: LocalizedStringKey
+    let text: String
+    let copyIdentifier: String
+
+    var body: some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.secondary)
+            Spacer()
+            HistoryCopyButtons(text: text, identifier: copyIdentifier)
         }
     }
 }

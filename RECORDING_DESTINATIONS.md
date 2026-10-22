@@ -1,5 +1,18 @@
 # Recording destination controls (VoiceInk++)
 
+## Current override — original-input capture is unused/off
+
+At Ethan's request on 2026-10-17, candidate build 436 disables the unused
+recording-start destination feature. Partial modifiers, the Start reservation and
+the post-audio retry perform no original-input capture. Normal Primary finish
+continues to paste into whichever input owns keyboard focus at delivery.
+Recording-time Next is consumed without stopping or choosing a missing target;
+the explicit post-stop second-chance Next route is unchanged. The legacy
+recording-start machinery below is retained as inactive reference, not current
+startup work. `FocusLockService.recordingStartInputCaptureEnabled` is hard-off;
+the historical `VIPPExactInputDeliveryEnabled` preference does not re-enable it.
+This candidate is not installed until the Mini test/build/install gate completes.
+
 VoiceInk++ keeps normal dictation as simple as base VoiceInk while the Next button adds optional
 exact-input latching. A Primary stop follows whichever keyboard input is current when delivery
 happens. Next can instead preserve the recording-start input or select a second-chance input while
@@ -13,6 +26,14 @@ session generations reject duplicate/orphan releases and events from a closed re
 This transport adds no destination route and does not alter the independent keyboard shortcut.
 
 ## Real-time transcription stays in the recorder
+
+After the normal both-Command/both-Option keyboard finish, a standalone Shift
+tap may choose Won't paste for that exact stopped result while transcription is
+still pending and completion policy has not frozen. Capture the stopped session
+ID before asynchronous finalization, accept either Shift key only on release,
+and reject capital-letter/modifier-chord use, newer active captures, stale results
+and alternate/reset boundaries. This reuses the existing formatted clipboard and
+History route; it adds no destination and never undoes a completed delivery.
 
 When a provider such as Soniox streams partial words during recording, VoiceInk++ displays those
 partials only in the black recorder bar. It never writes, migrates, or removes provisional text in
@@ -68,8 +89,10 @@ VoiceInk++ stops AUHAL itself while leaving the same WAV and realtime provider s
 paused audio is written or streamed. Media playback and the paired YouTube helper are left
 untouched; Ethan controls playback himself while paused. Press Primary once to restart capture into
 that same session after the short second-press decision window without changing playback. Press it
-twice inside that window to finish immediately through the same recoverable clipboard-only “Won’t
-paste” route used by a recording-time double-click. VoiceInk++ may unmute system output while
+twice inside that window to show the same recoverable clipboard-only “Won’t paste” choice used by
+a recording-time double-click. If no third press arrives through the full macOS multi-click
+interval, finish to the clipboard; a timely third press clears that choice and resumes the same
+capture. VoiceInk++ may unmute system output while
 capture is paused and restore its optional output mute when capture resumes, but only recording
 start and final stop/cancel send the normal media/YouTube-helper pause and resume lifecycle.
 
@@ -79,7 +102,7 @@ continuous recording-time gesture finalizes the paused session through ordinary 
 session's auto-send key to `.none`. Normal formatting/enhancement and paste remain intact; the
 override does not become a new destination, exact-input route, raw/skip mode, or global setting. A
 fifth press inside the already consumed gesture is ignored. Once the continuation expires, the
-triple remains Pause and a later press starts the normal paused-state single/double classifier.
+triple remains Pause and a later press starts the normal paused-state single/double/triple classifier.
 
 A single Primary press while recording retains normal base-VoiceInk stop behavior after the short
 double-click decision window expires. The delay is necessary because the first press
@@ -179,7 +202,8 @@ tests repeatedly failed on the real destination apps.
 | Primary/thumb/toggle button twice while recording | After the third-press interval expires, finish the same session to the clipboard only, with no paste/Return, then resume only playback VoiceInk++ paused for that recording |
 | Primary/thumb/toggle button three times in one genuine gesture | Pause capture without changing media playback, finalizing, or choosing a delivery route |
 | Primary/thumb/toggle button once while paused | Resume capture after the short second-press decision window without changing media playback |
-| Primary/thumb/toggle button twice while paused | Immediately finish the same session to clipboard/history only, with no paste/Return, through the existing “Won’t paste” route |
+| Primary/thumb/toggle button twice while paused | Show “Won’t paste”; if no third press arrives through the full continuation, finish to clipboard/history only with no paste/Return |
+| Primary/thumb/toggle button three times while paused | Clear “Won’t paste” and resume the same capture without finalizing or pasting |
 | **Next button** while recording or paused | The exact text input focused when you started recording, or that application when macOS hides the editor element |
 | **Next button** while the newest transcription is still loading | Second chance after a normal stop: replace that pending session's destination and auto-send behavior with the text input/app focused now |
 | **Next button** while the recorder bar is visible but no route is still eligible | VoiceInk++ consumes the press without changing the saved destination; it never advances media |
@@ -285,8 +309,9 @@ single fully idle press begins recording immediately after reservation, with no 
 window. A still-transcribing result keeps its short new-recording versus Won't paste decision. A normal single stop
 still resolves after the separate at-most-0.45-second multi-click decision window; a recording-time
 double press finishes to clipboard if no third press arrives, and a triple press pauses. While
-paused, one press resumes after the short decision window and two presses finish immediately to the
-same clipboard-only result. None chooses an exact delivery destination. Assign the
+paused, one press resumes after the short decision window, two finish to the clipboard if no third
+arrives through the full continuation, and a timely third resumes the same capture. None chooses an
+exact delivery destination. Assign the
 alternative **Next button** to **Next Track**. VoiceInk++ intercepts that button for the entire time
 any recorder/transcription bar is visible; eligible recording and transcription states perform
 their normal destination action, while an ineligible visible-bar press is consumed as a safe no-op.
@@ -317,6 +342,13 @@ press. An eligible state performs the recording-start or second-chance action; a
 consumes the press as a no-op. Only after the bar is hidden does the callback return an otherwise
 unowned event unchanged so macOS can route it to the normal media destination. The behavior is
 global and is not Spotify-specific.
+
+Agentic Mouse's separate **Tracks + Wheel** control is an intentional media command,
+not that physical recorder Next button. Its synthetic Next events are identified by
+the original event-tap CGEvent's creator PID resolving to `com.ethan.agentic-mouse`;
+both halves pass to media without changing recorder press ownership. Hardware,
+missing/unresolved creator identity and every other emitter retain the visible-bar
+rule above. This is not an eligibility-based fallback or another recording route.
 
 ## Accessibility and safe failure behavior
 

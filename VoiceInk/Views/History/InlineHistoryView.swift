@@ -447,23 +447,23 @@ struct InlineHistoryView: View {
 
 // MARK: - History Card Row
 
-private struct HistoryCardRow: View {
+struct HistoryCardRow: View {
     let transcription: Transcription
     let isExpanded: Bool
     let isChecked: Bool
     let onToggleExpand: () -> Void
     let onToggleCheck: () -> Void
     let onShowInfo: () -> Void
+    var onRetry: (() -> Void)? = nil
 
     @State private var selectedTab: TranscriptionTab = .original
 
     private var displayText: String {
-        switch selectedTab {
-        case .original:
-            return transcription.historyDisplayText
-        case .enhanced:
-            return transcription.enhancedText ?? ""
-        }
+        message.text
+    }
+
+    private var message: HistoryContextPresentation.Message {
+        HistoryContextPresentation.message(for: transcription, enhanced: selectedTab == .enhanced)
     }
 
     private var hasAudioFile: Bool {
@@ -477,46 +477,81 @@ private struct HistoryCardRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-                Toggle("", isOn: Binding(
-                    get: { isChecked },
-                    set: { _ in onToggleCheck() }
-                ))
-                .toggleStyle(CircularCheckboxStyle())
-                .labelsHidden()
+            header
 
-                VStack(alignment: .leading, spacing: 4) {
+            if isExpanded {
+                expandedContent
+                    .padding(.top, 10)
+            } else if message.hasFlowMarkers {
+                // Flow is the message, not hidden disclosure content. Expanding
+                // this row reveals the authored-only alternative and audio.
+                messageContent
+                    .padding(.top, 10)
+            } else {
+                // Actions own only the header. A separate full-width preview
+                // must not lose a column to Copy, Retry or the checkbox.
+                Button(action: onToggleExpand) {
+                    Text(HistoryContextPresentation.listPreview(displayText))
+                        .font(.system(size: 13))
+                        .lineLimit(2)
+                        .foregroundColor(.primary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("history-preview-\(transcription.id)")
+                .padding(.top, 4)
+            }
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Toggle("", isOn: Binding(
+                get: { isChecked },
+                set: { _ in onToggleCheck() }
+            ))
+            .toggleStyle(CircularCheckboxStyle())
+            .labelsHidden()
+
+            Button(action: onToggleExpand) {
+                HStack {
                     Text(transcription.timestamp, format: .dateTime.month(.abbreviated).day().hour().minute())
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.secondary)
-
-                    if !isExpanded {
-                        Text(HistoryContextPresentation.listPreview(transcription.enhancedText ?? transcription.historyDisplayText))
-                            .font(.system(size: 13))
-                            .lineLimit(2)
-                            .foregroundColor(.primary)
-                    }
+                        .lineLimit(1)
+                    Spacer()
                 }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
 
-                Spacer()
+            // Copy stays available while collapsed and uses the same complete
+            // selected-tab payload as the expanded entry, never listPreview.
+            // Separate buttons keep Copy/checkbox clicks from expanding it.
+            HistoryAudioRetryButton(transcription: transcription, actionOverride: onRetry)
+            HistoryCopyButtons(text: displayText, identifier: "history-copy-\(transcription.id)", rawText: message.rawText)
 
+            Button(action: onToggleExpand) {
                 Image(systemName: "chevron.right")
                     .font(.caption2.weight(.semibold))
                     .foregroundColor(.secondary)
                     .rotationEffect(.degrees(isExpanded ? 90 : 0))
                     .animation(.easeInOut(duration: 0.2), value: isExpanded)
             }
-            .contentShape(Rectangle())
-            .onTapGesture { onToggleExpand() }
-
-            if isExpanded {
-                expandedContent
-                    .padding(.top, 10)
-            }
+            .buttonStyle(.plain)
         }
     }
 
     // MARK: - Expanded Content
+
+    private var messageContent: some View {
+        ScrollView {
+            HistoryMessageContentView(text: displayText, fontSize: 14,
+                foregroundColor: AppTheme.Text.primary)
+        }
+        .frame(maxHeight: 350)
+    }
 
     private var expandedContent: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -545,40 +580,11 @@ private struct HistoryCardRow: View {
                 }
             }
 
-            ScrollView {
-                HistoryMessageContentView(
-                    text: displayText,
-                    fontSize: 14,
-                    foregroundColor: AppTheme.Text.primary
-                )
-            }
-            .frame(maxHeight: 350)
-            .overlay(alignment: .bottomTrailing) {
-                CopyIconButton(textToCopy: displayText)
-                    .padding(8)
-            }
+            messageContent
 
-            if let draft = transcription.recoverableRealtimeDraftText,
-               draft != transcription.historyDisplayText
-                .trimmingCharacters(in: .whitespacesAndNewlines) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Live draft at exit")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.secondary)
-                    Text(draft)
-                        .font(.system(size: 13))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(10)
-                        .background(
-                            RoundedRectangle(cornerRadius: AppTheme.Radius.card, style: .continuous)
-                                .fill(AppTheme.Surface.subtle)
-                        )
-                        .overlay(alignment: .bottomTrailing) {
-                            CopyIconButton(textToCopy: draft)
-                                .padding(8)
-                        }
-                }
+            if message.hasFlowMarkers {
+                HistoryRawTextView(text: message.rawText,
+                    identifier: "history-raw-copy-\(transcription.id)")
             }
 
             if hasAudioFile, let urlString = transcription.audioFileURL,

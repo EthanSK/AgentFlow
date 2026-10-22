@@ -46,6 +46,10 @@ struct VoiceInkApp: App {
         // explanation of the idle-miss bug. Must run first, before any heavy init work.
         _ = AppNapGuard.shared
 
+        // App-lifetime gate also covers capture started during an already-speaking reminder.
+        // It never changes manual Pause, session ownership, system mic volume or YouTube state.
+        _ = CodexSpeechPlaybackReceiver.shared
+
         AppDefaults.registerDefaults()
         OnboardingV2Migration.prepareIfNeeded()
 
@@ -130,6 +134,10 @@ struct VoiceInkApp: App {
             transcriptionModelManager: transcriptionModelManager,
             enhancementService: enhancementService
         )
+
+        CodexSpeechPlaybackReceiver.shared.configure { [weak engine] in
+            engine.map { $0.blocksSpokenReminders }
+        }
 
         // 5. Configure circular deps
         recorderUIManager.configure(engine: engine, recorder: engine.recorder)
@@ -364,12 +372,19 @@ struct VoiceInkApp: App {
                         })
                 }
             }
+            .modifier(MainWindowZoom())
         }
         .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 950, height: 730)
+        .defaultSize(width: MainWindowLayout.minimumSize.width,
+                     height: MainWindowLayout.minimumSize.height)
         .windowResizability(.contentSize)
         .commands {
             CommandGroup(replacing: .newItem) { }
+
+            CommandGroup(after: .toolbar) {
+                Divider()
+                MainWindowZoomMenu(keyboardShortcuts: true)
+            }
 
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesView(updaterViewModel: updaterViewModel)
@@ -430,64 +445,102 @@ struct VoiceInkApp: App {
     }
 }
 
-struct VoiceInkUpstreamRelease: Decodable, Equatable {
+struct AgentFlowRelease: Decodable, Equatable {
     let tagName: String
     let name: String?
     let htmlURL: URL
+    let draft: Bool
+    let prerelease: Bool
 
     enum CodingKeys: String, CodingKey {
         case tagName = "tag_name"
         case name
         case htmlURL = "html_url"
+        case draft, prerelease
     }
 }
 
-enum VoiceInkUpdatePolicy {
+enum AgentFlowUpdatePolicy {
     static let automaticCheckInterval: TimeInterval = 24 * 60 * 60
+    static let latestReleaseURL = URL(
+        string: "https://api.github.com/repos/EthanSK/AgentFlow/releases/latest"
+    )!
+
+    // Public tags combine the marketing version and independent app build (v2.0.398).
+    // Comparing only 2.0 would offer an older public build to a newer local install.
+    static func installedReleaseTag(version: String?, build: String?) -> String? {
+        guard let version, let build, !build.isEmpty,
+              build.allSatisfy({ $0.isASCII && $0.isNumber }),
+              versionComponents(version) != nil else { return nil }
+        let tag = "v\(version).\(build)"
+        return versionComponents(tag) == nil ? nil : tag
+    }
+
+    static func isOwnReleaseURL(_ url: URL, tag: String) -> Bool {
+        guard versionComponents(tag) != nil,
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+        else { return false }
+        return components.scheme == "https"
+            && components.host == "github.com"
+            && components.port == nil && components.user == nil && components.password == nil
+            && components.query == nil && components.fragment == nil
+            && components.path == "/EthanSK/AgentFlow/releases/tag/\(tag)"
+    }
+
+    static func isPublishedOwnRelease(_ release: AgentFlowRelease) -> Bool {
+        !release.draft && !release.prerelease
+            && isOwnReleaseURL(release.htmlURL, tag: release.tagName)
+    }
 
     static func isAutomaticCheckDue(lastCheck: Date?, now: Date) -> Bool {
         guard let lastCheck else { return true }
         return now.timeIntervalSince(lastCheck) >= automaticCheckInterval
     }
 
-    static func isNewerRelease(_ releaseTag: String, than integratedUpstreamTag: String) -> Bool {
-        normalizedVersion(releaseTag).compare(
-            normalizedVersion(integratedUpstreamTag),
-            options: .numeric
-        ) == .orderedDescending
+    static func isNewerRelease(_ releaseTag: String, than installedTag: String) -> Bool {
+        guard let release = versionComponents(releaseTag),
+              let installed = versionComponents(installedTag) else { return false }
+        for index in 0..<max(release.count, installed.count) {
+            let candidate = index < release.count ? release[index] : 0
+            let current = index < installed.count ? installed[index] : 0
+            if candidate != current { return candidate > current }
+        }
+        return false
     }
 
     static func shouldNotify(
         releaseTag: String,
-        integratedUpstreamTag: String,
+        installedTag: String,
         lastNotifiedTag: String?,
         checksEnabled: Bool
     ) -> Bool {
         checksEnabled
             && releaseTag != lastNotifiedTag
-            && isNewerRelease(releaseTag, than: integratedUpstreamTag)
+            && isNewerRelease(releaseTag, than: installedTag)
     }
 
-    private static func normalizedVersion(_ value: String) -> String {
+    private static func versionComponents(_ value: String) -> [Int]? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let first = trimmed.first, first == "v" || first == "V" else {
-            return trimmed
-        }
-        return String(trimmed.dropFirst())
+        let normalized = trimmed.first == "v" || trimmed.first == "V"
+            ? String(trimmed.dropFirst()) : trimmed
+        let parts = normalized.split(separator: ".", omittingEmptySubsequences: false)
+        guard (2...4).contains(parts.count), parts.allSatisfy({
+            !$0.isEmpty && $0.allSatisfy({ $0.isASCII && $0.isNumber }) && Int($0) != nil
+        }) else { return nil }
+        return parts.compactMap { Int($0) }
     }
 }
 
-private final class VoiceInkUpdateNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
-    private static let releaseURLKey = "voiceInkUpstreamReleaseURL"
+final class AgentFlowUpdateNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    private static let releaseURLKey = "agentFlowReleaseURL"
+    private static let releaseTagKey = "agentFlowReleaseTag"
 
-    static func content(for release: VoiceInkUpstreamRelease) -> UNMutableNotificationContent {
+    static func content(for release: AgentFlowRelease) -> UNMutableNotificationContent {
         let content = UNMutableNotificationContent()
-        content.title = "There’s a VoiceInk update"
-        let candidateName = release.name?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let displayName = candidateName.flatMap { $0.isEmpty ? nil : $0 } ?? release.tagName
-        content.body = "\(displayName) is available upstream. Open it to review for Agent Flow."
+        content.title = "There’s an Agent Flow update"
+        content.body = "\(release.tagName) is available. Open the release to download it."
         content.sound = .default
-        content.userInfo = [releaseURLKey: release.htmlURL.absoluteString]
+        content.userInfo = [releaseURLKey: release.htmlURL.absoluteString, releaseTagKey: release.tagName]
         return content
     }
 
@@ -507,7 +560,9 @@ private final class VoiceInkUpdateNotificationDelegate: NSObject, UNUserNotifica
         defer { completionHandler() }
         guard
             let value = response.notification.request.content.userInfo[Self.releaseURLKey] as? String,
-            let url = URL(string: value)
+            let tag = response.notification.request.content.userInfo[Self.releaseTagKey] as? String,
+            let url = URL(string: value),
+            AgentFlowUpdatePolicy.isOwnReleaseURL(url, tag: tag)
         else {
             return
         }
@@ -520,24 +575,22 @@ private final class VoiceInkUpdateNotificationDelegate: NSObject, UNUserNotifica
 @MainActor
 final class UpdaterViewModel: ObservableObject {
     static let automaticChecksKey = "VIPPDailyUpdateChecksEnabled"
-    static let lastAutomaticCheckKey = "VIPPLastDailyUpdateCheck"
-    static let lastNotifiedReleaseKey = "VIPPLastNotifiedUpstreamRelease"
+    static let lastAutomaticCheckKey = "AgentFlowLastDailyUpdateCheck"
+    static let lastNotifiedReleaseKey = "AgentFlowLastNotifiedRelease"
 
-    // VoiceInk++ deliberately reviews and manually ports upstream changes. This is the
-    // newest official VoiceInk release already represented by the fork, not VoiceInk++'s
-    // independent build number. A newer tag produces a notification only—never an
-    // automatic Sparkle install, source merge, or replacement of the running fork.
-    static let integratedUpstreamReleaseTag = "v2.0"
-    static let latestReleaseURL = URL(
-        string: "https://api.github.com/repos/Beingpax/VoiceInk/releases/latest"
-    )!
+    // Only our published Agent Flow releases are update candidates. Keep the existing
+    // enabled/disabled preference, but don't reuse upstream cadence/deduplication state.
+    // This remains notification-only: no unattended replacement of an active recording,
+    // upstream VoiceInk binary installation, or automatic source merge.
+    static let latestReleaseURL = AgentFlowUpdatePolicy.latestReleaseURL
 
     @Published private(set) var canCheckForUpdates = true
     @Published private(set) var automaticallyChecksForUpdates: Bool
 
     private let defaults: UserDefaults
     private let notificationCenter: UNUserNotificationCenter
-    private let notificationDelegate = VoiceInkUpdateNotificationDelegate()
+    private let notificationDelegate = AgentFlowUpdateNotificationDelegate()
+    private let installedReleaseTag: String?
     private let logger = Logger(
         subsystem: "com.ethansk.VoiceInkPlusPlus",
         category: "UpdateCheck"
@@ -547,10 +600,15 @@ final class UpdaterViewModel: ObservableObject {
 
     init(
         defaults: UserDefaults = .standard,
-        notificationCenter: UNUserNotificationCenter = .current()
+        notificationCenter: UNUserNotificationCenter = .current(),
+        bundle: Bundle = .main
     ) {
         self.defaults = defaults
         self.notificationCenter = notificationCenter
+        installedReleaseTag = AgentFlowUpdatePolicy.installedReleaseTag(
+            version: bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+            build: bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        )
         automaticallyChecksForUpdates = defaults.bool(forKey: Self.automaticChecksKey)
         notificationCenter.delegate = notificationDelegate
 
@@ -592,13 +650,13 @@ final class UpdaterViewModel: ObservableObject {
 
         let now = Date()
         let lastCheck = defaults.object(forKey: Self.lastAutomaticCheckKey) as? Date
-        guard !VoiceInkUpdatePolicy.isAutomaticCheckDue(lastCheck: lastCheck, now: now) else {
+        guard !AgentFlowUpdatePolicy.isAutomaticCheckDue(lastCheck: lastCheck, now: now) else {
             performCheck(reason: .automatic)
             return
         }
 
         let nextCheck = lastCheck!.addingTimeInterval(
-            VoiceInkUpdatePolicy.automaticCheckInterval
+            AgentFlowUpdatePolicy.automaticCheckInterval
         )
         let timer = Timer(fire: nextCheck, interval: 0, repeats: false) { [weak self] _ in
             Task { @MainActor [weak self] in
@@ -631,23 +689,25 @@ final class UpdaterViewModel: ObservableObject {
 
             do {
                 let release = try await Self.fetchLatestRelease()
-                let isNewer = VoiceInkUpdatePolicy.isNewerRelease(
+                try Task.checkCancellation()
+                guard let installedReleaseTag else { throw URLError(.cannotParseResponse) }
+                let isNewer = AgentFlowUpdatePolicy.isNewerRelease(
                     release.tagName,
-                    than: Self.integratedUpstreamReleaseTag
+                    than: installedReleaseTag
                 )
 
                 switch reason {
                 case .automatic:
-                    guard VoiceInkUpdatePolicy.shouldNotify(
+                    guard AgentFlowUpdatePolicy.shouldNotify(
                         releaseTag: release.tagName,
-                        integratedUpstreamTag: Self.integratedUpstreamReleaseTag,
+                        installedTag: installedReleaseTag,
                         lastNotifiedTag: defaults.string(
                             forKey: Self.lastNotifiedReleaseKey
                         ),
                         checksEnabled: automaticallyChecksForUpdates
                     ) else {
                         logger.info(
-                            "Daily upstream update check completed updateAvailable=\(isNewer, privacy: .public)"
+                            "Daily Agent Flow update check completed updateAvailable=\(isNewer, privacy: .public)"
                         )
                         return
                     }
@@ -659,18 +719,18 @@ final class UpdaterViewModel: ObservableObject {
                         showInAppUpdateNotification(release)
                     } else {
                         NotificationManager.shared.showNotification(
-                            title: String(localized: "VoiceInk is up to date"),
+                            title: String(localized: "Agent Flow is up to date"),
                             type: .success
                         )
                     }
                 }
             } catch is CancellationError {
-                logger.info("Upstream update check cancelled")
+                logger.info("Agent Flow update check cancelled")
             } catch {
-                logger.error("Upstream update check failed")
+                logger.error("Agent Flow update check failed")
                 if reason == .manual {
                     NotificationManager.shared.showNotification(
-                        title: String(localized: "Couldn’t check for VoiceInk updates"),
+                        title: String(localized: "Couldn’t check for Agent Flow updates"),
                         type: .warning
                     )
                 }
@@ -678,7 +738,7 @@ final class UpdaterViewModel: ObservableObject {
         }
     }
 
-    private static func fetchLatestRelease() async throws -> VoiceInkUpstreamRelease {
+    static func fetchLatestRelease(session: URLSession = .shared) async throws -> AgentFlowRelease {
         var request = URLRequest(
             url: latestReleaseURL,
             cachePolicy: .reloadIgnoringLocalCacheData,
@@ -688,16 +748,20 @@ final class UpdaterViewModel: ObservableObject {
             "application/vnd.github+json",
             forHTTPHeaderField: "Accept"
         )
-        request.setValue("VoiceInkPlusPlus", forHTTPHeaderField: "User-Agent")
+        request.setValue("AgentFlow", forHTTPHeaderField: "User-Agent")
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         guard
             let response = response as? HTTPURLResponse,
             (200..<300).contains(response.statusCode)
         else {
             throw URLError(.badServerResponse)
         }
-        return try JSONDecoder().decode(VoiceInkUpstreamRelease.self, from: data)
+        let release = try JSONDecoder().decode(AgentFlowRelease.self, from: data)
+        guard AgentFlowUpdatePolicy.isPublishedOwnRelease(release) else {
+            throw URLError(.cannotParseResponse)
+        }
+        return release
     }
 
     private func requestNotificationAuthorization() {
@@ -708,13 +772,13 @@ final class UpdaterViewModel: ObservableObject {
         }
     }
 
-    private func notifyAboutUpdate(_ release: VoiceInkUpstreamRelease) async {
+    private func notifyAboutUpdate(_ release: AgentFlowRelease) async {
         let settings = await notificationCenter.notificationSettings()
         switch settings.authorizationStatus {
         case .authorized, .provisional:
             let request = UNNotificationRequest(
-                identifier: "voiceink-upstream-update-\(release.tagName)",
-                content: VoiceInkUpdateNotificationDelegate.content(for: release),
+                identifier: "agentflow-update-\(release.tagName)",
+                content: AgentFlowUpdateNotificationDelegate.content(for: release),
                 trigger: nil
             )
             do {
@@ -730,9 +794,9 @@ final class UpdaterViewModel: ObservableObject {
         }
     }
 
-    private func showInAppUpdateNotification(_ release: VoiceInkUpstreamRelease) {
+    private func showInAppUpdateNotification(_ release: AgentFlowRelease) {
         NotificationManager.shared.showNotification(
-            title: String(localized: "There’s a VoiceInk update"),
+            title: String(localized: "There’s an Agent Flow update"),
             type: .info,
             duration: 12,
             actionButton: (String(localized: "View Release"), {

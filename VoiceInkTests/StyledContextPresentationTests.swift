@@ -4,7 +4,7 @@ import Testing
 
 /// Build 350 used display-only KaTeX paragraphs above the exact context XML.
 /// Build 351 coloured the XML once; build 360 temporarily kept XML plain. The
-/// current format restores fixed section colours with a safe envelope boundary.
+/// current format keeps fixed section colours and omits the outer context envelope.
 /// Only the authored opening is rainbow. Legacy preview tests remain negative/escaping
 /// fixtures. These tests pin the renderer-safety, ordering, budget, Mode, and
 /// route boundaries established from the installed Codex bundle (see the
@@ -340,13 +340,14 @@ struct StyledContextPresentationTests {
         #expect(parts[5] == "three")
     }
 
-    @Test func truncatedSelectionKeepsExplicitXMLMetadata() throws {
+    @Test func longerSelectionKeepsFullXMLAndExplicitMetadata() throws {
         let reference = try #require(LiveSelectionReference(String(repeating: "abc ", count: 2_100)))
-        #expect(reference.truncated)
+        #expect(!reference.truncated)
         let message = LiveSelectionReference.interleaving(
             [reference], with: "", presentation: .styledMath
         )
-        #expect(try unwrappedXML(message).contains("truncated=\"true\">"))
+        #expect(try unwrappedXML(message).contains("truncated=\"false\">"))
+        #expect(try unwrappedXML(message).contains(String(repeating: "abc ", count: 2_100)))
         #expect(!message.contains(LiveSelectionStyledMath.captionColor))
     }
 
@@ -374,19 +375,26 @@ struct StyledContextPresentationTests {
     @Test func styledContextUsesResolvedRouteModeWithoutTouchingDeliveryRoutes() throws {
         let pipeline = try repositorySource("VoiceInk/Transcription/Engine/TranscriptionPipeline.swift")
         let clipboardBranch = try #require(pipeline.range(
-            of: "        if completionDispositionNow == .clipboardOnly {"
+            of: "        func finishClipboardOnlyCompletion() {"
         ))
         let pasteTarget = try #require(pipeline.range(
             of: "        let pasteTargetForDelivery = await resolvePasteTarget()",
             range: clipboardBranch.upperBound..<pipeline.endIndex
         ))
         let clipboardBody = pipeline[clipboardBranch.lowerBound..<pasteTarget.lowerBound]
-        // Clipboard-only resolves no Mode output, so it keeps the plain grammar.
-        #expect(clipboardBody.contains("attachLiveSelectionsToFinalText()"))
-        #expect(!clipboardBody.contains("styledMath"))
+        // Clipboard-only reuses the resolved formatting, never the output action.
+        // Manual paste has no known recipient at finish; the source/HUD app must
+        // not switch it to raw output. Normal delivery keeps its recipient check.
+        #expect(!clipboardBody.contains("currentPromptRecipient()"))
+        #expect(clipboardBody.contains("outputForDelivery?.outputMode == .paste"))
+        #expect(clipboardBody.contains("outputForDelivery?.mode?.isStyledContextEnabled == true"))
+        #expect(clipboardBody.contains("compactFileURL: usesCompactPrompt ? archivedPromptURL : nil"))
+        #expect(!clipboardBody.contains("outputConfiguration()"))
+        #expect(!clipboardBody.contains("acquireDeliveryLease("))
+        #expect(!clipboardBody.contains("delivery.deliver("))
 
         let routeOutput = try #require(pipeline.range(
-            of: "let outputForPasteTarget = routeResolvedOutput",
+            of: "let outputForPasteTarget = recoversTypedDraft",
             range: pasteTarget.upperBound..<pipeline.endIndex
         ))
         let lease = try #require(pipeline.range(
@@ -394,6 +402,8 @@ struct StyledContextPresentationTests {
             range: routeOutput.upperBound..<pipeline.endIndex
         ))
         let decision = pipeline[routeOutput.upperBound..<lease.lowerBound]
+        #expect(decision.contains(": routeResolvedOutput"))
+        #expect(decision.contains("outputMode: .paste, autoSendKey: .none, customCommand: nil"))
         #expect(decision.contains("outputForPasteTarget.mode?.isStyledContextEnabled == true"))
         #expect(decision.contains("outputForPasteTarget.outputMode == .paste"))
         #expect(decision.contains("!skipPostProcessingNow"))
@@ -421,8 +431,9 @@ struct StyledContextPresentationTests {
         #expect(!capture.contains("Data(contentsOf"))
     }
 
-    @Test func capturedContextIsOnlyPastedIntoNativeAgentApps() {
-        for bundle in ["com.openai.codex", "com.openai.chat", "com.anthropic.claudefordesktop", "ru.keepcoder.Telegram"] {
+    @Test func capturedContextIsLimitedToAgentRecipientsUsingTheSelectedRoute() {
+        for bundle in ["com.openai.codex", "ru.keepcoder.Telegram", "org.telegram.desktop",
+                       "com.anthropic.claudefordesktop"] {
             #expect(LiveContextPastePolicy.includesSourceContext(
                 destination: .primaryCurrentInput,
                 currentApplicationBundleIdentifier: bundle,
@@ -437,7 +448,9 @@ struct StyledContextPresentationTests {
             }
         }
         for bundle in [nil, "com.google.Chrome", "com.apple.Safari", "com.microsoft.VSCode",
-                       "com.apple.Terminal", "com.googlecode.iterm2", "unknown.app"] as [String?] {
+                       "com.apple.Terminal", "com.googlecode.iterm2", "unknown.app",
+                       "com.openai.chat",
+                       "com.tinyspeck.slackmacgap", "com.hnc.Discord"] as [String?] {
             #expect(!LiveContextPastePolicy.includesSourceContext(
                 destination: .primaryCurrentInput,
                 currentApplicationBundleIdentifier: bundle,
@@ -520,7 +533,8 @@ struct StyledContextPresentationTests {
             #expect(timeline.contains("\\color{\(color)}"))
         }
         let decodedTimeline = try unwrappedXML(timeline)
-        #expect(decodedTimeline.contains("<agent_flow_context preview=\"authored_text_above\">\n\n<speech"))
+        #expect(decodedTimeline.hasPrefix("\n\n<speech"))
+        #expect(!decodedTimeline.contains("agent_flow_context"))
         #expect(decodedTimeline.contains("<speech timing=\"unavailable\">\n\nspoken first\n\n</speech>"))
         #expect(decodedTimeline.contains(">\n\ntyped &amp; exact\n\n</typed_text>"))
         #expect(decodedTimeline.contains("><text>not authored</text></codex_selection>"))
@@ -529,7 +543,7 @@ struct StyledContextPresentationTests {
             guard let start = body.range(of: "\\color{"), let end = body[start.upperBound...].firstIndex(of: "}") else { return nil }
             return String(body[start.upperBound..<end])
         })
-        #expect(colors == Set(["#f1f5f9", "#f4f4f5", "#67e8f9", "#e879f9", "#94a3b8"]))
+        #expect(colors == Set(["#f1f5f9", "#f4f4f5", "#67e8f9", "#e879f9"]))
         let plain = LiveSelectionReference.interleaving(references, with: "spoken first then last",
             includeTiming: true, includeReadablePreview: true)
         let restored = try unwrappedXML(styled).replacingOccurrences(of: "\n\n![Screenshot](</Users/test/shot.png>)", with: "")
@@ -538,18 +552,18 @@ struct StyledContextPresentationTests {
         #expect(styled.contains("![Screenshot](</Users/test/shot.png>)"))
     }
 
-    @Test func coloredTimelineUsesItalicEnvelopeWithSeparateReadableOpening() throws {
+    @Test func coloredTimelineOmitsOuterEnvelopeWithSeparateReadableOpening() throws {
         let selection = try #require(LiveSelectionReference("first highlighted text"))
         for references in [[], [selection]] {
             let message = LiveSelectionReference.interleaving(references, with: "spoken request",
                 presentation: .styledMath, includeTiming: true, includeReadablePreview: true)
-            let marker = "<agent_flow_context preview=\"authored_text_above\">"
             let opening = try #require(AuthoredTextRainbow.render("spoken request", startIndex: 0))
-            #expect(message.hasPrefix(opening + "\n\n\\(\\textsf{\\color{#94a3b8}\\textit{"))
-            #expect(!message.contains(marker))
+            let color = references.isEmpty ? LiveSelectionStyledMath.speechColor : LiveSelectionStyledMath.selectionColor
+            #expect(message.hasPrefix(opening + "\n\n\\(\\textsf{\\color{\(color)}\\textit{"))
             let decoded = try unwrappedXML(message)
-            #expect(decoded.contains(marker + "\n\n" + (references.isEmpty ? "<speech" : "<codex_selection")))
-            #expect(decoded.hasSuffix("</speech>\n\n</agent_flow_context>"))
+            #expect(decoded.hasPrefix("spoken request\n\n" + (references.isEmpty ? "<speech" : "<codex_selection")))
+            #expect(decoded.hasSuffix("</speech>"))
+            #expect(!decoded.contains("agent_flow_context") && !decoded.contains("authored_text_above"))
         }
     }
 
@@ -567,7 +581,8 @@ struct StyledContextPresentationTests {
         #expect(bodies.contains { $0.contains("upright\\ speech") && !$0.contains("\\textit{") })
         #expect(bodies.contains { $0.contains("quoted") && !$0.contains("\\textit{") })
         for body in bodies { #expect(hasBalancedGroups(body)) }
-        #expect(restored.contains("</speech>\n\n</agent_flow_context>"))
+        #expect(restored.hasSuffix("</speech>"))
+        #expect(!restored.contains("agent_flow_context"))
     }
 
     @Test func differentContextTypesHaveOneGapWhileMatchingTypesStayCompact() throws {
@@ -619,12 +634,15 @@ struct StyledContextPresentationTests {
             includeTiming: true, includeReadablePreview: true)
         #expect(styled.utf16.count <= LiveSelectionStyledMath.messageUTF16Budget)
         #expect(try unwrappedXML(styled) == plain)
+        #expect(!styled.contains("agent_flow_context") && !plain.contains("agent_flow_context"))
         // Once even the canonical message is larger than the styling budget,
         // preserve every word as plain text/XML rather than expanding or clipping.
         let huge = String(repeating: "word ", count: 20_000)
-        #expect(LiveSelectionReference.interleaving([], with: huge, presentation: .styledMath,
-            includeTiming: true, includeReadablePreview: true) == LiveSelectionReference.interleaving([], with: huge,
+        let hugeStyled = LiveSelectionReference.interleaving([], with: huge, presentation: .styledMath,
+            includeTiming: true, includeReadablePreview: true)
+        #expect(hugeStyled == LiveSelectionReference.interleaving([], with: huge,
             includeTiming: true, includeReadablePreview: true))
+        #expect(!hugeStyled.contains("agent_flow_context"))
     }
 
     @Test func rainbowAuthoredTextCannotEscapeTheMathRenderer() throws {

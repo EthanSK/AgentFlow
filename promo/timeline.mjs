@@ -59,9 +59,13 @@ function voicedTime(voiced, fraction) {
 
 /**
  * narration: parsed narration.json.
- * measured: optional { [id]: { duration, voiced } } from the real voice takes, in seconds.
+ * measured: optional { [id]: { duration, voiced, start } } in seconds. Voice takes supply
+ *   duration and voiced spans. The --reuse-audio render instead supplies `start` and
+ *   `duration` measured from the published captions; a measured start is used as-is,
+ *   because that audio is already mixed and can't be moved onto a new beat.
+ * options.duration: fixed video length (the published video's own length when reusing it).
  */
-export function buildTimeline(narration, measured = {}) {
+export function buildTimeline(narration, measured = {}, options = {}) {
   const ids = narration.segments.map((s) => s.id);
   const missing = REQUIRED_SEGMENTS.filter((id) => !ids.includes(id));
   if (missing.length) throw new Error(`narration.json is missing segment(s): ${missing.join(", ")}`);
@@ -75,7 +79,11 @@ export function buildTimeline(narration, measured = {}) {
     const take = measured[s.id];
     const duration = take ? take.duration : estimateSpeech(s.text);
     let start = s.start + shift;
-    if (previous && previous.end + narration.minGap > start + 1e-6) {
+    if (take && Number.isFinite(take.start)) {
+      // Already-mixed audio: report any difference from narration.json, never re-snap it.
+      start = take.start;
+      if (Math.abs(start - s.start) > 0.0015) shifts.push({ id: s.id, by: Number((start - s.start).toFixed(3)), measured: true });
+    } else if (previous && previous.end + narration.minGap > start + 1e-6) {
       // A take ran into the next line. Delay this and every later line by whole beats, so the
       // actions tied to them stay on the music's grid.
       const by = Math.ceil((previous.end + narration.minGap - start) / beat - 1e-9) * beat;
@@ -92,7 +100,8 @@ export function buildTimeline(narration, measured = {}) {
   }
 
   let duration = narration.duration + shift;
-  if (previous.end + 1 > duration) duration = Math.ceil((previous.end + 1.5) * 10) / 10;
+  if (Number.isFinite(options.duration)) duration = options.duration;
+  else if (previous.end + 1 > duration) duration = Math.ceil((previous.end + 1.5) * 10) / 10;
 
   // Live words for the recorder, in spoken order.
   const words = {};
@@ -116,6 +125,10 @@ export function buildTimeline(narration, measured = {}) {
   // typing beat has no line of its own: it sits in the pause before "Press again…" and is
   // anchored to that line so it always finishes before Codex comes forward.
   const moments = {
+    // Every moment that makes an interface sound in music.mjs (press, selLand, shutter,
+    // shotLand, typeClick, typing, dockClick, stop, pasteLand, sendAt, linkClick,
+    // detailsClick) is baked into the published audio. Changing its offset would make a
+    // --reuse-audio render click out of sync, so move only the camera and silent motion.
     titleOut: S("talk") - 0.5,      // title lifts away once the first line is finished
     deskIn: S("talk") - 0.2,        // menu bar, windows and Dock settle in once it's gone
     press: S("talk") + 0.3,         // shortcut pressed: "Press your shortcut…"
@@ -136,7 +149,7 @@ export function buildTimeline(narration, measured = {}) {
     stop: S("paste"),               // "Press again…"
     pasteLand: S("paste") + 1.2,    // one paste, as she says "…and Agent Flow pastes it all…"
     sendAt: S("paste") + 1.5,       // the Codex Mode's auto-send turns it into one short message
-    linkClick: S("paste") + 3.5,    // open the full prompt
+    linkClick: S("paste") + 3.5,    // open the full prompt from the message's ↗ link
     viewerOpen: S("paste") + 3.6,   // "…so your agent can see what you were looking at."
     detailsClick: S("paste") + 4.6, // expand the selection's metadata
     scrollStart: S("paste") + 5.2,  // down to the screenshot itself

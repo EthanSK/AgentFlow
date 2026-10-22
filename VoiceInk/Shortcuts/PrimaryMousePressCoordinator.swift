@@ -20,11 +20,14 @@ final class PrimaryMouseDecisionBarrier {
     }
 }
 
-/// A deliberately closed Karabiner protocol, not a generic automation endpoint.
+/// A deliberately closed physical-control protocol, not a generic automation endpoint.
 /// Keyboard Primary still uses its existing balanced modifier shortcut.
 struct PrimaryMouseCommand: Equatable, Sendable {
-    enum Source: String, CaseIterable, Sendable { case corsair, razer }
-    enum Phase: String, Sendable { case down, up }
+    // The wand uses its own cycle identity; impersonating a mouse could complete
+    // a different held control's pending gesture. All sources share the same
+    // readiness, stale-cycle, session and Primary-only delivery boundaries.
+    enum Source: String, CaseIterable, Sendable { case corsair, razer, wand }
+    enum Phase: String, Sendable { case down, up, cancel }
     let source: Source
     let phase: Phase
 
@@ -41,7 +44,8 @@ struct PrimaryMouseCommand: Equatable, Sendable {
               let sourceName = fields["source"] as? String,
               let source = Source(rawValue: sourceName),
               let phaseName = fields["phase"] as? String,
-              let phase = Phase(rawValue: phaseName) else { return nil }
+              let phase = Phase(rawValue: phaseName),
+              phase != .cancel || source == .wand else { return nil }
         return Self(source: source, phase: phase)
     }
 }
@@ -64,6 +68,7 @@ struct PrimaryMousePressCoordinator {
         case armed
         case consumedStartRelease
         case coalescedStartDown
+        case canceled
         case ignored
     }
 
@@ -102,6 +107,14 @@ struct PrimaryMousePressCoordinator {
             cycles.removeValue(forKey: command.source)
         }
         switch command.phase {
+        case .cancel:
+            // BLE loss is not a release: clear only the wand's unmatched held
+            // cycle so reconnect can accept a fresh press immediately. Never
+            // finalize capture, contribute a Primary gesture or touch another
+            // physical control's cycle. Mouse wire semantics remain down/up.
+            guard command.source == .wand,
+                  cycles.removeValue(forKey: .wand) != nil else { return .ignored }
+            return .canceled
         case .down:
             guard cycles[command.source] == nil else { return .ignored }
             let starts = context == .idle

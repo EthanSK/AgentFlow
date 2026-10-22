@@ -51,11 +51,13 @@ struct AuthoredTextRainbowTests {
         #expect(AuthoredTextRainbow.reserve(at: state) == nil)
     }
 
-    @Test func finalRainbowReservationLeavesPlainAndRawRoutesUntouched() throws {
+    @Test func finalRainbowReservationLeavesOrdinaryAndRawRoutesUntouched() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         let source = try String(contentsOf: root.appendingPathComponent("VoiceInk/Transcription/Engine/TranscriptionPipeline.swift"), encoding: .utf8)
         #expect(source.components(separatedBy: "AuthoredTextRainbow.reserveStartIndex()").count == 2)
-        #expect(source.contains("presentation == .styledMath && includeSourceContext"))
+        // Explicit inline Codex context now owns authored rainbow even if the
+        // Mode formerly requested plain styling; ordinary/raw routes still do not.
+        #expect(source.contains("(presentation == .styledMath || compactFileURL != nil) && includeSourceContext"))
         #expect(source.contains("&& !skipPostProcessingNow && hasAuthoredWords ? AuthoredTextRainbow.reserveStartIndex() : 0"))
         #expect(source.contains("rainbowStartIndex: rainbowStart"))
     }

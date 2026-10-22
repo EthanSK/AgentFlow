@@ -62,24 +62,38 @@ final class ShortcutMonitor {
         var pressedAt: TimeInterval?
         var isInterrupted = false
         var typingFocusRequested = false
+        var deferredModifierCandidate = false
+        var deferredModifierBlocked = false
+        var deferredModifierReleasing = false
     }
 
     private var shortcuts: [ShortcutAction: ShortcutState] = [:]
     private var interruptibleActions: Set<ShortcutAction> = []
+    private var deferredModifierToggleActions: Set<ShortcutAction> = []
     private var onKeyDown: ((ShortcutAction, TimeInterval) -> Void)?
     private var onKeyUp: ((ShortcutAction, TimeInterval) -> Void)?
     private var onShortcutInterrupted: ((ShortcutAction, TimeInterval) -> Void)?
     private var onModifierOnlySequenceProgress: ((ShortcutAction, TimeInterval) -> Void)?
     private var onNextTrackKeyDown: (() -> Bool)?
     private var onPrimaryTypingFocus: ((TimeInterval) -> Void)?
-    private var onTypingStart: (() -> Void)?
+    private var onTypingStart: ((Bool) -> Void)?
+    private var onStandaloneShift: (() -> Void)?
     private var typingToggleKeysDown = false
+    private var standaloneShiftCandidate = false
+    private var shiftWasDown = false
     private var isConsumingNextTrackPress = false
     private var eventTap: CFMachPort?
     private var eventTapRunLoopSource: CFRunLoopSource?
+    private let sourceApplicationBundleID: (pid_t) -> String?
     private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "ShortcutMonitor")
 
     private static let shortcutInterruptionWindow: TimeInterval = 1.0
+
+    init(sourceApplicationBundleID: @escaping (pid_t) -> String? = {
+        NSRunningApplication(processIdentifier: $0)?.bundleIdentifier
+    }) {
+        self.sourceApplicationBundleID = sourceApplicationBundleID
+    }
 
     deinit {
         stop()
@@ -89,13 +103,15 @@ final class ShortcutMonitor {
     func start(
         shortcuts: [ShortcutAction: Shortcut],
         interruptibleActions: Set<ShortcutAction> = [],
+        deferredModifierToggleActions: Set<ShortcutAction> = [],
         onKeyDown: @escaping (ShortcutAction, TimeInterval) -> Void,
         onKeyUp: @escaping (ShortcutAction, TimeInterval) -> Void,
         onShortcutInterrupted: ((ShortcutAction, TimeInterval) -> Void)? = nil,
         onModifierOnlySequenceProgress: ((ShortcutAction, TimeInterval) -> Void)? = nil,
         onNextTrackKeyDown: (() -> Bool)? = nil,
         onPrimaryTypingFocus: ((TimeInterval) -> Void)? = nil,
-        onTypingStart: (() -> Void)? = nil,
+        onTypingStart: ((Bool) -> Void)? = nil,
+        onStandaloneShift: (() -> Void)? = nil,
         installSystemEventTap: Bool = true
     ) -> Bool {
         stop()
@@ -109,6 +125,7 @@ final class ShortcutMonitor {
         }
 
         self.interruptibleActions = interruptibleActions
+        self.deferredModifierToggleActions = deferredModifierToggleActions
         self.onKeyDown = onKeyDown
         self.onKeyUp = onKeyUp
         self.onShortcutInterrupted = onShortcutInterrupted
@@ -116,6 +133,7 @@ final class ShortcutMonitor {
         self.onNextTrackKeyDown = onNextTrackKeyDown
         self.onPrimaryTypingFocus = onPrimaryTypingFocus
         self.onTypingStart = onTypingStart
+        self.onStandaloneShift = onStandaloneShift
 
         // Offline event-routing fixtures use the exact callback configuration
         // without registering a second global keyboard consumer on the test Mac.
@@ -161,6 +179,13 @@ final class ShortcutMonitor {
     /// Tear down and rebuild the event tap + run-loop source. Used by ensureEventTapHealthy
     /// when the Mach port has been invalidated (cannot just re-enable a dead port).
     private func reinstallEventTap() {
+        // A lost tap may have missed the candidate's release. Never replay that
+        // stale keyboard intent when a later, unrelated modifier event arrives.
+        for action in Array(shortcuts.keys) {
+            shortcuts[action]?.deferredModifierCandidate = false
+            shortcuts[action]?.deferredModifierBlocked = false
+            shortcuts[action]?.deferredModifierReleasing = false
+        }
         if let eventTapRunLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), eventTapRunLoopSource, .commonModes)
             self.eventTapRunLoopSource = nil
@@ -185,6 +210,7 @@ final class ShortcutMonitor {
 
         shortcuts = [:]
         interruptibleActions = []
+        deferredModifierToggleActions = []
         onKeyDown = nil
         onKeyUp = nil
         onShortcutInterrupted = nil
@@ -192,7 +218,10 @@ final class ShortcutMonitor {
         onNextTrackKeyDown = nil
         onPrimaryTypingFocus = nil
         onTypingStart = nil
+        onStandaloneShift = nil
         typingToggleKeysDown = false
+        standaloneShiftCandidate = false
+        shiftWasDown = false
         isConsumingNextTrackPress = false
     }
 
@@ -246,6 +275,17 @@ final class ShortcutMonitor {
             return handleSystemDefinedEvent(event)
         }
 
+        if [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(type) {
+            // A modifier-click is another app's gesture, not a voice tap.
+            let flags = NSEvent.ModifierFlags(rawValue: UInt(event.flags.rawValue))
+            if !Shortcut.normalizedModifierFlags(flags, forKeyCode: nil).isEmpty {
+                for action in deferredModifierToggleActions {
+                    shortcuts[action]?.deferredModifierBlocked = true
+                }
+            }
+            return false
+        }
+
         guard let eventKind = EventKind(type) else {
             return false
         }
@@ -253,6 +293,20 @@ final class ShortcutMonitor {
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         let modifierFlags = NSEvent.ModifierFlags(rawValue: UInt(event.flags.rawValue))
         let receivedAt = ProcessInfo.processInfo.systemUptime
+        if let onStandaloneShift {
+            let shift = Self.standaloneShiftTransition(
+                wasCandidate: standaloneShiftCandidate, wasShiftDown: shiftWasDown,
+                type: type, keyCode: keyCode, modifierFlags: modifierFlags
+            )
+            standaloneShiftCandidate = shift.isCandidate
+            shiftWasDown = shift.isShiftDown
+            // Observe a Shift-only tap, never swallow its down or release. Waiting
+            // for release distinguishes it from capital-letter typing and the Shift
+            // prefix of Primary's mouse macro; neither must suppress a pending paste.
+            // The owner checks the exact chord-stopped result synchronously before
+            // its completion policy freezes. Panel/Mode listeners have no callback.
+            if shift.dispatch { onStandaloneShift() }
+        }
         if eventKind == .flagsChanged, let onTypingStart {
             // ShortcutMonitor is shared by recording, Mode and visible-panel
             // listeners. Only the recording listener owns the typing chord.
@@ -265,8 +319,11 @@ final class ShortcutMonitor {
             )
             typingToggleKeysDown = transition.isDown
             if transition.dispatchKeyDown {
-                logger.info("Typing shortcut accepted owner=recording chord=bothCommandAndOption")
-                DispatchQueue.main.async { onTypingStart() }
+                // Freeze Shift at the completing key, not after the asynchronous
+                // callback (when Ethan may already have released the modifiers).
+                let clipboardOnly = modifierFlags.contains(.shift)
+                logger.info("Typing shortcut accepted owner=recording chord=bothCommandAndOption clipboardOnly=\(clipboardOnly, privacy: .public)")
+                DispatchQueue.main.async { onTypingStart(clipboardOnly) }
             }
             // The completing press is ours; every release still reaches the
             // foreground app. Never leave a logically held Command modifier.
@@ -299,6 +356,19 @@ final class ShortcutMonitor {
         let keyType = Int((data & 0xFFFF_0000) >> 16)
         guard keyType == NX_KEYTYPE_NEXT else { return false }
 
+        // Agentic Mouse's separate Tracks + Wheel control intentionally sends media
+        // Next, not the physical recorder's Next/latch action. Read the creator of
+        // this ORIGINAL event-tap CGEvent (not a reconstructed global NSEvent's
+        // target PID). Only that known emitter bypasses recorder ownership; hardware,
+        // unknown and every other source keep the visible-bar/three-route contract.
+        // Bypass both halves before touching the latch press state, so an interleaved
+        // media cycle cannot release a physical Next press owned by this recorder.
+        let sourcePID = event.getIntegerValueField(.eventSourceUnixProcessID)
+        if sourcePID > 1, sourcePID <= Int64(Int32.max),
+           sourceApplicationBundleID(pid_t(sourcePID)) == "com.ethan.agentic-mouse" {
+            return false
+        }
+
         let keyState = Int((data & 0x0000_FF00) >> 8)
         switch keyState {
         case Int(NX_KEYDOWN):
@@ -322,6 +392,13 @@ final class ShortcutMonitor {
 
     private func resetPressedShortcutsAfterTapInterruption() {
         typingToggleKeysDown = false
+        standaloneShiftCandidate = false
+        shiftWasDown = false
+        for action in Array(shortcuts.keys) {
+            shortcuts[action]?.deferredModifierCandidate = false
+            shortcuts[action]?.deferredModifierBlocked = false
+            shortcuts[action]?.deferredModifierReleasing = false
+        }
         let eventTime = ProcessInfo.processInfo.systemUptime
         let pressedActions = shortcuts.compactMap { action, state in
             state.isDown ? action : nil
@@ -361,6 +438,13 @@ final class ShortcutMonitor {
             }
 
             if state.shortcut.isModifierOnly {
+                if deferredModifierToggleActions.contains(action) {
+                    shouldSuppress = handleDeferredModifierToggle(
+                        action: action, state: state, kind: kind,
+                        keyCode: keyCode, modifierFlags: modifierFlags, eventTime: eventTime
+                    ) || shouldSuppress
+                    continue
+                }
                 shouldSuppress = handleModifierOnlyShortcut(
                     action: action,
                     state: state,
@@ -410,6 +494,66 @@ final class ShortcutMonitor {
         case suppress
         case keyDown
         case keyUp
+    }
+
+    /// Shift-Option-Command is also a prefix of the four-physical-key typing
+    /// chord with Shift. Wait for a clean release instead of starting/stopping
+    /// voice on that ambiguous prefix. Only an explicitly configured recording
+    /// toggle owns this path; panel/Mode monitors must pass it through. Extra
+    /// keys, Control/Function, or the opposite Command/Option cancel the candidate
+    /// until all modifiers lift. Forward every release to keep other apps balanced.
+    private func handleDeferredModifierToggle(
+        action: ShortcutAction, state: ShortcutState, kind: EventKind,
+        keyCode: UInt16, modifierFlags: NSEvent.ModifierFlags, eventTime: TimeInterval
+    ) -> Bool {
+        var state = state
+        let flags = Shortcut.normalizedModifierFlags(modifierFlags, forKeyCode: nil)
+        let target = state.shortcut.modifierFlags
+        if flags.isEmpty {
+            let dispatch = kind == .flagsChanged && state.deferredModifierCandidate
+                && !state.deferredModifierBlocked
+            state.deferredModifierCandidate = false
+            state.deferredModifierBlocked = false
+            state.deferredModifierReleasing = false
+            shortcuts[action] = state
+            if dispatch {
+                // The configured secondary binding is an alias of the existing
+                // Primary toggle, not an independent hands-free latch. Otherwise
+                // stopping a session begun by typing/the mouse would need two taps.
+                // The recording owner enables this only while Primary is toggle.
+                let recordingAction: ShortcutAction = .primaryRecording
+                dispatchKeyDown(for: recordingAction, eventTime: eventTime)
+                dispatchKeyUp(for: recordingAction, eventTime: eventTime)
+            }
+            return false
+        }
+        let raw = modifierFlags.rawValue
+        let expandedTypingChord = raw & 0x18 == 0x18 || raw & 0x60 == 0x60
+        if kind == .keyDown || !target.isSuperset(of: flags) || expandedTypingChord {
+            state.deferredModifierBlocked = true
+        }
+        if state.deferredModifierCandidate && flags != target {
+            state.deferredModifierReleasing = true
+        }
+        if state.deferredModifierReleasing && flags == target {
+            state.deferredModifierBlocked = true
+        }
+        let physicalBit: UInt
+        switch keyCode {
+        case 56: physicalBit = 0x02
+        case 60: physicalBit = 0x04
+        case 55: physicalBit = 0x08
+        case 54: physicalBit = 0x10
+        case 58: physicalBit = 0x20
+        case 61: physicalBit = 0x40
+        default: physicalBit = 0
+        }
+        let completed = kind == .flagsChanged && physicalBit != 0
+            && raw & physicalBit != 0 && flags == target
+            && !state.deferredModifierBlocked && !state.deferredModifierCandidate
+        if completed { state.deferredModifierCandidate = true }
+        shortcuts[action] = state
+        return completed
     }
 
     private func transitionForKeyShortcut(
@@ -550,13 +694,36 @@ final class ShortcutMonitor {
         // Aggregate Command+Option cannot distinguish one side from both sides.
         // Partial chords, the old both-Command chord, and every release pass through.
         let allFour = rawFlags & 0x78 == 0x78
-        let onlyCommandAndOption = Shortcut.normalizedModifierFlags(
+        let modifiers = Shortcut.normalizedModifierFlags(
             NSEvent.ModifierFlags(rawValue: rawFlags), forKeyCode: nil
-        ) == [.command, .option]
+        )
+        // Shift selects the existing Won't paste finish; Control/Function remain
+        // unrelated shortcuts. Adding/releasing Shift after a consumed chord must
+        // not dispatch a second action, and every modifier release is forwarded.
+        let supportedModifiers = modifiers == [.command, .option]
+            || modifiers == [.command, .option, .shift]
         let press = [UInt16(54), 55, 58, 61].contains(keyCode)
-            && allFour && onlyCommandAndOption && !wasDown
+            && allFour && supportedModifiers && !wasDown
         return .init(isDown: allFour, suppressDownstream: press,
                      dispatchKeyDown: press, dispatchKeyUp: wasDown && !allFour)
+    }
+
+    static func standaloneShiftTransition(
+        wasCandidate: Bool, wasShiftDown: Bool, type: CGEventType,
+        keyCode: UInt16, modifierFlags: NSEvent.ModifierFlags
+    ) -> (isCandidate: Bool, isShiftDown: Bool, dispatch: Bool) {
+        let modifiers = Shortcut.normalizedModifierFlags(modifierFlags, forKeyCode: nil)
+        let shiftDown = modifiers.contains(.shift)
+        let shiftEvent = type == .flagsChanged && [UInt16(56), 60].contains(keyCode)
+        if shiftEvent && !shiftDown {
+            return (false, false, wasCandidate && modifiers.isEmpty)
+        }
+        if shiftEvent && shiftDown && !wasShiftDown && modifiers == [.shift] {
+            return (true, true, false)
+        }
+        let candidate = wasCandidate && type != .keyDown
+            && (!shiftEvent) && modifiers == [.shift]
+        return (candidate, shiftDown, false)
     }
 
     static func isTypingModifierChord(_ flags: NSEvent.ModifierFlags) -> Bool {
@@ -639,7 +806,10 @@ final class ShortcutMonitor {
     private static let eventMask: CGEventMask = [
         CGEventType.keyDown,
         CGEventType.keyUp,
-        CGEventType.flagsChanged
+        CGEventType.flagsChanged,
+        CGEventType.leftMouseDown,
+        CGEventType.rightMouseDown,
+        CGEventType.otherMouseDown
     ].reduce(CGEventMask(0)) { mask, type in
         mask | (CGEventMask(1) << Int(type.rawValue))
     } | (CGEventMask(1) << Int(NX_SYSDEFINED)) // Media keys arrive as legacy NX_SYSDEFINED events, which CGEventType does not expose as a named Swift case.

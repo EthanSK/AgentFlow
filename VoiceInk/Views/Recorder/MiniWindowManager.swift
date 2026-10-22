@@ -168,7 +168,7 @@ class MiniWindowManager {
     private let hudScale = RecorderHUDScaleStore.shared
     private var scaleSubscription: AnyCancellable?
 
-    private let makeView: (CGFloat) -> AnyView
+    private let makeView: (CGSize) -> AnyView
 
     init(
         engine: VoiceInkEngine,
@@ -184,7 +184,7 @@ class MiniWindowManager {
         // (record-while-transcribing stack). Routed to engine.cancelSession(id:).
         onCancelSession: @escaping (UUID) -> Void
     ) {
-        self.makeView = { screenHeight in
+        self.makeView = { screenSize in
             AnyView(
                 // Host the STACK container (one card per engine.sessions entry) rather than
                 // a single MiniRecorderView. The stack renders the active/base card with full
@@ -192,7 +192,8 @@ class MiniWindowManager {
                 MiniRecorderStackView(
                     engine: engine,
                     hudScale: RecorderHUDScaleStore.shared,
-                    screenHeight: screenHeight,
+                    screenHeight: screenSize.height,
+                    screenWidth: screenSize.width,
                     recorder: recorder,
                     assistantSession: assistantSession,
                     onRecordButtonTapped: onRecordButtonTapped,
@@ -249,6 +250,14 @@ class MiniWindowManager {
         windows.forEach { $0.panel.orderOut(nil) }
     }
 
+    func displayIfNeeded() {
+        // Only our already-visible panels; never order, activate or make key.
+        for entry in windows where entry.panel.isVisible {
+            entry.host.layoutSubtreeIfNeeded()
+            entry.panel.displayIfNeeded()
+        }
+    }
+
     private func refreshScale() {
         guard !windows.isEmpty else { return }
         let screens = NSScreen.screens
@@ -285,7 +294,7 @@ class MiniWindowManager {
             )
             let panel = MiniRecorderPanel(contentRect: metrics)
             let host = ScaledRecorderHostingView(
-                rootView: makeView(screen.visibleFrame.height),
+                rootView: makeView(screen.visibleFrame.size),
                 scale: CGFloat(hudScale.scale)
             )
             panel.contentView = host

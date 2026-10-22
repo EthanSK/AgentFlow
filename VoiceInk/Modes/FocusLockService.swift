@@ -5,6 +5,13 @@ import os
 
 @MainActor
 final class FocusLockService: ObservableObject {
+    /// Unused recording-start destination capture is OFF at Ethan's request
+    /// (2026-10-17). Changing inputs while speaking must not require saving or
+    /// fingerprinting the original composer. Keep legacy Next-start machinery
+    /// dormant for reference, not as an automatically enabled preference/fallback.
+    /// Explicit post-stop second-chance capture is a separate decision and remains.
+    static let recordingStartInputCaptureEnabled = false
+
     /// Apple Terminal can reuse one AXTextArea while its selected tab changes. The
     /// native window ID plus TTY is therefore part of the exact Next-button decision;
     /// neither a PID, mutable title, nor retained AX wrapper is a session identity.
@@ -581,7 +588,17 @@ final class FocusLockService: ObservableObject {
     func stageRecordingStartInputBeforeShortcutCompletion(
         eventTime: TimeInterval? = nil
     ) {
+        guard Self.recordingStartInputCaptureEnabled else { return }
         let now = ProcessInfo.processInfo.systemUptime
+        // A partial modifier can wait behind an earlier synchronous AX capture.
+        // Once it has outlived the same freshness window as its staged target,
+        // another full scan cannot recover decision-time context. Do not let
+        // queued stale modifiers repeat that work ahead of the real start. The
+        // completed chord still performs its independent, full Next-only capture.
+        guard Self.isFreshRecordingStartModifierEvent(eventTime, now: now) else {
+            logger.notice("Recording-start pre-chord snapshot skipped reason=expiredOrInvalidModifierEvent")
+            return
+        }
         let dispatchLatencyMilliseconds = eventTime.map {
             max(0, Int((now - $0) * 1_000))
         } ?? -1
@@ -609,12 +626,26 @@ final class FocusLockService: ObservableObject {
         logger.info("Staged exact recording-start input before modifier chord completion pid=\(target.pid, privacy: .public) bundle=\(target.bundleIdentifier ?? "nil", privacy: .public) dispatchLatencyMs=\(dispatchLatencyMilliseconds, privacy: .public)")
     }
 
+    static func isFreshRecordingStartModifierEvent(
+        _ eventTime: TimeInterval?, now: TimeInterval
+    ) -> Bool {
+        guard now.isFinite else { return false }
+        guard let eventTime else { return true }
+        let age = now - eventTime
+        return eventTime.isFinite && age >= 0
+            && age <= stagedRecordingStartInputLifetime
+    }
+
     /// Complete the physical recording-start decision. Prefer the ordinary focused
     /// exact input. If Electron now reports only an ancestor, recover the earlier
     /// exact snapshot solely when it is fresh, replay-safe, from the same process,
     /// and still a descendant of that exact observed ancestor. This prevents a fast
     /// app/task switch from silently latching a different composer.
     func captureRecordingStartInputSnapshot() -> Target? {
+        guard Self.recordingStartInputCaptureEnabled else {
+            stagedRecordingStartInput = nil
+            return nil
+        }
         let completedChordTarget = captureFocusedInputSnapshot(
             allowApplicationFallback: true
         )
@@ -705,7 +736,8 @@ final class FocusLockService: ObservableObject {
             logger.notice("OpenAI recording-start passive composer capture stopped reason=focusedWindowFrameUnreadable pid=\(fallback.pid, privacy: .public)")
             return nil
         }
-        let candidates = descendants(of: fallbackContainer).filter { element in
+        var candidates: [(element: AXUIElement, identity: ExactInputIdentity)] = []
+        for element in descendants(of: fallbackContainer) {
             guard stringAttribute(kAXRoleAttribute, from: element)
                     == kAXTextAreaRole,
                   let editorFrame = relativeFrame(
@@ -724,22 +756,25 @@ final class FocusLockService: ObservableObject {
                     in: focusedWindow
                   ),
                   !identity.contextAnchors.isEmpty else {
-                return false
+                continue
             }
-            return true
+            // Keep the fingerprint observed for this candidate. Reading the same
+            // full window again for the winner costs another scan and could replace
+            // that earlier document identity after a task switch. The final focus,
+            // window and structural checks below still gate this passive capture;
+            // Next delivery independently revalidates the retained fingerprint.
+            candidates.append((element, identity))
         }
         guard candidates.count == 1,
-              let composer = candidates.first,
-              let identity = exactInputIdentity(
-                for: composer,
-                in: focusedWindow
-              ) else {
+              let candidate = candidates.first else {
             let elapsedMilliseconds = Int(
                 (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000
             )
             logger.notice("OpenAI recording-start passive composer capture stopped reason=candidateCount pid=\(fallback.pid, privacy: .public) candidates=\(candidates.count, privacy: .public) elapsedMs=\(elapsedMilliseconds, privacy: .public)")
             return nil
         }
+        let composer = candidate.element
+        let identity = candidate.identity
 
         // Revalidate at the capture boundary. If Ethan moved the caret, changed windows,
         // or ChatGPT updated during discovery, do nothing. This branch deliberately has
@@ -1280,7 +1315,11 @@ final class FocusLockService: ObservableObject {
     }
 
     func showRecordingStartInput(_ target: Target?) {
-        guard target == nil else { return } // The persistent capsule icon already shows a valid Next Track destination; only interrupt the user when capture failed.
+        // A missing target is expected while Ethan's unused recording-start
+        // capture is disabled, not a failed recording or a reason to focus an
+        // input. Keep real capture failures visible if that feature is restored;
+        // a valid destination already has its persistent capsule icon.
+        guard Self.recordingStartInputCaptureEnabled, target == nil else { return }
         NotificationManager.shared.showNotification(
             title: String(localized: "Recording start input unavailable — focus a text input before recording"),
             type: .warning,
@@ -4004,13 +4043,93 @@ final class FocusLockService: ObservableObject {
         return matchCount >= min(2, captured.count)
     }
 
+    struct ContextAnchorNode<Element> {
+        let element: Element
+        let role: String?
+    }
+
+    /// Same breadth-first tree, depth limit and hash deduplication as descendants.
+    /// Reading role beside children removes a second IPC pass, not any nodes or
+    /// document evidence. Never retain these observations across captures.
+    static func contextAnchorTraversal<Element, Identity: Hashable>(
+        root: Element,
+        maximumDepth: Int = 40,
+        identity: (Element) -> Identity,
+        read: (Element, Bool) -> (role: String?, children: [Element])
+    ) -> [ContextAnchorNode<Element>] {
+        var result: [ContextAnchorNode<Element>] = []
+        var queue: [(Element, Int)] = [(root, 0)]
+        var cursor = 0
+        var seen = Set<Identity>()
+        while cursor < queue.count {
+            let (element, depth) = queue[cursor]
+            cursor += 1
+            guard seen.insert(identity(element)).inserted else { continue }
+            let observation = read(element, depth < maximumDepth)
+            result.append(ContextAnchorNode(element: element, role: observation.role))
+            guard depth < maximumDepth else { continue }
+            for child in observation.children { queue.append((child, depth + 1)) }
+        }
+        return result
+    }
+
+    /// A global/malformed multi-read falls back once to the original individual
+    /// accessors. Per-attribute AX errors/CFNull remain unreadable values, exactly
+    /// like those accessors; an unreadable role never becomes a text anchor.
+    static func contextAnchorAttributePair(
+        values: [Any]?,
+        fallback: () -> (Any?, Any?)
+    ) -> (Any?, Any?) {
+        guard let values, values.count == 2 else { return fallback() }
+        return (values[0], values[1])
+    }
+
+    private func contextAnchorAttributes(
+        _ attributes: [String], from element: AXUIElement
+    ) -> [Any]? {
+        var values: CFArray?
+        guard AXUIElementCopyMultipleAttributeValues(
+            element, attributes as CFArray,
+            AXCopyMultipleAttributeOptions(rawValue: 0), &values
+        ) == .success, let values else { return nil }
+        return values as [AnyObject]
+    }
+
+    private func contextAnchorNodes(in window: AXUIElement) -> [ContextAnchorNode<AXUIElement>] {
+        Self.contextAnchorTraversal(root: window, identity: { CFHash($0) }) { element, readsChildren in
+            guard readsChildren else {
+                return (self.stringAttribute(kAXRoleAttribute, from: element), [])
+            }
+            let pair = Self.contextAnchorAttributePair(
+                values: self.contextAnchorAttributes(
+                    [kAXChildrenAttribute, kAXRoleAttribute], from: element
+                ), fallback: {
+                    (self.elementArrayAttribute(kAXChildrenAttribute, from: element),
+                     self.stringAttribute(kAXRoleAttribute, from: element))
+                }
+            )
+            return (pair.1 as? String, pair.0 as? [AXUIElement] ?? [])
+        }
+    }
+
+    private func contextAnchorValue(of element: AXUIElement) -> String? {
+        let pair = Self.contextAnchorAttributePair(
+            values: contextAnchorAttributes([kAXValueAttribute, kAXTitleAttribute], from: element),
+            fallback: {
+                (self.stringAttribute(kAXValueAttribute, from: element),
+                 self.stringAttribute(kAXTitleAttribute, from: element))
+            }
+        )
+        return pair.0 as? String ?? pair.1 as? String
+    }
+
     private func contextAnchors(
         in window: AXUIElement,
         region: CGRect?,
         excluding excludedElement: AXUIElement?
     ) -> [String] {
         let startedAt = ProcessInfo.processInfo.systemUptime
-        let elements = descendants(of: window)
+        let elements = contextAnchorNodes(in: window)
         // AX reads are synchronous cross-process calls on the recording-start path.
         // Freeze this scan's window geometry once, and reject non-text roles before
         // asking for node geometry. Do not shorten the tree, reuse a prior scan, or
@@ -4021,16 +4140,13 @@ final class FocusLockService: ObservableObject {
             elements: elements,
             region: region,
             isExcluded: { element in
-                excludedElement.map { CFEqual(element, $0) } ?? false
+                excludedElement.map { CFEqual(element.element, $0) } ?? false
             },
-            role: { self.stringAttribute(kAXRoleAttribute, from: $0) },
+            role: { $0.role },
             relativeFrame: {
-                self.relativeFrame(of: $0, in: window, windowFrame: windowFrame)
+                self.relativeFrame(of: $0.element, in: window, windowFrame: windowFrame)
             },
-            value: {
-                self.stringAttribute(kAXValueAttribute, from: $0)
-                    ?? self.stringAttribute(kAXTitleAttribute, from: $0)
-            }
+            value: { self.contextAnchorValue(of: $0.element) }
         )
         let durationMilliseconds = Int(
             (ProcessInfo.processInfo.systemUptime - startedAt) * 1_000

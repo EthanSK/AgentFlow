@@ -3,6 +3,8 @@ import SwiftUI
 struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     @ObservedObject var stateProvider: S
     let liveTranscriptHeight: CGFloat
+    var liveTranscriptWidth: CGFloat = MiniRecorderLayoutMetrics.liveTranscriptWidth
+    var maximumContextHeight: CGFloat = MiniRecorderLayoutMetrics.assistantPanelHeight
     let recorder: Recorder
     @ObservedObject var assistantSession: AssistantSession
     let onRecordButtonTapped: () -> Void
@@ -15,7 +17,7 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     // MARK: - Layout Constants
 
     private let compactWidth: CGFloat = 228
-    private let expandedWidth = MiniRecorderLayoutMetrics.liveTranscriptWidth
+    private var expandedWidth: CGFloat { liveTranscriptWidth }
     private let assistantWidth: CGFloat = 520
     private let compactCornerRadius: CGFloat = 20
     private let expandedCornerRadius: CGFloat = 14
@@ -32,13 +34,16 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     private var capsuleWidth: CGFloat {
         if hasAssistantResponse { return assistantWidth }
         if hasLiveTranscript { return expandedWidth }
-        return shouldShowPasteDestinationIndicator ? 280 : compactWidth // Active layout also includes the exact build label immediately left of Stop.
+        // Leave room for the explicit Pause/Play control; do not squeeze the
+        // waveform or either destination slot on compact (non-realtime) sessions.
+        if stateProvider.recordingState.isRecordingOrPaused { return 350 }
+        return shouldShowPasteDestinationIndicator ? 280 : compactWidth
     }
 
     // Realtime mode owns this panel immediately. LiveTranscriptView renders the
     // empty-state ellipsis, which never becomes speech or final delivery text.
     private var hasLiveTranscript: Bool {
-        stateProvider.recordingState.isRecordingOrPaused
+        (stateProvider.recordingState.isRecordingOrPaused || stateProvider.canTypeInHUD)
             && (stateProvider.showsRealtimeTranscriptHUD
                 || stateProvider.canTypeInHUD
                 || !stateProvider.liveSelectionReferences.isEmpty)
@@ -119,6 +124,9 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                     // observed session's skipPostProcessing flag (no closure threading needed).
                     RecorderSkipProcessingButton(isEngaged: skipPostProcessingBinding)
                         .transition(.opacity)
+                    if stateProvider.recordingState.isRecordingOrPaused {
+                        RecorderPauseButton(stateProvider: stateProvider)
+                    }
                     if stateProvider.canTypeInHUD {
                         RecorderMicrophoneButton(stateProvider: stateProvider)
                     }
@@ -175,14 +183,22 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
             if hasLiveTranscript {
                 LiveTranscriptView(
                     text: stateProvider.partialTranscript,
+                    potentialTTSActive: stateProvider.potentialTTSActive,
+                    dimsContextUntilSpeechArrives: stateProvider.dimsContextUntilSpeechArrives,
                     selectionReferences: stateProvider.liveContextPreviewReferences,
+                    cachedPreviewParts: stateProvider.liveContextPreviewParts,
                     height: liveTranscriptHeight,
                     typedInput: stateProvider.canTypeInHUD ? Binding(
                         get: { stateProvider.typedInput },
                         set: { stateProvider.updateTypedInput($0) }
                     ) : nil,
                     onEndTyping: { stateProvider.endTypingRun() },
-                    typingFocus: stateProvider.typingFocusController
+                    onSubmitTyping: { stateProvider.submitTypedInput() },
+                    onFinishTypingWithoutPasting: { stateProvider.finishTypedInputWithoutPasting() },
+                    typingFocus: stateProvider.typingFocusController,
+                    typingUndo: stateProvider.typingUndoController,
+                    width: liveTranscriptWidth,
+                    dragsWindow: true
                 )
                 Divider().background(Color.white.opacity(0.15))
             }
@@ -195,7 +211,8 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                 AssistantPanelView(
                     session: assistantSession,
                     liveFollowUpText: liveAssistantFollowUpText,
-                    onSend: onAssistantFollowUp
+                    onSend: onAssistantFollowUp,
+                    height: min(MiniRecorderLayoutMetrics.assistantPanelHeight, maximumContextHeight)
                 )
                 Divider().background(Color.white.opacity(0.15))
             } else {

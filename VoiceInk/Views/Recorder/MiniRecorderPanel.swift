@@ -9,10 +9,13 @@ enum MiniRecorderLayoutMetrics {
     // Keep the expanded width for mixed speech/context, but use the midpoint
     // between the original 12pt and enlarged 24pt type. The separate HUD
     // slider scales the entire panel without changing this layout measurement.
-    static let liveTranscriptWidth: CGFloat = 688
+    static let liveTranscriptWidth: CGFloat = 1100
     static let liveTranscriptFontSize: CGFloat = 18
     static let notchTranscriptSideExpansion: CGFloat = 360
-    static let bottomPadding: CGFloat = 24
+    // Ethan's "bottom edge touching the bottom of the screen" means the
+    // physical display edge, not the Dock-safe visibleFrame. Keep it flush
+    // while the default HUD grows upward; an explicit drag still owns position.
+    static let bottomPadding: CGFloat = 0
     static let controlBarHeight: CGFloat = 40
     static let liveTranscriptHeight: CGFloat = 56
     /// One line of recorder text plus the 16pt vertical padding every measured
@@ -30,10 +33,24 @@ enum MiniRecorderLayoutMetrics {
         return ceil(bounds.height) + 16
     }()
     static var typedInputHeight: CGFloat { singleLineHeight }
-    static let typedInputControlWidth: CGFloat = 90
     static let separatorHeight: CGFloat = 1
     static let assistantPanelHeight: CGFloat = 320
     static let stackedCardSpacing: CGFloat = 46
+
+    /// Widen the context surface, not its font. Convert physical display bounds
+    /// back to the slider's logical coordinate space so mirroring and UI scaling
+    /// cannot put the editor outside a smaller display.
+    static func contextWidth(screenWidth: CGFloat, scale: CGFloat) -> CGFloat {
+        min(liveTranscriptWidth, max(1, screenWidth / max(0.1, scale) - 48))
+    }
+
+    /// The quarter-screen limit includes the live card's controls and divider;
+    /// it is not a text-only cap followed by another control bar underneath.
+    /// Longer speech/context and typing already own separate scroll surfaces.
+    static func contextHeightLimit(screenHeight: CGFloat, scale: CGFloat,
+                                   controlsHeight: CGFloat = controlBarHeight) -> CGFloat {
+        max(0, screenHeight * 0.25 / max(0.1, scale) - controlsHeight - separatorHeight)
+    }
 
     /// Lay out only the lines that can fit in the current display's envelope.
     /// A character count cannot establish that the HUD is full: at the same
@@ -65,7 +82,7 @@ enum MiniRecorderLayoutMetrics {
         let limit = max(typedInputHeight, maxHeight)
         // Include the trailing insertion line: NSString otherwise omits it after Return.
         return max(typedInputHeight, measuredHeight(
-            text + "\u{200B}", width: width - 34 - typedInputControlWidth, limit: limit
+            text + "\u{200B}", width: width - 34, limit: limit
         ))
     }
 
@@ -96,6 +113,7 @@ enum MiniRecorderLayoutMetrics {
         let plain = parts.map { part -> String in
             switch part {
             case .speech(let text): return text
+            case .potentialTTS(let text): return "Potential ignore: " + text
             case .selection(let text): return "Selected Text: \(text)"
             case .screenshot(let text): return "Screenshot: \(text)"
             }
@@ -110,11 +128,13 @@ enum MiniRecorderLayoutMetrics {
         showsRealtimeTranscript: Bool,
         sessionCount: Int,
         realtimeTranscriptHeight: CGFloat = liveTranscriptHeight,
-        scale: CGFloat = 1
+        assistantHeight: CGFloat = assistantPanelHeight,
+        scale: CGFloat = 1,
+        screenBottomInset: CGFloat = 0
     ) -> CGFloat {
         let baseHeight: CGFloat
         if showsAssistant {
-            baseHeight = assistantPanelHeight + separatorHeight + controlBarHeight
+            baseHeight = assistantHeight + separatorHeight + controlBarHeight
         } else if showsRealtimeTranscript {
             baseHeight = realtimeTranscriptHeight + separatorHeight + controlBarHeight
         } else {
@@ -122,7 +142,9 @@ enum MiniRecorderLayoutMetrics {
         }
 
         let stackedHeight = CGFloat(max(0, sessionCount - 1)) * stackedCardSpacing
-        return bottomPadding + (baseHeight + stackedHeight) * scale
+        // Notifications use visibleFrame coordinates, while the HUD now starts
+        // at frame.minY. Convert once so a bottom Dock isn't reserved twice.
+        return max(0, bottomPadding + (baseHeight + stackedHeight) * scale - screenBottomInset)
     }
 }
 
@@ -144,6 +166,25 @@ struct RecorderPanelHeightSync: NSViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
     func makeNSView(context: Context) -> NSView { NSView(frame: .zero) }
 
+    static func resizedFrame(
+        _ frame: NSRect, desiredHeight: CGFloat, edge: Edge, scale: CGFloat,
+        screenFrame: NSRect, visibleFrame: NSRect, wasDraggedByUser: Bool
+    ) -> NSRect {
+        let limit = edge == .bottom
+            ? visibleFrame.maxY - screenFrame.minY - MiniRecorderLayoutMetrics.bottomPadding - 12
+            : screenFrame.height - 12
+        let minimum = 120 * scale
+        let height = min(max(minimum, desiredHeight * scale), max(minimum, limit))
+        var result = frame
+        result.size.height = height
+        if !wasDraggedByUser {
+            result.origin.y = edge == .bottom
+                ? screenFrame.minY + MiniRecorderLayoutMetrics.bottomPadding
+                : screenFrame.maxY - height
+        }
+        return result
+    }
+
     func updateNSView(_ view: NSView, context: Context) {
         context.coordinator.desiredHeight = desiredHeight
         context.coordinator.scale = scale
@@ -153,26 +194,23 @@ struct RecorderPanelHeightSync: NSViewRepresentable {
             coordinator.scheduled = false
             guard let panel = view?.window,
                   let screen = panel.screen else { return }
-            let limit = edge == .bottom
-                ? screen.visibleFrame.height - MiniRecorderLayoutMetrics.bottomPadding - 12
-                : screen.frame.height - 12
-            let minimum = 120 * coordinator.scale
-            let height = min(max(minimum, coordinator.desiredHeight * coordinator.scale),
-                             max(minimum, limit))
-            guard abs(panel.frame.height - height) > 1 else { return }
-            var frame = panel.frame
-            frame.size.height = height
-            if (panel as? MiniRecorderPanel)?.wasDraggedByUser != true {
-                frame.origin.y = edge == .bottom
-                    ? screen.visibleFrame.minY + MiniRecorderLayoutMetrics.bottomPadding
-                    : screen.frame.maxY - height
-            }
+            let frame = Self.resizedFrame(
+                panel.frame, desiredHeight: coordinator.desiredHeight, edge: edge,
+                scale: coordinator.scale, screenFrame: screen.frame,
+                visibleFrame: screen.visibleFrame,
+                wasDraggedByUser: (panel as? MiniRecorderPanel)?.wasDraggedByUser == true
+            )
+            guard abs(panel.frame.height - frame.height) > 1 else { return }
             panel.setFrame(frame, display: true)
         }
     }
 }
 
 class MiniRecorderPanel: NSPanel {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        RecorderTypingTextView.handleOwnedShortcut(event, in: self)
+            || super.performKeyEquivalent(with: event)
+    }
     var wasDraggedByUser = false
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
@@ -209,18 +247,25 @@ class MiniRecorderPanel: NSPanel {
         for screen: NSScreen? = NSScreen.main,
         scale: CGFloat = 1
     ) -> NSRect {
-        let width: CGFloat = 720 * scale
+        guard let screen else {
+            let contentWidth = MiniRecorderLayoutMetrics.contextWidth(screenWidth: 1440, scale: scale)
+            return NSRect(x: 0, y: 0, width: (contentWidth + 32) * scale, height: 430 * scale)
+        }
+        return calculateWindowMetrics(screenFrame: screen.frame, visibleFrame: screen.visibleFrame, scale: scale)
+    }
+
+    static func calculateWindowMetrics(
+        screenFrame: NSRect, visibleFrame: NSRect, scale: CGFloat
+    ) -> NSRect {
+        let contentWidth = MiniRecorderLayoutMetrics.contextWidth(
+            screenWidth: visibleFrame.width, scale: scale)
+        let width: CGFloat = (contentWidth + 32) * scale
         let height: CGFloat = 430 * scale
 
-        guard let screen else {
-            return NSRect(x: 0, y: 0, width: width, height: height)
-        }
-
         // Host stays large enough for assistant output; SwiftUI controls the visible mini width.
-        let visibleFrame = screen.visibleFrame
         let centerX = visibleFrame.midX
         let xPosition = centerX - (width / 2)
-        let yPosition = visibleFrame.minY + MiniRecorderLayoutMetrics.bottomPadding
+        let yPosition = screenFrame.minY + MiniRecorderLayoutMetrics.bottomPadding
 
         return NSRect(
             x: xPosition,

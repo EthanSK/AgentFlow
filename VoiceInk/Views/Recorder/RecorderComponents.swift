@@ -510,13 +510,22 @@ struct RecorderModeButton: View {
 
 struct LiveTranscriptView: View {
     let text: String
+    var potentialTTSActive = false
+    var dimsContextUntilSpeechArrives = false
     let selectionReferences: [LiveSelectionReference]
+    var cachedPreviewParts: [LiveSelectionReference.PreviewPart]? = nil
     let height: CGFloat
     var typedInput: Binding<String>? = nil
     var onEndTyping: () -> Void = {}
+    var onSubmitTyping: (() -> Void)? = nil
+    var onFinishTypingWithoutPasting: (() -> Void)? = nil
     var typingFocus: RecorderTypingFocus? = nil
+    var typingUndo: RecorderTypingUndoController? = nil
     var width: CGFloat = MiniRecorderLayoutMetrics.liveTranscriptWidth
-    @State private var typingFocusRequest = UUID()
+    var dragsWindow = false
+    // Absence means no explicit click-to-type request. A random default token
+    // could look like a new request when SwiftUI reused the previous editor.
+    @State private var typingFocusRequest: UUID? = nil
 
     private var editorHeight: CGFloat {
         guard let typedInput else { return 0 }
@@ -529,41 +538,69 @@ struct LiveTranscriptView: View {
         )
     }
 
-    private var previewParts: [LiveSelectionReference.PreviewPart] {
-        LiveSelectionReference.previewParts(selectionReferences, with: text)
-    }
-
-    private var previewText: Text {
-        guard !previewParts.isEmpty else { return Text("…") }
-        return previewParts.enumerated().reduce(Text("")) { result, entry in
+    private func previewText(_ parts: [LiveSelectionReference.PreviewPart]) -> Text {
+        let amber = Color(red: 251.0/255, green: 191.0/255, blue: 36.0/255)
+        // Keep waiting context readable but achromatic for peripheral feedback.
+        // Only recolor the bounded display, never rewrite/crop its source refs.
+        let waitingContext = Color.white.opacity(0.45)
+        guard !parts.isEmpty else {
+            return potentialTTSActive ? Text("Potential ignore").foregroundColor(amber) : Text("…")
+        }
+        let hasAnnotatedWords = parts.contains {
+            if case .potentialTTS = $0 { return true }
+            return false
+        }
+        // Playback feedback must appear before the next provider callback. The
+        // historical amber phrase remains after playback, but the live prefix
+        // disappears as soon as the bounded playback/tail ends.
+        let prefix = potentialTTSActive && !hasAnnotatedWords
+            ? Text("Potential ignore · ").foregroundColor(amber) : Text("")
+        return parts.enumerated().reduce(prefix) { result, entry in
             let part: Text
             switch entry.element {
             case .speech(let speech):
                 part = Text(speech)
+            case .potentialTTS(let speech):
+                part = Text("Potential ignore: " + speech)
+                    .foregroundColor(amber)
             case .selection(let preview):
                 part = Text("\(String(localized: "Selected Text")): \(preview)")
-                    .foregroundColor(.cyan.opacity(0.8))
+                    .foregroundColor(dimsContextUntilSpeechArrives ? waitingContext : .cyan.opacity(0.8))
             case .screenshot(let filename):
                 part = Text("\(String(localized: "Screenshot")): \(filename)")
-                    .foregroundColor(.purple.opacity(0.95))
+                    .foregroundColor(dimsContextUntilSpeechArrives ? waitingContext : .purple.opacity(0.95))
             }
-            return entry.offset == 0 ? part : result + Text("  ") + part
+            return result + (entry.offset == 0 ? Text("") : Text("  ")) + part
         }
     }
 
     var body: some View {
+        // One snapshot per body evaluation: both Text construction and scrolling
+        // use the same ordered parts. Rebuilding it four times per partial crowded
+        // the main thread and delayed the independently observed audio meter.
+        let parts = cachedPreviewParts ?? LiveSelectionReference.previewParts(selectionReferences, with: text)
         VStack(spacing: 0) {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {
                 // One chronological stream keeps each highlight between the
                 // speech before and after it. The old pinned latest-selection
                 // strip lost earlier highlights and made new ones jump to top.
-                previewText
+                previewText(parts)
                     .font(.system(size: MiniRecorderLayoutMetrics.liveTranscriptFontSize))
                     .foregroundColor(.white.opacity(0.8))
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 6)
+                    .overlay {
+                        if dragsWindow {
+                            // The read-only preview is a drag handle, not the
+                            // editable NSTextView below. Keep this INSIDE the
+                            // scroll document so wheel input still scrolls it.
+                            RecorderPanelDragSurface(onClick: {
+                                if typedInput != nil { typingFocusRequest = UUID() }
+                            })
+                        }
+                    }
                     .id("bottom")
             }
             .frame(height: max(0, height - editorHeight))
@@ -583,7 +620,7 @@ struct LiveTranscriptView: View {
                 )
             )
             .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
-            .onChange(of: previewParts) {
+            .onChange(of: parts) {
                 proxy.scrollTo("bottom", anchor: .bottom)
             }
         }
@@ -598,18 +635,42 @@ struct LiveTranscriptView: View {
                         .allowsHitTesting(false)
                 }
                 RecorderTypedInput(text: typedInput, focusRequest: typingFocusRequest,
-                                   onEndEditing: onEndTyping, typingFocus: typingFocus)
+                                   onEndEditing: onEndTyping, typingFocus: typingFocus,
+                                   typingUndo: typingUndo,
+                                   onSubmit: onSubmitTyping,
+                                   onFinishWithoutPasting: onFinishTypingWithoutPasting)
             }
-            // Reserve a stable control gutter so Unfocus never covers typed text
-            // or changes wrapping when the user enables/disables focus return.
-            .padding(.trailing, MiniRecorderLayoutMetrics.typedInputControlWidth)
+            // The removed Unfocus control used a reserved gutter. The editor
+            // now owns that width; measurement must use the same full width.
             .frame(height: editorHeight)
-            .overlay(alignment: .topTrailing) {
-                if let typingFocus { RecorderTypingFocusControl(focus: typingFocus) }
-            }
         }
         }
         .transaction { $0.disablesAnimations = true }
+    }
+}
+
+/// Pause the same capture, not microphone-off typing, finalization, or playback.
+/// Wait for the engine's real state change before presenting Play; every mirrored
+/// HUD observes that one session and disables the control during the transition.
+struct RecorderPauseButton<S: RecorderStateProvider & ObservableObject>: View {
+    @ObservedObject var stateProvider: S
+    var symbolName: String { stateProvider.recordingState == .paused ? "play.fill" : "pause.fill" }
+    var actionTitle: String {
+        stateProvider.recordingState == .paused
+            ? String(localized: "Resume recording") : String(localized: "Pause recording")
+    }
+    var body: some View {
+        Button(action: stateProvider.togglePause) {
+            Image(systemName: symbolName)
+                .font(.system(size: 12))
+                .foregroundStyle(stateProvider.recordingState == .paused ? .orange : .white.opacity(0.75))
+                .frame(width: 24, height: 24)
+        }
+        .buttonStyle(.plain)
+        .disabled(stateProvider.microphoneTransitionPending || !stateProvider.recordingState.isRecordingOrPaused)
+        .help(actionTitle)
+        .accessibilityLabel(actionTitle)
+        .accessibilityIdentifier("recorder-pause-resume")
     }
 }
 
@@ -624,7 +685,7 @@ struct RecorderMicrophoneButton<S: RecorderStateProvider & ObservableObject>: Vi
                 .frame(width: 24, height: 24)
         }
         .buttonStyle(.plain)
-        .disabled(stateProvider.microphoneTransitionPending)
+        .disabled(stateProvider.microphoneTransitionPending || stateProvider.recordingState == .starting)
         .help(stateProvider.microphoneOff ? String(localized: "Turn microphone on") : String(localized: "Turn microphone off"))
         .accessibilityLabel(stateProvider.microphoneOff ? String(localized: "Turn microphone on") : String(localized: "Turn microphone off"))
     }
@@ -928,6 +989,7 @@ struct AssistantPanelView: View {
     @ObservedObject var session: AssistantSession
     let liveFollowUpText: String
     let onSend: (String) -> Void
+    var height: CGFloat = MiniRecorderLayoutMetrics.assistantPanelHeight
 
     @State private var draftMessage = ""
     @FocusState private var isFollowUpFieldFocused: Bool
@@ -953,7 +1015,7 @@ struct AssistantPanelView: View {
         }
         .padding(.horizontal, horizontalPadding)
         .padding(.vertical, 10)
-        .frame(height: MiniRecorderLayoutMetrics.assistantPanelHeight)
+        .frame(height: height)
         .onAppear(perform: focusFollowUpFieldIfAvailable)
         .onChange(of: session.phase) {
             focusFollowUpFieldIfAvailable()

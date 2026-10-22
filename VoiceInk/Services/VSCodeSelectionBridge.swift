@@ -3,7 +3,7 @@ import Foundation
 
 /// Monaco's default AX editor explicitly exposes no text unless screen-reader
 /// mode is enabled. Better Git uses VS Code's public selection event instead.
-/// This is a pull made only for an active recording's real mouse gesture, not
+/// This is a pull made only for an active recording's explicit selection gesture, not
 /// an always-on editor feed. No clipboard, AX writes, focus changes or TCP port.
 /// Both ends require the current gesture, source PID and a private same-user
 /// socket. A missing/ambiguous/stale bridge falls through to read-only AX.
@@ -14,6 +14,8 @@ enum VSCodeSelectionBridge {
         let sourcePID: Int32
         let gestureStartedAt: Double
         let requestedAt: Double
+        var inputKind: String? = nil
+        var inputDirection: String? = nil
     }
 
     struct Response: Codable, Sendable {
@@ -22,6 +24,7 @@ enum VSCodeSelectionBridge {
         let sourcePID: Int32
         let changedAt: Double
         let text: String
+        var inputKind: String? = nil
     }
 
     static func supports(_ bundleID: String?) -> Bool {
@@ -31,6 +34,8 @@ enum VSCodeSelectionBridge {
     static func validatedText(_ response: Response, for request: Request, now: Double) -> String? {
         guard response.version == 1, response.nonce == request.nonce,
               response.sourcePID == request.sourcePID,
+              ["mouse", "keyboard", "selectAll"].contains(request.inputKind ?? "mouse"),
+              (response.inputKind ?? "mouse") == (request.inputKind ?? "mouse"),
               response.changedAt.isFinite, now.isFinite,
               response.changedAt >= request.gestureStartedAt - 30,
               response.changedAt <= now, now - request.requestedAt <= 1000,
@@ -40,10 +45,12 @@ enum VSCodeSelectionBridge {
         return response.text
     }
 
-    static func read(sourcePID: pid_t, gestureStartedAt: Date) async -> String? {
+    static func read(sourcePID: pid_t, gestureStartedAt: Date, inputKind: String? = nil,
+                     inputDirection: String? = nil) async -> String? {
         let request = Request(nonce: UUID().uuidString, sourcePID: sourcePID,
                               gestureStartedAt: gestureStartedAt.timeIntervalSince1970 * 1000,
-                              requestedAt: Date().timeIntervalSince1970 * 1000)
+                              requestedAt: Date().timeIntervalSince1970 * 1000,
+                              inputKind: inputKind, inputDirection: inputDirection)
         let directory = "/tmp/agentflow-selection-\(getuid())"
         // lstat refuses symlinks, and both directory and sockets must belong to
         // this user without group/world access. Never repair permissions here.

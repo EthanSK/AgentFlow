@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import OSLog
+import Combine
 
 class WindowManager: NSObject {
     static let shared = WindowManager()
@@ -11,9 +12,38 @@ class WindowManager: NSObject {
     private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "WindowManager")
     private weak var mainWindow: NSWindow?
     private var didApplyInitialPlacement = false
+    private var zoomObservation: AnyCancellable?
+    private var zoomKeyMonitor: Any?
+    private let zoomStore: MainWindowZoomStore
+    private var appliedZoom: Double
 
-    private override init() {
+    init(zoomStore: MainWindowZoomStore = .shared) {
+        self.zoomStore = zoomStore
+        self.appliedZoom = zoomStore.scale
         super.init()
+        zoomObservation = zoomStore.$scale.dropFirst().sink { [weak self] scale in
+            // @Published emits before the new value is stored. Resizing there
+            // races SwiftUI's old minimum width, leaving a blank strip after
+            // zoom-out. Apply only the latest value on the next main turn.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.zoomStore.scale == scale else { return }
+                self.applyMainWindowZoom(scale)
+            }
+        }
+        // The ordinary View menu owns the visible shortcuts; this local alias
+        // also accepts Command-= on keyboards where + normally needs Shift.
+        zoomKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let window = self?.mainWindow,
+                  (event.window ?? NSApp.keyWindow) === window,
+                  let action = MainWindowZoomAction.from(event, mainWindowIsKey: window.isKeyWindow)
+            else { return event }
+            self?.zoomStore.apply(action)
+            return nil
+        }
+    }
+
+    deinit {
+        if let zoomKeyMonitor { NSEvent.removeMonitor(zoomKeyMonitor) }
     }
     
     func configureWindow(_ window: NSWindow) {
@@ -36,14 +66,39 @@ class WindowManager: NSObject {
         window.level = .normal
         window.isOpaque = false
         window.isMovableByWindowBackground = false
-        window.minSize = NSSize(width: 0, height: 0)
+        window.contentMinSize = MainWindowLayout.minimumSize(at: zoomStore.scale)
         registerMainWindowIfNeeded(window)
         applyInitialPlacementIfNeeded(to: window)
         window.orderFrontRegardless()
     }
+
+    private func applyMainWindowZoom(_ scale: Double) {
+        let previous = appliedZoom
+        appliedZoom = scale
+        guard let window = mainWindow else { return }
+        let oldFrame = window.frame
+        let oldContent = window.contentRect(forFrameRect: oldFrame)
+        let minimum = MainWindowLayout.minimumSize(at: scale)
+        window.contentView?.layoutSubtreeIfNeeded()
+        window.contentMinSize = minimum
+        let size = NSSize(width: minimum.width,
+                          height: max(minimum.height, oldContent.height * scale / previous))
+        var frame = window.frameRect(forContentRect: NSRect(origin: .zero, size: size))
+        frame.origin = NSPoint(x: oldFrame.minX, y: oldFrame.maxY - frame.height)
+        if let screen = window.screen {
+            frame.origin.x = max(screen.visibleFrame.minX,
+                                 min(frame.origin.x, screen.visibleFrame.maxX - frame.width))
+            frame.origin.y = max(screen.visibleFrame.minY,
+                                 min(frame.origin.y, screen.visibleFrame.maxY - frame.height))
+        }
+        window.setFrame(frame, display: true)
+        saveMainWindowFrame(window)
+    }
     
     func registerMainWindow(_ window: NSWindow) {
         mainWindow = window
+        appliedZoom = zoomStore.scale
+        zoomStore.mainWindowIsKey = window.isKeyWindow
         window.identifier = Self.mainWindowIdentifier
         window.delegate = self
     }
@@ -159,6 +214,7 @@ extension WindowManager: NSWindowDelegate {
             logger.notice("windowWillClose: main window closing, clearing weak reference")
             window.orderOut(nil)
             mainWindow = nil
+            zoomStore.mainWindowIsKey = false
             didApplyInitialPlacement = false
         }
     }
@@ -167,6 +223,13 @@ extension WindowManager: NSWindowDelegate {
         guard let window = notification.object as? NSWindow,
               window.identifier == Self.mainWindowIdentifier else { return }
         NSApplication.shared.activate(ignoringOtherApps: true)
+        zoomStore.mainWindowIsKey = true
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              window.identifier == Self.mainWindowIdentifier else { return }
+        zoomStore.mainWindowIsKey = false
     }
 
     func windowDidMove(_ notification: Notification) {

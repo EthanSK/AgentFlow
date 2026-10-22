@@ -1,5 +1,63 @@
 import SwiftUI
 import Combine
+import AppKit
+
+/// Cheap first pixels, not a recording card: no Mode, destination, live waveform,
+/// editor, timers or controls until a real session owns them. Existing background
+/// cards and assistant content remain intact instead of being replaced by a shell.
+struct RecorderStartupPlaceholder: NSViewRepresentable {
+    let requestID: UUID
+    let onFirstDraw: (UUID, TimeInterval) -> Void
+
+    func makeNSView(context: Context) -> RecorderStartupPlaceholderView {
+        let view = RecorderStartupPlaceholderView(frame: .zero)
+        view.configure(requestID: requestID, onFirstDraw: onFirstDraw)
+        return view
+    }
+
+    func updateNSView(_ view: RecorderStartupPlaceholderView, context: Context) {
+        view.configure(requestID: requestID, onFirstDraw: onFirstDraw)
+    }
+}
+
+final class RecorderStartupPlaceholderView: NSView {
+    private var requestID: UUID?
+    private var reportedRequestID: UUID?
+    private var onFirstDraw: ((UUID, TimeInterval) -> Void)?
+
+    override var isOpaque: Bool { false }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    func configure(requestID: UUID, onFirstDraw: @escaping (UUID, TimeInterval) -> Void) {
+        if self.requestID != requestID { reportedRequestID = nil }
+        self.requestID = requestID
+        self.onFirstDraw = onFirstDraw
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard bounds.width > 0, bounds.height > 0 else { return }
+        NSColor.black.setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: 20, yRadius: 20).fill()
+        // Neutral, static dots acknowledge the command without simulating audio
+        // energy, recognized speech, Pause, or a live microphone.
+        NSColor(white: 0.45, alpha: 1).setFill()
+        for offset in [-8.0, 0.0, 8.0] as [CGFloat] {
+            NSBezierPath(ovalIn: NSRect(
+                x: bounds.midX + offset - 2, y: bounds.midY - 2, width: 4, height: 4
+            )).fill()
+        }
+        guard let requestID, reportedRequestID != requestID,
+              window?.isVisible == true,
+              NSGraphicsContext.current?.isDrawingToScreen == true,
+              let onFirstDraw else { return }
+        reportedRequestID = requestID
+        let drawnAt = ProcessInfo.processInfo.systemUptime
+        // Do not publish SwiftUI state from inside AppKit drawing. Capture the
+        // draw clock now; a late callback still cannot acknowledge a newer start.
+        DispatchQueue.main.async { onFirstDraw(requestID, drawnAt) }
+    }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // RecorderStackView(s) — stacked recorder cards for record-while-transcribing.
@@ -44,6 +102,7 @@ struct MiniRecorderStackView: View {
     @ObservedObject var hudScale: RecorderHUDScaleStore
     @State private var layoutTick = 0
     let screenHeight: CGFloat
+    let screenWidth: CGFloat
     let recorder: Recorder
     @ObservedObject var assistantSession: AssistantSession
     let onRecordButtonTapped: () -> Void
@@ -70,26 +129,31 @@ struct MiniRecorderStackView: View {
         ordered.isEmpty && assistantSession.isVisible
     }
 
+    private var liveTranscriptWidth: CGFloat {
+        MiniRecorderLayoutMetrics.contextWidth(screenWidth: screenWidth, scale: CGFloat(hudScale.scale))
+    }
+
+    private var maximumContextHeight: CGFloat {
+        MiniRecorderLayoutMetrics.contextHeightLimit(screenHeight: screenHeight, scale: CGFloat(hudScale.scale))
+    }
+
     private var liveTranscriptHeight: CGFloat {
         guard let baseSession else { return MiniRecorderLayoutMetrics.liveTranscriptHeight }
-        let parts = LiveSelectionReference.previewParts(
-            baseSession.liveContextPreviewReferences,
-            with: baseSession.partialTranscript
-        )
+        let parts = baseSession.liveContextPreviewParts
         return MiniRecorderLayoutMetrics.contextHeight(
             parts: parts,
             typedText: baseSession.canTypeInHUD ? baseSession.typedInput : nil,
-            width: MiniRecorderLayoutMetrics.liveTranscriptWidth,
-            maxHeight: screenHeight / CGFloat(hudScale.scale) - 150
+            width: liveTranscriptWidth,
+            maxHeight: maximumContextHeight
         )
     }
 
     private var baseCardHeight: CGFloat {
         if assistantSession.isVisible {
-            return MiniRecorderLayoutMetrics.assistantPanelHeight + 41
+            return min(MiniRecorderLayoutMetrics.assistantPanelHeight, maximumContextHeight) + 41
         }
         if let baseSession,
-           baseSession.liveRecordingState.isRecordingOrPaused,
+           (baseSession.liveRecordingState.isRecordingOrPaused || baseSession.canTypeInHUD),
            baseSession.showsRealtimeTranscriptHUD || baseSession.canTypeInHUD || !baseSession.liveSelectionReferences.isEmpty {
             return liveTranscriptHeight + 41
         }
@@ -103,10 +167,23 @@ struct MiniRecorderStackView: View {
     var body: some View {
         let _ = layoutTick // Register the session-change dependency for host geometry.
         ZStack(alignment: .bottom) {
+            if engine.startupPresentation.shouldShow(
+                sessionCount: ordered.count, assistantVisible: assistantSession.isVisible
+            ), let requestID = engine.startupPresentation.requestID {
+                RecorderStartupPlaceholder(requestID: requestID) { [weak engine] id, uptime in
+                    engine?.recordStartupPlaceholderDraw(requestID: id, uptime: uptime)
+                }
+                .frame(width: min(280, liveTranscriptWidth), height: MiniRecorderLayoutMetrics.controlBarHeight)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+                .transition(.identity)
+            }
             if showAssistantOnlyCard {
                 MiniRecorderView(
                     stateProvider: engine,
                     liveTranscriptHeight: liveTranscriptHeight,
+                    liveTranscriptWidth: liveTranscriptWidth,
+                    maximumContextHeight: maximumContextHeight,
                     recorder: recorder,
                     assistantSession: assistantSession,
                     onRecordButtonTapped: onRecordButtonTapped,
@@ -123,14 +200,14 @@ struct MiniRecorderStackView: View {
                     // climb upward in the bottom-anchored panel.
                     .offset(y: cardOffset(for: session))
                     .zIndex(zIndex(for: session))
-                    .transition(
-                        .move(edge: .bottom).combined(with: .opacity)
-                    )
+                    .transition(engine.startupPresentation.isHandingOff(to: session.startID)
+                        ? .identity : .move(edge: .bottom).combined(with: .opacity))
             }
         }
         // Implicit animation keyed on the session id list so add/remove (and the resulting
         // offset shuffles) animate the pile growing/collapsing.
-        .animation(.spring(response: 0.38, dampingFraction: 0.85), value: engine.sessions.map(\.id))
+        .animation(engine.startupPresentation.isHandingOff(to: baseSession?.startID)
+            ? nil : .spring(response: 0.38, dampingFraction: 0.85), value: engine.sessions.map(\.id))
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .onReceive((baseSession?.objectWillChange ?? ObservableObjectPublisher()).receive(on: RunLoop.main)) { _ in
             // The engine's session array does not publish changes to a session's
@@ -138,7 +215,7 @@ struct MiniRecorderStackView: View {
             layoutTick &+= 1
         }
         .background(RecorderPanelHeightSync(
-            desiredHeight: max(430, baseCardHeight + CGFloat(stackedChipCount) * 46 + 12),
+            desiredHeight: max(120, baseCardHeight + CGFloat(stackedChipCount) * 46 + 12),
             edge: .bottom,
             scale: CGFloat(hudScale.scale)
         ))
@@ -179,6 +256,8 @@ struct MiniRecorderStackView: View {
             MiniRecorderView(
                 stateProvider: session,
                 liveTranscriptHeight: liveTranscriptHeight,
+                liveTranscriptWidth: liveTranscriptWidth,
+                maximumContextHeight: maximumContextHeight,
                 recorder: recorder,
                 assistantSession: assistantSession,
                 onRecordButtonTapped: onRecordButtonTapped,
@@ -214,6 +293,7 @@ struct NotchRecorderStackView: View {
     let notchWidth: CGFloat
     let notchHeight: CGFloat
     let screenHeight: CGFloat
+    let screenWidth: CGFloat
     let onRecordButtonTapped: () -> Void
     let onCloseTapped: () -> Void
     let onCancelTapped: () -> Void
@@ -242,36 +322,53 @@ struct NotchRecorderStackView: View {
         pillSession == nil && assistantSession.isVisible
     }
 
+    private var liveTranscriptWidth: CGFloat {
+        MiniRecorderLayoutMetrics.contextWidth(screenWidth: screenWidth, scale: CGFloat(hudScale.scale))
+    }
+
+    private var maximumContextHeight: CGFloat {
+        MiniRecorderLayoutMetrics.contextHeightLimit(screenHeight: screenHeight,
+            scale: CGFloat(hudScale.scale), controlsHeight: notchHeight + 6)
+    }
+
     private var liveTranscriptHeight: CGFloat {
         guard let pillSession else { return MiniRecorderLayoutMetrics.liveTranscriptHeight }
         return MiniRecorderLayoutMetrics.contextHeight(
-            parts: LiveSelectionReference.previewParts(
-                pillSession.liveContextPreviewReferences,
-                with: pillSession.partialTranscript
-            ),
+            parts: pillSession.liveContextPreviewParts,
             typedText: pillSession.canTypeInHUD ? pillSession.typedInput : nil,
-            width: notchWidth + MiniRecorderLayoutMetrics.notchTranscriptSideExpansion * 2 - 16,
-            maxHeight: screenHeight / CGFloat(hudScale.scale) - notchHeight - 150
+            width: liveTranscriptWidth - 16,
+            maxHeight: maximumContextHeight
         )
     }
 
     private var desiredPanelHeight: CGFloat {
         let pill: CGFloat
         if assistantSession.isVisible {
-            pill = notchHeight + 6 + 320
+            pill = notchHeight + 6 + min(320, maximumContextHeight)
         } else if let session = pillSession,
-                  session.liveRecordingState.isRecordingOrPaused,
+                  (session.liveRecordingState.isRecordingOrPaused || session.canTypeInHUD),
                   session.showsRealtimeTranscriptHUD || session.canTypeInHUD || !session.liveSelectionReferences.isEmpty {
             pill = notchHeight + 6 + liveTranscriptHeight + 1
         } else {
             pill = notchHeight + 6
         }
-        return max(430, pill + CGFloat(backgroundSessions.count) * 46 + 12)
+        return max(120, pill + CGFloat(backgroundSessions.count) * 46 + 12)
     }
 
     var body: some View {
         let _ = layoutTick
         VStack(spacing: 6) {
+            if engine.startupPresentation.shouldShow(
+                sessionCount: ordered.count, assistantVisible: assistantSession.isVisible
+            ), let requestID = engine.startupPresentation.requestID {
+                RecorderStartupPlaceholder(requestID: requestID) { [weak engine] id, uptime in
+                    engine?.recordStartupPlaceholderDraw(requestID: id, uptime: uptime)
+                }
+                .frame(width: min(280, liveTranscriptWidth), height: notchHeight + 6)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+                .transition(.identity)
+            }
             // The pill at the top (the notch itself).
             if let pillSession {
                 NotchRecorderView(
@@ -281,6 +378,8 @@ struct NotchRecorderStackView: View {
                     notchWidth: notchWidth,
                     notchHeight: notchHeight,
                     liveTranscriptHeight: liveTranscriptHeight,
+                    liveTranscriptWidth: liveTranscriptWidth,
+                    maximumContextHeight: maximumContextHeight,
                     onRecordButtonTapped: onRecordButtonTapped,
                     onCloseTapped: onCloseTapped,
                     onCancelTapped: onCancelTapped,
@@ -294,6 +393,8 @@ struct NotchRecorderStackView: View {
                     notchWidth: notchWidth,
                     notchHeight: notchHeight,
                     liveTranscriptHeight: liveTranscriptHeight,
+                    liveTranscriptWidth: liveTranscriptWidth,
+                    maximumContextHeight: maximumContextHeight,
                     onRecordButtonTapped: onRecordButtonTapped,
                     onCloseTapped: onCloseTapped,
                     onCancelTapped: onCancelTapped,
@@ -311,7 +412,8 @@ struct NotchRecorderStackView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .animation(.spring(response: 0.38, dampingFraction: 0.85), value: engine.sessions.map(\.id))
+        .animation(engine.startupPresentation.isHandingOff(to: pillSession?.startID)
+            ? nil : .spring(response: 0.38, dampingFraction: 0.85), value: engine.sessions.map(\.id))
         .frame(maxWidth: .infinity, alignment: .top)
         .onReceive((pillSession?.objectWillChange ?? ObservableObjectPublisher()).receive(on: RunLoop.main)) { _ in
             layoutTick &+= 1

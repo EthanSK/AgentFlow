@@ -10,6 +10,8 @@
 
   /** @type {Array<() => void>} */
   const cleanupCallbacks = [];
+  const seekHistory = globalThis.__voiceInkYouTubeSeekHistory?.createController();
+  cleanupCallbacks.push(() => seekHistory?.dispose());
 
   /** @type {HTMLVideoElement | null} */
   let currentVideo = null;
@@ -457,6 +459,7 @@
       restoreAgenticMouseSpeedHold(hold.token, 'video-changed');
     }
     attachToVideo(video);
+    seekHistory?.refresh(video, currentVideoId());
   };
 
   /**
@@ -580,7 +583,9 @@
   /**
    * @returns {Promise<{ ok: boolean; resumed?: boolean; reason?: string }>}
    */
-  const resumeYouTube = async () => {
+  const resumeYouTube = async (expiresAt = Infinity) => {
+    const expired = () => Date.now() >= expiresAt;
+    if (expired()) return { ok: false, resumed: false, reason: 'playback-command-expired' };
     // Prefer the PiP video (same rationale as pauseYouTube): resume the exact element the user is
     // watching in the PiP window, not a stray in-page <video>.
     const video = getActiveVideo();
@@ -624,6 +629,9 @@
     ];
 
     for (let i = 0; i < RESUME_FALLBACK_ATTEMPTS.length; i += 1) {
+      // Hidden-page timers may resume long after the worker abandoned this request. Never
+      // let that stale continuation click Play underneath a later recording/manual pause.
+      if (expired()) return { ok: false, resumed: false, reason: 'playback-command-expired' };
       const attempt = RESUME_FALLBACK_ATTEMPTS[i];
 
       if (attempt.useButton && playButton instanceof HTMLElement) {
@@ -657,6 +665,38 @@
 
   // Agentic Mouse's five-second scrub command. This touches only the chosen <video>'s timeline:
   // it never focuses Chrome, activates a tab, changes playback state, or synthesizes a key/click.
+  // Use YouTube's actual visible control, not a guessed sponsor timestamp or a seek offset.
+  const jumpAheadYouTube = () => {
+    const video = getActiveVideo();
+    if (!video || location.pathname.startsWith('/shorts/')) {
+      return { ok: false, jumpAheadClicked: false, reason: 'no-watch-video' };
+    }
+    const player = video.closest('#movie_player');
+    if (!player) return { ok: false, jumpAheadClicked: false, reason: 'no-watch-player' };
+    const visible = element => {
+      const rect = element.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0 || rect.bottom <= 0 || rect.right <= 0 ||
+          rect.top >= window.innerHeight || rect.left >= window.innerWidth) return false;
+      for (let node = element; node; node = node.parentElement) {
+        const style = getComputedStyle(node);
+        if (node.hidden || node.getAttribute('aria-hidden') === 'true' ||
+            style.display === 'none' || style.visibility !== 'visible' || Number(style.opacity) === 0) return false;
+      }
+      return true;
+    };
+    const buttons = Array.from(player.querySelectorAll('button, [role="button"]')).filter(button => {
+      const label = (button.getAttribute('aria-label') || button.textContent || '').trim().replace(/\s+/g, ' ');
+      return /^Jump ahead$/i.test(label) && !button.disabled &&
+        button.getAttribute('aria-disabled') !== 'true' && visible(button);
+    });
+    if (buttons.length !== 1) {
+      return { ok: false, jumpAheadClicked: false, reason: buttons.length ? 'ambiguous-jump-ahead' : 'jump-ahead-not-visible' };
+    }
+    buttons[0].click();
+    // A click confirms control activation, not the eventual asynchronous seek.
+    return { ok: true, jumpAheadClicked: true };
+  };
+
   const seekYouTubeFiveSeconds = (seekSeconds) => {
     const video = getActiveVideo();
     if (!video) {
@@ -666,6 +706,7 @@
     const previousTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
     const duration = Number.isFinite(video.duration) ? video.duration : Number.POSITIVE_INFINITY;
     const targetTime = Math.min(duration, Math.max(0, previousTime + seekSeconds));
+    seekHistory?.remember();
     video.currentTime = targetTime;
     const sought = video.currentTime === targetTime;
     clog(`seek-youtube received: seconds=${seekSeconds} previous=${previousTime} current=${video.currentTime} sought=${sought}`);
@@ -702,6 +743,9 @@
     refreshVideoBinding();
 
     const typedMessage = /** @type {{ type?: unknown, seekSeconds?: unknown, volumeDelta?: unknown, holdToken?: unknown, playbackRate?: unknown, restorePlaybackRate?: unknown, holdLeaseMilliseconds?: unknown }} */ (message);
+    if (Number.isFinite(message.expiresAt) && Date.now() >= message.expiresAt) {
+      sendResponse({ ok: false, reason: 'playback-command-expired' }); return false;
+    }
 
     switch (typedMessage.type) {
       case 'state-request':
@@ -729,12 +773,16 @@
 
       case 'resume-youtube':
         // VoiceInk record-stop: resume only if currently paused. Response carries `resumed`.
-        resumeYouTube()
+        resumeYouTube(message.expiresAt)
           .then((response) => sendResponse(response))
           .catch((error) =>
             sendResponse({ ok: false, resumed: false, reason: String(error) }),
           );
         return true;
+
+      case 'jump-ahead-youtube':
+        sendResponse(jumpAheadYouTube());
+        return false;
 
       case 'seek-youtube':
         if (typedMessage.seekSeconds !== -5 && typedMessage.seekSeconds !== 5) {

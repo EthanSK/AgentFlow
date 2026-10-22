@@ -2,6 +2,10 @@ import SwiftUI
 import AppKit
 
 class KeyablePanel: NSPanel {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        RecorderTypingTextView.handleOwnedShortcut(event, in: self)
+            || super.performKeyEquivalent(with: event)
+    }
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 }
@@ -58,7 +62,10 @@ class NotchRecorderPanel: KeyablePanel {
 
         let maxSideExpansion = MiniRecorderLayoutMetrics.notchTranscriptSideExpansion
         let sideMargin: CGFloat = 10
-        let totalWidth = (notchWidth + (maxSideExpansion + sideMargin) * 2) * scale
+        let totalWidth = max(
+            MiniRecorderLayoutMetrics.contextWidth(screenWidth: screen.visibleFrame.width, scale: scale) + 16,
+            min(screen.visibleFrame.width / scale - 32, notchWidth + (maxSideExpansion + sideMargin) * 2)
+        ) * scale
 
         // 430 already accommodates the assistant panel (320). It also comfortably fits the
         // record-while-transcribing stack: the notch pill (~43) plus several "transcribing…"

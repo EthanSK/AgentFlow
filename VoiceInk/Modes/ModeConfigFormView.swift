@@ -544,7 +544,7 @@ struct ModeConfigFormView: View {
                 Toggle(isOn: $draft.isStyledContextEnabled) {
                     HStack(spacing: 6) {
                         Text("Colored context")
-                        InfoTip("Rainbow speech and typed text, with one color per XML section type. For apps that render LaTeX, such as Codex.")
+                        InfoTip("Colors speech, typed text, and context in compatible apps. Codex drafts stay editable plain text.")
                     }
                 }
             }

@@ -16,14 +16,20 @@
 //   node render.mjs --stills --out DIR [times…]   PNG stills
 //   node render.mjs --draft --out FILE.mp4 [--voice DIR]   preview anywhere outside docs/
 //   node render.mjs --voice DIR                   final video, captions and poster in docs/assets
-// Options: --scale N (device scale, default 2), --work DIR (frame cache), --fresh (ignore cache).
+//   node render.mjs --reuse-audio [--out FILE.mp4]
+//       the current picture over the PUBLISHED soundtrack, copied packet for packet, on the
+//       timing its captions record. Without --out it replaces the published video and poster
+//       (captions stay byte-identical) and writes promo/published-video.json. --plan and
+//       --stills accept --reuse-audio too, to check that timing before rendering.
+// Options: --scale N (device scale, default 2), --work DIR (frame cache), --fresh (ignore cache),
+//   --source FILE.mp4 and --captions FILE.vtt (reuse-audio inputs; default: the published ones).
 //
-// Requirements: Google Chrome (channel "chrome") and ffmpeg on PATH.
+// Requirements: Google Chrome (channel "chrome") and ffmpeg/ffprobe (4.4+, for streamhash) on PATH.
 
 import { chromium } from "playwright-core";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -31,29 +37,35 @@ import { buildTimeline, FPS, SAMPLE_RATE } from "./timeline.mjs";
 import { renderSoundtrack, reverb } from "./music.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
+const repoRoot = resolve(here, "..");
 const docs = resolve(here, "..", "docs");
 const FINAL = {
   video: join(docs, "assets", "agentflow-promo.mp4"),
   captions: join(docs, "assets", "agentflow-promo.vtt"),
   poster: join(docs, "assets", "agentflow-promo-poster.jpg"),
 };
+// Provenance of the published video: which soundtrack it carries and what drew the picture.
+const RECEIPT = join(here, "published-video.json");
 
 // ---------- Arguments ----------
 
 const args = process.argv.slice(2);
-const valueOptions = ["--voice", "--out", "--work", "--scale"];
+const valueOptions = ["--voice", "--out", "--work", "--scale", "--source", "--captions"];
 const option = (name) => {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : undefined;
 };
 const optionValueIndexes = new Set(valueOptions.map((name) => args.indexOf(name) + 1).filter((i) => i > 0));
 const times = args.filter((a, i) => !optionValueIndexes.has(i) && /^\d+(\.\d+)?$/.test(a)).map(Number);
-const mode = args.includes("--plan") ? "plan" : args.includes("--stills") ? "stills" : args.includes("--draft") ? "draft" : "final";
+const reuse = args.includes("--reuse-audio");
+const mode = args.includes("--plan") ? "plan" : args.includes("--stills") ? "stills" : args.includes("--draft") ? "draft" : reuse ? "reuse" : "final";
 const voiceDir = option("--voice") && resolve(option("--voice"));
 const outPath = option("--out") && resolve(option("--out"));
 const workDir = resolve(option("--work") || join(tmpdir(), "agentflow-promo-work"));
 const deviceScale = Number(option("--scale") || 2);
 const fresh = args.includes("--fresh");
+const sourceVideo = resolve(option("--source") || FINAL.video);
+const sourceCaptions = resolve(option("--captions") || FINAL.captions);
 
 function fail(message) {
   console.error(`render.mjs: ${message}`);
@@ -62,10 +74,13 @@ function fail(message) {
 
 if ((mode === "stills" || mode === "draft") && !outPath) fail(`--${mode} needs --out`);
 if (outPath && !relative(docs, outPath).startsWith("..")) {
-  fail("--out must be outside docs/. Only the final render (with every voice take) writes the published files.");
+  fail("--out must be outside docs/. Only the final render (with every voice take) or --reuse-audio without --out writes the published files.");
 }
+if (reuse && voiceDir) fail("--reuse-audio keeps the published soundtrack; it can't be combined with --voice.");
+if (reuse && mode === "draft") fail("--reuse-audio replaces --draft here: use --reuse-audio --out FILE.mp4 for a preview outside docs/.");
+if (!reuse && (option("--source") || option("--captions"))) fail("--source and --captions only apply with --reuse-audio.");
 if (mode === "final" && !voiceDir) {
-  fail("the final video needs the narration voice: pass --voice DIR with one <id>.wav per segment (see README.md). Use --draft --out FILE for a preview.");
+  fail("the final video needs a voiced soundtrack: pass --voice DIR with one <id>.wav per segment, or --reuse-audio to keep the published one (see README.md). Use --draft --out FILE for a preview; a music-only draft is never published.");
 }
 
 const narration = JSON.parse(readFileSync(join(here, "narration.json"), "utf8"));
@@ -302,12 +317,133 @@ function writeWav(file, L, R) {
   writeFileSync(file, buf);
 }
 
+// ---------- The published video, for --reuse-audio ----------
+//
+// The original voice takes aren't kept in the repository, but the published MP4 carries the
+// finished mix and its captions were written from the same measured timing (see captions()
+// below). Each cue starts at its line's measured start, and ends 0.35 s after the line's
+// last sound unless the next line (or the video's end) clips it. So the captions give every
+// line's real start and length without guessing, and the audio can be copied unchanged.
+
+const sha256File = (file) => createHash("sha256").update(readFileSync(file)).digest("hex");
+const repoPath = (file) => relative(repoRoot, file) || ".";
+
+function run(cmd, list) {
+  const r = spawnSync(cmd, list, { encoding: "utf8", maxBuffer: 1 << 26 });
+  if (r.error) fail(`${cmd} couldn't start: ${r.error.message}`);
+  if (r.status !== 0) fail(`${cmd} failed: ${r.stderr}`);
+  return r;
+}
+
+function probe(file, selector, entries) {
+  const r = run("ffprobe", ["-v", "error", ...selector, "-show_entries", entries, "-of", "json", file]);
+  return JSON.parse(r.stdout).streams || [];
+}
+
+function videoFrames(file) {
+  const [v] = probe(file, ["-select_streams", "v:0", "-count_packets"], "stream=nb_read_packets,r_frame_rate,width,height");
+  if (!v) fail(`${file} has no video stream`);
+  return { frames: Number(v.nb_read_packets), rate: v.r_frame_rate, width: v.width, height: v.height };
+}
+
+// SHA-256 of the audio stream's encoded packets, independent of the container around them.
+// Equal hashes before and after muxing prove the soundtrack was copied, not re-encoded.
+function audioStreamHash(file) {
+  const r = run("ffmpeg", ["-v", "error", "-i", file, "-map", "0:a:0", "-c", "copy", "-f", "streamhash", "-hash", "sha256", "-"]);
+  const hash = r.stdout.match(/SHA256=([0-9a-f]{64})/i)?.[1];
+  if (!hash) fail("couldn't hash the audio stream: ffmpeg 4.4 or later (streamhash muxer) is required");
+  return hash.toLowerCase();
+}
+
+function parseVtt(text) {
+  const ms = (stamp) => {
+    const m = stamp.match(/^(?:(\d+):)?(\d{2}):(\d{2})\.(\d{3})$/);
+    if (!m) fail(`unreadable caption time "${stamp}"`);
+    return ((Number(m[1] || 0) * 60 + Number(m[2])) * 60 + Number(m[3])) * 1000 + Number(m[4]);
+  };
+  const cues = [];
+  for (const block of text.replace(/\r/g, "").split(/\n{2,}/)) {
+    const lines = block.split("\n").filter((line) => line.trim());
+    const at = lines.findIndex((line) => line.includes("-->"));
+    if (at < 0) continue;
+    const [a, b] = lines[at].split("-->").map((part) => ms(part.trim().split(/\s+/)[0]));
+    cues.push({ start: a, end: b, text: lines.slice(at + 1).join(" ") });
+  }
+  return cues;
+}
+
+// Every narration line, matched to its caption cue(s) word for word, with its measured
+// start and length. Fails rather than estimating when a cue's end was clipped.
+function timingFromCaptions(cues, durationMs) {
+  const unquote = (text) => text.replace(/^“/, "").replace(/”$/, "");
+  const lines = [];
+  let c = 0;
+  for (const s of narration.segments) {
+    const parts = [];
+    let joined = "";
+    while (c < cues.length && joined !== s.text) {
+      parts.push(cues[c++]);
+      joined = parts.map((p) => (s.kind === "dictation" ? unquote(p.text) : p.text)).join(" ");
+      if (joined !== s.text && !s.text.startsWith(`${joined} `)) {
+        fail(`caption "${parts[parts.length - 1].text}" doesn't match narration line "${s.id}"; the published audio isn't this narration.json`);
+      }
+    }
+    if (joined !== s.text) fail(`the captions end before narration line "${s.id}"`);
+    lines.push({ id: s.id, kind: s.kind, declaredStart: s.start, startMs: parts[0].start, captionEndMs: parts[parts.length - 1].end });
+  }
+  if (c !== cues.length) fail(`the captions have ${cues.length - c} cue(s) beyond narration.json`);
+  return lines.map((line, i) => {
+    const next = lines[i + 1];
+    const limit = next ? next.startMs - 50 : durationMs;
+    if (line.captionEndMs >= limit - 1) {
+      fail(`can't measure where "${line.id}" ends: its caption was clipped by ${next ? "the next line" : "the end of the video"}, so its length would be a guess`);
+    }
+    const endMs = line.captionEndMs - 350;
+    if (endMs <= line.startMs || (i && line.startMs < lines[i - 1].captionEndMs - 350)) fail(`caption timing for "${line.id}" is inconsistent`);
+    return { ...line, start: line.startMs / 1000, end: endMs / 1000, duration: (endMs - line.startMs) / 1000 };
+  });
+}
+
+function measurePublished() {
+  for (const file of [sourceVideo, sourceCaptions]) if (!existsSync(file)) fail(`--reuse-audio needs ${file}`);
+  mkdirSync(workDir, { recursive: true });
+  const videoSha = sha256File(sourceVideo);
+  // Work from a private copy: without --out, the output replaces the published file.
+  const copy = join(workDir, `source-${videoSha.slice(0, 16)}.mp4`);
+  if (!existsSync(copy) || sha256File(copy) !== videoSha) copyFileSync(sourceVideo, copy);
+  const streams = probe(copy, [], "stream=codec_type");
+  const audioStreams = streams.filter((s) => s.codec_type === "audio").length;
+  if (audioStreams !== 1) fail(`${sourceVideo} must have exactly one audio stream (found ${audioStreams})`);
+  const video = videoFrames(copy);
+  if (video.rate !== `${FPS}/1` || !(video.frames > 0)) fail(`${sourceVideo} is ${video.rate} with ${video.frames} frames; expected ${FPS}/1`);
+  const [audio] = probe(copy, ["-select_streams", "a:0"], "stream=codec_name,sample_rate,channels");
+  const durationMs = Math.round((video.frames / FPS) * 1000);
+  const lines = timingFromCaptions(parseVtt(readFileSync(sourceCaptions, "utf8")), durationMs);
+  return {
+    copy,
+    frames: video.frames,
+    duration: video.frames / FPS,
+    lines,
+    measured: Object.fromEntries(lines.map((l) => [l.id, { start: l.start, duration: l.duration }])),
+    video: { sha256: videoSha, width: video.width, height: video.height },
+    captions: { sha256: sha256File(sourceCaptions) },
+    audio: {
+      streamSha256: audioStreamHash(copy),
+      codec: audio.codec_name, sampleRate: Number(audio.sample_rate), channels: audio.channels,
+    },
+  };
+}
+
 // ---------- Timeline, voice stem and recorder waveform ----------
 
-const takes = loadVoice();
-const timeline = buildTimeline(narration, takes || {});
+const published = reuse ? measurePublished() : null;
+const takes = published ? null : loadVoice();
+const timeline = published
+  ? buildTimeline(narration, published.measured, { duration: published.duration })
+  : buildTimeline(narration, takes || {});
 const samples = Math.ceil(timeline.duration * SAMPLE_RATE);
 const frameCount = Math.round(timeline.duration * FPS);
+if (published && frameCount !== published.frames) fail(`timeline has ${frameCount} frames; the published video has ${published.frames}`);
 
 function buildVoice() {
   const all = new Float32Array(samples);
@@ -333,6 +469,21 @@ function buildVoice() {
     }
   }
   return { all: compress(all), dictation };
+}
+
+// With --reuse-audio there are no separate dictation takes: the recorder waveform follows the
+// published mix, but only inside each dictation line's measured span (with the same lead-in
+// and tail as a trimmed take), so narration and music between lines never move it.
+function publishedDictation(file) {
+  const mix = decode(file);
+  const out = new Float32Array(samples);
+  for (const s of Object.values(timeline.seg)) {
+    if (s.kind !== "dictation") continue;
+    const a = Math.max(0, Math.round((s.start - 0.03) * SAMPLE_RATE));
+    const b = Math.min(samples, mix.length, Math.round((s.end + 0.18) * SAMPLE_RATE));
+    for (let i = a; i < b; i++) out[i] = mix[i];
+  }
+  return out;
 }
 
 // Recorder waveform level per video frame (0–1), from the dictation takes when present.
@@ -477,13 +628,98 @@ function printPlan() {
   });
   console.log(rows.join("\n"));
   console.log(`duration ${timeline.duration.toFixed(2)} s at ${narration.bpm} bpm`);
-  if (timeline.shifts.length) console.log(`shifted: ${timeline.shifts.map((s) => `${s.id} +${s.by} s`).join(", ")}`);
+  if (timeline.shifts.length) console.log(`shifted: ${timeline.shifts.map((s) => `${s.id} ${s.by > 0 ? "+" : ""}${s.by} s`).join(", ")}`);
+  if (published) {
+    console.log(`timing measured from ${repoPath(sourceCaptions)}; ${published.frames} frames from ${repoPath(sourceVideo)}`);
+    console.log(`audio stream sha256 ${published.audio.streamSha256} (${published.audio.codec}, ${published.audio.sampleRate} Hz, ${published.audio.channels} ch)`);
+    console.log("dictation words are placed by syllable within each measured line, not per measured word");
+  }
 }
 
-function run(cmd, list) {
-  const r = spawnSync(cmd, list, { encoding: "utf8", maxBuffer: 1 << 26 });
-  if (r.status !== 0) fail(`${cmd} failed: ${r.stderr}`);
-  return r;
+// The provenance file. Records hashes only; no dates, so identical inputs give identical bytes.
+function receiptFor(kind, extra) {
+  const files = ["scene.html", "timeline.mjs", "render.mjs", "music.mjs", "narration.json"];
+  return {
+    about: "Provenance of the published promo video. Written by render.mjs; see promo/README.md.",
+    kind,
+    narration: { segments: narration.segments.map((s) => s.id), duration: timeline.duration, fps: FPS, frames: frameCount },
+    picture: {
+      sources: Object.fromEntries(files.map((f) => [f, sha256File(join(here, f))])),
+      deviceScale,
+    },
+    ...extra,
+  };
+}
+
+// --reuse-audio: mux the rendered picture with the published audio packets, verify, then
+// publish (or write the preview). The soundtrack and captions are never regenerated.
+async function finishReuse(browser, promo, picture) {
+  const target = outPath || FINAL.video;
+  const base = target.slice(0, target.length - extname(target).length);
+  const captionsFile = outPath ? `${base}.vtt` : FINAL.captions;
+  const posterFile = outPath ? `${base}-poster.jpg` : FINAL.poster;
+  const receiptFile = outPath ? `${base}.receipt.json` : RECEIPT;
+
+  // Once a soundtrack is recorded, only those exact audio packets may be reused.
+  if (existsSync(RECEIPT)) {
+    const recorded = JSON.parse(readFileSync(RECEIPT, "utf8")).audio?.streamSha256;
+    if (recorded && recorded !== published.audio.streamSha256) {
+      fail(`${repoPath(sourceVideo)} carries audio ${published.audio.streamSha256}, not the soundtrack recorded in ${repoPath(RECEIPT)} (${recorded}). Refusing to publish a different soundtrack.`);
+    }
+  }
+
+  // Mux in the work folder; nothing reaches the target until the result verifies.
+  const candidate = join(workDir, "reuse-candidate.mp4");
+  run("ffmpeg", [
+    "-y", "-loglevel", "error", "-i", picture, "-i", published.copy,
+    "-map", "0:v:0", "-map", "1:a:0", "-c", "copy", "-movflags", "+faststart", candidate,
+  ]);
+  const made = videoFrames(candidate);
+  if (made.frames !== published.frames || made.rate !== `${FPS}/1`) {
+    fail(`the new video has ${made.frames} frames at ${made.rate}; the published one has ${published.frames} at ${FPS}/1`);
+  }
+  const outAudio = audioStreamHash(candidate);
+  if (outAudio !== published.audio.streamSha256) fail("the muxed audio isn't packet-identical to the published soundtrack");
+
+  mkdirSync(dirname(target), { recursive: true });
+  copyFileSync(candidate, target);
+  // The captions describe this exact audio, so they are kept byte for byte.
+  if (resolve(captionsFile) !== sourceCaptions) copyFileSync(sourceCaptions, captionsFile);
+  if (sha256File(captionsFile) !== published.captions.sha256) fail(`${captionsFile} changed while rendering`);
+
+  const posterPage = await openScene(browser, promo, 1);
+  await posterPage.evaluate((t) => window.renderAt(t), timeline.moments.typeEnd + 0.15);
+  await posterPage.screenshot({ path: posterFile, type: "jpeg", quality: 86 });
+
+  const receipt = receiptFor("reuse-audio", {
+    audio: {
+      streamSha256: outAudio,
+      codec: published.audio.codec, sampleRate: published.audio.sampleRate, channels: published.audio.channels,
+      reusedFrom: { file: repoPath(sourceVideo), sha256: published.video.sha256 },
+      voiceTakes: "not used: the published soundtrack (voice, music and interface sounds) is copied unchanged",
+    },
+    timing: {
+      from: { captions: repoPath(sourceCaptions), sha256: published.captions.sha256 },
+      lines: published.lines.map((l) => ({ id: l.id, kind: l.kind, declaredStart: l.declaredStart, start: l.start, end: l.end })),
+      dictationWords: "placed by syllable within each measured line",
+      waveform: "published mix inside the measured dictation lines",
+    },
+    output: {
+      video: { file: repoPath(target), sha256: sha256File(target) },
+      captions: { file: repoPath(captionsFile), sha256: published.captions.sha256 },
+      poster: { file: repoPath(posterFile), sha256: sha256File(posterFile) },
+      chrome: browser.version(),
+    },
+  });
+  writeFileSync(receiptFile, `${JSON.stringify(receipt, null, 2)}\n`);
+
+  const measured = measureFile(target);
+  console.log(target);
+  console.log(captionsFile);
+  console.log(posterFile);
+  console.log(receiptFile);
+  console.log(`audio packets identical to the published soundtrack (sha256 ${outAudio})`);
+  console.log(`loudness ${measured.integrated} LUFS, true peak ${measured.truePeak} dBFS, ${timeline.duration.toFixed(2)} s, ${made.frames} frames`);
 }
 
 function measureFile(file) {
@@ -496,12 +732,14 @@ function measureFile(file) {
 
 async function main() {
   if (timeline.shifts.length) {
-    console.warn(`note: long take(s) moved later lines by whole beats: ${timeline.shifts.map((s) => `${s.id} +${s.by} s`).join(", ")}`);
+    console.warn(published
+      ? `note: the published audio starts these lines away from narration.json, and the picture follows it: ${timeline.shifts.map((s) => `${s.id} ${s.by > 0 ? "+" : ""}${s.by} s`).join(", ")}`
+      : `note: long take(s) moved later lines by whole beats: ${timeline.shifts.map((s) => `${s.id} +${s.by} s`).join(", ")}`);
   }
   if (mode === "plan") return printPlan();
 
   const voice = takes ? buildVoice() : null;
-  const promo = { ...timeline, level: waveformLevels(voice?.dictation) };
+  const promo = { ...timeline, level: waveformLevels(published ? publishedDictation(published.copy) : voice?.dictation) };
   const browser = await chromium.launch({ channel: "chrome", headless: true });
   try {
     if (mode === "stills") {
@@ -533,6 +771,8 @@ async function main() {
     const picture = join(workDir, `picture-${key}.mp4`);
     if (fresh || !existsSync(picture)) await renderPicture(browser, promo, picture);
     else console.log(`reusing ${picture}`);
+
+    if (mode === "reuse") return await finishReuse(browser, promo, picture);
 
     // Sound: music and interface sounds, with the voice on top when there is one.
     const { music, sfx } = renderSoundtrack(timeline);
@@ -610,6 +850,23 @@ async function main() {
     const posterPage = await openScene(browser, promo, 1);
     await posterPage.evaluate((t) => window.renderAt(t), timeline.moments.typeEnd + 0.15);
     await posterPage.screenshot({ path: posterFile, type: "jpeg", quality: 86 });
+
+    if (mode === "final") {
+      // A new voiced soundtrack becomes the one later --reuse-audio renders must keep.
+      writeFileSync(RECEIPT, `${JSON.stringify(receiptFor("voice-takes", {
+        audio: {
+          streamSha256: audioStreamHash(target),
+          voiceTakes: Object.fromEntries(narration.segments.map((s) => [`${s.id}.wav`, sha256File(join(voiceDir, `${s.id}.wav`))])),
+        },
+        output: {
+          video: { file: repoPath(target), sha256: sha256File(target) },
+          captions: { file: repoPath(captionsFile), sha256: sha256File(captionsFile) },
+          poster: { file: repoPath(posterFile), sha256: sha256File(posterFile) },
+          chrome: browser.version(),
+        },
+      }), null, 2)}\n`);
+      console.log(RECEIPT);
+    }
 
     const measured = measureFile(target);
     console.log(target);

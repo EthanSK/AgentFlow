@@ -28,6 +28,7 @@ enum RecorderPanelStyle: String, CaseIterable, Identifiable {
 protocol RecorderPanelPresenting: AnyObject {
     func showTranscriptionRetryPanel()
     var isRecorderPanelVisible: Bool { get }
+    func flushStartupPresentation(requestID: UUID) async
     func dismissRecorderPanel() async
 }
 
@@ -71,6 +72,66 @@ enum RecorderPanelLifecyclePolicy {
         canceled: Bool
     ) -> Bool {
         startTokenIsCurrent && sessionStillOwnsMic && !panelIsVisible && !canceled
+    }
+
+    /// A recorder-start failure may stop the shared Recorder, discard the WAV/journal,
+    /// remove the session and dismiss the HUD only while that exact start still owns its
+    /// session. Cancel, an overlapping normal stop and reset replace the start token or
+    /// remove the session first and own their own teardown and History retention.
+    static func startFailureOwnsCaptureTeardown(
+        startTokenIsCurrent: Bool,
+        sessionIsRegistered: Bool,
+        sessionStillOwnsMic: Bool
+    ) -> Bool {
+        startTokenIsCurrent && sessionIsRegistered && sessionStillOwnsMic
+    }
+}
+
+/// Presentation only: an accepted Start is not a microphone owner or a fake session.
+/// In particular, reserving during the pending-result double-click decision must
+/// never show this shell or change Primary/Next routing.
+struct RecorderStartupPresentation: Equatable {
+    private(set) var requestID: UUID?
+    private(set) var handoffID: UUID?
+    private var activationUptime: TimeInterval?
+    private var reportedFirstDraw = false
+
+    init() {}
+
+    mutating func commit(_ id: UUID, activationUptime: TimeInterval) {
+        guard requestID != id else { return }
+        requestID = id
+        handoffID = nil
+        self.activationUptime = activationUptime
+        reportedFirstDraw = false
+    }
+
+    mutating func clear(_ id: UUID) {
+        guard requestID == id || handoffID == id else { return }
+        self = Self()
+    }
+
+    mutating func handoff(_ id: UUID) {
+        guard requestID == id else { return }
+        requestID = nil
+        handoffID = id
+    }
+
+    mutating func firstDraw(_ id: UUID, uptime: TimeInterval) -> Int? {
+        guard requestID == id || handoffID == id,
+              !reportedFirstDraw, let activationUptime,
+              uptime.isFinite, uptime >= activationUptime else { return nil }
+        reportedFirstDraw = true
+        return Int(min((uptime - activationUptime) * 1_000, Double(Int32.max)))
+    }
+
+    func shouldShow(sessionCount: Int, assistantVisible: Bool) -> Bool {
+        requestID != nil && sessionCount == 0 && !assistantVisible
+    }
+
+    func isHandingOff(to startID: UUID?) -> Bool {
+        guard let handoffID, let startID else { return false }
+        return handoffID == startID
     }
 }
 
@@ -166,10 +227,14 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
 
         let baseSession = engine.activeRecordingSession ?? engine.sessions.last
         let showsAssistant = engine.assistantSession.isVisible
-        guard showsAssistant || baseSession != nil else { return nil }
+        let showsStartup = engine.startupPresentation.shouldShow(
+            sessionCount: engine.sessions.count, assistantVisible: showsAssistant
+        )
+        guard showsAssistant || baseSession != nil || showsStartup else { return nil }
 
         let showsRealtimeTranscript =
-            baseSession?.liveRecordingState.isRecordingOrPaused == true
+            (baseSession?.liveRecordingState.isRecordingOrPaused == true
+                || baseSession?.canTypeInHUD == true)
             && (baseSession?.showsRealtimeTranscriptHUD == true
                 || baseSession?.canTypeInHUD == true
                 || baseSession?.liveSelectionReferences.isEmpty == false)
@@ -177,13 +242,12 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
         let transcriptHeight: CGFloat
         if let baseSession, showsRealtimeTranscript {
             transcriptHeight = MiniRecorderLayoutMetrics.contextHeight(
-                parts: LiveSelectionReference.previewParts(
-                    baseSession.liveContextPreviewReferences,
-                    with: baseSession.partialTranscript
-                ),
+                parts: baseSession.liveContextPreviewParts,
                 typedText: baseSession.canTypeInHUD ? baseSession.typedInput : nil,
-                width: MiniRecorderLayoutMetrics.liveTranscriptWidth,
-                maxHeight: screen.visibleFrame.height / CGFloat(RecorderHUDScaleStore.shared.scale) - 150
+                width: MiniRecorderLayoutMetrics.contextWidth(
+                    screenWidth: screen.visibleFrame.width, scale: CGFloat(RecorderHUDScaleStore.shared.scale)),
+                maxHeight: MiniRecorderLayoutMetrics.contextHeightLimit(
+                    screenHeight: screen.visibleFrame.height, scale: CGFloat(RecorderHUDScaleStore.shared.scale))
             )
         } else {
             transcriptHeight = MiniRecorderLayoutMetrics.liveTranscriptHeight
@@ -194,7 +258,11 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
             showsRealtimeTranscript: showsRealtimeTranscript,
             sessionCount: engine.sessions.count,
             realtimeTranscriptHeight: transcriptHeight,
-            scale: CGFloat(RecorderHUDScaleStore.shared.scale)
+            assistantHeight: min(MiniRecorderLayoutMetrics.assistantPanelHeight,
+                MiniRecorderLayoutMetrics.contextHeightLimit(screenHeight: screen.visibleFrame.height,
+                    scale: CGFloat(RecorderHUDScaleStore.shared.scale))),
+            scale: CGFloat(RecorderHUDScaleStore.shared.scale),
+            screenBottomInset: screen.visibleFrame.minY - screen.frame.minY
         )
     }
 
@@ -449,9 +517,32 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
     /// reservation. Shortcut monitoring can become live slightly earlier; reserving
     /// directly in the engine would let that reset invalidate the token and turn the
     /// first post-launch single press into a silent no-op.
-    func reserveRecordingStartAfterLaunchReset() async -> UUID? {
+    func reserveRecordingStartAfterLaunchReset(microphoneOff: Bool = false) async -> UUID? {
         await resetOnLaunch()
-        return engine?.reserveRecordingStart()
+        return engine?.reserveRecordingStart(microphoneOff: microphoneOff)
+    }
+
+    /// Give the shell one main-run-loop presentation opportunity before Mode,
+    /// journal and audio setup. This is not a click-decision timer or readiness
+    /// signal; the exact reservation is checked again after this suspension.
+    func flushStartupPresentation(requestID: UUID) async {
+        guard let engine,
+              engine.startupPresentation.shouldShow(
+                sessionCount: engine.sessions.count,
+                assistantVisible: engine.assistantSession.isVisible
+              ) else { return }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.main.async { [weak self] in
+                defer { continuation.resume() }
+                guard let self,
+                      self.engine?.startupPresentation.requestID == requestID,
+                      self.isRecorderPanelVisible else { return }
+                switch self.recorderPanelStyle {
+                case .mini: self.miniWindowManager?.displayIfNeeded()
+                case .notch: self.notchWindowManager?.displayIfNeeded()
+                }
+            }
+        }
     }
 
     func toggleRecorderPanel(
@@ -577,19 +668,34 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
                 await dismissRecorderPanel()
             }
         } else {
+            // Reserve before showing a nonactivating shell: the passive Next-only
+            // input and selection timestamp must still describe command time.
+            // Failed presentation releases only this exact request, not an old job.
+            let startRequestID: UUID?
+            if engine.activeRecordingSession == nil {
+                guard let id = reservedStartRequestID ?? engine.reserveRecordingStart() else { return }
+                guard engine.commitRecordingStartPresentation(id) else {
+                    engine.cancelRecordingStartReservation(id)
+                    return
+                }
+                startRequestID = id
+            } else {
+                // A temporarily lost panel can coexist with a real capture.
+                // Restore its controls, then retain the existing stop/cancel path;
+                // never assert a new idle reservation over that microphone owner.
+                startRequestID = nil
+            }
             guard showRecorderPanel(
                 reason: "recording start",
                 rearmFailureNotification: true
             ) else {
-                if let reservedStartRequestID {
-                    engine.cancelRecordingStartReservation(reservedStartRequestID)
-                }
+                if let startRequestID { engine.cancelRecordingStartReservation(startRequestID) }
                 return
             }
             isRecorderPanelVisible = true
             await engine.toggleRecord(
                 modeId: modeId,
-                reservedStartRequestID: reservedStartRequestID
+                reservedStartRequestID: startRequestID
             )
         }
     }

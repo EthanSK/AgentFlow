@@ -21,7 +21,7 @@
   <link rel="icon" href="assets/agentflow-icon.png">
   <link rel="apple-touch-icon" href="assets/agentflow-icon-512.png">
   <link rel="manifest" href="site.webmanifest">
-  <link rel="stylesheet" href="styles.css?v=379-typing-line">
+  <link rel="stylesheet" href="styles.css?v=458-plain-opening">
   <script>
     // Pre-hide the demo before first paint so autoplay never flashes the finished
     // example. If script.js hasn't taken over within 2.5 s, show everything.
@@ -62,6 +62,15 @@
       a generic selection from TextEdit; Codex keeps its own task-aware tag.
       The recorder's typing line shows "Click to type" until the typed name appears; the
       same typed words close the Codex paste. It matches the promo video's example.
+      The Codex pane mirrors AgentFlowPromptPreview.make in v2.0.458: one plain, editable
+      opening (a leading ↗ full-prompt link, every authored word, and inline-code
+      <selection>/<screenshot> markers), never rainbow-coloured. A message this short also
+      gets the canonical timeline appended underneath; at 5,000 UTF-16 units or more the
+      timeline is replaced by the "Read the full prompt before answering." footer link.
+      In Codex that appended timeline colours authored words in a rainbow and references
+      cyan/magenta; this page keeps its two signal colours and does not reproduce the
+      rainbow. Timing attributes are shown as "…" for width; the real output carries
+      start_at/end_at/captured_at values.
     -->
     <section class="hero" aria-labelledby="hero-title" data-demo-root data-stop-at="3050">
       <div class="wrap">
@@ -69,8 +78,8 @@
           <h1 id="hero-title">Speech to text, with your <span class="g-select">highlights</span> and <span class="g-shot">screenshots</span></h1>
           <div class="hero-aside" id="download">
             <p class="lede">Highlight text or take a screenshot while you talk. Agent Flow pastes your words with each reference near what you were saying, so your agent can see what you were looking at.</p>
-            <p class="actions"><a class="button" href="https://github.com/EthanSK/AgentFlow/releases/download/v2.0.366/AgentFlow-v2.0.366-mac-universal.zip">Download for Mac <span aria-hidden="true">↓</span></a></p>
-            <p class="release-note">v2.0.366 · macOS 14.4+ · Apple silicon and Intel<br>Developer ID signed and Apple notarized.</p>
+            <p class="actions"><a class="button" href="https://github.com/EthanSK/AgentFlow/releases/download/v2.0.458/AgentFlow-v2.0.458-mac-universal.zip">Download for Mac <span aria-hidden="true">↓</span></a></p>
+            <p class="release-note">v2.0.458 · macOS 14.4+ · Apple silicon and Intel<br>Developer ID signed and Apple notarized.</p>
             <p class="source-link"><a href="#build">Build from source</a></p>
           </div>
         </div>
@@ -84,9 +93,10 @@
               window reuses promo/scene.html's invented Rows.swift example, and the menu-bar
               clock matches the example screenshot's timestamp. Keep one HUD only; it stays
               the page's only black object. The window is a picture, not a control: no
-              hover, focus or click behaviour. The HUD is bottom-centred above a decorative
-              Dock and overlaps only the document's blank lower page, never the highlighted
-              line. The wallpaper and Dock establish macOS, not extra app controls.
+              hover, focus or click behaviour. Like the native panel since build 457, the HUD
+              is centred with its bottom edge on the screen's bottom edge (it floats over the
+              Dock area, so no Dock is drawn), and it overlaps only the document's blank lower
+              page, never the highlighted line. The wallpaper and menu bar establish macOS.
               The cyan wash is the selection that
               the HUD's Selected Text cue captures; its data-at reveals it just before
               that cue, and it is fully drawn without JavaScript or with reduced motion.
@@ -137,11 +147,9 @@
                   <p class="hud-type"><span class="step typed" data-at="2700">Call it fetchRows.</span><span class="hud-placeholder" aria-hidden="true">Click to type</span></p>
                   <div class="hud-bar" aria-hidden="true">
                     <span class="hud-stop"></span>
+                    <span class="hud-pause"></span>
                     <span class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
                   </div>
-                </div>
-                <div class="mac-dock" aria-hidden="true">
-                  <i class="dock-finder"></i><i class="dock-browser"></i><i class="dock-notes"></i><i class="dock-photos"></i><i class="dock-settings"></i><span class="dock-divider"></span><i class="dock-trash"></i>
                 </div>
               </div>
             </div>
@@ -155,13 +163,14 @@
           <div class="pane">
             <p class="pane-label">Pasted into Codex</p>
             <div class="composer">
-              <p class="msg step" data-at="3300">Rename this function</p>
-              <pre class="msg-xml xml-select step" data-at="3550"><code><span class="t">&lt;app_selection</span> <span class="a">index="1" source="TextEdit" characters="32" middle_omitted="false" truncated="false" bundle_id="com.apple.TextEdit"</span><span class="t">&gt;</span>
-  <span class="t">&lt;text&gt;</span>func loadRows(from cache: Cache)<span class="t">&lt;/text&gt;</span>
-<span class="t">&lt;/app_selection&gt;</span></code></pre>
-              <p class="msg step" data-at="3800">and make the empty state look like this.</p>
-              <pre class="msg-xml xml-shot step" data-at="4050"><code><span class="t">&lt;local_screenshot</span> <span class="a">path="/Users/you/Desktop/Screenshot 2026-09-24 at 10.41.12.png"</span><span class="t">/&gt;</span></code></pre>
-              <p class="msg step" data-at="4300">Call it fetchRows.</p>
+              <p class="msg msg-open step" data-at="3300"><span class="prompt-link" aria-hidden="true">↗</span><span class="sr-only">Full prompt link.</span> Rename this function <code class="marker">&lt;selection&gt;</code> and make the empty state look like this. <code class="marker">&lt;screenshot&gt;</code> Call it fetchRows.</p>
+              <div class="timeline">
+                <pre class="msg-xml xml-speech step" data-at="3600"><code><span class="t">&lt;speech</span> <span class="a">…</span><span class="t">&gt;</span>Rename this function<span class="t">&lt;/speech&gt;</span></code></pre>
+                <pre class="msg-xml xml-select step" data-at="3750"><code><span class="t">&lt;app_selection</span> <span class="a">index="1" source="TextEdit" characters="32" middle_omitted="false" truncated="false" bundle_id="com.apple.TextEdit" …</span><span class="t">&gt;&lt;text&gt;</span>func loadRows(from cache: Cache)<span class="t">&lt;/text&gt;&lt;/app_selection&gt;</span></code></pre>
+                <pre class="msg-xml xml-speech step" data-at="3900"><code><span class="t">&lt;speech</span> <span class="a">…</span><span class="t">&gt;</span>and make the empty state look like this.<span class="t">&lt;/speech&gt;</span></code></pre>
+                <pre class="msg-xml xml-shot step" data-at="4050"><code><span class="t">&lt;local_screenshot</span> <span class="a">path="/Users/you/Desktop/Screenshot 2026-09-24 at 10.41.12.png" …</span><span class="t">/&gt;</span></code></pre>
+                <pre class="msg-xml xml-speech step" data-at="4200"><code><span class="t">&lt;typed_text</span> <span class="a">…</span><span class="t">&gt;</span>Call it fetchRows.<span class="t">&lt;/typed_text&gt;</span></code></pre>
+              </div>
             </div>
           </div>
 
@@ -169,19 +178,19 @@
             <button class="replay" type="button" data-demo-replay hidden><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7M4 4v5h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>Replay</button>
             <ul class="facts">
               <li>Live words stay in the recorder until you stop, then paste once.</li>
-              <li>Mouse highlights keep up to 8,000 characters with whitespace intact. Separate highlights stay in order, even without speech between them.</li>
-              <li>Click the recorder to type alongside your speech and references. Enter adds a line break; finish normally to paste. The microphone stays active.</li>
-              <li>Context is pasted only into the native Codex, ChatGPT, Claude and Telegram apps. Other apps receive your spoken and typed words without the tags.</li>
+              <li>In Codex, your words arrive as plain, editable text, with &lt;selection&gt; and &lt;screenshot&gt; markers where you made them. The opening is never colour-styled.</li>
+              <li>A short message adds the full timeline underneath. A longer one ends with a “Read the full prompt” link instead; the ↗ at the start opens the same prompt.</li>
+              <li>Every full prompt is saved privately on your Mac and opens in a local viewer with your screenshots. Nothing is uploaded, so cloud-only chats can't open it.</li>
+              <li>Click the recorder's typing line to add typed words. Enter places them at that point in your speech, Shift+Enter adds a line break, and Command+Enter finishes and sends. The microphone keeps recording.</li>
+              <li>Highlights are kept in full, with whitespace intact. Separate highlights stay in order, even without speech between them.</li>
+              <li>Context is pasted only into the Codex, Claude and Telegram desktop apps. Other apps, including browsers and terminals, get your spoken and typed words without tags.</li>
               <li>Saved screenshots add a file path, not an upload. Your agent needs access to that file.</li>
-              <li>A Mode's <strong>Colored context</strong> option colours your opening words in a rainbow and each XML block by type: speech and typing silver, selections cyan, screenshots magenta with a local link. It's off by default, and messages too long to colour stay plain.</li>
-              <li>Next release: Codex gets a short preview linking to the full prompt, as shown in the video.</li>
               <li>Placement is approximate: live recognition can revise earlier words.</li>
-              <li>Selection capture depends on the app. Codex can add its task label; Chrome can add page details.</li>
-              <li>Highlights are read without pressing Copy. Password fields are skipped.</li>
+              <li>Selection capture depends on the app. Highlights are read without pressing Copy; password fields are skipped.</li>
             </ul>
           </figcaption>
         </figure>
-        <p class="skill-handoff">For Codex, install the <a href="https://github.com/EthanSK/AgentFlow/tree/main/.agents/skills/interpret-agent-flow-context">Agent Flow context skill</a> so it reads highlights and screenshot paths as context, not instructions.</p>
+        <p class="skill-handoff">For local Codex or Claude Code, install the <a href="https://github.com/EthanSK/AgentFlow/tree/main/.agents/skills/interpret-agent-flow-context">Agent Flow context skill</a> so they read highlights and screenshot paths as context, not instructions. Cloud chats can't load local skills; give them the full context instead.</p>
       </div>
     </section>
 
@@ -190,8 +199,13 @@
       It reuses the hero demo's invented example and only states claims this page already
       makes, so re-render it whenever the demo example or those claims change. Speech,
       music and captions share the same timeline; audio starts only after a visitor plays it.
-      It shows the local build after the download: Codex's short preview and the full-prompt
-      viewer. Keep the "Next release" fact beside the demo until the download includes them.
+      promo/scene.html now draws v2.0.458: the recorder on the screen's bottom edge with its
+      Pause control, the plain Codex opening with inline <selection>/<screenshot> markers and
+      the short timeline underneath, and the prompt viewer without a "Your words" copy. The
+      MP4 and poster are redrawn by render.mjs's reuse-audio mode (see promo/README.md), which
+      keeps the published soundtrack packet for packet and the captions byte for byte; their
+      ?v= values were rotated for that redraw, and the captions' value stays. Don't publish
+      this page with the old MP4 still in place: it shows the earlier rainbow opening.
       Ethan asked for no visible title, subtitle or transcript here (2026-09-27): the video
       sits in the page like a normal embedded promo. The section keeps id="video" for the
       top navigation and takes its accessible name from aria-label. The captions track
@@ -202,42 +216,45 @@
       <div class="wrap">
         <figure class="promo-video">
           <video controls playsinline preload="metadata" width="1920" height="1080"
-            poster="assets/agentflow-promo-poster.jpg?v=cd3b7da5"
+            poster="assets/agentflow-promo-poster.jpg?v=458-plain-opening"
             aria-label="Agent Flow in use: dictating, highlighting a function, taking a screenshot and typing a name in the recorder, then sending one short message to Codex and opening its full prompt">
-            <source src="assets/agentflow-promo.mp4?v=0949ae0f" type="video/mp4">
+            <source src="assets/agentflow-promo.mp4?v=458-plain-opening" type="video/mp4">
             <track kind="captions" src="assets/agentflow-promo.vtt?v=963678fc" srclang="en" label="English">
-            <a href="assets/agentflow-promo.mp4?v=0949ae0f">Agent Flow video (MP4)</a>
+            <a href="assets/agentflow-promo.mp4?v=458-plain-opening">Agent Flow video (MP4)</a>
           </video>
         </figure>
       </div>
     </section>
 
     <!--
-      Route contract remains in the destination guide, with optional controls below.
-      Primary is base VoiceInk current-input delivery and owns no exact input or Mode.
-      Only the two Next routes own an exact input plus its Mode/auto-send, and they fail
-      closed. Never merge these into one "toggle" or describe Next as toggling a destination.
+      Setup mirrors the v2.0.458 onboarding order: required Microphone + Accessibility
+      (Screen Recording is optional), microphone choice, the required local Parakeet
+      download, then an optional provider key that can be skipped. The app bundles no keys
+      or private endpoints and never installs skills or extensions by itself; the context
+      skill comes from scripts/install-context-skill.py in a source checkout.
     -->
     <section class="band" id="setup" aria-labelledby="setup-title">
       <div class="wrap split">
         <div class="band-head">
           <h2 id="setup-title">Setup</h2>
-          <p>No Agent Flow account or subscription. Bring your own OpenAI API key for live words.</p>
+          <p>No Agent Flow account or subscription. Transcribe on your Mac, or bring your own OpenAI API key for live words.</p>
         </div>
         <div class="band-body">
           <ol class="setup-steps">
             <li>Download, unzip, and move Agent Flow to Applications.</li>
-            <li>Allow Microphone and Accessibility when asked.</li>
-            <li>Add an <a href="https://platform.openai.com/api-keys">OpenAI API key</a> with API billing for GPT Live transcription. Your ChatGPT subscription doesn't include API credit.</li>
-            <li>Finish setup, which also downloads a local model for transcription without a key.</li>
+            <li>Allow Microphone and Accessibility when asked, then pick your microphone. Screen Recording is only needed by the features that ask for it.</li>
+            <li>Setup downloads NVIDIA's Parakeet model, so transcription works on your Mac without a key.</li>
+            <li>For live words, add your own <a href="https://platform.openai.com/api-keys">OpenAI API key</a> with API billing; a ChatGPT subscription doesn't include API credit. You can use another provider's key for optional AI actions, or skip this step.</li>
           </ol>
+          <p class="note">No API keys, private endpoints or personal settings are bundled. Your key stays in macOS Keychain, and providers bill you directly.</p>
+          <p class="note"><strong>On an Intel Mac</strong>, use a cloud transcription provider with your own key, which bills you for usage. Local models aren't reliable on Intel; the on-device model is for Apple silicon.</p>
           <p class="note">Auto-send presses Return after pasting. It starts off; enable it per app in Modes if you want it. For Codex CLI or Claude Code, configure the terminal or editor it runs in.</p>
-          <p class="note">Updates aren't automatic yet. New versions are on <a href="https://github.com/EthanSK/AgentFlow/releases">GitHub releases</a>.</p>
+          <p class="note">Updates are manual: new versions are on <a href="https://github.com/EthanSK/AgentFlow/releases">GitHub releases</a>. Agent Flow never replaces itself or installs upstream VoiceInk.</p>
           <details class="optional" id="pieces">
             <summary>Optional extras</summary>
             <dl class="pieces">
-              <div><dt>Codex skill</dt><dd>Ask Codex: “Install interpret-agent-flow-context from EthanSK/AgentFlow/.agents/skills/interpret-agent-flow-context.”</dd></div>
-              <div><dt>YouTube Bridge</dt><dd>Pauses the playing YouTube video in Chrome when recording starts, then resumes only that video. Its helper and login LaunchAgent need a source checkout; you load the Chrome extension once.</dd></div>
+              <div><dt>Context skill</dt><dd>Clone the source, then run <code>python3 scripts/install-context-skill.py</code>. It installs one shared copy for Codex and Claude Code and won't replace a skill you already have. The app never installs it for you.</dd></div>
+              <div><dt>YouTube Bridge</dt><dd>Pauses the playing video in Chrome when recording starts, then resumes only that video. YouTube keeps its own handling, and extension 0.2.6 adds standard video players on other sites. Some players can't be controlled. It asks to access all HTTP and HTTPS sites. Its helper and login LaunchAgent need a source checkout; you load the Chrome extension and approve its permissions yourself.</dd></div>
               <div><dt>Chrome details</dt><dd>For page titles and addresses with highlights, enable Chrome's View → Developer → Allow JavaScript from Apple Events, then grant Agent Flow Automation access if asked.</dd></div>
               <div><dt>Mouse controls</dt><dd>Map a mouse button to your recording shortcut if you want. <a href="https://ethansk.github.io/agentic-mouse/">Agentic Mouse</a> is separate and isn't required.</dd></div>
               <div><dt>VS Code</dt><dd>The <a href="https://marketplace.visualstudio.com/items?itemName=EthanSK.better-git-vscode">Better Git</a> bridge reads highlights in local code editors. Terminals and chat panels aren't covered.</dd></div>
@@ -256,17 +273,28 @@
         </div>
         <div class="band-body">
           <ul class="setup-steps">
-            <li>Press once to start, then again to stop and paste.</li>
-            <li>Press both Command and both Option keys together to type with the microphone off, then again to paste.</li>
+            <li>Press once to start, then again to stop. The text pastes into whichever input has keyboard focus when it arrives.</li>
+            <li>Press both Command and both Option keys together to start typing with the microphone off, then again to paste. Hold Shift as you finish to keep the result on your clipboard instead.</li>
             <li>Press twice while recording to finish without pasting. The text stays on your clipboard and in History.</li>
-            <li>Press three times while recording to pause, then once to resume.</li>
+            <li>Press three times while recording to pause, then once to resume. The recorder's pause button does the same.</li>
             <li>Start another recording while the last one is still transcribing.</li>
+            <li>History keeps your results. A double-press finish saves the recording's audio and live words first, so you can replay, copy or retranscribe it.</li>
           </ul>
+          <!--
+            Next Track in v2.0.458 (RecordingShortcutManager onNextTrackKeyDown): consumed while the
+            recorder is visible, so it never skips music then. Recording-start saved-input capture
+            is hard-off (FocusLockService.recordingStartInputCaptureEnabled = false), so Next while
+            recording is a consumed no-op. Primary stays base current-input delivery and owns no
+            exact input or Mode. The post-stop "second chance" (focusedDuringTranscription) is
+            still live, so it is described below exactly as README.md does; it owns that input
+            plus its app's Mode and fails closed. RECORDING_DESTINATIONS.md holds the full
+            contract. Never describe Next as toggling a destination.
+          -->
           <details class="optional" id="routes">
-            <summary>Next Track and saved inputs</summary>
-            <p class="note">While the recorder is visible, Next Track won't skip music. During recording, it stops and sends the text to the input where you started. After a normal stop, while transcription is still running, it can instead choose the input focused now.</p>
-            <p class="note">These saved-input actions use that app's settings and show an error if the target can't be verified. A normal stop simply pastes into the input focused when the result arrives.</p>
-            <p class="note"><a href="https://github.com/EthanSK/AgentFlow/blob/main/RECORDING_DESTINATIONS.md">Destination guide</a></p>
+            <summary>Next Track key</summary>
+            <p class="note">While the recorder is visible, Next Track won't skip music. Capturing the input where you started is off in this release, so pressing it while recording does nothing.</p>
+            <p class="note">After a normal stop, while the result is still transcribing, one press sends it to the input focused at that moment instead, using that app's settings. If Agent Flow can't verify that input, it shows an error rather than pasting somewhere else.</p>
+            <p class="note"><a href="https://github.com/EthanSK/AgentFlow/blob/main/RECORDING_DESTINATIONS.md">Destination guide</a> · <a href="https://github.com/EthanSK/AgentFlow/blob/main/TERMINOLOGY.md">Button glossary</a></p>
           </details>
         </div>
       </div>
@@ -289,8 +317,9 @@ cd AgentFlow
             </div>
           </div>
           <ul class="build-notes">
-            <li>Builds Agent Flow, installs it in <code>~/Applications</code> and opens it. It won't replace an existing installation.</li>
-            <li>Use <code>--all</code> to also install the Codex context skill and YouTube helper. Chrome still needs its unpacked extension loaded manually.</li>
+            <li>Builds Agent Flow, installs it in <code>~/Applications</code> and opens it. It won't replace an existing installation, including a downloaded app.</li>
+            <li>On a first install, add <code>--all</code> to also install the context skill and YouTube helper. Chrome still needs its unpacked extension loaded and approved by hand.</li>
+            <li>Already using the download? Run only <code>python3 scripts/install-context-skill.py</code> from the checkout to add the skill.</li>
             <li>The upstream <code>voiceink</code> Homebrew cask installs VoiceInk, not Agent Flow.</li>
           </ul>
           <p class="actions">
