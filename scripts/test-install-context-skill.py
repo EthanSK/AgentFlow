@@ -3,6 +3,7 @@ import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
+import subprocess
 
 spec = importlib.util.spec_from_file_location("installer", Path(__file__).with_name("install-context-skill.py"))
 installer = importlib.util.module_from_spec(spec)
@@ -10,6 +11,19 @@ spec.loader.exec_module(installer)
 
 
 class SkillInstallTests(unittest.TestCase):
+    def test_macos_stage_template_uses_unique_suffix(self):
+        source = Path(__file__).with_name("install-first-use.sh").read_text()
+        line = next(line for line in source.splitlines() if line.startswith("stage_dir="))
+        with tempfile.TemporaryDirectory(prefix="source install ") as parent:
+            directories = []
+            for _ in range(2):
+                result = subprocess.run(["bash", "-ec", line + '; printf "%s" "$stage_dir"'],
+                    env={"PATH": "/usr/bin:/bin", "stage_parent": parent},
+                    capture_output=True, text=True, check=True)
+                directories.append(Path(result.stdout))
+            self.assertNotEqual(*directories)
+            self.assertTrue(all(path.is_dir() and "XXXXXX" not in path.name for path in directories))
+
     def test_clean_home_and_repeat_share_one_skill(self):
         with tempfile.TemporaryDirectory(prefix="Agent Flow fresh user ") as folder:
             home = Path(folder)

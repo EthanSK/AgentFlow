@@ -102,7 +102,9 @@ if "$with_skill"; then
 fi
 
 mkdir -p "$HOME/Applications"
-stage_dir="$(mktemp -d "$HOME/Applications/.agentflow-install.XXXXXX.noindex")"
+stage_parent="$HOME/Applications/.agentflow-install.noindex"
+mkdir -p "$stage_parent"
+stage_dir="$(mktemp -d "$stage_parent/stage.XXXXXX")"
 candidate="$stage_dir/AgentFlow.app"
 echo "Building Agent Flow from this checkout into $stage_dir..."
 make -C "$repo_root" local "LOCAL_APP_OUTPUT=$candidate"
