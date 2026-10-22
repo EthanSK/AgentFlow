@@ -1,5 +1,11 @@
 # VoiceInk++ agent instructions
 
+Machine-specific instructions below describe Ethan's development environment. On another
+user's computer, use that user's authorized build/test machine and preserve their own microphone,
+permissions, keys and settings; do not assume access to Ethan's Mac Mini, signing certificates or
+personal paths. The recording, delivery and data-preservation contracts still apply. Users who
+only want the app should follow SETUP.md and use the notarized download, not build it.
+
 These repository-specific rules are mandatory for every future agent working on recording destinations, mouse-button handling, focus restoration, recorder UI, paste delivery, or auto-send.
 
 ## Repository learnings contract
