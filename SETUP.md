@@ -6,16 +6,16 @@ No private API keys, mouse profiles or personal settings are bundled.
 
 | Piece | Needed for | How to get it |
 | --- | --- | --- |
-| Agent Flow app | Recording, live recorder, transcription and final paste | [Notarized Mac download](https://github.com/EthanSK/AgentFlow/releases/download/v2.0.353/AgentFlow-v2.0.353-mac-universal.zip); macOS 14.4+. Xcode is only needed to build from source. |
+| Agent Flow app | Recording, live recorder, transcription and final paste | [Notarized Mac download](https://github.com/EthanSK/AgentFlow/releases/download/v2.0.458/AgentFlow-v2.0.458-mac-universal.zip); macOS 14.4+. Xcode is only needed to build from source. |
 | Your OpenAI API key and macOS grants | Recommended GPT Live transcription and input delivery | Create an [OpenAI API key](https://platform.openai.com/api-keys), enable API billing, then grant Microphone and Accessibility in macOS. A local Parakeet model remains available. |
-| [Context interpretation skill](.agents/skills/interpret-agent-flow-context/SKILL.md) | Helping Codex read the XML-style selection and screenshot references across tasks | Ask Codex to install the personal skill; `--with-codex-skill` is only for a first source installation |
+| [Context interpretation skill](.agents/skills/interpret-agent-flow-context/SKILL.md) | Helping local Codex and Claude Code read selection and screenshot references | Run the standalone skill installer below, before or after installing the app |
 | [Agent Flow YouTube Bridge](companions/youtube-bridge/README.md) | Pausing the YouTube tab playing when dictation starts, plus optional Agentic Mouse Chrome controls | Use the companion's own installer after installing the app download; Chrome needs one manual extension step |
 | [Agentic Mouse](https://ethansk.github.io/agentic-mouse/) | Optional hardware control layer and extra mouse actions | Separate app and setup; not bundled with Agent Flow |
 | [Better Git VS Code](https://marketplace.visualstudio.com/items?itemName=EthanSK.better-git-vscode) 1.2.99+ | Mouse highlights in local code editors; code-editor use is confirmed, while diff editors have isolated-test coverage only | Install from the VS Code Marketplace and activate the updated extension; no extra LaunchAgent or permission grant |
 | Programmable mouse | Optional hands-free Primary and Next buttons | Map in your own mouse software; Agent Flow also works from its keyboard shortcut |
 
 The YouTube helper is the only login LaunchAgent installed by this repository's setup. Agent Flow
-runs as a normal app; its upstream-release check runs inside the app and is notification-only.
+runs as a normal app; its optional update check reads only this repository's Agent Flow releases and is notification-only.
 The old fork auto-update LaunchAgent is intentionally disabled and is **not** part of setup.
 
 The [Agent Flow website](https://ethansk.github.io/AgentFlow/) shows the live-context
@@ -24,9 +24,11 @@ and companion apps; it is an example, not a requirement for your Mac.
 
 ## First installation
 
-Download [Agent Flow v2.0.353](https://github.com/EthanSK/AgentFlow/releases/download/v2.0.353/AgentFlow-v2.0.353-mac-universal.zip), unzip it and move `AgentFlow.app` to Applications. The universal app is Developer ID signed, Apple notarized and stapled. Open it and finish the permissions and model setup below. [Release checksums](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.353) are public.
+Download [Agent Flow v2.0.458](https://github.com/EthanSK/AgentFlow/releases/download/v2.0.458/AgentFlow-v2.0.458-mac-universal.zip), unzip it and move `AgentFlow.app` to Applications. The universal app is Developer ID signed, Apple notarized and stapled. Open it and finish the permissions and model setup below. [Release checksums](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.458) are public.
 
-For an update, finish any recording/transcription, quit the app, and keep the previous app bundle as rollback before replacing it. Do not delete Agent Flow's settings, Keychain entries or recordings. Updates are not automatic yet; the upstream VoiceInk check is notification-only.
+For an update, finish any recording/transcription, quit the app, and keep a ZIP of the previous app as rollback before replacing it. Do not delete Agent Flow's settings, Keychain entries or recordings. Updates are manual; optional daily checks notify you about this repository's releases, never replace the app or install upstream VoiceInk.
+
+To check a download, put the ZIP and `SHA256SUMS` from that release in the same folder, then run `shasum -a 256 -c SHA256SUMS` there. A matching checksum verifies the download; macOS separately checks the signature and notarization.
 
 ### Add optional extras after installing the download
 
@@ -34,8 +36,23 @@ The ZIP contains the app only. Do not run `install-first-use.sh --all` after ins
 that source-build installer deliberately refuses an existing app, even when an extras flag
 is supplied.
 
-- **Codex context skill:** ask Codex to install `interpret-agent-flow-context` from
-  `EthanSK/AgentFlow/.agents/skills/interpret-agent-flow-context` as a personal skill.
+- **Codex and Claude Code context skill:** clone the source once and run:
+
+  ```sh
+  git clone https://github.com/EthanSK/AgentFlow.git
+  cd AgentFlow
+  python3 scripts/install-context-skill.py
+  python3 scripts/install-context-skill.py --check
+  ```
+
+  This needs Python 3, not a native app build. It installs one canonical folder at
+  `~/.agents/skills/interpret-agent-flow-context`, with links from `~/.codex/skills`
+  and `~/.claude/skills`. It refuses to replace existing different skills or links.
+  Start a new Codex or Claude Code session to refresh its skill list. No global hooks,
+  settings changes, API keys or background service are installed. The weekly skill
+  update check asks before applying an available update and preserves local changes.
+  Cloud ChatGPT and Claude Desktop do not load these local skill folders; they need
+  the full inline context or an uploaded file, not a Mac-only file link.
 - **YouTube Bridge:** clone this repository into a folder you will keep, then follow the
   [companion's requirements and installer](companions/youtube-bridge/README.md#requirements-and-standalone-source).
   Run `./companions/youtube-bridge/scripts/install.sh` from the repository root. This builds
@@ -70,9 +87,10 @@ when no recording or transcription is active. The companion has its own
 
 ## Finish the parts macOS and Chrome cannot grant for you
 
-1. In Agent Flow, grant **Microphone** and **Accessibility** when prompted. For exact Terminal or
-   iTerm delivery, macOS may also request **Automation** for that host. Do not grant access to a
-   different app merely because its name looks similar.
+1. In Agent Flow, grant **Microphone** and **Accessibility** when prompted, then choose your
+   microphone. Screen Recording is needed only for capture features that request it.
+   Review the device before recording; changing system output to a speaker is not a request to
+   change your input. Do not grant access to a different app merely because its name looks similar.
 2. Create an [OpenAI API key](https://platform.openai.com/api-keys), enable API billing, and enter
    **your own** key during Agent Flow setup. The app saves it in macOS Keychain and recommends
    GPT Live Transcribe for a fresh setup. Agent Flow calls OpenAI directly: there is no Agent Flow
@@ -92,8 +110,9 @@ when no recording or transcription is active. The companion has its own
 4. If you installed the context skill, use a new Codex task or ask Codex to reload skills if it
    does not appear. The skill helps an agent interpret inline references; screenshot tags still
    contain **paths**, not uploaded image pixels.
-5. If you want physical controls, map one mouse button to Agent Flow's configured Primary
-   shortcut and another to macOS **Next Track**. Read the [button glossary](TERMINOLOGY.md) and
+5. If you want physical controls, map a mouse button to Agent Flow's configured Primary
+   shortcut. Saved-input Next routes are currently disabled; normal finish uses the keyboard-focused input.
+   Read the [button glossary](TERMINOLOGY.md) and
    [destination guide](RECORDING_DESTINATIONS.md). Install and configure Agentic Mouse separately
    only if you want its additional controls.
 6. For optional Chrome page details with selected text, enable **View → Developer → Allow
@@ -107,9 +126,9 @@ when no recording or transcription is active. The companion has its own
   final result pastes where you intended. Test auto-send only in a disposable input.
 - While recording, mouse-highlight short text first in Codex, then in a disposable TextEdit document,
   and save a macOS screenshot to a file, not just the clipboard. Confirm both cyan selections and the purple screenshot path appear
-  in capture order in the recorder and final message. The Codex highlight uses
-  `<codex_selection>`; TextEdit uses `<app_selection source="TextEdit">`. Selection text is bounded
-  to 8,000 characters with whitespace intact in the final message, while the recorder shows a short preview.
+  in capture order in the recorder and final message. Highlights use `<app_selection>`
+  with their source app. Selection text is kept in full with whitespace intact, while the recorder shows a short preview.
+  Some source apps impose their own limits before Agent Flow receives the text.
   Each separate highlight remains in order even if you speak nothing between them. Chrome can
   add page and DOM cues when browser scripting is available. Other apps work on a best-effort basis
   when they expose selected text through read-only macOS APIs. The receiving
@@ -120,16 +139,19 @@ when no recording or transcription is active. The companion has its own
   does not program your mouse or prove device-specific shortcuts work.
 - For VS Code, start recording and drag-select text in a disposable code editor, then a diff.
   Confirm each selection appears in the recorder and final `<app_selection>` message.
-  Better Git's optional bridge reads only a fresh mouse selection in the focused editor;
+  Better Git's optional bridge reads a fresh selection in the focused editor, including drag,
+  Shift-click and Command-A;
   automatic Git hunk navigation and stale selections are ignored. Terminals/chat webviews
   still depend on their own Accessibility exposure, not the code-editor bridge.
 
 ### App support is best effort
 
 Codex, Chrome and VS Code code-editor highlights have user-confirmed examples. The VS Code
-diff bridge has isolated Mac test coverage, not everyday-use acceptance. Telegram selections are not
-working reliably and are not claimed as supported. Other apps depend on their read-only
-Accessibility selection exposure; keyboard-only selection changes are not captured.
+diff bridge has isolated Mac test coverage, not everyday-use acceptance. Telegram's native selected
+text is not reliably exposed: the optional highlight-area image fallback asks for consent and is
+not exact selected text. Other apps depend on their read-only Accessibility selection exposure;
+not every rendered control or app supports it. Mouse and supported keyboard-selection gestures
+are captured, but source-app limitations still apply.
 
 Automatic paste includes highlights and screenshot paths only in the native Codex/ChatGPT,
 Telegram and Claude apps. Browsers, editors and terminals receive spoken/typed prose without those tags.

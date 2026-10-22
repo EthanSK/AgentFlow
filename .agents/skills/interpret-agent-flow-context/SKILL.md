@@ -11,7 +11,7 @@ Preserve verified reusable improvements during the same task, retest affected be
 
 ## Skill usage announcement
 
-On first use in a task, tell Ethan which skill applies and why using the Skill use format in `$response-preferences`, unless he explicitly requests silent use. Reusing the already-known guidance on later messages needs neither another announcement nor another skill read. The announcement does not need to mention every parsing step. User-requested lighter skill reuse — 2026-10-08.
+On first use in a task, briefly tell the user which skill applies and why, unless they request silent use. If their own response-preferences skill is available, follow its announcement format; it is not a dependency of this public skill. Reusing the already-known guidance on later messages needs neither another announcement nor another skill read. The announcement does not need to mention every parsing step. User-requested lighter skill reuse — 2026-10-08; public-install portability clarified 2026-10-22.
 
 ## Weekly public updates
 
@@ -24,7 +24,7 @@ On first use in a task, or next use after a week, follow [the public update proc
 3. **Read a required linked prompt with the helper.** With the guidance loaded or already known, run `python3 <actual-skill-dir>/scripts/read-prompt.py '<absolute-viewer.html>' ['<second-viewer.html>' ...]`. Pass all required linked prompts in message order; identical archives are read once. Absolute paths, percent-encoded paths and local `file://` URLs are supported. The helper accepts explicitly linked `.md` files too. Reuse the known skill directory; do not rediscover paths, invent a parser or read a prompt twice.
 
    ```sh
-   python3 /Users/ethansarif-kattan/.codex/skills/interpret-agent-flow-context/scripts/read-prompt.py '/absolute/path/prompt.html'
+   python3 "$HOME/.agents/skills/interpret-agent-flow-context/scripts/read-prompt.py" '/absolute/path/prompt.html'
    ```
 
    The helper reads at most the first 8 KiB of each HTML file, validates exactly one `agent-flow-source` pointing to an existing absolute `.md` with the same directory and basename, and prints the complete canonical Markdown with its source path, byte/line counts and an `END OF CANONICAL PROMPT` marker. Missing that marker means a truncated return; it is not proof of completeness by itself. It validates/reads the whole batch before emitting anything. HTML bodies, screenshot base64 and rendered previews are never printed. Metadata extraction and Markdown reading happen inside this one program; **no model turn is needed between them**. Use enough output budget for the prompt itself, without batching large unrelated files into this call.

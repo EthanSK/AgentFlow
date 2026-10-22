@@ -1,5 +1,14 @@
 # Public Agent Flow releases
 
+The release scripts publish the version read from the app source. Keep the public
+download, setup guide and website version aligned after the artifact passes the
+gates below. Build/test happens on the dedicated Mini; Developer ID signing and
+notarization may happen separately on the MacBook without replacing its installed app.
+Use a fresh `.noindex` output directory and set `AGENTFLOW_PACKAGES_DIR` to an existing
+reviewed Swift package cache if needed. Never substitute a local self-signed ZIP for
+the notarized public artifact. `SHA256SUMS` contains only downloadable filenames, so
+the documented `shasum -a 256 -c SHA256SUMS` works from a clean download directory.
+
 [v2.0.365](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.365) separates
 different context section types with one blank line, keeps matching types compact,
 and leaves apostrophes/quotation marks readable in XML text while preserving safe

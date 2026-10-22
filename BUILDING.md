@@ -1,6 +1,6 @@
 # Build Agent Flow
 
-Agent Flow is currently distributed as source. The local build path creates a standalone, ad-hoc signed `AgentFlow.app` without requiring a paid Apple Developer account.
+Agent Flow has a [notarized public download](SETUP.md). The optional local build path creates a standalone, ad-hoc signed `AgentFlow.app` without requiring a paid Apple Developer account.
 
 ## Requirements
 
@@ -41,7 +41,7 @@ without installing it, use the existing development command:
 git clone https://github.com/EthanSK/AgentFlow.git
 cd AgentFlow
 make local
-open ~/Downloads/AgentFlow.app
+open build.noindex/AgentFlow.app
 ```
 
 The first build takes longer because the Makefile prepares `whisper.xcframework` under `~/VoiceInk-Dependencies` and resolves the Swift package graph. Later builds reuse that dependency directory.
@@ -49,7 +49,7 @@ The first build takes longer because the Makefile prepares `whisper.xcframework`
 When the build succeeds, the standalone app is copied to:
 
 ```text
-~/Downloads/AgentFlow.app
+build.noindex/AgentFlow.app
 ```
 
 The bundle is named `AgentFlow.app`; macOS shows the user-facing name **Agent Flow**.
@@ -83,11 +83,11 @@ Ethan uses a Logitech G502 X LIGHTSPEED with Logitech G HUB, but any programmabl
 | `make check` | Verify Git, Xcode's build tools, and Swift |
 | `make whisper` | Prepare `whisper.xcframework` in `~/VoiceInk-Dependencies` |
 | `make setup` | Confirm the Whisper framework is available |
-| `make local` | Build and copy the standalone Agent Flow app to `~/Downloads` |
+| `make local` | Build a new standalone app in `build.noindex/` without replacing an existing output |
 | `make build` | Build the normal Debug configuration |
 | `make run` | Open the available Agent Flow build |
 | `make dev` | Build and run for development |
-| `make clean` | Remove the shared dependency directory |
+| `make clean` | Explain which task-owned output to remove; shared dependencies are preserved |
 | `make help` | List the available targets |
 
 When starting an installed background build, use `open -g /Applications/AgentFlow.app`.
@@ -100,9 +100,8 @@ presentation, but the release launcher must not create it.
 The ad-hoc local configuration intentionally omits capabilities that require Ethan's Apple signing setup:
 
 - No iCloud dictionary sync
-- No automatic install channel; Agent Flow can check the official VoiceInk GitHub releases once
-  per day and notify you when a newer upstream release is available to review, but it never installs
-  or merges that release. Pull reviewed Agent Flow source and rebuild instead.
+- No automatic install channel. Optional daily checks notify you about this repository's Agent Flow
+  releases, never upstream binaries. Download the reviewed release or pull reviewed source and rebuild.
 
 Transcription providers may require your own API credentials. Ethan's personal Deepgram local proxy is not part of this repository.
 

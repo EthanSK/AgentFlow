@@ -26,7 +26,7 @@ actual_sha=$(shasum -a 256 "$archive" | awk '{print $1}')
 test "$actual_sha" = "$expected_sha"
 (cd "$release_dir" && shasum -a 256 -c SHA256SUMS)
 
-inspect=$(mktemp -d "${TMPDIR:-/private/tmp}/voiceink-public-inspect.XXXXXX")
+inspect=$(mktemp -d "$release_dir/.inspect.XXXXXX")
 trap 'rm -rf "$inspect"' EXIT
 ditto -xk "$archive" "$inspect"
 "$root/scripts/verify-public-release.sh" "$inspect/AgentFlow.app"
@@ -41,9 +41,9 @@ if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
 fi
 notes="Developer ID-signed and Apple-notarized Agent Flow for Apple silicon and Intel, macOS 14.4 or later.
 
-Download the ZIP, extract AgentFlow.app, and move it to Applications. Give the app Microphone and Accessibility access, then add your OpenAI API key for GPT Live. The YouTube Bridge, Chrome extension, context skill, and Agentic Mouse are separate optional setup steps.
+Download the ZIP, extract AgentFlow.app, and move it to Applications. Grant Microphone and Accessibility, choose your microphone, then use the local model or your own supported provider/key. The context skill has a standalone installer for Codex and Claude Code. The YouTube Bridge, Chrome extension and Agentic Mouse remain separate optional setup steps.
 
-This is a public download, not an automatic in-app update. Before replacing an existing Agent Flow or VoiceInk++ install, stop any recording and keep a backup of the old app. The official VoiceInk app is a separate product.
+This is a public download, not an automatic in-app update. Before replacing an existing Agent Flow or VoiceInk++ install, finish any recording/transcription and keep a ZIP backup of the old app. The official VoiceInk app is a separate product.
 
 Setup: https://github.com/$repo/blob/$source_sha/SETUP.md
 Corresponding GPLv3 source: https://github.com/$repo/tree/$source_sha

@@ -262,10 +262,10 @@ features and their local interaction tests are defined. Upstream licensing, tria
 affiliate, and promotional-announcement changes are intentionally rejected for this commercial-free
 fork.
 
-Sparkle installation remains disabled for local builds. VoiceInk++ instead performs a default-on,
-notification-only check of the official VoiceInk GitHub release feed at most once per day. The
-Settings toggle can disable those checks. A notification opens the upstream release for review; it
-must never install the official app, merge upstream, or reinterpret a release as approved source.
+Sparkle installation remains disabled for local builds. The current notification-only updater
+checks this repository's Agent Flow releases, as described above. It preserves the user's daily
+check preference, opens only validated Agent Flow release links, and never installs upstream VoiceInk
+or merges source automatically.
 The legacy Mini script
 `~/.claude/scripts/voiceink-fork-update.sh` still exists, but its LaunchAgent is deliberately named
 `com.ethansk.voiceink-fork-autoupdate.plist.DISABLED`; keep it disabled because its wholesale-merge
