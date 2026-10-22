@@ -8,7 +8,12 @@ Agent Flow has a [notarized public download](SETUP.md). The optional local build
 - A recent full installation of Xcode
 - Xcode Command Line Tools
 - Git and Swift (both are included with the normal Xcode toolchain)
+- CMake 3.28 or later (for example, `brew install cmake`)
 - Internet access on the first build for Swift packages and `whisper.cpp`
+
+The notarized download needs none of these developer tools. The pinned upstream Whisper
+framework builder also builds iOS, tvOS and visionOS slices, so a from-source first build
+needs those SDKs installed in Xcode. Use the app download for the normal first-use path.
 
 Confirm the command-line prerequisites:
 

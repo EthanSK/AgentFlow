@@ -22,6 +22,8 @@ check:
 	@command -v git >/dev/null 2>&1 || { echo "git is not installed"; exit 1; }
 	@command -v xcodebuild >/dev/null 2>&1 || { echo "xcodebuild is not installed (need Xcode)"; exit 1; }
 	@command -v swift >/dev/null 2>&1 || { echo "swift is not installed"; exit 1; }
+	@command -v cmake >/dev/null 2>&1 || { echo "CMake 3.28+ is required for the source build. Install it first, or use the notarized app download."; exit 1; }
+	@xcodebuild -version >/dev/null 2>&1 || { echo "Select a full Xcode installation and complete its first-launch setup before building."; exit 1; }
 	@echo "Prerequisites OK"
 
 healthcheck: check

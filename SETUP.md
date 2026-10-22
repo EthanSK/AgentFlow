@@ -62,7 +62,8 @@ is supplied.
 
 ### Build from source instead
 
-Use a Mac with full Xcode, Git and internet access for the first dependency build:
+Use a Mac with full Xcode (including the SDKs listed in [BUILDING.md](BUILDING.md)),
+CMake 3.28+, Git and internet access for the first dependency build:
 
 ```sh
 git clone https://github.com/EthanSK/AgentFlow.git
