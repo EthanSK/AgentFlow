@@ -30,6 +30,13 @@ The current recording-start capture guard disables only that Next route. The
 post-stop `focusedDuringTranscription` second-chance code still runs; do not describe
 both Next routes as disabled merely because original-input capture is off.
 
+The promo's current visuals can be regenerated while preserving the existing
+narration: `promo/render.mjs --reuse-audio` derives segment starts from the original
+captions, keeps 1,116 frames at 30 fps and verifies identical AAC packet hashes.
+The Oct 22 redraw retained the original 37.2-second soundtrack and caption bytes.
+Its generated `published-video.json` records source and output hashes; do not
+describe a stale MP4 as updated merely because the HTML demonstration changed.
+
 ## 2026-10-17 — Claude context is an explicit recipient exception
 
 Ethan requested Agent Flow XML context in Claude and one shared interpretation

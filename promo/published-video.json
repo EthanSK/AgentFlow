@@ -1,0 +1,121 @@
+{
+  "about": "Provenance of the published promo video. Written by render.mjs; see promo/README.md.",
+  "kind": "reuse-audio",
+  "narration": {
+    "segments": [
+      "intro",
+      "talk",
+      "dictate1",
+      "highlight",
+      "dictate2",
+      "screenshot",
+      "paste",
+      "outro"
+    ],
+    "duration": 37.2,
+    "fps": 30,
+    "frames": 1116
+  },
+  "picture": {
+    "sources": {
+      "scene.html": "b0c19fa6f536dc253cf06a8fbdbd8d14ebb9496c522833720dcaa9abd46bc4a8",
+      "timeline.mjs": "97a342fb64e34dd9e03ee9039f8fe9b6926d0e4ba0798afee12bdccbf912e620",
+      "render.mjs": "a9fb0c79a305e24455ae04b24d25ff1c9c0111f5e28e8e125fc0a91cd3c57143",
+      "music.mjs": "968a9cb21a1b75f12c6a2c6cec7c5497171218134517bc568031b5daf66f023f",
+      "narration.json": "9823bf1cf33494d4840f862912b501b1586ba749af3f38b7078f60673c9284ec"
+    },
+    "deviceScale": 1
+  },
+  "audio": {
+    "streamSha256": "734aff5cccc17a8623f17dfc8390855dd9c5f91b1199181cd83e7463d3dcf4b4",
+    "codec": "aac",
+    "sampleRate": 48000,
+    "channels": 2,
+    "reusedFrom": {
+      "file": "docs/assets/agentflow-promo.mp4",
+      "sha256": "0949ae0fa8608594a7b027ee5b150da1fc37e8996af6e22907980c042ebf24a8"
+    },
+    "voiceTakes": "not used: the published soundtrack (voice, music and interface sounds) is copied unchanged"
+  },
+  "timing": {
+    "from": {
+      "captions": "docs/assets/agentflow-promo.vtt",
+      "sha256": "963678fc1296105f47e64a94ccd02c6c880592b3a9e3331e68768b02c19dfeb0"
+    },
+    "lines": [
+      {
+        "id": "intro",
+        "kind": "narration",
+        "declaredStart": 0.5,
+        "start": 0.5,
+        "end": 4.35
+      },
+      {
+        "id": "talk",
+        "kind": "narration",
+        "declaredStart": 4.8,
+        "start": 4.8,
+        "end": 7.74
+      },
+      {
+        "id": "dictate1",
+        "kind": "dictation",
+        "declaredStart": 8.4,
+        "start": 8.4,
+        "end": 9.73
+      },
+      {
+        "id": "highlight",
+        "kind": "narration",
+        "declaredStart": 10.2,
+        "start": 10.2,
+        "end": 13.61
+      },
+      {
+        "id": "dictate2",
+        "kind": "dictation",
+        "declaredStart": 14.4,
+        "start": 14.4,
+        "end": 17.59
+      },
+      {
+        "id": "screenshot",
+        "kind": "narration",
+        "declaredStart": 18,
+        "start": 18,
+        "end": 20.36
+      },
+      {
+        "id": "paste",
+        "kind": "narration",
+        "declaredStart": 24,
+        "start": 24,
+        "end": 30.07
+      },
+      {
+        "id": "outro",
+        "kind": "narration",
+        "declaredStart": 32.4,
+        "start": 32.4,
+        "end": 35.63
+      }
+    ],
+    "dictationWords": "placed by syllable within each measured line",
+    "waveform": "published mix inside the measured dictation lines"
+  },
+  "output": {
+    "video": {
+      "file": "docs/assets/agentflow-promo.mp4",
+      "sha256": "35eaacae9025080ddd480a79f363e52befbbe9b82253f6499d2f5a4b9a51d1c6"
+    },
+    "captions": {
+      "file": "docs/assets/agentflow-promo.vtt",
+      "sha256": "963678fc1296105f47e64a94ccd02c6c880592b3a9e3331e68768b02c19dfeb0"
+    },
+    "poster": {
+      "file": "docs/assets/agentflow-promo-poster.jpg",
+      "sha256": "7634f0725e98f5175311bce1f4bdf9bf272cbb5cdcae729f4a609575918eea21"
+    },
+    "chrome": "155.0.8059.85"
+  }
+}
