@@ -26,6 +26,8 @@ and companion apps; it is an example, not a requirement for your Mac.
 
 Download [Agent Flow v2.0.458](https://github.com/EthanSK/AgentFlow/releases/download/v2.0.458/AgentFlow-v2.0.458-mac-universal.zip), unzip it and move `AgentFlow.app` to Applications. The universal app is Developer ID signed, Apple notarized and stapled. Open it and finish the permissions and model setup below. [Release checksums](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.458) are public.
 
+**Intel Macs:** use a supported cloud transcription provider with your own key. The app's Models page warns that local models do not work reliably on Intel. Apple-silicon Macs can use the downloaded local model without a provider key. A universal executable does not guarantee equal local-model support on both architectures.
+
 For an update, finish any recording/transcription, quit the app, and keep a ZIP of the previous app as rollback before replacing it. Do not delete Agent Flow's settings, Keychain entries or recordings. Updates are manual; optional daily checks notify you about this repository's releases, never replace the app or install upstream VoiceInk.
 
 To check a download, put the ZIP and `SHA256SUMS` from that release in the same folder, then run `shasum -a 256 -c SHA256SUMS` there. A matching checksum verifies the download; macOS separately checks the signature and notarization.

@@ -18,6 +18,8 @@
 
 [Release notes and checksums](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.458) · [Build from source](#build-from-source)
 
+The app includes an Intel build, but local models are not reliable on Intel Macs; use a cloud transcription provider there. Cloud providers require your own account, key and any usage charges. Apple-silicon Macs can use the downloaded local model without a provider key.
+
 Updates are manual. Optional daily checks read this repository's Agent Flow releases, not upstream VoiceInk; they never replace a running app.
 
 ## Real-time context
