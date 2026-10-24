@@ -5224,3 +5224,27 @@ Each entry looks like:
 **Commit:** 570a6fa
 **Guard:** Thorough comments at start()/handleFrontmostAppActivation/resolveAndApplyConfiguration; ignores own bundle id + nil bundle id; [weak self] in observer + async hop to avoid retain cycle / actor violation
 ---
+## 2026-10-25 — Codex selection attribution depends on the bundled CLI layout
+
+The live `ChatGPT.app` Codex host (26.1021.31345 / 21828) retains
+`com.openai.codex` but moved its executable from `Contents/Resources/codex` to
+`Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex`. The old single-path
+host check therefore classified its highlights as generic `app_selection` and
+skipped all source-chat metadata. Commit `087732c1` recognizes both measured
+layouts, requiring the expected bundle ID and a regular executable file rather
+than trusting the app name or an executable directory.
+
+The existing capture-time before/after identity check and optional title lookup
+remain separate from selected text and delivery. Unknown, changing or over-cap
+activity-log scope is now explicitly `task_scope="unknown"`, including the first
+text capture before optional labels finish. Multiple candidates remain
+`task_scope="multiple_visible_chats"`, never a guessed source pane. The current
+bounded log sample retained seven active IDs while a complete sample retained
+three: a bounded tail is not a complete visibility snapshot or proof of the
+selected pane. Never infer source identity from quoted chat names, newest activity
+or the receiving task. No new Accessibility query, clipboard operation or polling
+was added. Native guards are `codexHostRecognitionAcceptsBothBundledCLILayouts`,
+`unresolvedCodexScopeIsExplicitWithoutInventingASource` and the existing main/side
+candidate and XML/title round-trip tests; physical selected-pane acceptance is
+separate from source and fixture evidence.
+
