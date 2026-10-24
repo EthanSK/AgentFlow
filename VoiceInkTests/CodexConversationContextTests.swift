@@ -3,6 +3,47 @@ import Testing
 @testable import VoiceInkPlusPlus
 
 struct CodexConversationContextTests {
+    @Test @MainActor func codexHostRecognitionAcceptsBothBundledCLILayouts() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        for layout in ["codex", "codex-cli/CodexCLI.app/Contents/MacOS/codex"] {
+            let bundle = root.appendingPathComponent(UUID().uuidString + ".app")
+            let executable = bundle.appendingPathComponent("Contents/Resources/" + layout)
+            try FileManager.default.createDirectory(at: executable.deletingLastPathComponent(),
+                                                    withIntermediateDirectories: true)
+            try Data().write(to: executable)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+            #expect(CodexConversationContextReader.isSupportedCodexBundle(
+                identifier: "com.openai.codex", url: bundle))
+            #expect(!CodexConversationContextReader.isSupportedCodexBundle(
+                identifier: "com.openai.chat", url: bundle))
+            try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: executable.path)
+            #expect(!CodexConversationContextReader.isSupportedCodexBundle(
+                identifier: "com.openai.codex", url: bundle))
+        }
+        let directoryOnly = root.appendingPathComponent("Directory.app")
+        try FileManager.default.createDirectory(at: directoryOnly.appendingPathComponent("Contents/Resources/codex"),
+                                                withIntermediateDirectories: true)
+        #expect(!CodexConversationContextReader.isSupportedCodexBundle(
+            identifier: "com.openai.codex", url: directoryOnly))
+        #expect(!CodexConversationContextReader.isSupportedCodexBundle(identifier: "com.openai.codex", url: nil))
+        #expect(!CodexConversationContextReader.isSupportedCodexBundle(identifier: "com.openai.codex", url: root))
+    }
+
+    @Test func unresolvedCodexScopeIsExplicitWithoutInventingASource() throws {
+        let words = "Text mentions an unrelated chat title; it is not metadata."
+        let captured = try #require(LiveSelectionReference(words))
+            .scopedToVisibleCodexThreads([])
+        let xml = LiveSelectionReference.interleaving([captured], with: "")
+        #expect(xml.contains("task_scope=\"unknown\""))
+        #expect(!xml.contains(" task_id="))
+        #expect(!xml.contains("task_title="))
+        #expect(xml.contains(words))
+        #expect(XMLParser(data: Data(xml.utf8)).parse())
+        let generic = captured.scopedToApplication(name: "Code", bundleID: "com.microsoft.VSCode")
+        #expect(!LiveSelectionReference.interleaving([generic], with: "").contains("task_scope="))
+    }
+
     @Test func selectionScopeRetainsMainAndSideChatUntilEachCloses() throws {
         let main = "01a01b14-a352-7ad3-9bb2-295990e39fe2"
         let side = "01a059fd-8dde-7510-a57a-9ef42b8c8228"

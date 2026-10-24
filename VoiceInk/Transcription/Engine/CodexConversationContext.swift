@@ -385,15 +385,28 @@ enum CodexConversationContextReader {
         _ app: NSRunningApplication,
         fileManager: FileManager
     ) -> Bool {
-        guard app.bundleIdentifier == CodexConversationContextPolicy.bundleIdentifier,
-              let bundleURL = app.bundleURL else {
+        isSupportedCodexBundle(
+            identifier: app.bundleIdentifier, url: app.bundleURL, fileManager: fileManager
+        )
+    }
+
+    /// A bundle name/ID alone cannot distinguish the Codex host from ChatGPT.
+    /// New hosts moved the bundled CLI into CodexCLI.app; checking only the old
+    /// Resources/codex silently disabled Ethan's selection source-chat labels.
+    /// Keep both measured layouts read-only and require a real executable file.
+    static func isSupportedCodexBundle(
+        identifier: String?, url: URL?, fileManager: FileManager = .default
+    ) -> Bool {
+        guard identifier == CodexConversationContextPolicy.bundleIdentifier,
+              let url else {
             return false
         }
-        let codexBinary = bundleURL
-            .appendingPathComponent("Contents")
-            .appendingPathComponent("Resources")
-            .appendingPathComponent("codex")
-        return fileManager.isExecutableFile(atPath: codexBinary.path)
+        let resources = url.appendingPathComponent("Contents/Resources", isDirectory: true)
+        return ["codex", "codex-cli/CodexCLI.app/Contents/MacOS/codex"].contains { path in
+            let executable = resources.appendingPathComponent(path)
+            return (try? executable.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+                && fileManager.isExecutableFile(atPath: executable.path)
+        }
     }
 
     nonisolated private static func codexLogURLs(

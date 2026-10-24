@@ -85,6 +85,7 @@ struct LiveSelectionReference: Equatable {
     private var codexThreadID: String?
     private var codexThreadTitle: String?
     private var visibleCodexThreadIDs: [String] = []
+    private var hasCodexScopeObservation = false
     private var chromeContext: ChromeSelectionContextReader.Context?
     private var source: Source = .codex
     private(set) var captureID: UUID?
@@ -257,6 +258,7 @@ struct LiveSelectionReference: Equatable {
         copy.codexThreadID = id.lowercased()
         copy.codexThreadTitle = title
         copy.visibleCodexThreadIDs = []
+        copy.hasCodexScopeObservation = true
         return copy
     }
 
@@ -267,6 +269,7 @@ struct LiveSelectionReference: Equatable {
         var copy = self
         copy.codexThreadID = nil
         copy.codexThreadTitle = nil
+        copy.hasCodexScopeObservation = true
         copy.visibleCodexThreadIDs = Array(Set(ids.filter {
             UUID(uuidString: $0) != nil
         }.map { $0.lowercased() })).sorted()
@@ -300,6 +303,7 @@ struct LiveSelectionReference: Equatable {
         copy.codexThreadID = nil
         copy.codexThreadTitle = nil
         copy.visibleCodexThreadIDs = []
+        copy.hasCodexScopeObservation = false
         return copy
     }
 
@@ -659,6 +663,11 @@ struct LiveSelectionReference: Equatable {
         if case .codex = source, visibleCodexThreadIDs.count > 1 {
             attributes += " task_scope=\"multiple_visible_chats\""
             attributes += " visible_task_ids=\"\(visibleCodexThreadIDs.joined(separator: ","))\""
+        } else if case .codex = source, hasCodexScopeObservation, codexThreadID == nil {
+            // A missing/changing log boundary is not a source-chat identity.
+            // Be explicit even when optional metadata work was canceled by a
+            // newer highlight; the already captured text must remain available.
+            attributes += " task_scope=\"unknown\""
         }
         attributes += timing + displayCopy
         // Separate metadata from the payload visibly without adding whitespace
@@ -1596,7 +1605,7 @@ final class LiveSelectionCapture {
             }
             guard let self, self.isAttached else { return }
             let captureID = UUID()
-            let captured = isCodex ? reference : reference.scopedToApplication(
+            let captured = isCodex ? reference.scopedToVisibleCodexThreads([]) : reference.scopedToApplication(
                 name: app.localizedName, bundleID: app.bundleIdentifier
             ).scopedToChrome(chromeContext)
             // Commit proven text before optional labels. A new click can cancel
@@ -1628,7 +1637,7 @@ final class LiveSelectionCapture {
                 } else if threadsBefore == threadsAfter {
                     labeled = reference.scopedToVisibleCodexThreads(threadsBefore)
                 } else {
-                    labeled = reference
+                    labeled = reference.scopedToVisibleCodexThreads([])
                 }
             } else {
                 // Generic apps expose an app identity, not a proven document,
