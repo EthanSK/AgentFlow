@@ -104,6 +104,7 @@ struct LiveSelectionReference: Equatable {
         copy.codexThreadID = labeled.codexThreadID
         copy.codexThreadTitle = labeled.codexThreadTitle
         copy.visibleCodexThreadIDs = labeled.visibleCodexThreadIDs
+        copy.hasCodexScopeObservation = labeled.hasCodexScopeObservation
         copy.chromeContext = labeled.chromeContext
         return copy
     }

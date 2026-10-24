@@ -40,6 +40,9 @@ struct CodexConversationContextTests {
         #expect(!xml.contains("task_title="))
         #expect(xml.contains(words))
         #expect(XMLParser(data: Data(xml.utf8)).parse())
+        let original = try #require(LiveSelectionReference(words))
+        let updated = original.updatingSourceLabels(from: captured)
+        #expect(LiveSelectionReference.interleaving([updated], with: "").contains("task_scope=\"unknown\""))
         let generic = captured.scopedToApplication(name: "Code", bundleID: "com.microsoft.VSCode")
         #expect(!LiveSelectionReference.interleaving([generic], with: "").contains("task_scope="))
     }
