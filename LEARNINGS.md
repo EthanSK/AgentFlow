@@ -5242,7 +5242,9 @@ text capture before optional labels finish. Multiple candidates remain
 bounded log sample retained seven active IDs while a complete sample retained
 three: a bounded tail is not a complete visibility snapshot or proof of the
 selected pane. Never infer source identity from quoted chat names, newest activity
-or the receiving task. No new Accessibility query, clipboard operation or polling
+or the receiving task. Commit `38920cfb` accepts only native activity-event lines,
+excluding message/tool log echoes containing the same event name. No new
+Accessibility query, clipboard operation or polling
 was added. Native guards are `codexHostRecognitionAcceptsBothBundledCLILayouts`,
 `unresolvedCodexScopeIsExplicitWithoutInventingASource` and the existing main/side
 candidate and XML/title round-trip tests; physical selected-pane acceptance is
