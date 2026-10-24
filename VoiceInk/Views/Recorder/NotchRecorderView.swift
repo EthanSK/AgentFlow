@@ -249,7 +249,8 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                     currentState: stateProvider.recordingState,
                     completionDisposition: stateProvider.completionDisposition,
                     recorder: recorder,
-                    menuBarHeight: notchHeight
+                    menuBarHeight: notchHeight,
+                    realtimeStreamSleeping: stateProvider.showsRealtimeStreamSleepingBadge
                 )
 
                 CurrentFocusApplicationIndicator(

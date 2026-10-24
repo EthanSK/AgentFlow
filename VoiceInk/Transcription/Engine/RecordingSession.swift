@@ -224,7 +224,15 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
 
     // Coarse lifecycle phase (drives stack membership / which card is the base). @Published
     // so the owning engine's array observers and this session's card both react.
-    @Published var phase: Phase
+    @Published var phase: Phase {
+        didSet {
+            // The resting-stream marker describes live capture only. Clear it as soon as
+            // this session stops recording so a transcribing card never shows it.
+            if phase != .recording, realtimeStreamSleeping {
+                realtimeStreamSleeping = false
+            }
+        }
+    }
 
     // Fine-grained recorder UI state for THIS card (idle/recording/transcribing/enhancing).
     // The pipeline pushes .enhancing here via onStateChange; the card's RecorderStatusDisplay
@@ -472,6 +480,7 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         typedInput = value
         if typedRunStartedAt == nil { typedRunStartedAt = date }
         typedRunLatestEditAt = date
+        noteRealtimeSessionActivity()
     }
 
     /// Enter, leaving the editor, and a mirrored panel's end callback commit the
@@ -490,12 +499,14 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         guard canTypeInHUD,
               let index = liveSelectionReferences.lastIndex(where: \.isTypedText) else { return false }
         undoneTypedRuns.append((index, liveSelectionReferences.remove(at: index)))
+        noteRealtimeSessionActivity()
         return true
     }
 
     @discardableResult func redoCommittedTyping() -> Bool {
         guard canTypeInHUD, let run = undoneTypedRuns.popLast() else { return false }
         liveSelectionReferences.insert(run.reference, at: min(run.index, liveSelectionReferences.count))
+        noteRealtimeSessionActivity()
         return true
     }
 
@@ -550,6 +561,31 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     // recorder must still communicate that live transcription is active. The empty
     // state renders only an ellipsis; it is never treated as transcript content.
     @Published var showsRealtimeTranscriptHUD = false
+
+    // Optional GPT Live silence sleep: true only while this recording's network stream
+    // is resting during clearly quiet audio. Capture continues (waveform, WAV, recovery),
+    // so this is NOT gesture-Pause and NOT microphone-off; the HUD shows a small symbol,
+    // never routine status text. Only this session's own streaming service writes it.
+    @Published private(set) var realtimeStreamSleeping = false
+    private var realtimeStreamSleepGeneration: UInt64 = 0
+
+    /// Applies one ordered update from this session's silence sleep. A stale generation
+    /// (an update that hopped to the main actor late) is ignored so the HUD can never be
+    /// left claiming rest after the stream woke. Sleeping is shown only while recording.
+    func applyRealtimeStreamSleeping(_ sleeping: Bool, generation: UInt64) {
+        guard generation > realtimeStreamSleepGeneration else { return }
+        realtimeStreamSleepGeneration = generation
+        let visible = sleeping && phase == .recording
+        if realtimeStreamSleeping != visible {
+            realtimeStreamSleeping = visible
+        }
+    }
+
+    /// Authored activity in this session keeps its optional silence sleep awake. This is
+    /// a notification only: typing, selection capture and their timeline are unchanged.
+    private func noteRealtimeSessionActivity() {
+        transcriptionSession?.noteSessionActivity()
+    }
 
     // ── VIPP (skip-mode-processing feature) — per-session ONE-SHOT bypass flag ──
     //
@@ -854,6 +890,7 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         } else {
             liveSelectionReferences.append(anchored)
         }
+        noteRealtimeSessionActivity()
         typingFocus.returnAfterContext()
     }
 

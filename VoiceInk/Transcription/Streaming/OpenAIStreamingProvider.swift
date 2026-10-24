@@ -54,6 +54,27 @@ struct OpenAITranscriptAccumulator {
     }
 }
 
+/// Privacy-safe summary of a completed event's optional `usage` object. Only numeric
+/// billing fields and a known usage type are kept, so a per-session log can compare the
+/// provider's billed duration with the audio actually appended (for example while the
+/// optional silence sleep withholds quiet audio). It never includes transcript text,
+/// item identifiers, prompts, or any other string the server echoes.
+enum OpenAIRealtimeUsageSummary {
+    static func describe(_ usage: Any?) -> String? {
+        guard let usage = usage as? [String: Any] else { return nil }
+        var fields: [String] = []
+        if let type = usage["type"] as? String {
+            fields.append("type=\(["duration", "tokens"].contains(type) ? type : "other")")
+        }
+        for key in ["seconds", "input_tokens", "output_tokens", "total_tokens"] {
+            if let number = usage[key] as? NSNumber {
+                fields.append("\(key)=\(number.stringValue)")
+            }
+        }
+        return fields.isEmpty ? "present=unrecognized" : fields.joined(separator: " ")
+    }
+}
+
 /// Incremental 16 kHz PCM16 to 24 kHz PCM16 conversion for OpenAI Realtime.
 /// The phase and preceding sample survive audio callback boundaries so chunking cannot
 /// introduce discontinuities or subtly change the submitted recording.
@@ -336,6 +357,12 @@ final class OpenAIStreamingProvider: ContextualStreamingTranscriptionProvider, @
                     "OpenAI completion recovered same-item delta \(resolution.privacySafeLogMetadata, privacy: .public)"
                 )
             }
+            if let usage = OpenAIRealtimeUsageSummary.describe(json["usage"]) {
+                logger.notice("OpenAI completion usage \(usage, privacy: .public)")
+            }
+            // Still exactly one final per recording. The optional silence sleep pauses
+            // appends only; it never commits, so this one completion covers every byte
+            // sent before Stop's single commit.
             yieldFinalOnce(resolution.text)
 
         case "conversation.item.input_audio_transcription.failed", "error":

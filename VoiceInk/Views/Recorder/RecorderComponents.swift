@@ -926,17 +926,20 @@ struct RecorderStatusDisplay: View {
     let completionDisposition: RecordingCompletionDisposition
     @ObservedObject var recorder: Recorder
     let menuBarHeight: CGFloat?
+    let realtimeStreamSleeping: Bool
 
     init(
         currentState: RecordingState,
         completionDisposition: RecordingCompletionDisposition,
         recorder: Recorder,
-        menuBarHeight: CGFloat? = nil
+        menuBarHeight: CGFloat? = nil,
+        realtimeStreamSleeping: Bool = false
     ) {
         self.currentState = currentState
         self.completionDisposition = completionDisposition
         self.recorder = recorder
         self.menuBarHeight = menuBarHeight
+        self.realtimeStreamSleeping = realtimeStreamSleeping
     }
 
     var body: some View {
@@ -963,6 +966,16 @@ struct RecorderStatusDisplay: View {
                 // and layout animations and must not all redraw for every meter tick.
                 AudioVisualizer(audioMeter: recorder.audioMeter, color: .white, isActive: true)
                     .scaleEffect(y: menuBarHeight != nil ? min(1.0, (menuBarHeight! - 8) / 25) : 1.0, anchor: .center)
+                    // The waveform keeps moving while GPT Live sleeps because capture
+                    // continues. An overlay (not extra width) marks the resting network
+                    // stream without shifting the mirrored panels' layout or adding
+                    // routine status text above the waveform.
+                    .overlay(alignment: .bottomTrailing) {
+                        if realtimeStreamSleeping {
+                            RealtimeStreamSleepingBadge()
+                                .transition(.opacity)
+                        }
+                    }
                     .transition(.opacity)
             } else if currentState == .paused {
                 // Pause is visible without adding routine status text above the
@@ -980,6 +993,27 @@ struct RecorderStatusDisplay: View {
         }
         .animation(.easeInOut(duration: 0.2), value: currentState)
         .animation(.easeInOut(duration: 0.15), value: completionDisposition)
+        .animation(.easeInOut(duration: 0.2), value: realtimeStreamSleeping)
+    }
+}
+
+/// Marks that GPT Live is not receiving audio during clearly quiet recording. Opacity
+/// is the only animation, so Reduce Motion needs no separate variant. The same text is
+/// the tooltip and the VoiceOver label; it states that capture continues so the symbol
+/// is never mistaken for Pause or microphone-off.
+struct RealtimeStreamSleepingBadge: View {
+    static var helpText: String {
+        String(localized: "GPT Live sleeping. Recording continues.")
+    }
+
+    var body: some View {
+        Image(systemName: "moon.zzz.fill")
+            .font(.system(size: 8, weight: .bold))
+            .foregroundStyle(.white.opacity(0.85))
+            .padding(2)
+            .background(Circle().fill(Color.black.opacity(0.85)))
+            .help(Self.helpText)
+            .accessibilityLabel(Text(Self.helpText))
     }
 }
 

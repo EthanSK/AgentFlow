@@ -1,5 +1,33 @@
 # Learnings
 
+## 2026-10-24 — Realtime idle savings must gate uploads, never capture
+
+For GPT Live Transcribe, a synthetic production-WebSocket comparison billed
+21 seconds when a 15-second gap was sent as silence and 6 seconds when no audio
+was appended during the gap. Retained margins billed 8 seconds for 7.46 seconds
+of audio; a five-minute no-append gap preserved both phrases and the same 8-second
+usage. This is evidence for these sessions, not all provider idle limits or
+microphones. See `REALTIME_SILENCE_SLEEP.md` for the bounded probe conditions.
+
+Gate only the outgoing PCM downstream of both recorder sinks. Keep the full WAV,
+one open realtime connection, one Stop commit, and the existing final delivery.
+Count intentional quiet omission separately from queue loss; provider errors,
+including those arriving after drain, still require the complete-WAV fallback.
+Per-session words, typing and accepted context can wake only their own stream.
+
+The first −50 dBFS / 9 dB adaptive gate discarded a synthetic −62 dBFS phrase
+over a −60 dBFS tone which OpenAI recognized in the unfiltered input. More
+conservative thresholds preserved the fixture byte-for-byte. Do not train the
+noise estimate on already-active frames: sustained soft speech can otherwise
+become its own noise floor. Audible background sound may deliberately prevent
+savings. Invalid odd-byte chunks must disable omission, since withholding an
+odd byte count misaligns every later PCM16 sample in the incremental resampler.
+
+This is network sleep, not manual Pause: keep waveform/WAV capture, media,
+YouTube lifecycle, input device and Primary/Next ownership unchanged. The setting
+is opt-in and frozen per recording. Physical microphone/room acceptance remains
+separate from synthetic audio and native regression evidence.
+
 ## 2026-10-17 — Claude context is an explicit recipient exception
 
 Ethan requested Agent Flow XML context in Claude and one shared interpretation

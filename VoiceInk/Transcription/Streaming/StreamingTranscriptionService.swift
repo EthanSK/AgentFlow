@@ -66,15 +66,50 @@ struct StreamingAudioMetricsSnapshot: Equatable {
     let droppedChunks: Int
     let droppedBytes: Int
     let drainTimedOut: Bool
+    /// Quiet chunks the optional GPT Live silence sleep deliberately did not append.
+    /// They are still in the WAV. Counting them separately keeps intentional omission
+    /// from looking like loss (which would force a paid completed-WAV retry every time)
+    /// while every real drop below still rejects the realtime result.
+    let withheldChunks: Int
+    let withheldBytes: Int
+    /// A gated session saw a provider error or socket failure before its final. An idle
+    /// gap can outlive a server session; never accept a final that might omit audio.
+    let providerFailureReported: Bool
 
-    /// Only a fully drained one-to-one PCM stream may produce a deliverable realtime
-    /// result. A plausible non-empty transcript is still incomplete if any chunk failed.
+    init(
+        receivedChunks: Int,
+        receivedBytes: Int,
+        sentChunks: Int,
+        sentBytes: Int,
+        droppedChunks: Int,
+        droppedBytes: Int,
+        drainTimedOut: Bool,
+        withheldChunks: Int = 0,
+        withheldBytes: Int = 0,
+        providerFailureReported: Bool = false
+    ) {
+        self.receivedChunks = receivedChunks
+        self.receivedBytes = receivedBytes
+        self.sentChunks = sentChunks
+        self.sentBytes = sentBytes
+        self.droppedChunks = droppedChunks
+        self.droppedBytes = droppedBytes
+        self.drainTimedOut = drainTimedOut
+        self.withheldChunks = withheldChunks
+        self.withheldBytes = withheldBytes
+        self.providerFailureReported = providerFailureReported
+    }
+
+    /// Only a fully drained stream may produce a deliverable realtime result: every
+    /// received chunk was either sent or intentionally withheld as quiet audio. A
+    /// plausible non-empty transcript is still incomplete if any chunk failed.
     var isComplete: Bool {
         !drainTimedOut &&
+            !providerFailureReported &&
             droppedChunks == 0 &&
             droppedBytes == 0 &&
-            receivedChunks == sentChunks &&
-            receivedBytes == sentBytes
+            receivedChunks == sentChunks + withheldChunks &&
+            receivedBytes == sentBytes + withheldBytes
     }
 }
 
@@ -87,6 +122,9 @@ private final class StreamingMetrics: @unchecked Sendable {
     private var droppedChunks = 0
     private var droppedBytes = 0
     private var drainTimedOut = false
+    private var withheldChunks = 0
+    private var withheldBytes = 0
+    private var providerFailureReported = false
 
     func recordReceived(_ byteCount: Int) {
         lock.lock()
@@ -109,6 +147,19 @@ private final class StreamingMetrics: @unchecked Sendable {
         lock.unlock()
     }
 
+    func recordWithheld(_ byteCount: Int) {
+        lock.lock()
+        withheldChunks += 1
+        withheldBytes += byteCount
+        lock.unlock()
+    }
+
+    func markProviderFailure() {
+        lock.lock()
+        providerFailureReported = true
+        lock.unlock()
+    }
+
     func markDrainTimedOut() {
         lock.lock()
         drainTimedOut = true
@@ -125,7 +176,10 @@ private final class StreamingMetrics: @unchecked Sendable {
             sentBytes: sentBytes,
             droppedChunks: droppedChunks,
             droppedBytes: droppedBytes,
-            drainTimedOut: drainTimedOut
+            drainTimedOut: drainTimedOut,
+            withheldChunks: withheldChunks,
+            withheldBytes: withheldBytes,
+            providerFailureReported: providerFailureReported
         )
     }
 }
@@ -147,30 +201,67 @@ class StreamingTranscriptionService {
 
     private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "StreamingTranscriptionService")
     private var provider: StreamingTranscriptionProvider?
+    // Keep the real queue, gate, event consumer and Stop path testable together.
+    // Production leaves this nil and retains the existing provider registry.
+    private let providerFactory: ((any TranscriptionModel) -> StreamingTranscriptionProvider)?
     private var sendTask: Task<Void, Never>?
     private var sendLoopCompletion: AsyncStream<Void>?
     private var eventConsumerTask: Task<Void, Never>?
-    private let chunkSource = AudioChunkSource()
+    private let chunkSource: AudioChunkSource
     private var state: StreamingState = .idle
     private var committedSegments: [String] = []
     private let modelContext: ModelContext
     private let fluidAudioService: FluidAudioTranscriptionService?
     private var onPartialTranscript: ((String) -> Void)?
-    private let metrics = StreamingMetrics()
+    private let metrics: StreamingMetrics
+    // Optional GPT Live silence sleep for THIS recording only. Nil for every other
+    // provider and whenever the setting was off when the recording's realtime session
+    // was created. See RealtimeSilenceSleep.swift for the network-omission contract.
+    private let silenceSleep: RealtimeSilenceSleepController?
     private var stopStartedAt: Date?
     private var firstPartialLogged = false
     private var firstCommitLogged = false
 
-    init(modelContext: ModelContext, fluidAudioService: FluidAudioTranscriptionService? = nil, onPartialTranscript: ((String) -> Void)? = nil) {
+    init(
+        modelContext: ModelContext,
+        fluidAudioService: FluidAudioTranscriptionService? = nil,
+        onPartialTranscript: ((String) -> Void)? = nil,
+        silenceSleepConfiguration: RealtimeSilenceSleepGate.Configuration? = nil,
+        onSilenceSleepChange: ((Bool, UInt64) -> Void)? = nil,
+        providerFactory: ((any TranscriptionModel) -> StreamingTranscriptionProvider)? = nil
+    ) {
         self.modelContext = modelContext
         self.fluidAudioService = fluidAudioService
         self.onPartialTranscript = onPartialTranscript
+        self.providerFactory = providerFactory
+        let chunkSource = AudioChunkSource()
+        let metrics = StreamingMetrics()
+        self.chunkSource = chunkSource
+        self.metrics = metrics
+        self.silenceSleep = silenceSleepConfiguration.map { configuration in
+            RealtimeSilenceSleepController(
+                configuration: configuration,
+                forward: { chunk in
+                    // The same bounded queue and drop accounting as ungated audio.
+                    if !chunkSource.send(chunk) {
+                        metrics.recordDropped(chunk.count)
+                    }
+                },
+                withhold: { chunk in
+                    metrics.recordWithheld(chunk.count)
+                },
+                onSleepingChange: { sleeping, generation in
+                    onSilenceSleepChange?(sleeping, generation)
+                }
+            )
+        }
     }
 
     deinit {
         onPartialTranscript = nil
         sendTask?.cancel()
         eventConsumerTask?.cancel()
+        silenceSleep?.discard()
         chunkSource.finish()
         commitSignal?.finish()
     }
@@ -199,16 +290,23 @@ class StreamingTranscriptionService {
         self.provider = provider
 
         let selectedLanguage = context.language ?? "auto"
-        logger.notice("Streaming start requested model=\(model.displayName, privacy: .public) language=\(selectedLanguage, privacy: .public)")
+        logger.notice("Streaming start requested model=\(model.displayName, privacy: .public) language=\(selectedLanguage, privacy: .public) silenceSleep=\(self.silenceSleep != nil, privacy: .public)")
 
-        if let contextualProvider = provider as? any ContextualStreamingTranscriptionProvider {
-            try await contextualProvider.connect(
-                model: model,
-                language: selectedLanguage,
-                context: context
-            )
-        } else {
-            try await provider.connect(model: model, language: selectedLanguage)
+        do {
+            if let contextualProvider = provider as? any ContextualStreamingTranscriptionProvider {
+                try await contextualProvider.connect(
+                    model: model,
+                    language: selectedLanguage,
+                    context: context
+                )
+            } else {
+                try await provider.connect(model: model, language: selectedLanguage)
+            }
+        } catch {
+            // A failed handshake leaves this recording on its complete-WAV fallback.
+            // End gating so the HUD can never claim that a dead stream is only resting.
+            silenceSleep?.finish()
+            throw error
         }
 
         // If cancel() was called while we were awaiting the connection, tear down immediately.
@@ -228,9 +326,23 @@ class StreamingTranscriptionService {
     /// Buffers an audio chunk for sending. Safe to call from the audio callback thread.
     nonisolated func sendAudioChunk(_ data: Data) {
         metrics.recordReceived(data.count)
+        if let silenceSleep {
+            // Every chunk is still received and counted. The gate either forwards it
+            // into the same bounded queue, holds it briefly as preroll, or accounts it
+            // as withheld quiet audio. It never touches the WAV, which already has it.
+            silenceSleep.receive(data)
+            return
+        }
         if !chunkSource.send(data) {
             metrics.recordDropped(data.count)
         }
+    }
+
+    /// This recording's own authored activity (typing, accepted selections or
+    /// screenshots). It holds the optional silence sleep awake and wakes it on the next
+    /// chunk. No-op without a gate; it never affects another recording.
+    nonisolated func noteSessionActivity() {
+        silenceSleep?.noteSessionActivity()
     }
 
     /// Stops streaming, commits remaining audio, and returns the final transcribed text.
@@ -241,12 +353,26 @@ class StreamingTranscriptionService {
 
         state = .committing
         stopStartedAt = Date()
+        // A sleeping stream holds its newest quiet preroll. Forward it in capture order
+        // BEFORE the chunk source finishes, so the one commit below covers every sent
+        // byte and nothing is pending when completeness is checked. This is still the
+        // only commit for the recording: sleep/wake boundaries never commit.
+        silenceSleep?.finish()
         let beforeDrain = metrics.snapshot()
         logger.notice("Streaming stop requested receivedChunks=\(beforeDrain.receivedChunks, privacy: .public) sentChunks=\(beforeDrain.sentChunks, privacy: .public) receivedBytes=\(beforeDrain.receivedBytes, privacy: .public) sentBytes=\(beforeDrain.sentBytes, privacy: .public)")
 
         // Finish the chunk source so the send loop drains remaining chunks and exits naturally.
         let didDrain = await drainRemainingChunks()
         let drainedMetrics = metrics.snapshot()
+        if let silenceSleep {
+            // Counts only: no audio, transcript, or identifiers. 16 kHz mono PCM16 is
+            // 32,000 bytes per second. Compare sentSeconds with any provider-reported
+            // usage before claiming that withheld silence was not billed.
+            let summary = silenceSleep.summarySnapshot
+            let sentSeconds = Double(drainedMetrics.sentBytes) / 32_000
+            let withheldSeconds = Double(drainedMetrics.withheldBytes) / 32_000
+            logger.notice("Streaming silence sleep summary sleeps=\(summary.sleeps, privacy: .public) sentSeconds=\(sentSeconds, format: .fixed(precision: 2), privacy: .public) withheldSeconds=\(withheldSeconds, format: .fixed(precision: 2), privacy: .public) withheldChunks=\(drainedMetrics.withheldChunks, privacy: .public) providerFailure=\(drainedMetrics.providerFailureReported, privacy: .public)")
+        }
         guard didDrain, drainedMetrics.isComplete else {
             // The complete WAV is already durable. Never commit or deliver a realtime
             // result after a send failure or drain timeout, even when its text looks
@@ -254,7 +380,7 @@ class StreamingTranscriptionService {
             // Unlike startup overflow, this happens only after Stop and has no mid-recording
             // HUD change to explain. Keep the safe fallback quiet instead of showing a noisy
             // warning for a transient socket problem; the extra latency is the only symptom.
-            logger.warning("Streaming audio incomplete; refusing realtime result droppedChunks=\(drainedMetrics.droppedChunks, privacy: .public) droppedBytes=\(drainedMetrics.droppedBytes, privacy: .public) drainTimedOut=\(drainedMetrics.drainTimedOut, privacy: .public)")
+            logger.warning("Streaming audio incomplete; refusing realtime result droppedChunks=\(drainedMetrics.droppedChunks, privacy: .public) droppedBytes=\(drainedMetrics.droppedBytes, privacy: .public) drainTimedOut=\(drainedMetrics.drainTimedOut, privacy: .public) providerFailure=\(drainedMetrics.providerFailureReported, privacy: .public)")
             state = .failed
             await cleanupStreaming()
             throw StreamingTranscriptionError.incompleteAudio
@@ -278,6 +404,13 @@ class StreamingTranscriptionService {
 
         // Wait for the server to acknowledge our commit (or timeout)
         let finalText = await waitForFinalCommit(signalStream: signalStream)
+        // A socket error may arrive after the pre-commit drain check. Never accept a
+        // later plausible final after that error; the complete WAV remains available.
+        guard metrics.snapshot().isComplete else {
+            state = .failed
+            await cleanupStreaming()
+            throw StreamingTranscriptionError.incompleteAudio
+        }
         if let stopStartedAt {
             logger.notice("Streaming stop completed elapsed=\(Date().timeIntervalSince(stopStartedAt), format: .fixed(precision: 3), privacy: .public)s finalChars=\(finalText.count, privacy: .public)")
         }
@@ -297,6 +430,9 @@ class StreamingTranscriptionService {
         sendTask?.cancel()
         sendTask = nil
         sendLoopCompletion = nil
+        // Cancel/reset sends nothing more: held preroll is discarded from the stream
+        // only. The WAV and any retained recovery draft are owned elsewhere.
+        silenceSleep?.discard()
         chunkSource.finish()
 
         // Clean up commit signal if waiting
@@ -317,6 +453,7 @@ class StreamingTranscriptionService {
     // MARK: - Private
 
     private func createProvider(for model: any TranscriptionModel) -> StreamingTranscriptionProvider {
+        if let providerFactory { return providerFactory(model) }
         if model.provider == .fluidAudio {
             if FluidAudioModelManager.isNemotronModel(named: model.name) {
                 return FluidAudioNemotronStreamingProvider()
@@ -445,6 +582,7 @@ class StreamingTranscriptionService {
                         // Refresh the live preview so it keeps showing the full running transcript
                         // after a commit (instead of resetting to empty until the next partial).
                         if self.state == .streaming {
+                            if !trimmed.isEmpty { self.silenceSleep?.noteSessionActivity() }
                             self.onPartialTranscript?(self.committedSegments.joined(separator: " "))
                         }
                         if self.state == .committing {
@@ -458,6 +596,10 @@ class StreamingTranscriptionService {
                             self.logger.notice("Streaming first partial event chars=\(text.count, privacy: .public)")
                         }
                         if self.state == .streaming {
+                            // New live words are this session's activity. They hold the
+                            // optional silence sleep awake, and a late word for audio sent
+                            // before sleeping wakes it so the model gets following context.
+                            if !text.isEmpty { self.silenceSleep?.noteSessionActivity() }
                             let prefix = self.committedSegments.joined(separator: " ")
                             let display: String
                             if prefix.isEmpty {
@@ -476,6 +618,19 @@ class StreamingTranscriptionService {
                 case .error(let error):
                     await MainActor.run {
                         self.logger.error("Streaming event error: \(error, privacy: .public)")
+                        // Gated sessions only (other providers keep their existing
+                        // behavior): a provider error or socket failure before the final
+                        // may mean the server stopped accepting audio during an idle gap.
+                        // Mark the stream incomplete so Stop uses the complete WAV instead
+                        // of delivering a possibly truncated realtime final.
+                        if self.silenceSleep != nil,
+                           self.state == .streaming
+                            || (self.state == .committing && self.committedSegments.isEmpty) {
+                            self.metrics.markProviderFailure()
+                            // A failed connection is no longer sleeping. Stop gating
+                            // and clear the HUD marker while the full WAV keeps recording.
+                            self.silenceSleep?.finish()
+                        }
                     }
                 }
             }  
@@ -522,6 +677,8 @@ class StreamingTranscriptionService {
         sendTask?.cancel()
         sendTask = nil
         sendLoopCompletion = nil
+        // Idempotent: stop already finished the gate; this covers failure paths.
+        silenceSleep?.discard()
         chunkSource.finish()
         commitSignal?.finish()
         commitSignal = nil

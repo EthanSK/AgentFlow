@@ -26,6 +26,9 @@ protocol RecorderStateProvider: AnyObject {
     // its first partial arrives. This is presentation state only: the placeholder
     // never enters the transcript or either Primary/Next delivery route.
     var showsRealtimeTranscriptHUD: Bool { get }
+    // Optional GPT Live silence sleep: the network stream is resting while capture
+    // continues. Presentation only; never a Pause, microphone-off, or delivery state.
+    var realtimeStreamSleeping: Bool { get }
     var pasteDestinationIndicatorTarget: FocusLockService.Target? { get } // While recording this previews the Next Track destination; after stop it follows the session's actual pending paste target until delivery finishes.
     var iconActionPulse: RecorderIconActionPulse? { get } // Primary normal stop flashes the left/current icon; either accepted Next-button route flashes the right/locked icon.
 
@@ -47,6 +50,12 @@ protocol RecorderStateProvider: AnyObject {
 }
 
 extension RecorderStateProvider {
+    // Microphone-off typing can retain the recording state and the sleeping socket.
+    // Its badge must not claim that microphone recording continues in that state.
+    var showsRealtimeStreamSleepingBadge: Bool {
+        realtimeStreamSleeping && !microphoneOff && recordingState == .recording
+    }
+
     // Context colors acknowledge provider words, not microphone intent, a moving
     // meter, typing, or captured selections. This is only HUD presentation: batch
     // capture/realtime fallback stays unconfirmed until stop, and saved context
@@ -60,6 +69,7 @@ extension RecorderStateProvider {
     }
 
     var showsRealtimeTranscriptHUD: Bool { false }
+    var realtimeStreamSleeping: Bool { false }
     var completionDisposition: RecordingCompletionDisposition { .normalDelivery }
     var liveSelectionReferences: [LiveSelectionReference] { [] }
     var liveContextPreviewReferences: [LiveSelectionReference] { liveSelectionReferences }

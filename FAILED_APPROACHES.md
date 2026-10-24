@@ -1,5 +1,21 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-10-24 — Do not learn audible speech into a realtime silence floor
+
+An initial upload gate using a −50 dBFS ceiling and 9 dB margin learned a quiet
+background tone as its floor. It then withheld a synthetic −62 dBFS phrase over
+that −60 dBFS tone. The full input produced the correct phrase through the actual
+OpenAI GPT Live Transcribe endpoint; the gated input produced an empty final.
+Keeping the full WAV alone did not make the realtime result safe.
+
+Rejected: treating all stable low-level sound as removable silence, updating the
+floor from already-active frames, or treating byte totals as proof that words
+were preserved. The accepted direction uses conservative thresholds, excludes
+active frames from floor learning, and fails open for audible/uncertain sound.
+Reconsider a more aggressive detector only with representative soft-speech,
+music/noise and onset fixtures plus actual provider recognition evidence; a
+better savings ratio by itself is not sufficient. See `REALTIME_SILENCE_SLEEP.md`.
+
 ## 2026-10-17 — Treat a click-pane result or Demo panel as live keyboard focus — REJECTED
 
 **Failure condition:** The first inspector only walked the clicked element's

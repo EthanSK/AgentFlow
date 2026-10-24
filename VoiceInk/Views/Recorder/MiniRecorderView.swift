@@ -150,7 +150,8 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                 RecorderStatusDisplay(
                     currentState: stateProvider.recordingState,
                     completionDisposition: stateProvider.completionDisposition,
-                    recorder: recorder
+                    recorder: recorder,
+                    realtimeStreamSleeping: stateProvider.showsRealtimeStreamSleepingBadge
                 )
                 .background(RecorderPanelDragSurface())
             }

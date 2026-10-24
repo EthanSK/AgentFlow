@@ -1517,6 +1517,15 @@ class VoiceInkEngine: NSObject, ObservableObject {
                                 self.partialTranscript = partial
                             }
                         }
+                    },
+                    onRealtimeSilenceSleepChange: { [weak session] sleeping, generation in
+                        // Presentation only: the optional GPT Live silence sleep reports
+                        // that this session's network stream is resting. The microphone,
+                        // WAV, destination, Mode and delivery are untouched. Generations
+                        // discard a stale update that arrives out of order.
+                        Task { @MainActor in
+                            session?.applyRealtimeStreamSleeping(sleeping, generation: generation)
+                        }
                     }
                 )
                 session.transcriptionSession = streamingSession
