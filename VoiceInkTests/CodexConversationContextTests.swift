@@ -76,6 +76,17 @@ struct CodexConversationContextTests {
         #expect(!other.contains("visible_task_ids"))
     }
 
+    @Test func selectionScopeIgnoresActivityNamesEchoedInsideMessageOrToolLogs() {
+        let main = "01a01b14-a352-7ad3-9bb2-295990e39fe2"
+        let other = "01a059fd-8dde-7510-a57a-9ef42b8c8228"
+        let event = "thread_stream_view_activity_changed active=true conversationId=\(main) rendererWindowAppearance=primary rendererWindowVisible=true rendererWindowId=1"
+        let genuine = "2026-10-25T00:01:00.000Z info [electron-message-handler] " + event
+        let echoed = "2026-10-25T00:01:01.000Z info [electron-message-handler] Sending server request params="
+            + event.replacingOccurrences(of: main, with: other)
+        #expect(CodexConversationContextPolicy.visibleSelectionThreadIDs(from: genuine + "\n" + echoed) == [main])
+        #expect(CodexConversationContextPolicy.visibleSelectionThreadIDs(from: echoed).isEmpty)
+    }
+
     private var repositoryRoot: URL {
         URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

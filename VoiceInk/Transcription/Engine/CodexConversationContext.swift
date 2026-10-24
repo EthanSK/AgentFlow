@@ -36,8 +36,17 @@ enum CodexConversationContextPolicy {
     /// identity when another chat is also visible. No selected text is needed.
     static func visibleSelectionThreadIDs(from logText: String) -> [String] {
         var active: [String: Set<String>] = [:]
-        let events = logText.split(separator: "\n").filter {
-            $0.contains("thread_stream_view_activity_changed")
+        let events = logText.split(separator: "\n").filter { rawLine in
+            // Native logs also echo tool arguments and message text. Only an
+            // actual activity event may supply source metadata; finding its name
+            // inside quoted words would attribute the selection to their content.
+            guard let marker = rawLine.range(of: "thread_stream_view_activity_changed ") else { return false }
+            let prefix = rawLine[..<marker.lowerBound].split(whereSeparator: \.isWhitespace).map(String.init)
+            guard let timestamp = prefix.first,
+                  timestamp.range(of: #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$"#,
+                                  options: .regularExpression) != nil else { return false }
+            return prefix.count == 1 || Array(prefix.dropFirst()) == ["info"]
+                || Array(prefix.dropFirst()) == ["info", "[electron-message-handler]"]
         }.map(String.init).sorted()
         for line in events {
             guard (line.contains("rendererWindowAppearance=primary")
