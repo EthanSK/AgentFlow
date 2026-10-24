@@ -5235,7 +5235,10 @@ layouts, requiring the expected bundle ID and a regular executable file rather
 than trusting the app name or an executable directory.
 
 The existing capture-time before/after identity check and optional title lookup
-remain separate from selected text and delivery. Unknown, changing or over-cap
+remain separate from selected text and delivery. Log candidates no longer call
+the exact-ID/title API: even a lone remaining ID cannot prove its selected pane.
+The stable-ID/title serializer remains available for a future read-only source
+that actually binds a selection to its pane. Unknown, changing or over-cap
 activity-log scope is now explicitly `task_scope="unknown"`, including the first
 text capture before optional labels finish. Multiple candidates remain
 `task_scope="multiple_visible_chats"`, never a guessed source pane. The current

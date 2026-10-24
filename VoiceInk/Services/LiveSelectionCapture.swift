@@ -669,6 +669,9 @@ struct LiveSelectionReference: Equatable {
             // Be explicit even when optional metadata work was canceled by a
             // newer highlight; the already captured text must remain available.
             attributes += " task_scope=\"unknown\""
+            if let candidate = visibleCodexThreadIDs.first {
+                attributes += " visible_task_ids=\"\(candidate)\""
+            }
         }
         attributes += timing + displayCopy
         // Separate metadata from the payload visibly without adding whitespace
@@ -1626,16 +1629,13 @@ final class LiveSelectionCapture {
             guard isCodex else { return }
             let labeled: LiveSelectionReference
             if isCodex {
-                // Only the verified Codex app may add a task label. A task
-                // switch during selection leaves the existing plain tag.
+                // Activity logs identify candidates, not the selected pane.
+                // Their bounded tail can omit older close events, so even one
+                // remaining ID is not proof. Reserve task_id/task_title for a
+                // future read-only source that binds the actual selected pane.
                 let threadsBefore = await beforeLabels
                 let threadsAfter = await CodexConversationContextReader.selectionThreadIDs(processIdentifier: sourcePID)
-                if threadsBefore == threadsAfter, threadsBefore.count == 1,
-                   let id = threadsBefore.first {
-                    labeled = reference.scopedToCodexThread(
-                        id: id, title: CodexSelectionThreadTitleReader.title(for: id)
-                    )
-                } else if threadsBefore == threadsAfter {
+                if threadsBefore == threadsAfter {
                     labeled = reference.scopedToVisibleCodexThreads(threadsBefore)
                 } else {
                     labeled = reference.scopedToVisibleCodexThreads([])

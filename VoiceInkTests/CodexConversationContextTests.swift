@@ -45,6 +45,13 @@ struct CodexConversationContextTests {
         #expect(LiveSelectionReference.interleaving([updated], with: "").contains("task_scope=\"unknown\""))
         let generic = captured.scopedToApplication(name: "Code", bundleID: "com.microsoft.VSCode")
         #expect(!LiveSelectionReference.interleaving([generic], with: "").contains("task_scope="))
+        let candidateID = "01a01b14-a352-7ad3-9bb2-295990e39fe2"
+        let candidate = captured.scopedToVisibleCodexThreads([candidateID])
+        let candidateXML = LiveSelectionReference.interleaving([candidate], with: "")
+        #expect(candidateXML.contains("task_scope=\"unknown\""))
+        #expect(candidateXML.contains("visible_task_ids=\"\(candidateID)\""))
+        #expect(!candidateXML.contains(" task_id="))
+        #expect(!candidateXML.contains("task_title="))
     }
 
     @Test func selectionScopeRetainsMainAndSideChatUntilEachCloses() throws {
