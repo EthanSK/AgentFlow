@@ -22,6 +22,14 @@ Retain the no-install hold and distinguish source/test clearance from a resolved
 physical-input incident. Bounded original extracts and the historical report
 pointers are in this task's `historical-input-evidence.md` qualification evidence.
 
+At 17:22 UTC Ethan reported the Chrome selections `eerriikkaa kkiirrkk` and `aa`
+while installed build 460 was independently verified. The rollback therefore
+does not establish physical-input acceptance. Device Hub was absent. A bounded,
+listen-only HID/session diagnostic saw no key presses, so it was inconclusive;
+zero observed input is never a passing typing check. Resetting this chat's
+Computer Use kernel left the shared helper's Chrome keyboard hook present and
+does not itself prove recovery or identify that hook as the cause.
+
 ## 2026-10-25 — Hosted typing checks must cover real sleep transitions and focus lifetime
 
 The quiet-upload gate has no demonstrated causal link to the reported doubled
