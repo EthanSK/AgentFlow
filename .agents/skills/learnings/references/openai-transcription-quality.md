@@ -4,7 +4,7 @@ Read before changing OpenAI transcription prompts, Vocabulary hints, language, d
 session reuse, or quality claims. Research checked 2026-09-05. Re-fetch the cited model
 documentation when changing its contract; this is a dated audit, not a frozen API manual.
 
-## 2026-10-25 explicit captured-reference updates
+## 2026-10-25 captured-reference updates: real API audio-integrity hold
 
 Ethan clarified that highlights/screenshots should help Agent Flow's own speech
 transcription, not connect to Codex Voice. The current
@@ -20,13 +20,44 @@ extra screens, or appends reference text to the spoken transcript locally. Treat
 recognition hints as untrusted source data; JSON quoting is not an instruction sandbox.
 
 The [update contract](https://developers.openai.com/api/reference/resources/realtime/client-events#session.update)
-merges supplied fields only. Send an explicit empty prompt to clear a hint; omission
-retains the old value. Serialize prompt-only updates with the existing audio sender,
-wait for `session.updated`, and drain accepted pending context before the sole Stop
-commit. That acknowledgement has no matching client event ID. Close new offers at
-Stop, discard them at Cancel, and reject late OCR by recording/generation ownership.
-After a rejected or unacknowledged update, use original frozen prompt/Vocabulary for
-the single completed-WAV fallback instead of resubmitting the suspect addition.
+describes merging supplied fields. Actual protocol testing rejected a prompt-only
+nested object with `missing_required_parameter` for
+`session.audio.input.transcription.model`. Repeating the same frozen model,
+language, Vocabulary and delay was accepted; an explicit empty prompt cleared a
+hint. The server did not echo keywords or delay even at startup, so omission from
+that acknowledgement does not itself prove they were reset.
+
+Acceptance did not preserve the pending audio. Three same-audio synthetic control
+recordings (4.51075 seconds, one startup update and one Stop commit) retained all
+three spoken markers in order, with 81-character finals and `usage.seconds=5`.
+Full-envelope updates and the narrower transcription-only shape both returned only
+the last phrase (26 characters). Two fully traced narrow runs had one matching
+committed/completed item, no early completion/cleared event, and `usage.seconds=2`.
+This rejects safe mid-recording updates for this observed API, without proving the
+server's internal reset mechanism or a general recognition-quality improvement.
+
+Production `OpenAIStreamingProvider.supportsLiveContextUpdates` is therefore a
+hard false with no preference escape hatch. The sender checks it, and the adapter
+also rejects direct update calls before network work. Startup hints available at
+prepare still work; later references remain in the final message and in the local
+context for an otherwise-needed completed-WAV fallback. Ignoring an unsupported
+live update must not force another paid request. No second session or model switch.
+
+Before reconsidering, repeat identical synthetic controls and updates, retaining
+every event's item identity and numeric usage even on failure. Require all spoken
+markers, full duration, one Stop-owned matching completion and no unexpected clear.
+Also add fail-closed item ownership for early/mismatched completion and provider
+errors independently of the silence-sleep setting; the current single-final adapter
+assumes one turn and must not be reused for implicit update-created turns. A safe
+chunking design needs separate boundary/assembly qualification, not an unchecked
+switch of this capability. Do not replay whole recordings on each hint update.
+
+For any future supported adapter, serialize updates with the existing audio sender,
+wait for `session.updated`, and drain accepted pending context before Stop. That
+acknowledgement has no matching client event ID. Close new offers at Stop, discard
+them at Cancel, and reject late OCR by recording/generation ownership. After a
+rejected/unacknowledged hint, use original frozen prompt/Vocabulary for the single
+completed-WAV fallback instead of resubmitting the suspect addition.
 
 Self-improved — 2026-10-25: official merge semantics and Mini regressions establish
 these validation boundaries. `LiveTranscriptionContextTests` covers conservative
@@ -34,8 +65,10 @@ UTF-8 prompt fitting, long no-space text, local Vision OCR, delayed acknowledgem
 rejected-hint fallback, startup/overlap/stop lifetime and unchanged other providers.
 Preserve those tests plus existing context, audio, startup, Primary/Next and HUD-only
 guards. The dated frozen-prompt audit below predates this explicit-reference exception.
-No live API acceptance or paired human-reference accuracy result was established for
-this feature. The implementation remains uninstalled at Ethan's instruction.
+The subsequent real API evidence above supersedes the earlier source-only clean
+review. Native tests cover the hard hold; they do not qualify unsafe live updates.
+No paired human-reference accuracy result was established. The feature remains
+uninstalled at Ethan's instruction.
 
 ## Identify the actual model
 

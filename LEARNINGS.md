@@ -1,6 +1,44 @@
 # Learnings
 
-## 2026-10-25 — Agent Flow can update its own transcription hints without Codex Voice
+## 2026-10-25 — Accepted live hint updates lost earlier speech; production updates held
+
+Real API testing superseded the source-only qualification below. A prompt-only
+`session.update` was rejected because the nested transcription model is required.
+Repeating the unchanged model/language/Vocabulary/delay made full and narrower
+transcription-only updates acceptable, but neither shape preserved earlier speech.
+
+On the Mini, three synthetic clips said “The first marker is cedar”, “The second
+marker is maple”, and “The last marker is willow” (4.51075 seconds total). Three
+control runs without mid-session updates kept all markers in order, with 81-character
+finals and five billed seconds. Accepted updates between clips yielded only the
+last phrase, 26 characters; two fully traced narrow runs reported two billed seconds,
+exactly one matching committed/completed item, no early completion and no cleared
+event. This isolates a real audio-integrity failure associated with these updates;
+it does not establish the server's internal mechanism. No user audio was uploaded.
+
+The feature branch now hard-disables actual OpenAI mid-recording context updates
+at both the serial sender's capability check and the provider's direct-call boundary.
+There is no runtime preference to bypass the hold. References available at prepare
+can still enter startup context; later captures retain their full final-message
+references and can guide an otherwise-needed completed-WAV fallback. Ignoring an
+unsupported update does not trigger another paid request. The installed build 460
+remains unchanged and installation remains forbidden.
+
+Before enabling updates, require same-audio controls plus every spoken marker,
+full numeric usage duration and Stop-owned item identity in successful update runs.
+The current single-final provider also needs explicit early/mismatched-item and
+pre-Stop-error rejection before any multi-turn design: source-only mock acknowledgement
+checks did not prove that invariant. Do not repeatedly replay whole audio per hint.
+The linked transcription-quality skill reference carries the reusable procedure.
+
+Source hold `60fa66c7` passed 97 focused native tests in seven suites on the Mini,
+including unsupported-provider/no-extra-fallback and direct-adapter bypass guards.
+The resumed Claude Opus 5.5 hold review found no confirmed defect in the hold;
+it did not qualify mid-recording updates or physical recognition. The source-only
+132-test typing/sleep supplement below remains historical evidence, not another
+post-hold run. Skill validation and all three learning-index parser tests passed.
+
+## 2026-10-25 — Direct Agent Flow transcription-context prototype, source-only qualification
 
 Ethan explicitly corrected the target to Agent Flow's own speech-to-text session.
 The conversational Voice investigation below concerns a different API and must not

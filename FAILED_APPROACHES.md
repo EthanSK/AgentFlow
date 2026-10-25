@@ -1,5 +1,31 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-10-25 — Treat accepted session.update as proof of preserved live audio
+
+- **State:** Rejected by real same-audio API probes; production capability held off.
+- **Attempt:** Send bounded captured-reference hints during an uncommitted GPT Live
+  recording, waiting for `session.updated` before continuing PCM and one final commit.
+- **Observed failure:** A prompt-only nested object first failed validation because
+  `session.audio.input.transcription.model` was required. Both a full-envelope update
+  and a narrow transcription-only update with the same frozen model, keywords,
+  languages and delay were subsequently accepted but retained only the last spoken
+  phrase. Three no-update controls retained all three markers (81 characters, five
+  billed seconds); two traced narrow-update runs had 26-character finals and two
+  billed seconds, one matching committed/completed item and no early completion or
+  cleared event. Narrowing out PCM format and turn detection did not fix the loss.
+- **Use instead:** Keep actual OpenAI mid-recording updates hard-disabled in both
+  sender and adapter. Permit startup hints, preserve final references and the full
+  WAV, and never force a paid fallback just because a live hint is unsupported.
+  Acknowledgement, serialized socket sends, byte accounting and mock-provider tests
+  alone cannot qualify this path. Do not infer the server's private reset mechanism.
+- **Reconsider only if:** Identical audio with updates reliably preserves every
+  spoken marker, full duration and Stop-owned item identity. Reject early/mismatched
+  completions and provider errors even without silence sleep before considering a
+  multi-turn/chunking design. Keep real human accuracy qualification separate.
+- **Evidence:** Mini synthetic probes on 2026-10-25; private counts-only wire results
+  004–010, Codex control/update comparison and Claude Opus 5.5 protocol review.
+  No app installation, microphone capture or private speech upload was performed.
+
 ## 2026-10-25 — Omit a live prompt to clear it, or reuse a rejected hint in fallback
 
 - **State:** Rejected during source/protocol review before installation.
@@ -10,8 +36,9 @@
   only, so omitting `prompt` retains the previous hint. An explicitly rejected hint
   can also poison the fallback if it is submitted again. The latter was reproduced
   with an offline rejecting provider; no live provider failure is claimed.
-- **Use instead:** Send prompt-only updates with an explicit empty string when
-  clearing. After failed startup/update, use original prompt, language and Vocabulary
+- **Use instead:** Keep live updates held as described above. Any future qualified
+  update must explicitly clear the prompt and include the required frozen model.
+  After failed startup/update, use original prompt, language and Vocabulary
   for the single fallback. Keep explicit retries on the original baseline. Fit
   structured hints before JSON encoding with a conservative UTF-8 ceiling, and
   retain bounded prefixes for no-space text rather than silently clearing it.
