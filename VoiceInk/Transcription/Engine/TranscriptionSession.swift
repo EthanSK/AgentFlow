@@ -24,11 +24,16 @@ protocol TranscriptionSession: AnyObject {
     /// network stream awake. It is a presentation-free hint, never a delivery, commit,
     /// destination, or capture decision. Declared here so fakes can observe it.
     func noteSessionActivity()
+
+    func updateRecognitionReference(_ text: String?)
+    func finishRecognitionReferences()
 }
 
 extension TranscriptionSession {
     func beginFinalization(audioURL _: URL) {}
     func noteSessionActivity() {}
+    func updateRecognitionReference(_ text: String?) {}
+    func finishRecognitionReferences() {}
 }
 
 /// Owns exactly one asynchronous final result for exactly one recorded file.
@@ -151,6 +156,8 @@ final class StreamingTranscriptionSession: TranscriptionSession {
     private var model: (any TranscriptionModel)?
     private var context: TranscriptionRequestContext = .currentDefaults
     private var streamingFailed = false
+    private var latestRecognitionReference: String?
+    private var recognitionReferencesFinished = false
     private var eagerlyFinalizesAfterStop = false
     private var startupTask: Task<Void, Never>?
     private var startupTaskID: UUID?
@@ -163,7 +170,9 @@ final class StreamingTranscriptionSession: TranscriptionSession {
 
     func prepare(configuration: TranscriptionRuntimeConfiguration) async throws -> ((Data) -> Void)? {
         let model = configuration.model
-        let context = configuration.requestContext
+        let context = model.provider == .openAI
+            ? configuration.requestContext.withLiveReference(latestRecognitionReference)
+            : configuration.requestContext
 
         self.model = model
         self.context = context
@@ -216,6 +225,7 @@ final class StreamingTranscriptionSession: TranscriptionSession {
     }
 
     func beginFinalization(audioURL: URL) {
+        finishRecognitionReferences()
         guard eagerlyFinalizesAfterStop else { return }
         let didBegin = finalization.begin(audioURL: audioURL) { [weak self] boundAudioURL in
             guard let self else {
@@ -229,7 +239,8 @@ final class StreamingTranscriptionSession: TranscriptionSession {
     }
 
     func transcribe(audioURL: URL) async throws -> String {
-        try await finalization.value(audioURL: audioURL) { [weak self] boundAudioURL in
+        finishRecognitionReferences()
+        return try await finalization.value(audioURL: audioURL) { [weak self] boundAudioURL in
             guard let self else {
                 throw VoiceInkEngineError.transcriptionFailed
             }
@@ -286,13 +297,19 @@ final class StreamingTranscriptionSession: TranscriptionSession {
         // evaluation: .agents/skills/learnings/references/openai-transcription-quality.md.
         let fallbackStart = Date()
         logger.notice("Using batch fallback for \(model.displayName, privacy: .public) file=\(audioURL.lastPathComponent, privacy: .public)")
-        let text = try await fallbackService.transcribe(audioURL: audioURL, model: model, context: context)
+        // A rejected/unacknowledged hint must not poison the paid fallback too.
+        // Keep the original prompt, language and frozen Vocabulary, omitting only
+        // this optional addition after either startup or dynamic-context failure.
+        let fallbackContext = streamingFailed || streamingService.contextUpdateFailed
+            ? context.withLiveReference(nil) : context
+        let text = try await fallbackService.transcribe(audioURL: audioURL, model: model, context: fallbackContext)
         try Task.checkCancellation()
         logger.notice("Batch fallback completed elapsed=\(Date().timeIntervalSince(fallbackStart), format: .fixed(precision: 3), privacy: .public)s chars=\(text.count, privacy: .public)")
         return text
     }
 
     func cancel() {
+        recognitionReferencesFinished = true
         finalization.cancel()
         startupTask?.cancel()
         startupTask = nil
@@ -302,5 +319,20 @@ final class StreamingTranscriptionSession: TranscriptionSession {
 
     func noteSessionActivity() {
         streamingService.noteSessionActivity()
+    }
+
+    func updateRecognitionReference(_ text: String?) {
+        guard !recognitionReferencesFinished else { return }
+        // A recording-start selection can arrive before prepare has chosen the model.
+        // Retain it locally; only OpenAI is permitted to send it once prepared.
+        latestRecognitionReference = text.flatMap(LiveTranscriptionContext.boundedReference)
+        guard model?.provider == .openAI else { return }
+        context = context.withLiveReference(latestRecognitionReference)
+        streamingService.updateTranscriptionContext(context)
+    }
+
+    func finishRecognitionReferences() {
+        recognitionReferencesFinished = true
+        streamingService.finishTranscriptionContextUpdates()
     }
 }

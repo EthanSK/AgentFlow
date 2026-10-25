@@ -835,10 +835,50 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     // carries its own so two sessions (one recording, one transcribing) never share state.
 
     // Streaming/file transcription session prepared at record-start, used by the pipeline.
-    var transcriptionSession: TranscriptionSession?
+    var transcriptionSession: TranscriptionSession? {
+        didSet {
+            // Start-time selections can finish before optional realtime preparation.
+            // Replay only this recording's latest reference, never another workspace.
+            if transcriptionSession != nil,
+               let reference = liveSelectionReferences.last(where: { $0.recognitionSource != nil }) {
+                captureLiveRecognitionReference(reference)
+            }
+        }
+    }
     // Mode-resolved transcription engine settings captured at record-start (so the pipeline
     // uses the config that was active WHEN this recording started, not whatever is active now).
     var transcriptionConfiguration: TranscriptionRuntimeConfiguration?
+    private(set) var liveRecognitionReference: String?
+    private lazy var liveRecognitionCapture = LiveTranscriptionReferenceCapture { [weak self] text in
+        guard let self, self.phase == .recording, !self.shouldCancel,
+              self.contextCaptureEndedAt == nil else { return }
+        self.liveRecognitionReference = text
+        self.transcriptionSession?.updateRecognitionReference(text)
+    }
+
+    /// Freeze the final accepted hint into the queued file/retry configuration too.
+    /// Vocabulary, Mode and all non-OpenAI request bytes remain start-owned.
+    var transcriptionConfigurationWithLiveReference: TranscriptionRuntimeConfiguration? {
+        guard let configuration = transcriptionConfiguration else { return nil }
+        guard configuration.model.provider == .openAI,
+              configuration.model.name == OpenAITranscriptionConfiguration.liveModelName,
+              configuration.isRealtimeEnabled else { return configuration }
+        return TranscriptionRuntimeConfiguration(
+            mode: configuration.mode, model: configuration.model, language: configuration.language,
+            isRealtimeEnabled: configuration.isRealtimeEnabled,
+            requestContext: configuration.requestContext.withLiveReference(liveRecognitionReference)
+        )
+    }
+
+    private func captureLiveRecognitionReference(_ reference: LiveSelectionReference) {
+        guard phase == .recording, !shouldCancel, contextCaptureEndedAt == nil, !microphoneOff,
+              let configuration = transcriptionConfiguration,
+              configuration.model.provider == .openAI,
+              configuration.model.name == OpenAITranscriptionConfiguration.liveModelName,
+              configuration.isRealtimeEnabled,
+              let source = reference.recognitionSource else { return }
+        liveRecognitionCapture.accept(source)
+    }
     // App/window context snapshot store for AI enhancement context.
     var contextStore: RecordingContextSnapshotStore?
     // A failed-file retry reuses only the original value snapshot. Never restart
@@ -891,6 +931,9 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
             liveSelectionReferences.append(anchored)
         }
         noteRealtimeSessionActivity()
+        if liveSelectionReferences.last(where: { $0.recognitionSource != nil }) == anchored {
+            captureLiveRecognitionReference(anchored)
+        }
         typingFocus.returnAfterContext()
     }
 
@@ -903,6 +946,8 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     func endLiveSelectionCapture(at date: Date = Date()) {
         // Freeze once at capture finish, never at provider/network completion.
         if contextCaptureEndedAt == nil { contextCaptureEndedAt = date }
+        liveRecognitionCapture.finish()
+        transcriptionSession?.finishRecognitionReferences()
         updateAnnotationCaptureState(at: date)
         flushSpeechTiming()
         typingFocus.disable(releaseKeyboard: false)

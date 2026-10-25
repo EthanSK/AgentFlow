@@ -74,7 +74,7 @@ private struct TrustBody: View {
                 .padding(.bottom, 28)
 
             VStack(spacing: 10) {
-                Text("Local models stay on your Mac. GPT Live sends audio and bounded voice hints to OpenAI; highlights and screenshot paths join the message after recognition.")
+                Text("Local models stay on your Mac. GPT Live sends audio and short hints from captured highlights and screenshot text to OpenAI. Full highlights and screenshot paths join your message after recognition.")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(AppTheme.Text.primary)
                     .multilineTextAlignment(.center)

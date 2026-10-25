@@ -1,6 +1,6 @@
 import Foundation
 
-struct TranscriptionRequestContext {
+struct TranscriptionRequestContext: Equatable, Sendable {
     let language: String?
     /// The existing static `TranscriptionPrompt`. Never rewritten: every provider except
     /// the OpenAI transcription models receives exactly these legacy bytes.
@@ -13,26 +13,41 @@ struct TranscriptionRequestContext {
     /// Vocabulary keywords frozen with this recording. `nil` means no snapshot was taken
     /// and the provider path performs its own legacy live fetch.
     let vocabulary: [String]?
+    /// This recording's latest deliberately captured reference. This is a bounded
+    /// recognition hint, never authored transcript or a permanent Vocabulary entry.
+    let liveReferenceText: String?
 
     init(
         language: String?,
         prompt: String?,
         promptWithRecentContext: String? = nil,
-        vocabulary: [String]? = nil
+        vocabulary: [String]? = nil,
+        liveReferenceText: String? = nil
     ) {
         self.language = language
         self.prompt = prompt
         self.promptWithRecentContext = promptWithRecentContext
         self.vocabulary = vocabulary
+        self.liveReferenceText = liveReferenceText
     }
 
     /// Prompt for the OpenAI transcription models only.
     ///
     /// Optional active-Codex conversation context is deliberately scoped to OpenAI because
     /// that is where it is designed and capped. Realtime and completed-audio fallback both
-    /// read this frozen value, so one recording can never send two different prompts.
+    /// read the same recording-owned snapshot. Explicit live reference updates may
+    /// replace its hint; they never reread another recording's defaults or Vocabulary.
     var openAITranscriptionPrompt: String? {
-        promptWithRecentContext ?? prompt
+        guard let liveReferenceText else { return promptWithRecentContext ?? prompt }
+        return LiveTranscriptionContext.prompt(
+            base: promptWithRecentContext ?? prompt, reference: liveReferenceText
+        )
+    }
+
+    func withLiveReference(_ text: String?) -> Self {
+        Self(language: language, prompt: prompt,
+             promptWithRecentContext: promptWithRecentContext, vocabulary: vocabulary,
+             liveReferenceText: text.flatMap(LiveTranscriptionContext.boundedReference))
     }
 
     /// Frozen keywords when this recording captured a snapshot, otherwise the caller's

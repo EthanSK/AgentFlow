@@ -208,6 +208,7 @@ class StreamingTranscriptionService {
     private var sendLoopCompletion: AsyncStream<Void>?
     private var eventConsumerTask: Task<Void, Never>?
     private let chunkSource: AudioChunkSource
+    private let contextUpdates = LiveTranscriptionContextBuffer()
     private var state: StreamingState = .idle
     private var committedSegments: [String] = []
     private let modelContext: ModelContext
@@ -221,6 +222,7 @@ class StreamingTranscriptionService {
     private var stopStartedAt: Date?
     private var firstPartialLogged = false
     private var firstCommitLogged = false
+    private(set) var contextUpdateFailed = false
 
     init(
         modelContext: ModelContext,
@@ -345,6 +347,15 @@ class StreamingTranscriptionService {
         silenceSleep?.noteSessionActivity()
     }
 
+    func updateTranscriptionContext(_ context: TranscriptionRequestContext) {
+        guard state == .idle || state == .connecting || state == .streaming else { return }
+        contextUpdates.offer(context)
+    }
+
+    func finishTranscriptionContextUpdates() {
+        contextUpdates.finish()
+    }
+
     /// Stops streaming, commits remaining audio, and returns the final transcribed text.
     func stopAndGetFinalText() async throws -> String {
         guard let provider = provider, state == .streaming else {
@@ -352,6 +363,7 @@ class StreamingTranscriptionService {
         }
 
         state = .committing
+        contextUpdates.finish()
         stopStartedAt = Date()
         // A sleeping stream holds its newest quiet preroll. Forward it in capture order
         // BEFORE the chunk source finishes, so the one commit below covers every sent
@@ -434,6 +446,7 @@ class StreamingTranscriptionService {
         // only. The WAV and any retained recovery draft are owned elsewhere.
         silenceSleep?.discard()
         chunkSource.finish()
+        contextUpdates.finish(discard: true)
 
         // Clean up commit signal if waiting
         commitSignal?.finish()
@@ -480,6 +493,7 @@ class StreamingTranscriptionService {
         guard let provider else { return }
         let source = chunkSource
         let metrics = metrics
+        let contextUpdates = contextUpdates
         let (completionStream, completionContinuation) = AsyncStream.makeStream(
             of: Void.self,
             bufferingPolicy: .bufferingNewest(1)
@@ -491,8 +505,29 @@ class StreamingTranscriptionService {
                 completionContinuation.yield()
                 completionContinuation.finish()
             }
+            // The same sender orders context, PCM and the final drain. Await the
+            // provider acknowledgement before following audio. A rejected/unacknowledged
+            // hint invalidates realtime only; the complete WAV and original frozen
+            // guidance remain available to the existing one-shot batch fallback.
+            func applyPendingContext() async {
+                guard let context = contextUpdates.take(),
+                      let contextual = provider as? any LiveContextStreamingTranscriptionProvider else { return }
+                do {
+                    try await contextual.updateTranscriptionContext(context)
+                } catch {
+                    metrics.markProviderFailure()
+                    contextUpdates.finish(discard: true)
+                    // Do not log the server's echoed error: it may contain a private hint.
+                    await MainActor.run {
+                        self?.contextUpdateFailed = true
+                        self?.logger.warning("Live transcription context update failed; retaining complete-WAV fallback")
+                    }
+                }
+            }
             for await chunk in source.stream {
+                guard !Task.isCancelled else { break }
                 source.didDequeue(chunk.count)
+                await applyPendingContext()
                 do {
                     try await provider.sendAudioChunk(chunk)
                     metrics.recordSent(chunk.count)
@@ -504,6 +539,7 @@ class StreamingTranscriptionService {
                     }
                 }
             }
+            if !Task.isCancelled { await applyPendingContext() }
         }
     }
 

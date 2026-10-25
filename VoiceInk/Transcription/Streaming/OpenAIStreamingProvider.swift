@@ -156,7 +156,7 @@ struct OpenAIRealtimePCMResampler {
 /// Dedicated WebSocket adapter for OpenAI's transcription session. Realtime deltas remain
 /// recorder-HUD preview only; only the completed event enters the existing one-shot final
 /// delivery pipeline selected by Primary or Next.
-final class OpenAIStreamingProvider: ContextualStreamingTranscriptionProvider, @unchecked Sendable {
+final class OpenAIStreamingProvider: LiveContextStreamingTranscriptionProvider, @unchecked Sendable {
     private var webSocketTask: URLSessionWebSocketTask?
     private var urlSession: URLSession?
     private var receiveTask: Task<Void, Never>?
@@ -167,6 +167,8 @@ final class OpenAIStreamingProvider: ContextualStreamingTranscriptionProvider, @
     private let stateLock = NSLock()
     private var didCommitStorage = false
     private var didSignalFinalStorage = false
+    private let contextAcknowledgements: AsyncStream<Void>
+    private let contextAcknowledgement: AsyncStream<Void>.Continuation
     private let logger = Logger(
         subsystem: "com.prakashjoshipax.voiceink",
         category: "OpenAIStreamingProvider"
@@ -179,6 +181,9 @@ final class OpenAIStreamingProvider: ContextualStreamingTranscriptionProvider, @
         var continuation: AsyncStream<StreamingTranscriptionEvent>.Continuation!
         transcriptionEvents = AsyncStream { continuation = $0 }
         eventsContinuation = continuation
+        let acknowledgements = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
+        contextAcknowledgements = acknowledgements.stream
+        contextAcknowledgement = acknowledgements.continuation
     }
 
     deinit {
@@ -186,6 +191,7 @@ final class OpenAIStreamingProvider: ContextualStreamingTranscriptionProvider, @
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
         urlSession?.invalidateAndCancel()
         eventsContinuation?.finish()
+        contextAcknowledgement.finish()
     }
 
     func connect(
@@ -222,12 +228,12 @@ final class OpenAIStreamingProvider: ContextualStreamingTranscriptionProvider, @
         resetFinalSignal()
         task.resume()
 
-        // Both halves of one recording must agree. This realtime session and the
-        // completed-audio fallback in `CloudTranscriptionService` read the same frozen
-        // prompt and keyword snapshot, so an empty live final cannot silently retry the
-        // same audio with different provider guidance.
-        // Send guidance once here, not on every audio chunk or partial transcript. Duplicate
-        // local context-resolution logs do not imply duplicate session.update requests.
+        // Both halves start with this recording's own prompt and frozen Vocabulary.
+        // Deliberately captured references can later update its bounded topic hint through
+        // the same serial audio sender. The fallback keeps the latest captured snapshot,
+        // or original guidance if startup/a context update fails;
+        // partial transcripts never generate hints, retries or destination mutations.
+        // Send initial guidance here, never on every audio chunk or partial transcript.
         // Fresh recording sessions also prevent implicit context carry-over between tasks.
         // Research: .agents/skills/learnings/references/openai-transcription-quality.md.
         let sessionUpdate = OpenAITranscriptionConfiguration.realtimeSessionUpdate(
@@ -253,6 +259,20 @@ final class OpenAIStreamingProvider: ContextualStreamingTranscriptionProvider, @
         try await sendAudio(converted, over: task)
     }
 
+    func updateTranscriptionContext(_ context: TranscriptionRequestContext) async throws {
+        guard let task = webSocketTask, !didCommit, !Task.isCancelled else {
+            throw StreamingTranscriptionError.notConnected
+        }
+        let update = OpenAITranscriptionConfiguration.realtimeContextUpdate(prompt: context.openAITranscriptionPrompt)
+        try await sendJSON(update, over: task)
+        let acknowledged = await StreamingTranscriptionService.waitForSendLoopCompletion(
+            contextAcknowledgements, timeoutNanoseconds: 2_000_000_000
+        )
+        guard acknowledged, !Task.isCancelled else {
+            throw StreamingTranscriptionError.timeout
+        }
+    }
+
     func commit() async throws {
         guard let task = webSocketTask else {
             throw StreamingTranscriptionError.notConnected
@@ -267,6 +287,7 @@ final class OpenAIStreamingProvider: ContextualStreamingTranscriptionProvider, @
     }
 
     func disconnect() async {
+        contextAcknowledgement.finish()
         receiveTask?.cancel()
         receiveTask = nil
         webSocketTask?.cancel(with: .normalClosure, reason: nil)
@@ -298,7 +319,9 @@ final class OpenAIStreamingProvider: ContextualStreamingTranscriptionProvider, @
                     case "session.updated":
                         return
                     case "error":
-                        throw StreamingTranscriptionError.serverError(self.errorMessage(from: json))
+                        // An initial reference hint can already be present here. Never
+                        // expose a server error's echoed private request in local logs.
+                        throw StreamingTranscriptionError.serverError("OpenAI realtime transcription request failed")
                     default:
                         continue
                     }
@@ -324,6 +347,7 @@ final class OpenAIStreamingProvider: ContextualStreamingTranscriptionProvider, @
                     handleMessage(json)
                 }
             } catch {
+                contextAcknowledgement.finish()
                 if !Task.isCancelled {
                     eventsContinuation?.yield(
                         .error(StreamingTranscriptionError.connectionFailed(error.localizedDescription))
@@ -337,6 +361,9 @@ final class OpenAIStreamingProvider: ContextualStreamingTranscriptionProvider, @
 
     private func handleMessage(_ json: [String: Any]) {
         switch json["type"] as? String {
+        case "session.updated":
+            contextAcknowledgement.yield()
+
         case "conversation.item.input_audio_transcription.delta":
             guard let delta = json["delta"] as? String, !delta.isEmpty else { return }
             let itemID = (json["item_id"] as? String) ?? "active"
@@ -366,8 +393,11 @@ final class OpenAIStreamingProvider: ContextualStreamingTranscriptionProvider, @
             yieldFinalOnce(resolution.text)
 
         case "conversation.item.input_audio_transcription.failed", "error":
+            contextAcknowledgement.finish()
             eventsContinuation?.yield(
-                .error(StreamingTranscriptionError.serverError(errorMessage(from: json)))
+                // Provider errors can echo private prompt text. Keep a fixed message
+                // on the live event/log path; the complete WAV remains authoritative.
+                .error(StreamingTranscriptionError.serverError("OpenAI realtime transcription request failed"))
             )
             signalEmptyFinalAfterCommitIfNeeded()
 
@@ -429,17 +459,6 @@ final class OpenAIStreamingProvider: ContextualStreamingTranscriptionProvider, @
             return nil
         }
         return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-    }
-
-    private func errorMessage(from json: [String: Any]) -> String {
-        if let error = json["error"] as? [String: Any],
-           let message = error["message"] as? String {
-            return message
-        }
-        if let message = json["message"] as? String {
-            return message
-        }
-        return "OpenAI Realtime transcription failed"
     }
 
     private func customDictionaryTerms() -> [String] {

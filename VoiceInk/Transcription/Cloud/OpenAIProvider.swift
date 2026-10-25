@@ -177,6 +177,17 @@ enum OpenAITranscriptionConfiguration {
         ]
     }
 
+    static func realtimeContextUpdate(prompt: String?) -> [String: Any] {
+        // session.update merges only supplied fields. Explicit empty text clears an
+        // earlier hint; omission would leave stale context active after failed OCR.
+        // Do not resend model, format, Vocabulary, language, delay or VAD settings.
+        ["type": "session.update", "session": [
+            "type": "transcription", "audio": ["input": ["transcription": [
+                "prompt": normalizedPrompt(prompt) ?? "",
+            ]]],
+        ]]
+    }
+
     static func completedAudioFields(
         language: String?,
         prompt: String?,

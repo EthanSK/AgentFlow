@@ -73,3 +73,11 @@ extension ContextualStreamingTranscriptionProvider {
         try await connect(model: model, language: language, context: .currentDefaults)
     }
 }
+
+/// Only an audited transcription adapter accepts updates to its existing session.
+/// Other providers retain their original requests and never receive captured context.
+protocol LiveContextStreamingTranscriptionProvider: ContextualStreamingTranscriptionProvider {
+    /// Return only after the server acknowledges this update. The existing serial
+    /// audio sender owns calls, so updates, audio and Stop's commit cannot overtake.
+    func updateTranscriptionContext(_ context: TranscriptionRequestContext) async throws
+}
