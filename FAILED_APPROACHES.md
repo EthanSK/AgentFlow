@@ -1,5 +1,25 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-10-25 — Commit a context update at an arbitrary point in speech
+
+- **State:** Rejected by a real split-phrase negative control.
+- **Attempt:** Commit each buffered item before updating context, but cut immediately
+  at the selection change rather than waiting for acoustic quiet.
+- **Observed:** Whole-phrase cuts preserved all three markers; arbitrary cuts at
+  0.7s and2.4s lost a marker on identical audio, despite matching commit/completion IDs.
+- **Use instead:** A fully analysed conservative quiet gap, exact item ownership and
+  in-order private assembly into one final. Continuous sound retains the prior hint.
+  Empty audible items must fail the recording, not be skipped; pad an undersized
+  final network fragment to120ms without changing the WAV. Seed and preserve applied
+  prompt identity so no-op/expired hints do not add unnecessary billable turns.
+- **Reconsider only if:** A directly verified provider contract supplies word-safe
+  boundaries or continuous context without splitting words. Do not replay the full
+  recording per hint or claim socket acknowledgement proves word preservation.
+- **Evidence:** Synthetic API runs 011–016 and native adapter runs 018–027;
+  final native joined/short-fragment probes compared every reference word. The
+  focused Mini tests and independent Opus review were followed by the 796-test
+  release gate for installed build 462, 2026-10-25.
+
 ## 2026-10-25 — Treat accepted session.update as proof of preserved live audio
 
 - **State:** Rejected by real same-audio API probes; production capability held off.

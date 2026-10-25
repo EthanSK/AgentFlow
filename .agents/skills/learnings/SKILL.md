@@ -157,15 +157,18 @@ local context-log count, synthetic probe, or catalog score as that evidence.
 When reducing Vocabulary hints, preserve stored terms and every non-OpenAI provider; review
 the OpenAI-only exclusion set rather than lowering an alphabetical keyword cap. Confirm the
 per-recording realtime/fallback list is identical and the current live setting separately.
-For explicit captured-reference hints, read the reference's dated audio-integrity hold;
+For explicit captured-reference hints, read the reference's dated audio-integrity evidence;
 do not apply conversational Voice events to a transcription session or enable a live
-update merely because it is documented/acknowledged. OpenAI mid-recording updates
-remain hard-disabled after same-audio synthetic tests lost earlier speech. Require
-all-marker/duration and item-ownership evidence before reconsidering; preserve startup
-context, late-OCR rejection and original-guidance fallback after a rejected hint.
-Self-improved — 2026-10-25: three controls preserved all markers while accepted
-updates retained only the last phrase. The real API evidence overrides the earlier
-source-only review; see `FAILED_APPROACHES.md` and the linked quality reference.
+update merely because it is documented/acknowledged. Raw OpenAI updates over uncommitted audio remain rejected after losing earlier
+speech. Use only the qualified quiet-boundary commit/completion/update route, with
+one final assembly, audible-empty rejection, short-final padding and deduplication
+against acknowledged prompts. Preserve fresh quiet evidence, Stop/cancel ownership,
+late-OCR rejection and original-guidance fallback. Recheck all-marker/duration and
+item identity in real API probes; fake acknowledgements alone are insufficient.
+Self-improved — 2026-10-25: raw updates and arbitrary commits lost words; quiet-gap
+and actual native-adapter probes preserved them. Four Opus findings added empty-turn,
+minimum-duration, source-guard and applied-context regressions. See `FAILED_APPROACHES.md`
+and the linked quality reference; human recognition benefit remains unproven.
 
 For OpenAI GPT Live Transcribe work, use `scripts/openai-transcription-probe.swift` with synthetic PCM16 mono 24 kHz plus its WAV equivalent before building, installing, or changing active Modes. Require `session.updated`, at least one real delta, a non-empty completion, and a successful `gpt-transcribe` completed-audio fallback. The WebSocket connection is `wss://api.openai.com/v1/realtime?intent=transcription`; `gpt-live-transcribe` belongs only in `audio.input.transcription.model`. Never revive either rejected `?model=gpt-live-transcribe` or `?model=gpt-realtime-*` connection form. The probe reads the VoiceInk++ key from local secure preferences and must not print transcript contents or credentials.
 

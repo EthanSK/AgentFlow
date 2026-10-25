@@ -36,24 +36,37 @@ committed/completed item, no early completion/cleared event, and `usage.seconds=
 This rejects safe mid-recording updates for this observed API, without proving the
 server's internal reset mechanism or a general recognition-quality improvement.
 
-Production `OpenAIStreamingProvider.supportsLiveContextUpdates` is therefore a
-hard false with no preference escape hatch. The sender checks it, and the adapter
-also rejects direct update calls before network work. Startup hints available at
-prepare still work; later references remain in the final message and in the local
-context for an otherwise-needed completed-WAV fallback. Ignoring an unsupported
-live update must not force another paid request. No second session or model switch.
+The initial production capability was hard-disabled until a different route was
+qualified. The candidate quiet-boundary route first commits the prior audio, binds
+its exact item identity and awaits completion, then changes context. Never revive
+an update over uncommitted audio. Arbitrary mid-phrase commits lost a marker; three
+quiet-gap probes matched the whole control transcript. Per-turn rounding reported
+nine billed seconds versus eight for the same7.51s audio, so updates are coalesced,
+rate/count bounded and deduplicated against acknowledged startup/current state.
 
-Before reconsidering, repeat identical synthetic controls and updates, retaining
-every event's item identity and numeric usage even on failure. Require all spoken
-markers, full duration, one Stop-owned matching completion and no unexpected clear.
-Also add fail-closed item ownership for early/mismatched completion and provider
-errors independently of the silence-sleep setting; the current single-final adapter
-assumes one turn and must not be reused for implicit update-created turns. A safe
-chunking design needs separate boundary/assembly qualification, not an unchecked
-switch of this capability. Do not replay whole recordings on each hint update.
+The actual native adapter has passed synthetic real-API single-turn, joined-turn,
+no-following-audio Stop and10ms quiet final-fragment cases. Each emitted one final,
+no early final/errors and every expected marker. Empty audible turns fail closed;
+only proven quiet empty turns may be skipped. A short final fragment after an
+intermediate turn receives enough network-only zero PCM to reach120ms; WAV capture
+is unchanged. Source guards must assert the two commit-helper CALLERS, not merely
+count the JSON string, which is shared by Stop and explicit-hint boundaries.
+
+Use the conservative classifier as a separate observation policy. Wait for a fully
+analysed quiet second, require fresh quiet evidence after each change, and never
+cut continuous speech. Unstarted hints are discarded at Stop; no hint-only turn
+may start during drain. Bound updates to10 per recording and one per10seconds;
+expire a pending offer after120seconds without erasing applied-prompt identity.
+Original-language/Vocabulary context remains frozen, and audio/provider failure
+uses one original-guidance full-WAV fallback even with silence sleep off.
+
+Release-suite, signed installation and human voice accuracy remain distinct. Keep
+same-audio controls, all spoken markers, numeric usage and item identity in future
+provider changes. This evidence does not establish the server's internal reset
+mechanism, an optimal acoustic threshold or improved human recognition.
 
 For any future supported adapter, serialize updates with the existing audio sender,
-wait for `session.updated`, and drain accepted pending context before Stop. That
+wait for `session.updated`; discard unstarted pending context at Stop. That
 acknowledgement has no matching client event ID. Close new offers at Stop, discard
 them at Cancel, and reject late OCR by recording/generation ownership. After a
 rejected/unacknowledged hint, use original frozen prompt/Vocabulary for the single
@@ -66,9 +79,11 @@ rejected-hint fallback, startup/overlap/stop lifetime and unchanged other provid
 Preserve those tests plus existing context, audio, startup, Primary/Next and HUD-only
 guards. The dated frozen-prompt audit below predates this explicit-reference exception.
 The subsequent real API evidence above supersedes the earlier source-only clean
-review. Native tests cover the hard hold; they do not qualify unsafe live updates.
-No paired human-reference accuracy result was established. The feature remains
-uninstalled at Ethan's instruction.
+review. Native tests cover quiet-boundary ownership; they do not qualify raw live
+updates. Build 462 from native source `4caf9076` subsequently passed all 796 Mini
+tests in 29 suites and signed installation after Ethan's explicit authorization.
+The installed executable matches the qualified artifact. No paired human-reference
+accuracy result or physical microphone/typing acceptance was established.
 
 ## Identify the actual model
 

@@ -1,12 +1,22 @@
 # GPT Live silence sleep
 
-## Candidate status
+## Installed status — 25 October 2026
 
-The ten-second policy is held on `codex/agentflow-idle-sleep`. Build 461 was rejected
-after reported focus interference and doubled typing during live settings inspection;
-the exact build 460 was restored. Ethan explicitly requested source/test iteration
-with Claude and no installation. Native tests and code review do not establish the
-cause of that incident or authorize deploying this candidate.
+Build 462 from native source `4caf9076` is installed. Ethan's later request to
+finish and install superseded the earlier hold. The feature remains on
+`codex/agentflow-idle-sleep`; it has not been merged. The Mini's canonical release
+gate passed all 796 tests in 29 suites, after 156 focused tests and independent
+Claude Opus review. The universal signed artifact and running installed executable
+match. All 198 selected settings were preserved, including the enabled quiet-upload
+preference and `gpt-live-transcribe` model. Installation waited for an ordinary,
+guarded all-session-idle quit; no capture was force-closed.
+
+Earlier, build 461 was rolled back after reported focus interference and doubled
+typing during live settings inspection. The later browser typing incident recovered
+after the shared Computer Use helper reset and Ethan's physical confirmation.
+Those observations do not establish that the candidate source caused the incident.
+Native tests, synthetic API probes and review do not replace physical microphone,
+typing or recognition-quality acceptance.
 
 ## Behavior
 
@@ -20,7 +30,9 @@ can stop appending audio to the existing realtime connection. A small moon on
 the recorder waveform means the network stream is sleeping; recording continues.
 Sound or session activity wakes it on the next audio callback. Recent audio is
 buffered and sent before the waking chunk, preserving the beginning of the sound.
-Stop still makes one commit and one final delivery through the existing route.
+Sleep/wake alone never commits. Explicit captured-reference hints may close owned
+provider turns at qualified quiet gaps; Stop still produces one assembled final
+delivery through the existing route.
 
 This is a conservative level detector, not speaker identification. Audible music,
 other voices, or a noisy room can keep it awake. It does not promise to remove

@@ -1,6 +1,59 @@
 # Learnings
 
+## 2026-10-25 — Quiet owned turns preserve audio across captured-hint updates
+
+This supersedes the temporary hard hold below for the new quiet-boundary route,
+not the rejected raw update over uncommitted speech. Ethan explicitly asked to
+finish and install after the earlier source-only status. Build 462 from native
+source `4caf9076` passed release qualification and was installed after the cooperative
+all-session idle guard allowed an ordinary quit. The feature remains on
+`codex/agentflow-idle-sleep`.
+
+Actual API checks established the distinction: arbitrary within-phrase commits
+lost a marker; three quiet-gap commit/completion/update runs retained every phrase,
+exactly matching the 81-character control. The same 7.51075 seconds reported eight
+billed seconds in one turn and nine across three turns (per-turn rounding). Bound
+and coalesce hints rather than treating extra commits as free.
+
+The native adapter now owns every committed item and assembles one final transcript.
+The serial sender permits a hint before audio or after a fully analysed quiet second,
+with three seconds of initial audio, ten seconds between updates, at most ten updates
+and 120-second pending-hint expiry. Fresh quiet evidence is required per turn;
+continuous speech/noise simply defers the hint. This observer never withholds PCM.
+Intermediate commits do not flush the resampler. Stop discards unstarted hints and
+keeps the existing one final delivery through unchanged Primary/Next routes.
+
+Four independent Opus review findings were fixed: audible empty turns fail closed
+instead of disappearing beside nonempty turns; final fragments after a boundary
+receive only enough network-only zeros to reach 120ms (server minimum100ms), without
+changing the WAV; structural guards assert the two actual commit-helper callers;
+applied/in-flight/pending hints are distinct and seeded from acknowledged startup,
+so expiry and no-text OCR cannot cause duplicate billable turns. A revert during an
+in-flight change survives its acknowledgement. Provider errors require original-
+guidance WAV fallback even when silence sleep is off.
+
+All 156 focused native tests in 10 suites passed on the Mini, followed by the
+canonical full release gate: 796 tests in 29 suites, all passed on exact source
+`4caf9076`. This includes the mandatory Primary, both Next-route and HUD-only guards.
+The actual native provider compiled from source passed legacy single-turn, joined
+turns, Stop without new audio after an update, and a 10ms quiet final fragment.
+Each produced one final, no early final/errors and every expected marker. No private
+speech, physical microphone capture, MacBook input automation or model change was
+used. Final joined/short-fragment probes also compared every reference word.
+
+The installed universal build 462 passed deep/strict signing, retained the same
+designated requirement and outer permissions, and preserved all 198 selected
+settings, its icon and the official VoiceInk installation. The old 460 bundle was
+retired to Trash after a verified rollback ZIP was saved. Runtime identity and
+installed executable SHA-256 matched the qualified artifact. Ten-second quiet
+upload sleep remains enabled; the model remains `gpt-live-transcribe`. These
+checks do not prove physical compatibility, zero possible regressions or improved
+human word accuracy.
+
 ## 2026-10-25 — Accepted live hint updates lost earlier speech; production updates held
+
+Historical checkpoint: the later quiet-owned-turn qualification above supersedes
+this temporary hold, but does not qualify raw updates over uncommitted speech.
 
 Real API testing superseded the source-only qualification below. A prompt-only
 `session.update` was rejected because the nested transcription model is required.
