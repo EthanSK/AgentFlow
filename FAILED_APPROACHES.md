@@ -1,5 +1,18 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-10-25 — Unit tests alone did not qualify build 461 for live typing
+
+The ten-second quiet-upload candidate passed 42 focused and 744 full native Mini
+tests. During the subsequent MacBook Audio-panel inspection, Ethan reported focus
+interference and visibly doubled characters, then demanded rollback. The agent
+stopped/reset Computer Use and restored the exact previous signed build 460.
+
+This rejects the candidate's live acceptance, not a proven root cause in its two
+timing constants. Do not attribute the duplication to silence detection or claim
+it fixed from unit counts alone. Reconsider deployment only after the reported
+focus/typing interaction is understood and verified on a disposable Mini target;
+keep the change on its feature branch in the meantime, as Ethan requested.
+
 ## 2026-10-24 — Do not learn audible speech into a realtime silence floor
 
 An initial upload gate using a −50 dBFS ceiling and 9 dB margin learned a quiet

@@ -1,5 +1,19 @@
 # Learnings
 
+## 2026-10-25 — Ten-second candidate failed live acceptance; keep it off the installed app
+
+Build 461 passed 42 focused and 744 full Mini tests, but Ethan reported focus
+interference and doubled typing during an agent's Audio-settings inspection while
+he was actively using typing mode. The production change from accepted build 460
+only changed the quiet and activity delays; the causal mechanism is unproven.
+The UI-control session was stopped/reset and the exact signed build 460 restored.
+
+Ethan explicitly required the new change to stay on its feature branch until it
+works and has been tested on the Mini. Do not re-install 461 merely because the
+same unit suite passes again. Reproduce and qualify focus plus ordinary typing on
+a disposable Mini target, including concurrent inspection, before proposing a
+new release. Preserve the rollback and do not inject test input into his live work.
+
 ## 2026-10-25 — Keep quiet-upload delay and activity hold at ten seconds
 
 Ethan changed the GPT Live quiet-upload delay from five to ten seconds. Both the
