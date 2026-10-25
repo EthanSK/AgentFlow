@@ -4,6 +4,39 @@ Read before changing OpenAI transcription prompts, Vocabulary hints, language, d
 session reuse, or quality claims. Research checked 2026-09-05. Re-fetch the cited model
 documentation when changing its contract; this is a dated audit, not a frozen API manual.
 
+## 2026-10-25 explicit captured-reference updates
+
+Ethan clarified that highlights/screenshots should help Agent Flow's own speech
+transcription, not connect to Codex Voice. The current
+[transcription guide](https://developers.openai.com/api/docs/guides/realtime-transcription#add-transcription-context)
+explicitly permits another `session.update` within an existing transcription session.
+This is a separate feature from automatic active-Codex excerpts and conversational
+`session.thinking.append`; neither Codex nor a second voice session is required.
+
+The held feature accepts a short topic hint from deliberately captured selections,
+or local OCR of their already captured images. It never feeds typed prose, HUD
+partials or History back into recognition, changes permanent Vocabulary, captures
+extra screens, or appends reference text to the spoken transcript locally. Treat
+recognition hints as untrusted source data; JSON quoting is not an instruction sandbox.
+
+The [update contract](https://developers.openai.com/api/reference/resources/realtime/client-events#session.update)
+merges supplied fields only. Send an explicit empty prompt to clear a hint; omission
+retains the old value. Serialize prompt-only updates with the existing audio sender,
+wait for `session.updated`, and drain accepted pending context before the sole Stop
+commit. That acknowledgement has no matching client event ID. Close new offers at
+Stop, discard them at Cancel, and reject late OCR by recording/generation ownership.
+After a rejected or unacknowledged update, use original frozen prompt/Vocabulary for
+the single completed-WAV fallback instead of resubmitting the suspect addition.
+
+Self-improved — 2026-10-25: official merge semantics and Mini regressions establish
+these validation boundaries. `LiveTranscriptionContextTests` covers conservative
+UTF-8 prompt fitting, long no-space text, local Vision OCR, delayed acknowledgement,
+rejected-hint fallback, startup/overlap/stop lifetime and unchanged other providers.
+Preserve those tests plus existing context, audio, startup, Primary/Next and HUD-only
+guards. The dated frozen-prompt audit below predates this explicit-reference exception.
+No live API acceptance or paired human-reference accuracy result was established for
+this feature. The implementation remains uninstalled at Ethan's instruction.
+
 ## Identify the actual model
 
 VoiceInk++ uses `gpt-live-transcribe` for microphone streaming, not a conversational

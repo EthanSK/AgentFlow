@@ -157,6 +157,11 @@ local context-log count, synthetic probe, or catalog score as that evidence.
 When reducing Vocabulary hints, preserve stored terms and every non-OpenAI provider; review
 the OpenAI-only exclusion set rather than lowering an alphabetical keyword cap. Confirm the
 per-recording realtime/fallback list is identical and the current live setting separately.
+For explicit captured-reference hints, read the reference's dated live-update exception;
+do not apply conversational Voice events to a transcription session. Preserve update/Stop
+ordering, late-OCR rejection and original-guidance fallback after a failed hint update.
+Self-improved — 2026-10-25: official session-update semantics and the focused Mini
+`LiveTranscriptionContextTests` establish this distinction; recognition benefit remains unproven.
 
 For OpenAI GPT Live Transcribe work, use `scripts/openai-transcription-probe.swift` with synthetic PCM16 mono 24 kHz plus its WAV equivalent before building, installing, or changing active Modes. Require `session.updated`, at least one real delta, a non-empty completion, and a successful `gpt-transcribe` completed-audio fallback. The WebSocket connection is `wss://api.openai.com/v1/realtime?intent=transcription`; `gpt-live-transcribe` belongs only in `audio.input.transcription.model`. Never revive either rejected `?model=gpt-live-transcribe` or `?model=gpt-realtime-*` connection form. The probe reads the VoiceInk++ key from local secure preferences and must not print transcript contents or credentials.
 

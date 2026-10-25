@@ -1,5 +1,56 @@
 # Learnings
 
+## 2026-10-25 — Agent Flow can update its own transcription hints without Codex Voice
+
+Ethan explicitly corrected the target to Agent Flow's own speech-to-text session.
+The conversational Voice investigation below concerns a different API and must not
+be treated as a dependency of this feature. Current official transcription docs
+explicitly allow another `session.update` during an existing `gpt-live-transcribe`
+session. The model accepts text/audio, so already captured images require local
+OCR rather than an image append. No second conversational session is involved.
+
+Implementation `a53c5a14` is held on `codex/agentflow-idle-sleep`, uninstalled:
+
+- Deliberately captured selections, or local OCR of their existing image files,
+  supply one latest short topic hint. Typed prose, History and HUD partials never
+  become hints. Full original references remain in the final message unchanged.
+- Static prompt, frozen Vocabulary, Mode language, `xhigh`, PCM/WAV and all other
+  providers retain their contracts. The composed JSON prompt fits a conservative
+  992-byte UTF-8 ceiling; no-space passages use bounded Character prefixes.
+- One recording-owned mailbox coalesces updates. The existing serial audio sender
+  orders them with PCM and waits for acknowledgement. Stop closes offers and drains
+  the final pending hint before its sole commit; Cancel discards it. Late OCR is
+  generation/lifecycle guarded, and stateless image recognition runs serially with
+  bounded file/image dimensions. No screen polling, focus or input mutation is added.
+- Update payloads merge only the prompt. Clearing requires an explicit empty
+  prompt: omission preserves stale server state. Server errors are not logged with
+  echoed private request data. A failed startup/update removes the optional hint
+  from the one completed-WAV fallback while retaining original prompt/Vocabulary;
+  explicit failed-recording retries also retain the original baseline.
+- Native privacy wording now discloses short highlight and screenshot-text hints
+  during recognition, separately from complete final-message references.
+
+All 95 focused Mini tests in seven suites passed through the canonical Xcode test
+action, including real Vision OCR of a synthetic saved image, acknowledgement
+blocking, rejected startup/update fallback, pre-attachment selection replay,
+Unicode/JSON fitting, overlap/stop lifetime, unchanged other providers and the
+mandatory Primary/Next/HUD-only guards. Codex and resumed Claude Opus 5.5 resolved
+four confirmed review findings; the final source review found none remaining.
+The installed build-460 executable was independently unchanged.
+
+These are source/offline qualifications, not real API acceptance, physical typing
+acceptance or a demonstrated speech-recognition improvement. Mid-session server
+timing, late-hint influence on earlier audio, unspoken hint insertions and human
+accuracy still need direct evaluation. Do not install under the current hold.
+The first test-without-building attempt had missing task-owned build products and
+executed no tests; a separate `.noindex` derived folder plus the canonical combined
+build/test action passed. Do not count that failed launch or guess its cleanup cause.
+
+Sources checked on this date:
+- https://developers.openai.com/api/docs/guides/realtime-transcription#add-transcription-context
+- https://developers.openai.com/api/reference/resources/realtime/client-events#session.update
+- https://developers.openai.com/api/docs/models/gpt-live-transcribe
+
 ## 2026-10-25 — Selection context for conversational Voice is a separate integration
 
 Read-only source inspection confirms `LiveSelectionReference` is assembled into

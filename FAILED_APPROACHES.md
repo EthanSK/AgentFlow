@@ -1,5 +1,26 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-10-25 — Omit a live prompt to clear it, or reuse a rejected hint in fallback
+
+- **State:** Rejected during source/protocol review before installation.
+- **Attempt:** Compose live captured-reference hints using the startup payload's
+  omission-for-empty convention, then reuse the latest captured hint after a failed
+  live update in the completed-WAV request.
+- **Failure condition:** Official `session.update` semantics merge supplied fields
+  only, so omitting `prompt` retains the previous hint. An explicitly rejected hint
+  can also poison the fallback if it is submitted again. The latter was reproduced
+  with an offline rejecting provider; no live provider failure is claimed.
+- **Use instead:** Send prompt-only updates with an explicit empty string when
+  clearing. After failed startup/update, use original prompt, language and Vocabulary
+  for the single fallback. Keep explicit retries on the original baseline. Fit
+  structured hints before JSON encoding with a conservative UTF-8 ceiling, and
+  retain bounded prefixes for no-space text rather than silently clearing it.
+- **Evidence:** `a53c5a14`, `LiveTranscriptionContextTests`, current official update
+  contract and 95 passing focused Mini tests; final Codex/Opus source review.
+- **Reconsider only if:** A documented, directly verified provider contract changes
+  merge/clear semantics. Do not treat a successful socket send as acknowledgement
+  or as proof of recognition accuracy.
+
 ## 2026-10-25 — Treat an Agent Flow restart or task-local CUA reset as a shared-hook reset
 
 **Observed failure:** this task's CUA JavaScript-kernel reset left the shared
