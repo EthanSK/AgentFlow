@@ -1,13 +1,195 @@
 import Foundation
+import AppKit
+import SwiftUI
 import SwiftData
 import Testing
 @testable import VoiceInkPlusPlus
+
+/// Plain test-owned destination: no recorder shortcut dispatch or app activation.
+private final class SilenceSleepTypingTestPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+}
 
 /// GPT Live silence sleep: network-stream omission during clearly quiet recording.
 /// These fixtures use synthetic PCM only. They prove the local gate's decisions and
 /// accounting; they do not prove OpenAI billing, idle-socket survival, or recognition
 /// across a gap — those need the separate synthetic provider probe.
 struct RealtimeSilenceSleepTests {
+    /// Exercise native window/event dispatch with the actual SwiftUI HUD roots,
+    /// rather than infer typing safety from a gate-only unit test. These windows
+    /// belong to the Mini test host; no system input or live user app is targeted.
+    @Test @MainActor func sleepWakeRepaintsPreserveExactTypingAndReleasedFocusInBothHUDStyles() async throws {
+        func editor(in view: NSView) -> RecorderTypingTextView? {
+            if let found = view as? RecorderTypingTextView { return found }
+            return view.subviews.lazy.compactMap { editor(in: $0) }.first
+        }
+        func settle(_ windows: [NSWindow]) async throws {
+            for window in windows { window.contentView?.layoutSubtreeIfNeeded() }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        let authored = "one key becomes one character"
+        // Exercise RecordingSession's real focus controller and its real gates.
+        // Refuse an unsuitable fixture environment instead of replacing that
+        // wiring or changing the Mini user's preferences/mouse state.
+        try #require(RecorderTypingFocus.automaticReturnEnabled(in: .standard))
+        try #require(NSEvent.pressedMouseButtons == 0)
+        for mini in [true, false] {
+            for microphoneOff in [false, true] {
+                for driveSleepChanges in [false, true] {
+                    let session = RecordingSession()
+                    session.microphoneOff = microphoneOff
+                    session.showsRealtimeTranscriptHUD = true
+                    let activity = ActivityCountingSession()
+                    session.transcriptionSession = activity
+                    var configuration = Self.fixtureConfiguration
+                    configuration.trailingQuietSeconds = 0.04
+                    configuration.activityHoldSeconds = 0
+                    configuration.prerollSeconds = 0.02
+                    let controller = RealtimeSilenceSleepController(configuration: configuration,
+                        forward: { _ in }, withhold: { _ in },
+                        onSleepingChange: { [weak session] sleeping, generation in
+                            Task { @MainActor in
+                                session?.applyRealtimeStreamSleeping(sleeping, generation: generation)
+                            }
+                        })
+                    if driveSleepChanges { activity.onActivity = { controller.noteSessionActivity() } }
+                    let recorder = Recorder()
+                    let assistant = AssistantSession()
+                    var panels: [NSPanel] = []
+                    for offset in [0, 30] {
+                        let frame = NSRect(x: 100 + offset, y: 100, width: 940, height: 220)
+                        let panel: NSPanel = mini ? MiniRecorderPanel(contentRect: frame)
+                            : NotchRecorderPanel(contentRect: frame)
+                        let root: AnyView
+                        if mini {
+                            root = AnyView(MiniRecorderView(stateProvider: session,
+                                liveTranscriptHeight: 120, liveTranscriptWidth: 900, recorder: recorder,
+                                assistantSession: assistant, onRecordButtonTapped: {}, onCloseTapped: {},
+                                onCancelTapped: {}, onAssistantFollowUp: { _ in }))
+                        } else {
+                            root = AnyView(NotchRecorderView(stateProvider: session, recorder: recorder,
+                                assistantSession: assistant, notchWidth: 180, notchHeight: 32,
+                                liveTranscriptHeight: 120, liveTranscriptWidth: 900,
+                                onRecordButtonTapped: {}, onCloseTapped: {}, onCancelTapped: {},
+                                onAssistantFollowUp: { _ in }))
+                        }
+                        panel.contentView = NSHostingView(rootView: root.frame(width: 940, height: 220))
+                        panel.orderFrontRegardless()
+                        panels.append(panel)
+                    }
+                    // The test host can be inactive. A normal activating NSWindow
+                    // cannot establish key ownership there; use a test-owned
+                    // nonactivating panel with an ordinary, non-recorder editor.
+                    let outside = SilenceSleepTypingTestPanel(contentRect: NSRect(x: 200, y: 200, width: 400, height: 100),
+                        styleMask: [.titled, .nonactivatingPanel], backing: .buffered, defer: false)
+                    outside.isReleasedWhenClosed = false
+                    let outsideEditor = NSTextView(frame: outside.contentView!.bounds)
+                    outsideEditor.isRichText = false
+                    outside.contentView = outsideEditor
+                    defer {
+                        session.typingFocus.disable(releaseKeyboard: false)
+                        for panel in panels { panel.orderOut(nil); panel.close() }
+                        outside.orderOut(nil)
+                        outside.close()
+                    }
+                    try await settle(panels)
+                    let active = try #require(editor(in: panels[0].contentView!))
+                    let mirror = try #require(editor(in: panels[1].contentView!))
+                    #expect(active !== mirror)
+                    session.typingFocus.enable(active)
+                    panels[0].makeKey()
+                    #expect(panels[0].makeFirstResponder(active))
+                    var expectedSleeping = false
+                    func repaint() async throws {
+                        if driveSleepChanges {
+                            expectedSleeping.toggle()
+                            let sleep = expectedSleeping
+                            // Exercise the actual background-audio -> controller ->
+                            // MainActor presentation hop. Short test timings force
+                            // repeated transitions; the real ten-second policy has
+                            // its own deterministic audio/wall-clock regression.
+                            await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+                                DispatchQueue.global(qos: .userInitiated).async {
+                                    if sleep {
+                                        controller.receive(Data(count: 1_280))
+                                        controller.receive(Data(count: 1_280))
+                                    } else {
+                                        controller.receive(TestPCM.data(Array(repeating: Int16(10_000), count: 320)))
+                                    }
+                                    done.resume()
+                                }
+                            }
+                        }
+                        // Read only the test-owned views while they redraw. This is
+                        // bounded AppKit inspection, not a CUA/physical-key receipt.
+                        _ = active.accessibilityValue()
+                        _ = panels[0].accessibilityTitle()
+                        try await settle(panels)
+                        #expect(session.realtimeStreamSleeping == expectedSleeping)
+                        #expect(session.showsRealtimeStreamSleepingBadge == (expectedSleeping && !microphoneOff))
+                        #expect(editor(in: panels[0].contentView!) === active)
+                        #expect(editor(in: panels[1].contentView!) === mirror)
+                    }
+                    func type(_ character: Character, in window: NSWindow) throws {
+                        try #require(NSApp.keyWindow === window && window.isKeyWindow)
+                        let event = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero,
+                            modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                            windowNumber: window.windowNumber, context: nil, characters: String(character),
+                            charactersIgnoringModifiers: String(character), isARepeat: false, keyCode: 0))
+                        NSApp.sendEvent(event)
+                    }
+                    var expected = ""
+                    for character in authored {
+                        try await repaint()
+                        try type(character, in: panels[0])
+                        expected.append(character)
+                        try await settle(panels)
+                        #expect(active.string == expected)
+                        #expect(mirror.string == expected)
+                        #expect(session.typedInput == expected)
+                        #expect(activity.activityCount == expected.count)
+                        #expect(session.liveSelectionReferences.filter(\.isTypedText).isEmpty)
+                        #expect(NSApp.keyWindow === panels[0] && panels[0].firstResponder === active)
+                    }
+                    outside.makeKeyAndOrderFront(nil)
+                    #expect(outside.makeFirstResponder(outsideEditor))
+                    try await settle(panels + [outside])
+                    try #require(NSApp.keyWindow === outside && outside.firstResponder === outsideEditor)
+                    for character in "outside" {
+                        try await repaint()
+                        try type(character, in: outside)
+                        #expect(NSApp.keyWindow === outside && outside.firstResponder === outsideEditor)
+                    }
+                    #expect(outsideEditor.string == "outside")
+                    #expect(session.typedInput.isEmpty && active.string.isEmpty && mirror.string.isEmpty)
+                    let runs = session.liveSelectionReferences.filter(\.isTypedText)
+                    #expect(runs.count == 1)
+                    #expect(runs.first?.preview == authored)
+                    #expect(activity.activityCount == authored.count)
+                    // Give even the full production retry lifetime a chance to
+                    // run. Sleep changes alone must not reclaim the keyboard.
+                    try await Task.sleep(nanoseconds: 2_200_000_000)
+                    #expect(NSApp.keyWindow === outside && outside.firstResponder === outsideEditor)
+                    #expect(outsideEditor.string == "outside" && session.typedInput.isEmpty)
+                    #expect(session.liveSelectionReferences.filter(\.isTypedText) == runs)
+                    // Positive control: accepted context really does return focus
+                    // for microphone-off typing. Speech mode leaves it outside.
+                    session.recordLiveSelection(try #require(LiveSelectionReference("test-owned selected context")))
+                    for _ in 0..<110 {
+                        if microphoneOff, NSApp.keyWindow === panels[0], panels[0].firstResponder === active { break }
+                        try await Task.sleep(nanoseconds: 20_000_000)
+                    }
+                    if microphoneOff {
+                        #expect(NSApp.keyWindow === panels[0] && panels[0].firstResponder === active)
+                    } else {
+                        #expect(NSApp.keyWindow === outside && outside.firstResponder === outsideEditor)
+                    }
+                    #expect(outsideEditor.string == "outside")
+                    #expect(session.liveSelectionReferences.filter(\.isTypedText) == runs)
+                }
+            }
+        }
+    }
     // Algorithm scenarios keep their original short fixture timings. The separate
     // production-policy test below pins Ethan's ten-second setting and both gates.
     private static var fixtureConfiguration: RealtimeSilenceSleepGate.Configuration {
@@ -605,10 +787,11 @@ struct RealtimeSilenceSleepTests {
     @MainActor
     private final class ActivityCountingSession: TranscriptionSession {
         var activityCount = 0
+        var onActivity: (() -> Void)?
         func prepare(configuration: TranscriptionRuntimeConfiguration) async throws -> ((Data) -> Void)? { nil }
         func transcribe(audioURL: URL) async throws -> String { "" }
         func cancel() {}
-        func noteSessionActivity() { activityCount += 1 }
+        func noteSessionActivity() { activityCount += 1; onActivity?() }
     }
 
     @Test @MainActor func typingAndSelectionsReportActivityOnlyToTheirOwnRecording() throws {

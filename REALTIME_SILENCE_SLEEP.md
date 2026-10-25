@@ -1,5 +1,15 @@
 # GPT Live silence sleep
 
+## Candidate status
+
+The ten-second policy is held on `codex/agentflow-idle-sleep`. Build 461 was rejected
+after reported focus interference and doubled typing during live settings inspection;
+the exact build 460 was restored. Ethan explicitly requested source/test iteration
+with Claude and no installation. Native tests and code review do not establish the
+cause of that incident or authorize deploying this candidate.
+
+## Behavior
+
 `Audio → Recording Behavior → Sleep GPT Live During Silence` is an opt-in
 setting for OpenAI `gpt-live-transcribe`. It is read when that recording creates
 its realtime session, including when a typing-only recording first enables its microphone.

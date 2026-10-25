@@ -1,5 +1,29 @@
 # Learnings
 
+## 2026-10-25 — Hosted typing checks must cover real sleep transitions and focus lifetime
+
+The quiet-upload gate has no demonstrated causal link to the reported doubled
+characters. Codex and an independent Opus 5.5 review found no confirmed source
+defect. Preserve that narrower conclusion: source inspection cannot rule out all
+window-server, input-method, keyboard-monitor or cross-process inspection effects.
+
+The Mini regression now hosts two actual Mini or Notch HUD roots, dispatches one
+in-process native key event per character and checks exact editor/model/mirror
+text after every event. A real gate receives background synthetic audio and sends
+ordered MainActor sleep updates. End each update alternately awake/asleep and let
+the view settle; wake-and-sleep in one burst may coalesce before rendering. Keep
+one activity notification per real edit, stable editor identity, one committed
+run at blur, a 2.2-second no-return wait, and the microphone-off accepted-context
+positive control using the session's actual production focus controller.
+
+An activating NSWindow could not gain key ownership in the inactive test host,
+even with sleep updates disabled. A plain test-owned nonactivating NSPanel plus
+explicit ownership preconditions corrects that fixture failure; it is not an app
+fix. Refuse unsuitable defaults/held-mouse state rather than changing user input
+or duplicating production focus gates. All 43 final focused tests passed; the
+745-test full run passed before the last test-only tightening. Neither result is
+physical/CUA acceptance or permission to install the held candidate.
+
 ## 2026-10-25 — Ten-second candidate failed live acceptance; keep it off the installed app
 
 Build 461 passed 42 focused and 744 full Mini tests, but Ethan reported focus
@@ -13,6 +37,8 @@ works and has been tested on the Mini. Do not re-install 461 merely because the
 same unit suite passes again. Reproduce and qualify focus plus ordinary typing on
 a disposable Mini target, including concurrent inspection, before proposing a
 new release. Preserve the rollback and do not inject test input into his live work.
+His subsequent instruction explicitly forbade installation while Codex and Claude
+iterate. Mini test/review completion does not authorize another installation.
 
 ## 2026-10-25 — Keep quiet-upload delay and activity hold at ten seconds
 
