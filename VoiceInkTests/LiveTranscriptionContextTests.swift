@@ -14,12 +14,14 @@ private final class ReferenceHintTestProvider: LiveContextStreamingTranscription
     let rejectsUpdates: Bool
     let rejectsConnection: Bool
     let supportsLiveContextUpdates: Bool
+    let errorsOnCommit: Bool
     let acknowledgement: (@Sendable () async -> Void)?
     var snapshot: [String] { lock.withLock { recorded } }
     var contextSnapshot: [TranscriptionRequestContext] { lock.withLock { contexts } }
 
     init(rejectsUpdates: Bool = false, rejectsConnection: Bool = false,
          supportsLiveContextUpdates: Bool = true,
+         errorsOnCommit: Bool = false,
          acknowledgement: (@Sendable () async -> Void)? = nil) {
         let pair = AsyncStream.makeStream(of: StreamingTranscriptionEvent.self)
         transcriptionEvents = pair.stream
@@ -27,6 +29,7 @@ private final class ReferenceHintTestProvider: LiveContextStreamingTranscription
         self.rejectsUpdates = rejectsUpdates
         self.rejectsConnection = rejectsConnection
         self.supportsLiveContextUpdates = supportsLiveContextUpdates
+        self.errorsOnCommit = errorsOnCommit
         self.acknowledgement = acknowledgement
     }
 
@@ -43,6 +46,7 @@ private final class ReferenceHintTestProvider: LiveContextStreamingTranscription
     func sendAudioChunk(_ data: Data) async throws { lock.withLock { recorded.append("audio") } }
     func commit() async throws {
         lock.withLock { recorded.append("commit") }
+        if errorsOnCommit { output.yield(.error(StreamingTranscriptionError.serverError("Synthetic integrity failure"))) }
         output.yield(.committed(text: "spoken words only"))
     }
     func disconnect() async { output.finish() }
@@ -70,6 +74,20 @@ private actor ReferenceHintOCRGate {
 
 struct LiveTranscriptionContextTests {
     private let base = TranscriptionRequestContext(language: "en", prompt: "A design conversation.", vocabulary: ["Scarlett", "AC-42"])
+
+    @Test @MainActor func integrityErrorWithoutSilenceSleepRejectsPlausibleTextAndUsesOriginalFallback() async throws {
+        let provider = ReferenceHintTestProvider(errorsOnCommit: true)
+        let (service, container) = try harness(provider)
+        _ = container
+        let fallback = ReferenceHintFallback()
+        let session = StreamingTranscriptionSession(streamingService: service, fallbackService: fallback)
+        session.updateRecognitionReference("optional initial hint")
+        _ = try await session.prepare(configuration: TranscriptionRuntimeConfiguration(mode: nil,
+            model: model(), language: "en", isRealtimeEnabled: true, requestContext: base))
+        #expect(try await session.transcribe(audioURL: URL(fileURLWithPath: "/tmp/integrity.wav")) == "spoken words only")
+        #expect(!service.audioWasComplete)
+        #expect(fallback.contexts == [base])
+    }
 
     @MainActor private func model(provider: ModelProvider = .openAI) -> CloudModel {
         CloudModel(name: OpenAITranscriptionConfiguration.liveModelName,
@@ -177,7 +195,8 @@ struct LiveTranscriptionContextTests {
         #expect(canceled.take() == nil)
         let deduped = LiveTranscriptionContextBuffer()
         deduped.offer(base.withLiveReference("same"))
-        _ = deduped.take()
+        let applied = deduped.take()!
+        deduped.markApplied(applied)
         deduped.offer(base.withLiveReference("same"))
         #expect(deduped.take() == nil)
     }
@@ -223,15 +242,15 @@ struct LiveTranscriptionContextTests {
         #expect(fallback.contexts.isEmpty)
     }
 
-    @Test @MainActor func openAIMidRecordingUpdateHoldCannotBeBypassedByADirectCall() async throws {
+    @Test @MainActor func openAIMidRecordingUpdatesRequireALiveConnection() async throws {
         let (_, container) = try harness(ReferenceHintTestProvider())
         let provider = OpenAIStreamingProvider(modelContext: ModelContext(container))
-        #expect(!provider.supportsLiveContextUpdates)
+        #expect(provider.supportsLiveContextUpdates)
         do {
             try await provider.updateTranscriptionContext(base.withLiveReference("held"))
-            Issue.record("A held OpenAI update must never enter the network path")
-        } catch StreamingTranscriptionError.serverError(let message) {
-            #expect(message == "OpenAI mid-recording context updates are unavailable")
+            Issue.record("An unconnected provider cannot update a live session")
+        } catch StreamingTranscriptionError.notConnected {
+            // No credential lookup, connection or mutation is attempted.
         }
     }
 
@@ -260,6 +279,11 @@ struct LiveTranscriptionContextTests {
         service.updateTranscriptionContext(base.withLiveReference("AC-42 account"))
         service.sendAudioChunk(Data([1, 2]))
         try await service.startStreaming(model: model(), context: base)
+        for _ in 0..<500 {
+            if provider.snapshot.contains("audio") { break }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        #expect(provider.snapshot.contains("audio"))
         let result = try await service.stopAndGetFinalText()
         #expect(provider.snapshot == ["connect", "context", "audio", "commit"])
         #expect(result == "spoken words only")
@@ -268,16 +292,43 @@ struct LiveTranscriptionContextTests {
         #expect(provider.contextSnapshot.last?.vocabulary == base.vocabulary)
     }
 
-    @Test @MainActor func noFollowingAudioStillDrainsTheLastContextBeforeCommit() async throws {
+    @Test @MainActor func senderDefersAHintUntilQuietThenKeepsQueuedOnsetInOrder() async throws {
+        let provider = ReferenceHintTestProvider()
+        let (service, container) = try harness(provider)
+        _ = container
+        try await service.startStreaming(model: model(), context: base)
+        service.sendAudioChunk(Data(repeating: 60, count: 96_000))
+        for _ in 0..<500 {
+            if provider.snapshot.count == 2 { break }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        service.updateTranscriptionContext(base.withLiveReference("new topic"))
+        service.sendAudioChunk(Data(repeating: 0, count: 32_000))
+        for _ in 0..<500 {
+            if provider.snapshot.count == 3 { break }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        #expect(provider.snapshot == ["connect", "audio", "audio"])
+        service.sendAudioChunk(Data(repeating: 60, count: 3_200))
+        for _ in 0..<500 {
+            if provider.snapshot.contains("context") { break }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        _ = try await service.stopAndGetFinalText()
+        #expect(provider.snapshot == ["connect", "audio", "audio", "context", "audio", "commit"])
+        #expect(service.audioWasComplete)
+    }
+
+    @Test @MainActor func stopDiscardsAHintWithoutFollowingAudio() async throws {
         let provider = ReferenceHintTestProvider()
         let (service, container) = try harness(provider)
         _ = container
         try await service.startStreaming(model: model(), context: base)
         service.updateTranscriptionContext(base.withLiveReference("final highlight"))
         _ = try await service.stopAndGetFinalText()
-        #expect(provider.snapshot == ["connect", "context", "commit"])
+        #expect(provider.snapshot == ["connect", "commit"])
         service.updateTranscriptionContext(base.withLiveReference("after final"))
-        #expect(provider.contextSnapshot.last?.liveReferenceText == "final highlight")
+        #expect(provider.contextSnapshot.last?.liveReferenceText == nil)
     }
 
     @Test @MainActor func audioAndCommitWaitForTheContextAcknowledgement() async throws {
@@ -307,6 +358,11 @@ struct LiveTranscriptionContextTests {
         let audio = try #require(try await session.prepare(configuration: config))
         session.updateRecognitionReference("current selection")
         audio(Data([1, 2]))
+        for _ in 0..<500 {
+            if provider.snapshot.contains("context") { break }
+            try await Task.sleep(nanoseconds: 1_000_000)
+        }
+        #expect(provider.snapshot.contains("context"))
         let result = try await session.transcribe(audioURL: URL(fileURLWithPath: "/tmp/existing-recording.wav"))
         #expect(result == "spoken words only")
         #expect(provider.snapshot == ["connect", "context", "audio"])

@@ -193,9 +193,9 @@ enum OpenAITranscriptionConfiguration {
     static func realtimeContextUpdate(
         language: String?, prompt: String?, customVocabulary: [String]
     ) -> [String: Any] {
-        // Experimental wire shape only: production mid-recording updates are held
-        // in OpenAIStreamingProvider. This payload was accepted by the real API but
-        // did not preserve earlier buffered speech. Do not infer safety from its shape.
+        // Use only AFTER the previous owned audio turn has completed. This shape
+        // was accepted over pending audio but lost earlier speech; the provider's
+        // quiet-boundary commit/identity/assembly contract makes updates usable.
         // session.update merges only supplied fields. Explicit empty text clears an
         // earlier hint; omission would leave stale context active after failed OCR.
         // The live API rejects a prompt-only nested object with

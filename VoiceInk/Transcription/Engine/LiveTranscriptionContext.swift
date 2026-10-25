@@ -140,30 +140,59 @@ final class LiveTranscriptionReferenceCapture {
 
 /// The existing audio sender is the only consumer. Rapid context changes coalesce
 /// here instead of creating concurrent socket sends or an unbounded context queue.
-/// Stop closes offers but leaves the final accepted snapshot available to drain
-/// before the recording's sole commit. Cancel discards it.
+/// Stop/Cancel discard unstarted updates: a new hint cannot help future speech once
+/// capture has ended, and must never create another provider turn during the drain.
 final class LiveTranscriptionContextBuffer: @unchecked Sendable {
     private let lock = NSLock()
     private var pending: TranscriptionRequestContext?
-    private var lastPrompt: String?
-    private var hasPrompt = false
+    private var appliedPrompt: String?
+    private var hasAppliedPrompt = false
+    private var inFlightPrompt: String?
+    private var hasInFlightPrompt = false
     private var closed = false
+    private var offeredAt: TimeInterval = 0
 
-    func offer(_ context: TranscriptionRequestContext) {
+    private static func prompt(_ context: TranscriptionRequestContext) -> String? {
+        OpenAITranscriptionConfiguration.normalizedPrompt(context.openAITranscriptionPrompt)
+    }
+
+    func offer(_ context: TranscriptionRequestContext, at now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
         lock.withLock {
             guard !closed else { return }
-            let prompt = OpenAITranscriptionConfiguration.normalizedPrompt(context.openAITranscriptionPrompt)
-            guard !hasPrompt || prompt != lastPrompt else { return }
-            hasPrompt = true
-            lastPrompt = prompt
+            let prompt = Self.prompt(context)
+            // A revert to the applied prompt must stay pending while a DIFFERENT
+            // update is in flight; its acknowledgement will otherwise make it stale.
+            if !hasInFlightPrompt && hasAppliedPrompt && prompt == appliedPrompt {
+                pending = nil
+                return
+            }
             pending = context
+            offeredAt = now
         }
     }
 
-    func take() -> TranscriptionRequestContext? {
+    func take(maximumAge: TimeInterval? = nil, at now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> TranscriptionRequestContext? {
         lock.withLock {
-            defer { pending = nil }
-            return pending
+            guard let context = pending else { return nil }
+            pending = nil
+            if let maximumAge, now - offeredAt > maximumAge { return nil }
+            hasInFlightPrompt = true
+            inFlightPrompt = Self.prompt(context)
+            return context
+        }
+    }
+
+    /// Seed after connect or record an acknowledged update. Never overwrite a
+    /// newer pending offer; clear only a duplicate of the prompt actually applied.
+    func markApplied(_ context: TranscriptionRequestContext) {
+        lock.withLock {
+            appliedPrompt = Self.prompt(context)
+            hasAppliedPrompt = true
+            if hasInFlightPrompt && inFlightPrompt == appliedPrompt {
+                hasInFlightPrompt = false
+                inFlightPrompt = nil
+            }
+            if let context = pending, Self.prompt(context) == appliedPrompt { pending = nil }
         }
     }
 
@@ -172,5 +201,50 @@ final class LiveTranscriptionContextBuffer: @unchecked Sendable {
             closed = true
             if discard { pending = nil }
         }
+    }
+}
+
+/// Captured hints may close an audio turn only BEFORE speech or after a fully
+/// analysed quiet gap. Committing on an arbitrary highlight cut a synthetic word
+/// in the real API. Reuse the conservative silence classifier as an observer only:
+/// every PCM byte still goes to the provider; no Action here ever omits audio.
+struct LiveTranscriptionBoundaryPolicy {
+    static let maximumHintAge: TimeInterval = 120
+    private var quiet: RealtimeSilenceSleepGate
+    private var sentBytes = 0
+    private var lastUpdateAt: TimeInterval?
+    private var updates = 0
+
+    init() {
+        quiet = Self.makeObserver(initialFloor: RealtimeSilenceSleepGate.Configuration.gptLiveDefault.initialNoiseFloorDBFS)
+    }
+
+    private static func makeObserver(initialFloor: Double) -> RealtimeSilenceSleepGate {
+        var configuration = RealtimeSilenceSleepGate.Configuration.gptLiveDefault
+        configuration.trailingQuietSeconds = 1
+        configuration.activityHoldSeconds = 0
+        configuration.prerollSeconds = 0
+        configuration.initialNoiseFloorDBFS = initialFloor
+        return RealtimeSilenceSleepGate(configuration: configuration, startedAt: 0)
+    }
+
+    func canApplyContext(at now: TimeInterval) -> Bool {
+        guard updates < 10,
+              lastUpdateAt.map({ now - $0 >= 10 }) ?? true else { return false }
+        return sentBytes == 0 || (sentBytes >= 3 * 32_000 && quiet.isAtAnalyzedQuietBoundary)
+    }
+
+    mutating func didSend(_ data: Data, at now: TimeInterval) {
+        sentBytes += data.count
+        _ = quiet.process(data, at: now)
+    }
+
+    mutating func didApplyContext(at now: TimeInterval) {
+        lastUpdateAt = now
+        updates += 1
+        // The next turn must establish its OWN complete quiet second. Old quiet
+        // evidence plus a delayed short callback could otherwise commit <100ms,
+        // below the server minimum. Retain the conservative learned floor.
+        quiet = Self.makeObserver(initialFloor: quiet.noiseFloorDBFS)
     }
 }

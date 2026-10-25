@@ -299,8 +299,8 @@ final class StreamingTranscriptionSession: TranscriptionSession {
         logger.notice("Using batch fallback for \(model.displayName, privacy: .public) file=\(audioURL.lastPathComponent, privacy: .public)")
         // A rejected/unacknowledged hint must not poison the paid fallback too.
         // Keep the original prompt, language and frozen Vocabulary, omitting only
-        // this optional addition after either startup or dynamic-context failure.
-        let fallbackContext = streamingFailed || streamingService.contextUpdateFailed
+        // this optional addition after startup, update or audio-integrity failure.
+        let fallbackContext = streamingFailed || streamingService.contextUpdateFailed || !streamingService.audioWasComplete
             ? context.withLiveReference(nil) : context
         let text = try await fallbackService.transcribe(audioURL: audioURL, model: model, context: fallbackContext)
         try Task.checkCancellation()
@@ -328,8 +328,8 @@ final class StreamingTranscriptionSession: TranscriptionSession {
         latestRecognitionReference = text.flatMap(LiveTranscriptionContext.boundedReference)
         guard model?.provider == .openAI else { return }
         // This local snapshot also guides an otherwise-needed completed-WAV fallback.
-        // The sender separately requires proven live-update support; OpenAI currently
-        // declines it, so later captures cannot reset the active audio buffer.
+        // The sender separately requires a conservative quiet boundary and the
+        // provider completes that owned turn before updating the active session.
         context = context.withLiveReference(latestRecognitionReference)
         streamingService.updateTranscriptionContext(context)
     }
