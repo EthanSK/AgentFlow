@@ -38,6 +38,11 @@ mandatory Primary/Next/HUD-only guards. Codex and resumed Claude Opus 5.5 resolv
 four confirmed review findings; the final source review found none remaining.
 The installed build-460 executable was independently unchanged.
 
+A supplementary canonical Mini run passed 132 tests in `RealtimeSilenceSleepTests`
+and `RecorderTypedInputTests`, including the hosted typing/focus scenarios. Together
+the two disjoint focused selections cover 227 tests in nine suites. This still does
+not establish physical keyboard or microphone acceptance.
+
 These are source/offline qualifications, not real API acceptance, physical typing
 acceptance or a demonstrated speech-recognition improvement. Mid-session server
 timing, late-hint influence on earlier audio, unspoken hint insertions and human
