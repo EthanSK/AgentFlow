@@ -77,6 +77,10 @@ extension ContextualStreamingTranscriptionProvider {
 /// Only an audited transcription adapter accepts updates to its existing session.
 /// Other providers retain their original requests and never receive captured context.
 protocol LiveContextStreamingTranscriptionProvider: ContextualStreamingTranscriptionProvider {
+    /// Configuration acceptance is insufficient: the adapter must prove that an
+    /// update preserves the uncommitted audio before this can be true.
+    var supportsLiveContextUpdates: Bool { get }
+
     /// Return only after the server acknowledges this update. The existing serial
     /// audio sender owns calls, so updates, audio and Stop's commit cannot overtake.
     func updateTranscriptionContext(_ context: TranscriptionRequestContext) async throws

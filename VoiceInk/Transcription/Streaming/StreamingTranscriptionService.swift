@@ -511,7 +511,8 @@ class StreamingTranscriptionService {
             // guidance remain available to the existing one-shot batch fallback.
             func applyPendingContext() async {
                 guard let context = contextUpdates.take(),
-                      let contextual = provider as? any LiveContextStreamingTranscriptionProvider else { return }
+                      let contextual = provider as? any LiveContextStreamingTranscriptionProvider,
+                      contextual.supportsLiveContextUpdates else { return }
                 do {
                     try await contextual.updateTranscriptionContext(context)
                 } catch {

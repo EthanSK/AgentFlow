@@ -134,31 +134,11 @@ enum OpenAITranscriptionConfiguration {
     static func realtimeSessionUpdate(
         language: String?,
         prompt: String?,
-        customVocabulary: [String]
+        customVocabulary: [String],
+        includesEmptyPrompt: Bool = false
     ) -> [String: Any] {
-        // Context is a topic/setting hint, keywords are literal possible spoken terms, and
-        // languages are expected input languages—not required output or agent instructions.
-        // https://developers.openai.com/api/docs/guides/transcription#improve-transcription-quality
-        // Preserve separate fields, frozen snapshot parity, and audio-grounded evaluation.
-        var transcription: [String: Any] = [
-            "model": liveModelName,
-            "delay": accuracyDelay,
-        ]
-
-        if let prompt = normalizedPrompt(prompt) {
-            transcription["prompt"] = prompt
-        }
-
-        let keywords = normalizedKeywords(customVocabulary)
-        if !keywords.isEmpty {
-            transcription["keywords"] = keywords
-        }
-
-        let languages = normalizedLanguages(language)
-        if !languages.isEmpty {
-            transcription["languages"] = languages
-        }
-
+        let transcription = realtimeTranscriptionOptions(language: language, prompt: prompt,
+            customVocabulary: customVocabulary, includesEmptyPrompt: includesEmptyPrompt)
         return [
             "type": "session.update",
             "session": [
@@ -177,14 +157,56 @@ enum OpenAITranscriptionConfiguration {
         ]
     }
 
-    static func realtimeContextUpdate(prompt: String?) -> [String: Any] {
+    /// Shared fields previously composed inside realtimeSessionUpdate. Startup and
+    /// captured-reference updates must use identical frozen transcription settings.
+    private static func realtimeTranscriptionOptions(
+        language: String?, prompt: String?, customVocabulary: [String], includesEmptyPrompt: Bool
+    ) -> [String: Any] {
+        // Context is a topic/setting hint, keywords are literal possible spoken terms, and
+        // languages are expected input languages—not required output or agent instructions.
+        // https://developers.openai.com/api/docs/guides/transcription#improve-transcription-quality
+        // Preserve separate fields, frozen snapshot parity, and audio-grounded evaluation.
+        var transcription: [String: Any] = [
+            "model": liveModelName,
+            "delay": accuracyDelay,
+        ]
+
+        if let prompt = normalizedPrompt(prompt) {
+            transcription["prompt"] = prompt
+        } else if includesEmptyPrompt {
+            transcription["prompt"] = ""
+        }
+
+        let keywords = normalizedKeywords(customVocabulary)
+        if !keywords.isEmpty {
+            transcription["keywords"] = keywords
+        }
+
+        let languages = normalizedLanguages(language)
+        if !languages.isEmpty {
+            transcription["languages"] = languages
+        }
+
+        return transcription
+    }
+
+    static func realtimeContextUpdate(
+        language: String?, prompt: String?, customVocabulary: [String]
+    ) -> [String: Any] {
+        // Experimental wire shape only: production mid-recording updates are held
+        // in OpenAIStreamingProvider. This payload was accepted by the real API but
+        // did not preserve earlier buffered speech. Do not infer safety from its shape.
         // session.update merges only supplied fields. Explicit empty text clears an
         // earlier hint; omission would leave stale context active after failed OCR.
-        // Do not resend model, format, Vocabulary, language, delay or VAD settings.
-        ["type": "session.update", "session": [
-            "type": "transcription", "audio": ["input": ["transcription": [
-                "prompt": normalizedPrompt(prompt) ?? "",
-            ]]],
+        // The live API rejects a prompt-only nested object with
+        // missing_required_parameter: session.audio.input.transcription.model.
+        // Repeat the SAME model/language/Vocabulary/delay to satisfy validation and
+        // avoid a nested replacement losing them. Context never changes PCM format
+        // or VAD: those are startup-owned audio state, not recognition hints.
+        let transcription = realtimeTranscriptionOptions(language: language, prompt: prompt,
+            customVocabulary: customVocabulary, includesEmptyPrompt: true)
+        return ["type": "session.update", "session": [
+            "type": "transcription", "audio": ["input": ["transcription": transcription]],
         ]]
     }
 

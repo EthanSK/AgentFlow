@@ -157,6 +157,13 @@ struct OpenAIRealtimePCMResampler {
 /// recorder-HUD preview only; only the completed event enters the existing one-shot final
 /// delivery pipeline selected by Primary or Next.
 final class OpenAIStreamingProvider: LiveContextStreamingTranscriptionProvider, @unchecked Sendable {
+    // Held experiment, with no user-default escape hatch. The 2026-10-25 real API
+    // accepted both complete and transcription-only session.update payloads but
+    // returned only the audio appended after the latest update. Identical control
+    // recordings without updates retained all three spoken markers. Startup context
+    // remains valid; do not enable mid-recording updates from schema/ack tests alone.
+    let supportsLiveContextUpdates = false
+
     private var webSocketTask: URLSessionWebSocketTask?
     private var urlSession: URLSession?
     private var receiveTask: Task<Void, Never>?
@@ -229,9 +236,10 @@ final class OpenAIStreamingProvider: LiveContextStreamingTranscriptionProvider, 
         task.resume()
 
         // Both halves start with this recording's own prompt and frozen Vocabulary.
-        // Deliberately captured references can later update its bounded topic hint through
-        // the same serial audio sender. The fallback keeps the latest captured snapshot,
-        // or original guidance if startup/a context update fails;
+        // Only references available at prepare can enter the live startup request.
+        // Later captures stay in the final message and completed-WAV fallback context;
+        // mid-recording network updates are held by supportsLiveContextUpdates.
+        // The fallback uses original guidance if startup/a context update fails;
         // partial transcripts never generate hints, retries or destination mutations.
         // Send initial guidance here, never on every audio chunk or partial transcript.
         // Fresh recording sessions also prevent implicit context carry-over between tasks.
@@ -260,10 +268,19 @@ final class OpenAIStreamingProvider: LiveContextStreamingTranscriptionProvider, 
     }
 
     func updateTranscriptionContext(_ context: TranscriptionRequestContext) async throws {
+        // Enforce the hold here too, so a direct caller cannot bypass the sender's
+        // capability check and silently discard already buffered speech.
+        guard supportsLiveContextUpdates else {
+            throw StreamingTranscriptionError.serverError("OpenAI mid-recording context updates are unavailable")
+        }
         guard let task = webSocketTask, !didCommit, !Task.isCancelled else {
             throw StreamingTranscriptionError.notConnected
         }
-        let update = OpenAITranscriptionConfiguration.realtimeContextUpdate(prompt: context.openAITranscriptionPrompt)
+        let update = OpenAITranscriptionConfiguration.realtimeContextUpdate(
+            language: context.language,
+            prompt: context.openAITranscriptionPrompt,
+            customVocabulary: context.customVocabulary(orLiveFetch: customDictionaryTerms)
+        )
         try await sendJSON(update, over: task)
         let acknowledged = await StreamingTranscriptionService.waitForSendLoopCompletion(
             contextAcknowledgements, timeoutNanoseconds: 2_000_000_000

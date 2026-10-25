@@ -327,6 +327,9 @@ final class StreamingTranscriptionSession: TranscriptionSession {
         // Retain it locally; only OpenAI is permitted to send it once prepared.
         latestRecognitionReference = text.flatMap(LiveTranscriptionContext.boundedReference)
         guard model?.provider == .openAI else { return }
+        // This local snapshot also guides an otherwise-needed completed-WAV fallback.
+        // The sender separately requires proven live-update support; OpenAI currently
+        // declines it, so later captures cannot reset the active audio buffer.
         context = context.withLiveReference(latestRecognitionReference)
         streamingService.updateTranscriptionContext(context)
     }

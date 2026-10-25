@@ -13,17 +13,20 @@ private final class ReferenceHintTestProvider: LiveContextStreamingTranscription
     private var contexts: [TranscriptionRequestContext] = []
     let rejectsUpdates: Bool
     let rejectsConnection: Bool
+    let supportsLiveContextUpdates: Bool
     let acknowledgement: (@Sendable () async -> Void)?
     var snapshot: [String] { lock.withLock { recorded } }
     var contextSnapshot: [TranscriptionRequestContext] { lock.withLock { contexts } }
 
     init(rejectsUpdates: Bool = false, rejectsConnection: Bool = false,
+         supportsLiveContextUpdates: Bool = true,
          acknowledgement: (@Sendable () async -> Void)? = nil) {
         let pair = AsyncStream.makeStream(of: StreamingTranscriptionEvent.self)
         transcriptionEvents = pair.stream
         output = pair.continuation
         self.rejectsUpdates = rejectsUpdates
         self.rejectsConnection = rejectsConnection
+        self.supportsLiveContextUpdates = supportsLiveContextUpdates
         self.acknowledgement = acknowledgement
     }
 
@@ -179,16 +182,57 @@ struct LiveTranscriptionContextTests {
         #expect(deduped.take() == nil)
     }
 
-    @Test func clearingAHintIsAnExplicitEmptyPromptAndDoesNotResetSessionSettings() throws {
-        let update = OpenAITranscriptionConfiguration.realtimeContextUpdate(prompt: nil)
+    @Test func experimentalUpdateIncludesRequiredFrozenSettingsAndExplicitClear() throws {
+        let update = OpenAITranscriptionConfiguration.realtimeContextUpdate(
+            language: base.language, prompt: nil, customVocabulary: base.vocabulary ?? []
+        )
         let session = try #require(update["session"] as? [String: Any])
         let audio = try #require(session["audio"] as? [String: Any])
         let input = try #require(audio["input"] as? [String: Any])
         let transcription = try #require(input["transcription"] as? [String: Any])
         #expect(transcription["prompt"] as? String == "")
-        #expect(Set(transcription.keys) == ["prompt"])
+        // The real API requires model even for a mid-session prompt update. Keep
+        // every other setting identical rather than resetting a nested object.
+        #expect(transcription["model"] as? String == OpenAITranscriptionConfiguration.liveModelName)
+        #expect(transcription["keywords"] as? [String] == base.vocabulary)
+        #expect(transcription["languages"] as? [String] == ["en"])
+        #expect(transcription["delay"] as? String == "xhigh")
         #expect(Set(input.keys) == ["transcription"])
+        #expect(input["turn_detection"] == nil)
+        #expect(input["format"] == nil)
         #expect(session["type"] as? String == "transcription")
+    }
+
+    @Test @MainActor func unsupportedLiveUpdatesNeverReachTheWireOrForcePaidFallback() async throws {
+        let provider = ReferenceHintTestProvider(supportsLiveContextUpdates: false)
+        let (service, container) = try harness(provider)
+        _ = container
+        let fallback = ReferenceHintFallback()
+        let session = StreamingTranscriptionSession(streamingService: service, fallbackService: fallback)
+        session.updateRecognitionReference("available at startup")
+        let config = TranscriptionRuntimeConfiguration(mode: nil, model: model(), language: "en", isRealtimeEnabled: true, requestContext: base)
+        let audio = try #require(try await session.prepare(configuration: config))
+        audio(Data([1, 2]))
+        session.updateRecognitionReference("captured after prepare")
+        audio(Data([3, 4]))
+        #expect(try await session.transcribe(audioURL: URL(fileURLWithPath: "/tmp/held-updates.wav")) == "spoken words only")
+        #expect(provider.snapshot == ["connect", "audio", "audio", "commit"])
+        #expect(provider.contextSnapshot.map(\.liveReferenceText) == ["available at startup"])
+        #expect(service.audioWasComplete)
+        #expect(!service.contextUpdateFailed)
+        #expect(fallback.contexts.isEmpty)
+    }
+
+    @Test @MainActor func openAIMidRecordingUpdateHoldCannotBeBypassedByADirectCall() async throws {
+        let (_, container) = try harness(ReferenceHintTestProvider())
+        let provider = OpenAIStreamingProvider(modelContext: ModelContext(container))
+        #expect(!provider.supportsLiveContextUpdates)
+        do {
+            try await provider.updateTranscriptionContext(base.withLiveReference("held"))
+            Issue.record("A held OpenAI update must never enter the network path")
+        } catch StreamingTranscriptionError.serverError(let message) {
+            #expect(message == "OpenAI mid-recording context updates are unavailable")
+        }
     }
 
     @Test @MainActor func lateScreenshotOCRCannotReplaceNewerSelectionOrSurviveStop() async throws {
