@@ -1,5 +1,27 @@
 # Learnings
 
+## 2026-10-25 — Doubled-character text predates the quiet-upload feature
+
+An original user message in **🌈 Ye Olde Meme Game 2** on 8 September 2026 at
+14:43:14 UTC contains `meemmee ccrreeaattoorr` inside otherwise ordinary text.
+Earlier that day, at 12:16:58 UTC, Ethan reported that background game testing
+was interfering with his typing; the agent stopped Computer Use and suspended
+the test game. The complaint and doubled text are about 2.5 hours apart: neither
+their timing nor the recorded Computer Use calls establish one causal mechanism.
+The original archive is thread `01a07dbe-7ce0-7cd3-828a-2d8a68b79f6e`, September
+7 segment, lines 3442/3453/3505/5060. This text pattern predates the October
+quiet-upload feature; do not assume the ten-second change originated it, or infer
+that the current build cannot contribute to a separate recurrence.
+
+The 30 September Codex/Opus keyboard audit is a different episode: ordinary typing
+stopped, Device Hub capture was implicated by isolated recovery, and the deeper
+Apple/Computer Use focus/release mechanism remained unproven. It does not prove
+the cause of doubled characters. Today's recovery changed both the installed
+build and the Computer Use session, so it cannot isolate either as the fix.
+Retain the no-install hold and distinguish source/test clearance from a resolved
+physical-input incident. Bounded original extracts and the historical report
+pointers are in this task's `historical-input-evidence.md` qualification evidence.
+
 ## 2026-10-25 — Hosted typing checks must cover real sleep transitions and focus lifetime
 
 The quiet-upload gate has no demonstrated causal link to the reported doubled

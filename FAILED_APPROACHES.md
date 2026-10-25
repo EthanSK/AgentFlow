@@ -1,5 +1,20 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-10-25 — Treat doubled input as a newly introduced quiet-upload symptom
+
+Original 8 September user text already contains doubled characters, before the
+quiet-upload feature existed. That rejects the assumption that this class of
+symptom began with the new feature; it does not exonerate build 461 from a distinct
+contribution today or prove a common cause across incidents. Today's rollback and
+Computer Use reset occurred together, so recovery alone isolates neither action.
+
+**Use instead:** Preserve original dated records, distinguish blocked typing from
+doubled characters, and correlate the actual input/automation path before assigning
+causality. A source review or another passing unit suite is not that evidence.
+**Reconsider a specific causal assignment only if:** controlled input-path evidence
+separates the candidate, prior build and automation/session state on disposable
+targets. Do not run that experiment against Ethan's live MacBook typing.
+
 ## 2026-10-25 — Unit tests alone did not qualify build 461 for live typing
 
 The ten-second quiet-upload candidate passed 42 focused and 744 full native Mini
