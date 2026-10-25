@@ -4,8 +4,8 @@
 setting for OpenAI `gpt-live-transcribe`. It is read when that recording creates
 its realtime session, including when a typing-only recording first enables its microphone.
 
-The microphone and complete WAV keep recording. After sustained clearly quiet
-audio and no recent words, typing, or accepted selection/screenshot, Agent Flow
+The microphone and complete WAV keep recording. After ten seconds of clearly quiet
+audio and ten seconds without words, typing, or accepted selection/screenshot, Agent Flow
 can stop appending audio to the existing realtime connection. A small moon on
 the recorder waveform means the network stream is sleeping; recording continues.
 Sound or session activity wakes it on the next audio callback. Recent audio is

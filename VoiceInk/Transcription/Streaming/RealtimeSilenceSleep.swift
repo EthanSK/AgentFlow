@@ -100,8 +100,8 @@ struct RealtimeSilenceSleepGate {
         static let gptLiveDefault = Configuration(
             sampleRate: 16_000,
             analysisFrameSeconds: 0.02,
-            trailingQuietSeconds: 5,
-            activityHoldSeconds: 5,
+            trailingQuietSeconds: 10,
+            activityHoldSeconds: 10,
             prerollSeconds: 0.75,
             quietCeilingDBFS: -65,
             wakeMarginDB: 2,

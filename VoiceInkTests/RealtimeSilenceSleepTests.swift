@@ -8,6 +8,15 @@ import Testing
 /// accounting; they do not prove OpenAI billing, idle-socket survival, or recognition
 /// across a gap — those need the separate synthetic provider probe.
 struct RealtimeSilenceSleepTests {
+    // Algorithm scenarios keep their original short fixture timings. The separate
+    // production-policy test below pins Ethan's ten-second setting and both gates.
+    private static var fixtureConfiguration: RealtimeSilenceSleepGate.Configuration {
+        var configuration = RealtimeSilenceSleepGate.Configuration.gptLiveDefault
+        configuration.trailingQuietSeconds = 5
+        configuration.activityHoldSeconds = 5
+        return configuration
+    }
+
     // MARK: - Synthetic 16 kHz mono PCM16
 
     private enum TestPCM {
@@ -87,7 +96,7 @@ struct RealtimeSilenceSleepTests {
         private(set) var transitions: [(sleeping: Bool, atAudioSeconds: Double)] = []
         private(set) var wallClockOffset: Double = 0
 
-        init(configuration: RealtimeSilenceSleepGate.Configuration = .gptLiveDefault) {
+        init(configuration: RealtimeSilenceSleepGate.Configuration = RealtimeSilenceSleepTests.fixtureConfiguration) {
             gate = RealtimeSilenceSleepGate(configuration: configuration, startedAt: 0)
         }
 
@@ -149,6 +158,32 @@ struct RealtimeSilenceSleepTests {
     }
 
     // MARK: - Entering quiet
+
+    @Test func productionPolicyWaitsTenSecondsForBothQuietAndRecentActivity() throws {
+        let configuration = RealtimeSilenceSleepGate.Configuration.gptLiveDefault
+        #expect(configuration.trailingQuietSeconds == 10)
+        #expect(configuration.activityHoldSeconds == 10)
+        #expect(configuration.prerollSeconds == 0.75)
+        var seed: UInt64 = 103
+
+        var quiet = GateRun(configuration: configuration)
+        quiet.feed(TestPCM.noise(seconds: 9.9, dbfs: -70, seed: &seed))
+        #expect(!quiet.gate.isSleeping)
+        #expect(quiet.withheld.isEmpty)
+        quiet.feed(TestPCM.noise(seconds: 0.2, dbfs: -70, seed: &seed))
+        let quietSleep = try #require(quiet.transitions.first)
+        #expect(quietSleep.atAudioSeconds >= 10 && quietSleep.atAudioSeconds <= 10.04)
+
+        var active = GateRun(configuration: configuration)
+        active.feed(TestPCM.noise(seconds: 9.9, dbfs: -70, seed: &seed))
+        active.noteActivity()
+        active.feed(TestPCM.noise(seconds: 9.9, dbfs: -70, seed: &seed))
+        #expect(!active.gate.isSleeping)
+        #expect(active.withheld.isEmpty)
+        active.feed(TestPCM.noise(seconds: 0.2, dbfs: -70, seed: &seed))
+        let activitySleep = try #require(active.transitions.first)
+        #expect(activitySleep.atAudioSeconds >= 19.9 && activitySleep.atAudioSeconds <= 19.94)
+    }
 
     @Test func quietRoomSleepsOnlyAfterTheTrailingPeriodAndSessionHold() throws {
         var seed: UInt64 = 1
@@ -495,7 +530,7 @@ struct RealtimeSilenceSleepTests {
         sink: ControllerSink
     ) -> RealtimeSilenceSleepController {
         RealtimeSilenceSleepController(
-            configuration: .gptLiveDefault,
+            configuration: Self.fixtureConfiguration,
             clock: { clock.now },
             forward: { sink.sent.append($0) },
             withhold: { sink.withheld.append($0) },

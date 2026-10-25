@@ -1,5 +1,17 @@
 # Learnings
 
+## 2026-10-25 — Keep quiet-upload delay and activity hold at ten seconds
+
+Ethan changed the GPT Live quiet-upload delay from five to ten seconds. Both the
+audio quiet period and time since the latest words, typing or accepted context
+must reach ten seconds. The settings tooltip reads the production configuration,
+so it must not acquire a separately maintained numeric value. Keep short algorithm
+test fixtures explicit and separately exercise the real ten-second policy.
+
+This remains one open transcription connection with omitted quiet appends, not
+separate transcripts joined locally. Resume replays the small onset buffer; only
+the user's final Stop commits the transcript. Full WAV recovery stays continuous.
+
 ## 2026-10-24 — Realtime idle savings must gate uploads, never capture
 
 For GPT Live Transcribe, a synthetic production-WebSocket comparison billed
