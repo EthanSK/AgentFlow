@@ -1,5 +1,53 @@
 # Learnings
 
+## 2026-10-25 — Chrome/Opera doubled typing recovered after a shared Computer Use helper reset
+
+**Verified recovery, not a proven internal root cause:** after the accepted
+Agent Flow build 460 was restarted without changing its executable, Ethan still
+reported doubled physical typing in Chrome and Opera, while Codex typed normally.
+The shared `SkyComputerUseService` held enabled, filtering, app-targeted keyboard
+taps for both affected browser processes (`mask=1c00`, `options=0`). Restarting
+that helper removed the old taps, and Ethan then confirmed: “Oh, it's fixed now”.
+Chrome, Opera, Codex's host and Agent Flow remained on their original processes
+during this helper reset. No browser tabs were closed, no app was installed, and
+no keyboard layout, microphone or recording setting was changed by the repair.
+
+For a matching recurrence, recover the current ownership rather than copying old
+PIDs or blaming Agent Flow's latest feature:
+
+1. Use a read-only `CGGetEventTapList` snapshot to match the affected browser PIDs
+   to the current helper's filtering keyboard taps. A tap's presence alone is
+   correlation; keep other explanations open.
+2. Check active browser automation and preserve its work. Stop this task's native
+   input calls into the affected browsers. Resolve the helper's exact executable,
+   current PID and owner afresh; never kill an unattributed Computer Use kernel.
+3. For an authorized reset, give the native advance warning, wait five seconds,
+   recheck identity and held modifiers, then request termination of only that
+   helper. The successful operation used one `SIGTERM`; it did not terminate
+   Codex/ChatGPT, Agent Flow, either browser, or unrelated input utilities.
+4. The supported CUA app-inventory call reconnected successfully and a fresh
+   helper appeared. Verify that the old per-app keyboard taps are absent and the
+   browser/host/Agent Flow processes stayed unchanged. Do not immediately select
+   or inject input into those browsers and reinstall the suspect hooks.
+5. Ask Ethan for a physical typing check in both affected browsers. Metadata,
+   a successful signal, helper respawn or synthetic text insertion is not physical
+   recovery. A terminated helper can remain as a zombie until its parent reaps
+   it; `kill(pid, 0)` alone therefore does not establish that it is still running.
+   Never restart the host merely to remove that exited process.
+
+This isolates a successful recovery operation for this episode. It does not
+prove whether a hook, injected event, private focus state or another interaction
+inside the helper duplicated the keys, nor establish the cause of the earlier
+Codex or September incidents. A universal absence of recurrence is untested.
+The ten-second native candidate remains held and uninstalled.
+
+Private receipts are under `~/.codex/outputs/2026-10-25-agent-flow-offline-review/`:
+`current-double-input/browser-helper-reset.json`, before/after tap snapshots and
+`opus-browser-008`. The original Agent Flow acceptance prompt is
+`prompt-5d915ca6-2713-4ba5-bccd-c3461d5346f9`, linked in chat
+`01a16f01-aa71-7432-a81c-4cf6edb7bc1c`. The physical confirmation came after
+Codex's helper reset and the completed resumed Opus assessment.
+
 ## 2026-10-25 — Doubled-character text predates the quiet-upload feature
 
 An original user message in **🌈 Ye Olde Meme Game 2** on 8 September 2026 at
@@ -16,8 +64,10 @@ that the current build cannot contribute to a separate recurrence.
 The 30 September Codex/Opus keyboard audit is a different episode: ordinary typing
 stopped, Device Hub capture was implicated by isolated recovery, and the deeper
 Apple/Computer Use focus/release mechanism remained unproven. It does not prove
-the cause of doubled characters. Today's recovery changed both the installed
-build and the Computer Use session, so it cannot isolate either as the fix.
+the cause of doubled characters. The midday rollback changed both the installed
+build and the Computer Use session, so that early recovery cannot isolate either
+as the fix. The later isolated helper reset and physical acceptance are recorded
+in the newer recovery entry above.
 Retain the no-install hold and distinguish source/test clearance from a resolved
 physical-input incident. Bounded original extracts and the historical report
 pointers are in this task's `historical-input-evidence.md` qualification evidence.

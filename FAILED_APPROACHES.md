@@ -1,12 +1,35 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-10-25 — Treat an Agent Flow restart or task-local CUA reset as a shared-hook reset
+
+**Observed failure:** this task's CUA JavaScript-kernel reset left the shared
+`SkyComputerUseService` and its Chrome keyboard tap present. A later isolated
+restart of the unchanged Agent Flow build 460 also left Chrome doubling; Ethan
+then reported Opera doubling while Codex typed normally. Neither action proved
+that the shared browser input state had been reset. A zero-event passive sample
+likewise proved no physical recovery.
+
+**Use instead:** for this observed Chrome/Opera signature, freshly identify the
+shared helper and its app-targeted filtering keyboard taps. Preserve concurrent
+automation, warn before a bounded authorized helper-only reset, verify tap removal
+without closing the browsers, and require Ethan's physical check. That operation
+was accepted in this episode; the exact internal duplication mechanism is still
+unproven. See the newest recovery entry in `LEARNINGS.md`.
+
+**Reconsider these earlier actions as the repair only if:** new ownership or
+controlled before/after evidence shows the fault actually belongs to Agent Flow
+or the task-local kernel. Do not generalize this recovery into automatic helper
+termination for every typing complaint, or resume installing the held candidate.
+
 ## 2026-10-25 — Treat doubled input as a newly introduced quiet-upload symptom
 
 Original 8 September user text already contains doubled characters, before the
 quiet-upload feature existed. That rejects the assumption that this class of
 symptom began with the new feature; it does not exonerate build 461 from a distinct
-contribution today or prove a common cause across incidents. Today's rollback and
-Computer Use reset occurred together, so recovery alone isolates neither action.
+contribution today or prove a common cause across incidents. The midday rollback
+and Computer Use reset occurred together, so that early recovery isolates neither
+action. Later Chrome/Opera recovery after a helper-only reset is separately
+recorded in `LEARNINGS.md`; it does not establish the cause of every older case.
 
 **Use instead:** Preserve original dated records, distinguish blocked typing from
 doubled characters, and correlate the actual input/automation path before assigning
