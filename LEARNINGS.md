@@ -1,5 +1,33 @@
 # Learnings
 
+## 2026-10-25 — Selection context for conversational Voice is a separate integration
+
+Read-only source inspection confirms `LiveSelectionReference` is assembled into
+the final destination message after transcription; it is not streamed into the
+transcription provider. `OpenAIStreamingProvider` starts an intent-scoped
+transcription session using frozen prompt/Vocabulary context. Neither that path
+nor the recorder's separate assistant chat implements a bridge into the existing
+Codex/ChatGPT conversational Voice session. Do not confuse transcription hints,
+final prompt context and live voice-conversation context.
+
+Official GPT-Live documentation checked on this date explicitly supports page and
+selection changes through `session.thinking.append` with `delegation_id: null`:
+send concise factual updates, deduplicate/combine rapid changes, and treat page
+content as reference data rather than trusted instructions. Each append has a
+500-token limit. This requires control of the owning Live session; API support
+does not prove that an external app can attach to the desktop product's call.
+The current exposed Codex tools offer on-demand screen context during active
+Voice, but no external automatic selection-append control was established.
+
+GPT-Live 1 accepts audio/text, so a screenshot needs OCR or backend vision rather
+than a raw image append to that model. Desktop Voice already documents optional
+Screen context/Appshots on demand. No live call was inspected, modified or tested
+in this investigation. Sources:
+- https://developers.openai.com/api/docs/guides/live-delegation#share-ui-context
+- https://developers.openai.com/api/docs/guides/live-conversations#add-context-during-the-conversation
+- https://developers.openai.com/api/docs/models/gpt-live-1
+- https://learn.chatgpt.com/docs/features/voice#show-chatgpt-what-you-see
+
 ## 2026-10-25 — Chrome/Opera doubled typing recovered after a shared Computer Use helper reset
 
 **Verified recovery, not a proven internal root cause:** after the accepted
