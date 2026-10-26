@@ -165,7 +165,6 @@ struct VoiceInkApp: App {
             engine: engine, recorderUI: recorderUIManager
         )
         _newChatRecordingService = StateObject(wrappedValue: newChatRecordingService)
-        appDelegate.newChatRecordingService = newChatRecordingService
 
         let menuBarManager = MenuBarManager()
         _menuBarManager = StateObject(wrappedValue: menuBarManager)
@@ -191,6 +190,7 @@ struct VoiceInkApp: App {
         // consult the live session collection before terminating. This prevents a
         // release restart from cutting off microphone audio or queued transcription.
         appDelegate.voiceInkEngine = engine
+        appDelegate.newChatRecordingService = newChatRecordingService
 
         // Ensure no lingering recording state from previous runs
         Task {
