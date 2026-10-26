@@ -4,9 +4,8 @@ import os
 
 /// Opt-in runtime flag for the active-Codex-task transcription context hint.
 ///
-/// Default OFF. This flag controls only automatic active-Codex excerpts. Explicit
-/// captured-reference hints are a separate OpenAI-only path; no Codex dependency or
-/// context query is needed for them. Other providers retain the legacy prompt bytes.
+/// Default OFF. While off, VoiceInk++ builds byte-identical legacy provider requests:
+/// the static `TranscriptionPrompt` is the only prompt any provider ever sees.
 enum RecentTranscriptContextSettings {
     static let enabledKey = "VIPPRecentTranscriptContextEnabled"
 

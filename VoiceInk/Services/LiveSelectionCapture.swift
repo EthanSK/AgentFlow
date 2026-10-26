@@ -6,8 +6,8 @@ import SQLite3
 
 /// A per-recording reference to text selected in the frontmost app. The HUD
 /// shows only a compact preview; the full captured selection is added to the final
-/// destination message after transcription. A separate bounded OpenAI-only hint
-/// may help speech recognition; it never replaces this complete reference.
+/// destination message after transcription. It is never sent to the speech-to-text
+/// provider or used to change its prompt while recording.
 struct LiveSelectionReference: Equatable {
     // The durable prompt is the agent's complete input. Neither the HUD nor
     // the short chat bubble may impose a line/character cap on captured text.
@@ -137,9 +137,8 @@ struct LiveSelectionReference: Equatable {
         }
     }
 
-    /// Only a saved macOS screenshot's path is carried into the final message;
-    /// the reference remains a path. Optional transcription hints OCR this explicit
-    /// saved image locally; they never attach its pixels to the transcription API.
+    /// Only a saved macOS screenshot's path is carried into the final message.
+    /// Recognition never opens or OCRs this image; the receiving agent reads it.
     init?(screenshotURL: URL) {
         guard screenshotURL.isFileURL,
               screenshotURL.path.hasPrefix("/") else { return nil }
@@ -244,19 +243,6 @@ struct LiveSelectionReference: Equatable {
     var isTypedText: Bool { typedText != nil }
     var hasSpeechTiming: Bool { speechBoundary }
     var isSelection: Bool { screenshotPath == nil && !isTypedText && !speechBoundary }
-
-    enum RecognitionSource: Sendable {
-        case text(String)
-        case image(URL)
-    }
-
-    /// Typed prose and speech timing must never be fed back as recognition hints.
-    /// Read original captured content, not decorated HUD/XML or a later workspace.
-    var recognitionSource: RecognitionSource? {
-        guard !isTypedText, !speechBoundary else { return nil }
-        if let imagePath { return .image(URL(fileURLWithPath: imagePath)) }
-        return .text(String(selectedText.prefix(2_000)))
-    }
 
     var spokenWordCount: Int {
         anchoredWordCount

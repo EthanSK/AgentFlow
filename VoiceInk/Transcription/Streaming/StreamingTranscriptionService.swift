@@ -208,7 +208,6 @@ class StreamingTranscriptionService {
     private var sendLoopCompletion: AsyncStream<Void>?
     private var eventConsumerTask: Task<Void, Never>?
     private let chunkSource: AudioChunkSource
-    private let contextUpdates = LiveTranscriptionContextBuffer()
     private var state: StreamingState = .idle
     private var committedSegments: [String] = []
     private let modelContext: ModelContext
@@ -222,7 +221,6 @@ class StreamingTranscriptionService {
     private var stopStartedAt: Date?
     private var firstPartialLogged = false
     private var firstCommitLogged = false
-    private(set) var contextUpdateFailed = false
 
     init(
         modelContext: ModelContext,
@@ -318,7 +316,6 @@ class StreamingTranscriptionService {
             return
         }
 
-        contextUpdates.markApplied(context)
         state = .streaming
         startSendLoop()
         startEventConsumer()
@@ -348,15 +345,6 @@ class StreamingTranscriptionService {
         silenceSleep?.noteSessionActivity()
     }
 
-    func updateTranscriptionContext(_ context: TranscriptionRequestContext) {
-        guard state == .idle || state == .connecting || state == .streaming else { return }
-        contextUpdates.offer(context)
-    }
-
-    func finishTranscriptionContextUpdates() {
-        contextUpdates.finish(discard: true)
-    }
-
     /// Stops streaming, commits remaining audio, and returns the final transcribed text.
     func stopAndGetFinalText() async throws -> String {
         guard let provider = provider, state == .streaming else {
@@ -364,12 +352,11 @@ class StreamingTranscriptionService {
         }
 
         state = .committing
-        contextUpdates.finish(discard: true)
         stopStartedAt = Date()
         // A sleeping stream holds its newest quiet preroll. Forward it in capture order
-        // BEFORE the chunk source finishes. The final commit covers remaining bytes;
-        // earlier explicit-hint turns are already owned inside the provider. Sleep/wake
-        // alone never creates a turn, and Stop still produces one final delivery.
+        // BEFORE the chunk source finishes, so the one commit below covers every sent
+        // byte and nothing is pending when completeness is checked. This is still the
+        // only commit for the recording: sleep/wake boundaries never commit.
         silenceSleep?.finish()
         let beforeDrain = metrics.snapshot()
         logger.notice("Streaming stop requested receivedChunks=\(beforeDrain.receivedChunks, privacy: .public) sentChunks=\(beforeDrain.sentChunks, privacy: .public) receivedBytes=\(beforeDrain.receivedBytes, privacy: .public) sentBytes=\(beforeDrain.sentBytes, privacy: .public)")
@@ -447,7 +434,6 @@ class StreamingTranscriptionService {
         // only. The WAV and any retained recovery draft are owned elsewhere.
         silenceSleep?.discard()
         chunkSource.finish()
-        contextUpdates.finish(discard: true)
 
         // Clean up commit signal if waiting
         commitSignal?.finish()
@@ -494,7 +480,6 @@ class StreamingTranscriptionService {
         guard let provider else { return }
         let source = chunkSource
         let metrics = metrics
-        let contextUpdates = contextUpdates
         let (completionStream, completionContinuation) = AsyncStream.makeStream(
             of: Void.self,
             bufferingPolicy: .bufferingNewest(1)
@@ -502,46 +487,15 @@ class StreamingTranscriptionService {
         sendLoopCompletion = completionStream
 
         sendTask = Task.detached { [weak self] in
-            var boundaryPolicy = LiveTranscriptionBoundaryPolicy()
             defer {
                 completionContinuation.yield()
                 completionContinuation.finish()
             }
-            // The same sender orders context, PCM and the final drain. Await the
-            // provider acknowledgement before following audio. A rejected/unacknowledged
-            // hint invalidates realtime only; the complete WAV and original frozen
-            // guidance remain available to the existing one-shot batch fallback.
-            func applyPendingContext() async {
-                guard let contextual = provider as? any LiveContextStreamingTranscriptionProvider,
-                      contextual.supportsLiveContextUpdates else {
-                    contextUpdates.finish(discard: true)
-                    return
-                }
-                let now = ProcessInfo.processInfo.systemUptime
-                guard boundaryPolicy.canApplyContext(at: now),
-                      let context = contextUpdates.take(maximumAge: LiveTranscriptionBoundaryPolicy.maximumHintAge, at: now) else { return }
-                do {
-                    try await contextual.updateTranscriptionContext(context)
-                    contextUpdates.markApplied(context)
-                    boundaryPolicy.didApplyContext(at: ProcessInfo.processInfo.systemUptime)
-                } catch {
-                    metrics.markProviderFailure()
-                    contextUpdates.finish(discard: true)
-                    // Do not log the server's echoed error: it may contain a private hint.
-                    await MainActor.run {
-                        self?.contextUpdateFailed = true
-                        self?.logger.warning("Live transcription context update failed; retaining complete-WAV fallback")
-                    }
-                }
-            }
             for await chunk in source.stream {
-                guard !Task.isCancelled else { break }
                 source.didDequeue(chunk.count)
-                await applyPendingContext()
                 do {
                     try await provider.sendAudioChunk(chunk)
                     metrics.recordSent(chunk.count)
-                    boundaryPolicy.didSend(chunk, at: ProcessInfo.processInfo.systemUptime)
                 } catch {
                     metrics.recordDropped(chunk.count)
                     let desc = error.localizedDescription
@@ -550,9 +504,6 @@ class StreamingTranscriptionService {
                     }
                 }
             }
-            // Stop owns the sole final event. A hint left without following capture
-            // stays in final-message references/fallback, never creates a drain turn.
-            contextUpdates.finish(discard: true)
         }
     }
 
@@ -667,13 +618,14 @@ class StreamingTranscriptionService {
                 case .error(let error):
                     await MainActor.run {
                         self.logger.error("Streaming event error: \(error, privacy: .public)")
-                        // Multi-turn OpenAI integrity is independent of silence sleep.
-                        // A plausible final cannot override an unknown/failed item or
-                        // socket error; keep the existing other-provider behavior.
-                        let ownsContextTurns = self.provider is any LiveContextStreamingTranscriptionProvider
-                        let vulnerableState = self.state == .streaming || self.state == .committing
-                        if vulnerableState && (ownsContextTurns ||
-                            (self.silenceSleep != nil && self.committedSegments.isEmpty)) {
+                        // Gated sessions only (other providers keep their existing
+                        // behavior): a provider error or socket failure before the final
+                        // may mean the server stopped accepting audio during an idle gap.
+                        // Mark the stream incomplete so Stop uses the complete WAV instead
+                        // of delivering a possibly truncated realtime final.
+                        if self.silenceSleep != nil,
+                           self.state == .streaming
+                            || (self.state == .committing && self.committedSegments.isEmpty) {
                             self.metrics.markProviderFailure()
                             // A failed connection is no longer sleeping. Stop gating
                             // and clear the HUD marker while the full WAV keeps recording.

@@ -1,5 +1,23 @@
 # Learnings
 
+## 2026-10-26 — Remove captured-reference hints from speech recognition
+
+Ethan explicitly rejected the recent feature that sent highlighted context to the
+realtime transcription model and asked to undo it completely. Source removal
+restores the pre-feature streaming adapter and sender: one frozen initial request,
+one Stop-owned commit, no captured-reference mailbox, no recognition OCR and no
+intermediate audio turns to change the prompt. The complete original selections
+and screenshot paths still enter final messages. Vocabulary, independently opted-in
+recent Codex conversation context, quiet-upload sleep and the Primary/Next routes
+remain unchanged. The newer deferred-quit and new-chat changes remain intact.
+
+This supersedes the 25 October product acceptance below; those protocol findings
+remain historical evidence. The new isolation regressions check that references
+remain available to delivery without altering the recognition request, and that
+the removed update hooks cannot silently return. At this source-edit checkpoint,
+the Mini is unreachable and these tests have not run; build 465 is still installed.
+Do not claim runtime removal until a replacement is built, tested and installed.
+
 ## 2026-10-25 — Quiet owned turns preserve audio across captured-hint updates
 
 This supersedes the temporary hard hold below for the new quiet-boundary route,

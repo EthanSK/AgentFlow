@@ -1,5 +1,20 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-10-26 — Captured-reference hints are no longer wanted in speech recognition
+
+- **State:** Rejected by Ethan; remove the feature completely, not a disabled flag.
+- **Removed approach:** Startup and live transcription hints from captured selections
+  or screenshot OCR, with intermediate audio commits for prompt changes.
+- **Reason:** Ethan explicitly asked to undo this recent addition. Earlier synthetic
+  protocol success did not establish that its live behavior met his needs; it must
+  not be treated as current product acceptance.
+- **Use instead:** Frozen original recognition guidance and one Stop-owned commit;
+  preserve selections and screenshot paths for the final message only. Vocabulary,
+  separately configured recent-chat context, and quiet-upload sleep are independent.
+- **Reconsider only if:** Ethan explicitly requests captured-reference recognition
+  again. Any future design still needs independent audio-integrity and human-voice
+  qualification; the historical 25 October measurements alone are insufficient.
+
 ## 2026-10-25 — Commit a context update at an arbitrary point in speech
 
 - **State:** Rejected by a real split-phrase negative control.

@@ -906,21 +906,9 @@ struct RealtimeSilenceSleepTests {
             #expect(!gate.contains(forbidden), "silence sleep must not reference \(forbidden)")
         }
 
-        // Sleep/wake never commits. The only explicit network commit helper is
-        // called by Stop and the owned captured-hint boundary, never by this gate.
+        // One provider commit per recording, still issued only from Stop.
         let provider = try source("VoiceInk/Transcription/Streaming/OpenAIStreamingProvider.swift")
         #expect(provider.components(separatedBy: "\"type\": \"input_audio_buffer.commit\"").count - 1 == 1)
-        #expect(provider.components(separatedBy: "try await sendCommitMessage(over: task)").count - 1 == 2)
-        let updateBody = try #require(provider.range(of: "func updateTranscriptionContext(_ context:"))
-        let stopBody = try #require(provider.range(of: "func commit() async throws", range: updateBody.upperBound..<provider.endIndex))
-        let boundaryBody = String(provider[updateBody.lowerBound..<stopBody.lowerBound])
-        let disconnectBody = try #require(provider.range(of: "func disconnect() async", range: stopBody.upperBound..<provider.endIndex))
-        let finalBody = String(provider[stopBody.lowerBound..<disconnectBody.lowerBound])
-        #expect(finalBody.components(separatedBy: "try await sendCommitMessage(over: task)").count - 1 == 1)
-        let ownedCommit = try #require(boundaryBody.range(of: "try await sendCommitMessage(over: task)"))
-        let completeWait = try #require(boundaryBody.range(of: ".turnCompletion(index)"))
-        let changeHint = try #require(boundaryBody.range(of: "OpenAITranscriptionConfiguration.realtimeContextUpdate"))
-        #expect(ownedCommit.lowerBound < completeWait.lowerBound && completeWait.lowerBound < changeHint.lowerBound)
         #expect(provider.contains("private func yieldFinalOnce"))
 
         let service = try source("VoiceInk/Transcription/Streaming/StreamingTranscriptionService.swift")

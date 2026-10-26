@@ -1751,7 +1751,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
     private func enqueueTranscription(for session: RecordingSession, transcription: Transcription) {
         guard let audioURL = session.audioURL?.standardizedFileURL,
               transcription.audioFileURL == audioURL.absoluteString,
-              let transcriptionConfiguration = session.transcriptionConfigurationWithLiveReference,
+              let transcriptionConfiguration = session.transcriptionConfiguration,
               let identity = transcriptionJobRegistry.register(
                   recordingSessionID: session.id,
                   transcriptionID: transcription.id,

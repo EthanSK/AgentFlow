@@ -4,7 +4,23 @@ Read before changing OpenAI transcription prompts, Vocabulary hints, language, d
 session reuse, or quality claims. Research checked 2026-09-05. Re-fetch the cited model
 documentation when changing its contract; this is a dated audit, not a frozen API manual.
 
-## 2026-10-25 captured-reference updates: real API audio-integrity hold
+## 2026-10-26: captured-reference transcription hints removed
+
+Ethan requested: "remove the recent addition where we send ChatGPT the context
+of what we're highlighting, the real-time voice model" and "Undo it completely."
+Selections and screenshot paths belong to the final message only. Do not add them
+to the speech-to-text prompt at startup, update the prompt during recording, OCR
+captured images for recognition, or split audio into intermediate turns for hints.
+The removal restores one Stop-owned commit and the original frozen request guidance.
+It leaves Vocabulary, the independently configured recent-Codex-message context,
+the quiet-upload sleep feature, final references, and Primary/Next delivery intact.
+
+The 25 October evidence below is historical, not permission to restore the feature.
+Reconsider only after a new explicit request; API acceptance and synthetic tests
+alone do not override this product decision. Removal verification and installation
+status are recorded in `LEARNINGS.md`.
+
+## Historical 2026-10-25 captured-reference updates: real API audio-integrity hold
 
 Ethan clarified that highlights/screenshots should help Agent Flow's own speech
 transcription, not connect to Codex Voice. The current

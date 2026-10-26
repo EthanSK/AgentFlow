@@ -7,8 +7,7 @@ import Foundation
 // WHAT: while an ordinary recording keeps capturing, stop appending clearly quiet
 // PCM to the open OpenAI `gpt-live-transcribe` socket, then resume immediately when
 // local sound or this session's own activity returns. One socket stays open and the
-// recording still ends with one final delivery at Stop. Captured-hint updates may
-// independently finish owned turns at quiet boundaries; silence sleep never does.
+// recording still ends with exactly one `input_audio_buffer.commit` at Stop.
 //
 // WHY: Ethan asked for long silent listening periods not to stream to OpenAI while
 // Agent Flow keeps recording (2026-10-24). Streaming transcription is documented as
@@ -24,10 +23,10 @@ import Foundation
 //    completed-file fallback always have the complete audio.
 //  • Not manual Pause. AUHAL keeps running, the waveform keeps moving, media and
 //    the YouTube helper are untouched, and the session stays `.recording`.
-//  • Never a commit or delivery boundary. Sleeping/waking alone never commits,
-//    pastes, sends Return, or changes the Primary/Next destination. Only an explicit
-//    pending recognition hint may use the provider's separately guarded quiet-turn
-//    commit/identity/assembly route; it still emits one final via yieldFinalOnce.
+//  • Never a commit or delivery boundary. The OpenAI provider accepts exactly one
+//    final per recording (`yieldFinalOnce`), so committing at each silence would
+//    silently drop every later item. Sleeping/waking never commits, pastes, sends
+//    Return, or changes the Primary/Next destination.
 //  • Not speaker identification. The classifier only asks "is this audio clearly
 //    quiet?". Any audible sound — Ethan, a presenter, a singer, music, a keyboard —
 //    keeps or wakes the stream. Uncertain audio fails open (it is sent).
@@ -138,7 +137,6 @@ struct RealtimeSilenceSleepGate {
 
     private var frameSumOfSquares: Double = 0
     private var frameSampleCount = 0
-    private var activityEvidence = false
     private var currentBlockMinimumDB: Double?
     private var currentBlockSampleCount = 0
     private var recentBlockMinimaDB: [Double] = []
@@ -160,23 +158,6 @@ struct RealtimeSilenceSleepGate {
     }
 
     var isSleeping: Bool { phase == .sleeping }
-
-    /// Read-only acoustic evidence for the independent hint-boundary policy. An
-    /// unfinished analysis frame could already contain a new onset, so it cannot
-    /// authorize closing a transcription turn. This never changes omission/actions.
-    var isAtAnalyzedQuietBoundary: Bool { isSleeping && frameSampleCount == 0 }
-
-    /// Conservative audio evidence, not speaker identification. An empty ASR turn
-    /// is safe to skip only when this observer found no possible audible content.
-    /// Include the unfinished frame so very short onsets cannot disappear at Stop.
-    var hasPossibleActivity: Bool {
-        if activityEvidence || phase == .finished { return true }
-        guard frameSampleCount > 0 else { return false }
-        let rms = (frameSumOfSquares / Double(frameSampleCount)).squareRoot()
-        return rms > 0 && 20 * log10(rms) > activityThresholdDBFS
-    }
-
-    mutating func resetActivityEvidence() { activityEvidence = false }
 
     var noiseFloorDBFS: Double {
         var candidates = recentBlockMinimaDB
@@ -208,7 +189,6 @@ struct RealtimeSilenceSleepGate {
         }
         guard !chunk.isEmpty else { return [.send(chunk)] }
         let heardActivity = analyze(chunk)
-        if heardActivity { activityEvidence = true }
 
         switch phase {
         case .streaming:

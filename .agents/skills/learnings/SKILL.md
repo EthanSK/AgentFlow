@@ -203,6 +203,13 @@ can otherwise look healthy while ordinary dictations lose all useful context. Ke
 message, transcript, prompt, and keyword text out of logs. The retired History policy lives only in
 test fixtures to preserve its comments and negative evidence; never restore its runtime query.
 
+Ethan removed captured-reference speech-to-text hints entirely on 2026-10-26.
+Keep selections and screenshot paths in the final message only: no startup hint,
+mid-recording prompt update, recognition OCR, or intermediate audio turn for them.
+This does not disable the separately configured recent-Codex-message context or
+Vocabulary. Read the newest removal contract in
+`references/openai-transcription-quality.md` before revisiting that feature.
+
 For live Codex selected-text and screenshot context, keep one per-recording chronological
 stream: bounded selected-text excerpts, saved native screenshot **paths only**, and HUD-only
 speech. Capture screenshots only from the configured macOS screenshot folder while the
