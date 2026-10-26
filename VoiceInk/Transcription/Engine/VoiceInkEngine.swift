@@ -356,6 +356,25 @@ class VoiceInkEngine: NSObject, ObservableObject {
         activeRecordingSession?.startID ?? recordingStartReservation.pendingID
     }
 
+    /// Double Top may create a chat for the voice start already requested by its
+    /// first press. This is passive lifecycle identity, never a saved destination.
+    var newChatRecordingCapture: NewChatRecordingCapture {
+        if let session = activeRecordingSession {
+            guard !session.microphoneOff,
+                  session.liveRecordingState == .starting || session.liveRecordingState == .recording else {
+                return .unavailable
+            }
+            return .voice(session.startID)
+        }
+        if let id = recordingStartReservation.pendingID {
+            return typingFocusStartID == id ? .unavailable : .voice(id)
+        }
+        guard !hasActiveCaptureOwner, !assistantSession.isVisible, !isResettingRecordingSession else {
+            return .unavailable
+        }
+        return .idle
+    }
+
     /// Includes both a start reservation and a materialized recording session. This
     /// closes the tiny consumed-reservation-to-session-card boundary for UI decisions.
     var hasActiveCaptureOwner: Bool {
