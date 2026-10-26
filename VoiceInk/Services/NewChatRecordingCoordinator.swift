@@ -95,6 +95,7 @@ final class NewChatRecordingCoordinator {
     private var startTask: Task<Void, Never>?
     static let maximumEntries = 128
     static let retention: TimeInterval = 60
+    var isCreatingChat: Bool { operation != nil }
 
     init(
         selectedHarness: @escaping () -> NewChatRecordingHarness?,

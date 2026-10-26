@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 class AppDelegate: NSObject, NSApplicationDelegate {
     weak var menuBarManager: MenuBarManager?
     weak var voiceInkEngine: VoiceInkEngine?
+    weak var newChatRecordingService: NewChatRecordingService?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Inactive launches can receive sessionDidResignActive before did-finish.
@@ -52,7 +53,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Next-only input before its session card exists, and may still be waiting on
         // exact-input capture, an older delivery or model cleanup. A cooperative quit
         // (including a release swap) in that window must wait like a live recording.
+        // New-chat creation is an unfinished voice-start intent even before audio
+        // is reserved. Do not replace the app while its native launcher can still
+        // create/focus that input; the bounded operation must finish or cancel first.
         let hasPendingRecordingStart = voiceInkEngine?.hasPendingRecordingStart == true
+            || newChatRecordingService?.isCreatingChat == true
         guard Self.shouldBlockTermination(
             hasInFlightSessions: hasInFlightSessions,
             hasHistoryRetries: !HistoryAudioRetryState.shared.activeIDs.isEmpty,

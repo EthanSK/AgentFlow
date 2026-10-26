@@ -6,6 +6,7 @@ import CoreFoundation
 /// selected harness and voice lifecycle. Neither side owns a new paste target.
 @MainActor
 final class NewChatRecordingService: ObservableObject {
+    @Published private(set) var isCreatingChat = false
     static let requestName = Notification.Name("com.ethansk.AgentFlow.newChatRecording.v1")
     static let resultName = Notification.Name("com.ethansk.AgentFlow.newChatRecording.result.v1")
     static let launchName = Notification.Name("com.ethansk.AgenticMouse.newChat.v1")
@@ -109,6 +110,9 @@ final class NewChatRecordingService: ObservableObject {
     }
 
     private func publish(_ status: NewChatRecordingStatus) {
+        // A rejected concurrent request must not clear the real operation's quit
+        // veto. This describes the coordinator, not the last emitted status.
+        isCreatingChat = coordinator.isCreatingChat
         var fields: [String: Any] = [
             "version": 1, "phase": status.phase.rawValue, "reason": status.reason.rawValue
         ]

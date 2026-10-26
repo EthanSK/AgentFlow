@@ -120,9 +120,11 @@ struct NewChatRecordingTests {
         let first = f.request(); let second = f.request()
         f.coordinator.receive(first); f.coordinator.receive(second)
         #expect(f.statuses.last?.reason == .busy)
+        #expect(f.coordinator.isCreatingChat)
         f.finish(first.id); f.coordinator.receive(second)
         #expect(f.launched.count == 1)
         #expect(f.statuses.last?.reason == .busy)
+        #expect(!f.coordinator.isCreatingChat)
         f.coordinator.cancel()
     }
 
@@ -226,5 +228,12 @@ struct NewChatRecordingTests {
         f.coordinator.receive(first)
         #expect(f.statuses.last?.reason == .stale)
         f.coordinator.cancel()
+    }
+
+    @Test func pendingChatCreationParticipatesInCooperativeQuitVeto() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let appDelegate = try String(contentsOf: root.appendingPathComponent("VoiceInk/AppDelegate.swift"), encoding: .utf8)
+        #expect(appDelegate.contains("newChatRecordingService?.isCreatingChat == true"))
+        #expect(AppDelegate.shouldBlockTermination(hasInFlightSessions: false, hasPendingRecordingStart: true))
     }
 }

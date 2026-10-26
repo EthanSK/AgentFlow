@@ -161,9 +161,11 @@ struct VoiceInkApp: App {
         // 7. Create other services that depend on engine
         let recordingShortcutManager = RecordingShortcutManager(engine: engine, recorderUIManager: recorderUIManager)
         _recordingShortcutManager = StateObject(wrappedValue: recordingShortcutManager)
-        _newChatRecordingService = StateObject(wrappedValue: NewChatRecordingService(
+        let newChatRecordingService = NewChatRecordingService(
             engine: engine, recorderUI: recorderUIManager
-        ))
+        )
+        _newChatRecordingService = StateObject(wrappedValue: newChatRecordingService)
+        appDelegate.newChatRecordingService = newChatRecordingService
 
         let menuBarManager = MenuBarManager()
         _menuBarManager = StateObject(wrappedValue: menuBarManager)
