@@ -5560,3 +5560,11 @@ was added. Native guards are `codexHostRecognitionAcceptsBothBundledCLILayouts`,
 candidate and XML/title round-trip tests; physical selected-pane acceptance is
 separate from source and fixture evidence.
 
+
+## 2026-10-26 — Double Top owns one start-only chat-creation operation
+
+- `NewChatRecordingCoordinator` snapshots the sole `VIPPNewChatRecordingHarness` preference and adopts an existing voice start ID; it never reuses the ordinary toggle as a second press or changes Primary/Next delivery ownership.
+- Reserve a request UUID before invoking the native launcher so synchronous replies and duplicate requests cannot create another chat. Guard duplicate ready replies before starting asynchronous capture; retain bounded result tombstones beyond the wire freshness window.
+- Pending native chat creation must join `AppDelegate`'s cooperative quit veto even before a recording reservation exists. Its busy state comes from the active operation, not the latest published result: a concurrent rejected request can otherwise hide real work.
+- Attach the service to the app delegate only after all SwiftUI stored state has initialized, alongside the existing engine/menu-bar assignments.
+- Initial 17 focused tests on the Mini passed for the coordinator plus Primary/Next/HUD-only guards. The added quit-veto test and final integrated/physical release acceptance are separate pending checks; do not infer installation or a native launcher receipt from these unit tests.
