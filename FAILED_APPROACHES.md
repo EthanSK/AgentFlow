@@ -2369,3 +2369,17 @@ A future agent may revisit a rejected mechanism only when all of these are writt
 
 If those answers are absent, use the current accepted path or fail closed. Do not rediscover this
 week by iteration.
+# 2026-10-26 — Wait for process exit after a one-time rejected quit — REJECTED
+
+**Failure condition:** `applicationShouldTerminate` returned `terminateCancel`
+during real work. The work finished, but no further quit request happened; a
+kernel process-exit wait never woke and the old warning falsely looked current.
+
+**Use instead:** Retain deferred quit intent in the app, observe every owner that
+can block termination, and retry ordinary quit after a next-turn read proves all
+are idle. Keep the same guard at the final boundary and keep **I've finished** as
+an optional immediate check. Never treat one old refusal as a current recording
+measurement or replace the guard with HUD visibility.
+
+**Reconsider only if:** The running app already implements an independently
+verified deferred-termination callback; a process-exit wait alone cannot provide it.

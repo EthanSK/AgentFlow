@@ -4,6 +4,7 @@ import AVFoundation
 import SwiftData
 import AppKit
 import os
+import Combine
 
 /// Runtime payload for one registry-approved queue identity. Audio, transcription
 /// configuration, streaming session, and SwiftData record are captured once when the
@@ -252,7 +253,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
     // Reservation across requestRecordPermission → startNewSession scheduling. Without
     // this synchronous token, two rapid Primary start events can both observe no active
     // session before either scheduled MainActor task appends one, creating two mic owners.
-    private var recordingStartReservation = RecordingStartReservation()
+    @Published private var recordingStartReservation = RecordingStartReservation()
     private var preparedRecordingStart: PreparedRecordingStart?
     private var typingFocusStartID: UUID?
 
@@ -348,6 +349,15 @@ class VoiceInkEngine: NSObject, ObservableObject {
     /// is waiting on permission, cleanup, or a delivery lease.
     var hasPendingRecordingStart: Bool {
         recordingStartReservation.pendingID != nil
+    }
+
+    /// Status edges only: no transcript/waveform subscription or idle timer. A
+    /// canceled startup with no session card must also release a deferred quit.
+    var terminationActivityChanges: AnyPublisher<Void, Never> {
+        Publishers.Merge(
+            $sessions.map { _ in () },
+            $recordingStartReservation.map { _ in () }
+        ).eraseToAnyPublisher()
     }
 
     /// One stable identity across reservation and microphone startup, used only

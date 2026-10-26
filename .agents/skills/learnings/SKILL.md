@@ -32,12 +32,14 @@ an install or restart, even when the build and tests are ready. A missing record
 window or an apparently idle Accessibility snapshot is not proof that the session
 ended; the recorder may be hidden or recovering. Monitor safely and continue the
 authorized installation automatically when the current session finishes; do not
-ask Ethan to confirm an ordinary session end. Use cheap read-only checks every
-few seconds while this task is active, not repeated model turns or UI probes.
+ask Ethan to confirm an ordinary session end. From build 465 use the app's
+event-driven deferred quit and the installer's process-exit wait; **I've finished**
+is an optional immediate recheck. Older builds may need a fresh ordinary quit
+after work ends. Never infer continued activity solely from an earlier veto.
 Require the installed app's `applicationShouldTerminate` all-session veto at the
 final cooperative quit boundary: recording, typing, paused capture, transcription
 and delivery all count as active. Give the real five-second restart warning,
-recheck immediately afterward, and treat a refused quit as continued activity;
+recheck immediately afterward, and treat a refused quit as activity at that moment;
 never escalate to TERM, KILL or another forced exit. Keep a bounded watcher, and
 use the product's thread heartbeat only if continuation must survive yielding;
 pause that heartbeat once installation is verified. Unknown identity/state is

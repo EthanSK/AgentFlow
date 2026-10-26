@@ -5568,3 +5568,26 @@ separate from source and fixture evidence.
 - Pending native chat creation must join `AppDelegate`'s cooperative quit veto even before a recording reservation exists. Its busy state comes from the active operation, not the latest published result: a concurrent rejected request can otherwise hide real work.
 - Attach the service to the app delegate only after all SwiftUI stored state has initialized, alongside the existing engine/menu-bar assignments.
 - The final 18 focused tests on the Mini passed for the coordinator, quit veto and Primary/Next/HUD-only guards. The complete native unit run passed 810 tests in 30 suites. Final integrated/physical release acceptance is separate; do not infer installation or a native launcher receipt from these unit tests.
+
+## 2026-10-26 — A refused quit must resume after the work finishes
+
+The build-462 update received a cooperative quit while audio was active. The
+recording then stopped and cleanup completed, but the app had returned
+`terminateCancel` without retaining a retry. Waiting only for process exit could
+therefore wait forever after all real work had ended. The earlier veto was not
+evidence that the user was still recording minutes later.
+
+Build 465 retains that quit intent and observes session membership, pending start
+reservations, History retry IDs and pending new-chat creation. A coalesced next-main-
+turn check reads the final state after `@Published` changes and retries ordinary
+termination only when all owners are idle. The existing all-session guard runs
+again at that boundary. No stop/cancel command, forced exit, capture reset,
+transcript subscription or repeating timer is added. **I've finished** remains an
+optional immediate retry. Cancelled start reservations must publish too, including
+when no session card was ever added.
+
+The final focused Mini action passed 33 tests across stop safety, new-chat
+coordination and mandatory Primary/Next/HUD-only guards. It includes will-change
+ordering, all owners clearing, a new start before the scheduled check, cancellation
+of a scheduled check, and exactly one retry. Installed/physical acceptance remains
+separate from these hosted tests.

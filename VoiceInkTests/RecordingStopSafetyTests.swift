@@ -3,6 +3,7 @@ import AppKit
 import SwiftUI
 import os
 import Testing
+import Combine
 @testable import VoiceInkPlusPlus
 
 /// Ethan reported recordings that stopped without any Primary, Next or Cancel action.
@@ -11,6 +12,67 @@ import Testing
 /// shared Recorder, and a cooperative quit waits for a start that has no card yet.
 @Suite(.serialized)
 struct RecordingStopSafetyTests {
+    @MainActor private func nextMainTurn() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+    }
+    @Test @MainActor func deferredQuitFollowsActualIdleStateWithoutButtonOrPolling() async {
+        let changes = PassthroughSubject<Void, Never>()
+        var recording = true
+        var retrying = true
+        var starting = true
+        var quits = 0
+        let coordinator = DeferredTerminationCoordinator(
+            isBlocked: { recording || retrying || starting }, retry: { quits += 1 }
+        )
+        coordinator.waitForIdle(changes: changes.eraseToAnyPublisher())
+        await nextMainTurn()
+        #expect(quits == 0)
+        // Model @Published's will-change ordering, not just post-change sends.
+        changes.send(); recording = false
+        await nextMainTurn()
+        #expect(quits == 0)
+        changes.send(); retrying = false
+        await nextMainTurn()
+        #expect(quits == 0)
+        changes.send(); starting = false
+        await nextMainTurn()
+        #expect(quits == 1)
+        changes.send()
+        await nextMainTurn()
+        #expect(quits == 1)
+    }
+
+    @Test @MainActor func deferredQuitRechecksNewWorkBeforeRetryAndCancelInvalidatesQueuedRead() async {
+        let changes = PassthroughSubject<Void, Never>()
+        var busy = true
+        var quits = 0
+        let coordinator = DeferredTerminationCoordinator(isBlocked: { busy }, retry: { quits += 1 })
+        coordinator.waitForIdle(changes: changes.eraseToAnyPublisher())
+        busy = false; changes.send()
+        // A new start in this same transition must win over the pending read.
+        busy = true
+        await nextMainTurn()
+        #expect(quits == 0)
+        busy = false; changes.send(); coordinator.cancel()
+        await nextMainTurn()
+        #expect(quits == 0)
+        coordinator.waitForIdle(changes: changes.eraseToAnyPublisher())
+        await nextMainTurn()
+        #expect(quits == 1)
+    }
+
+    @Test func deferredQuitObservesEveryOwningWorkSource() throws {
+        let engine = try source("VoiceInk/Transcription/Engine/VoiceInkEngine.swift")
+        #expect(engine.contains("@Published private var recordingStartReservation"))
+        #expect(engine.contains("$sessions.map { _ in () }"))
+        #expect(engine.contains("$recordingStartReservation.map { _ in () }"))
+        let delegate = try source("VoiceInk/AppDelegate.swift")
+        #expect(delegate.contains("voiceInkEngine.terminationActivityChanges"))
+        #expect(delegate.contains("HistoryAudioRetryState.shared.$activeIDs"))
+        #expect(delegate.contains("newChatRecordingService.$isCreatingChat"))
+    }
     private enum ScriptedRealtimeError: Error {
         case providerRejected
     }
