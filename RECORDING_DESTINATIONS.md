@@ -474,11 +474,11 @@ The important destination values are:
 - `VoiceInk/Transcription/Engine/TranscriptionDelivery.swift` isolates base current-input Primary
   delivery from app-specific foreground/background exact delivery used only by Next routes.
 
-## Double Top: create a chat before dictation (build 463)
+## Double Top: create a chat before dictation (build 464)
 
 This start-only orchestration is not a fourth delivery destination. The receiver sends one UUID
 intent to Agent Flow; the app reads `VIPPNewChatRecordingHarness` once (`codex` by default or
-`claudeCode`). An unknown explicit value fails closed. The receiver must not maintain a second
+`claudeCode`). Settings → New Chats → App edits this same key. An unknown explicit value fails closed. The receiver must not maintain a second
 harness preference. Claude Code means a fresh terminal CLI session, not Claude Desktop.
 
 `NewChatRecordingService` uses these app-lifetime DistributedNotificationCenter messages:
