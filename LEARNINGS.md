@@ -1,5 +1,42 @@
 # Learnings
 
+## 2026-10-27 — Separate UI handoff time from actual prompt processing
+
+Build 470's recent successful typing-only trace took 1.260 s from Stop to the
+posted Cmd-V and 1.517 s through auto-send. Stop/recovery occupied 228 ms;
+the app-recipient/MainActor envelope occupied 674 ms; log scope took 13 ms;
+canonical plus viewer writes took about 3 ms; a newly queued paste Task waited
+202 ms before starting. Clipboard setup itself was effectively zero, followed
+by the established roughly 135 ms paste event sequence and 220 ms auto-send wait.
+A second run's recipient envelope was 853 ms and queued paste wait 231 ms. Its
+own-HUD refusal while a newer typing editor held the keyboard was intentional.
+Do not call these intervals heavy XML computation or a one-second reaction timer.
+The recipient envelope includes scheduling and synchronous app-property checks;
+it does not prove which of those caused all the elapsed time.
+
+Build 471 keeps the archive callback explicitly MainActor-isolated, matching its
+already isolated pipeline caller, and removes the generic-executor → MainActor.run
+round trip. The heavy log scan and archive writer still run on their workers.
+Primary now directly awaits the existing cursor paste operation instead of
+creating a fresh MainActor Task solely to await it. The local own-HUD veto lives
+once in the shared paste session, preserving queued Next callers too. FIFO leases,
+clipboard restoration, key guards, destination routes and keyboard waits remain.
+Fine-grained recipient timings now distinguish frontmost lookup, app metadata and
+host validation. Do not claim the entire 674 ms was removed without a new trace.
+
+Two focused Xcode actions compiled but stalled before naming any test. Only those
+attributed runners were canceled; no other Mini Xcode job was active. The existing
+user `com.apple.testmanagerd` repair again allowed the same canonical selection
+to execute: 155 checks passed in four suites. The final exact-source native gate
+passed all 771 tests in 28 suites at source `ad6ca925`. No direct focused xctest
+fallback, Developer Mode change, new E2E run or MacBook app termination was used
+for the runner repair. Signed build 471 is installed with CDHash
+`c7dba72cec2bfa1bc968907da86df4f66531eca2` and the unchanged requirement.
+The five-second notice, cooperative process exit, persistent new PID, executable,
+Mode/language/context and clipboard preferences, icon and untouched official
+VoiceInk all verified. Post-install physical typing latency remains unmeasured
+until the next normal finish; do not call the source change zero-latency proof.
+
 ## 2026-10-27 — Typing finish can wait on presentation and local I/O
 
 Build 469 live typing-only traces explicitly report `network=false` and zero
