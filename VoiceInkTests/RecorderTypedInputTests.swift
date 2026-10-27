@@ -3141,7 +3141,7 @@ struct RecorderTypedInputTests {
         #expect(!editor.contains("toggleRecord("))
         #expect(!editor.contains("CGEvent("))
         let paste = try source("VoiceInk/Paste/CursorPaster.swift")
-        #expect(paste.contains("!RecorderTypingTextView.ownsKeyboard && canPost()"))
+        #expect(paste.contains("!RecorderTypingTextView.ownsKeyboard && requestedCanPost()"))
         let engine = try source("VoiceInk/Transcription/Engine/VoiceInkEngine.swift")
         #expect(engine.contains("RecorderTypingTextView.releaseKeyboardBeforeFinish()\n            active.phase = .transcribing"))
         #expect(engine.contains("session.restoreLiveContextForRetry(liveContextReferences)"))

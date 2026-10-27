@@ -7846,7 +7846,8 @@ struct VoiceInkTests {
             primaryStart.lowerBound..<backgroundStart.lowerBound
         ]
 
-        #expect(primaryBody.contains("startPasteAtCursor(pastedText)"))
+        #expect(primaryBody.contains("await CursorPaster.pasteAtCursorAndWaitUntilPosted(pastedText)"))
+        #expect(!primaryBody.contains("CursorPaster.startPasteAtCursor"))
         #expect(primaryBody.contains(
             "Self.primaryCurrentInputSettleNanoseconds"
         ))

@@ -8,6 +8,30 @@ import SwiftUI
 
 @Suite(.serialized)
 struct RecorderResponsivenessTests {
+    @Test func typingFinishDoesNotQueueMainActorWorkItAlreadyOwns() throws {
+        let pipeline = try source("VoiceInk/Transcription/Engine/TranscriptionPipeline.swift")
+        #expect(pipeline.contains("private let archivePrompt: @MainActor (String, UUID) async throws -> URL"))
+        let archiveStart = try #require(pipeline.range(of: "archivePrompt: @escaping @MainActor"))
+        let archiveEnd = try #require(pipeline.range(of: "currentPromptRecipient:", range: archiveStart.upperBound..<pipeline.endIndex))
+        let archive = pipeline[archiveStart.lowerBound..<archiveEnd.lowerBound]
+        #expect(!archive.contains("await MainActor.run"))
+        // Heavy scope/file work must still leave the UI actor.
+        #expect(archive.contains("await CodexConversationContextReader.selectionThreadIDs"))
+        #expect(archive.contains("await AgentFlowPromptArchive.save"))
+
+        let paster = try source("VoiceInk/Paste/CursorPaster.swift")
+        let directStart = try #require(paster.range(of: "static func pasteAtCursorAndWaitUntilPosted("))
+        let directEnd = try #require(paster.range(of: "private static func performPasteSession(", range: directStart.upperBound..<paster.endIndex))
+        let direct = paster[directStart.lowerBound..<directEnd.lowerBound]
+        #expect(direct.contains("await performPasteSession"))
+        #expect(!direct.contains("startPasteAtCursor("))
+        #expect(!direct.contains("Task {"))
+        // Both entry points retain the local typing-HUD veto; faster delivery
+        // must never paste a previous result into a newer Agent Flow editor.
+        let shared = paster[directEnd.lowerBound...]
+        #expect(shared.contains("!RecorderTypingTextView.ownsKeyboard && requestedCanPost()"))
+    }
+
     @Test @MainActor func finishedHUDDoesNotReadHiddenContextForVisibility() {
         let probe = FinishedHUDContextProbe()
         for state in [RecordingState.transcribing, .enhancing, .idle, .busy] {

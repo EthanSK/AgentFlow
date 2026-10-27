@@ -152,26 +152,28 @@ class CursorPaster {
         return Task { @MainActor in
             let queueMs = Date().timeIntervalSince(queuedAt) * 1_000
             logger.info("Foreground paste worker started queueMs=\(queueMs, privacy: .public)")
-            // A previous Primary result may finish during a newer recording.
-            // Never feed it into our own authored-input HUD. This is only a local
-            // responder guard, not saved-app capture, AX routing or focus repair;
-            // refusal keeps the text on the clipboard and uses normal error handling.
-            return await performPasteSession(text, canPost: {
-                !RecorderTypingTextView.ownsKeyboard && canPost()
-            })
+            return await performPasteSession(text, canPost: canPost)
         }
     }
 
     @MainActor
     static func pasteAtCursorAndWaitUntilPosted(_ text: String) async -> PasteResult {
-        await startPasteAtCursor(text).value
+        // An already-awaited Primary paste needs no new Task/main-run-loop turn.
+        // Keep the same FIFO lease, own-HUD guard and one system-focused Cmd-V.
+        await performPasteSession(text, canPost: { true })
     }
 
     @MainActor
     private static func performPasteSession(
         _ text: String,
-        canPost: @escaping @MainActor () -> Bool
+        canPost requestedCanPost: @escaping @MainActor () -> Bool
     ) async -> PasteResult {
+        // Refactor of the existing startPasteAtCursor responder guard: both
+        // queued and directly awaited entry points must reject our own typing HUD.
+        // This is local responder safety, never AX targeting or focus repair.
+        let canPost: @MainActor () -> Bool = {
+            !RecorderTypingTextView.ownsKeyboard && requestedCanPost()
+        }
         let preparationStarted = Date()
         let pasteboard = NSPasteboard.general
         let shouldRestoreClipboard = UserDefaults.standard.bool(forKey: "restoreClipboardAfterPaste")

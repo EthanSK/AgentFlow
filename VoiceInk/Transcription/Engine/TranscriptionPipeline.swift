@@ -97,7 +97,7 @@ class TranscriptionPipeline {
     private let serviceRegistry: TranscriptionServiceRegistry
     private let enhancementService: AIEnhancementService?
     private let delivery: any TranscriptionDelivering
-    private let archivePrompt: (String, UUID) async throws -> URL
+    private let archivePrompt: @MainActor (String, UUID) async throws -> URL
     private let currentPromptRecipient: () -> AgentFlowPromptPreview.Recipient
     private let copyCompletedText: (String) -> Bool
     private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "TranscriptionPipeline")
@@ -110,23 +110,34 @@ class TranscriptionPipeline {
         serviceRegistry: TranscriptionServiceRegistry,
         enhancementService: AIEnhancementService?,
         delivery: (any TranscriptionDelivering)? = nil,
-        archivePrompt: @escaping (String, UUID) async throws -> URL = { text, id in
+        archivePrompt: @escaping @MainActor (String, UUID) async throws -> URL = { text, id in
             // Presentation scope only, using existing app-owned selected-view
             // logs. Never capture/resolve an AX input or turn this into a Primary
             // destination. Multiple visible panes are ambiguous, not a guessed chat.
+            // The pipeline already owns MainActor. Keep the app snapshot
+            // here instead of hopping to a generic async executor and queueing
+            // MainActor.run again. Log scanning and file writes still use workers.
             let recipientStarted = Date()
-            let processID = await MainActor.run { () -> pid_t? in
+            var frontmostMs = 0.0
+            var appMetadataMs = 0.0
+            var hostCheckMs = 0.0
+            let processID: pid_t? = {
                 let frontmost = NSWorkspace.shared.frontmostApplication
+                let frontmostFinished = Date()
+                frontmostMs = frontmostFinished.timeIntervalSince(recipientStarted) * 1_000
                 // The typing HUD may own focus. Reuse its already maintained
                 // external-app indicator, not a recording-start input or new AX
                 // probe. A real external app switch still overrides that indicator.
                 let app = frontmost?.bundleIdentifier == Bundle.main.bundleIdentifier
                     ? ActiveWindowService.shared.currentApplication : frontmost
+                let metadataFinished = Date()
+                appMetadataMs = metadataFinished.timeIntervalSince(frontmostFinished) * 1_000
+                defer { hostCheckMs = Date().timeIntervalSince(metadataFinished) * 1_000 }
                 guard let app, !app.isTerminated,
                       CodexConversationContextReader.isSupportedCodexApplication(app, fileManager: .default)
                 else { return nil }
                 return app.processIdentifier
-            }
+            }()
             let scopeStarted = Date()
             let ids = if let processID {
                 await CodexConversationContextReader.selectionThreadIDs(processIdentifier: processID)
@@ -134,7 +145,7 @@ class TranscriptionPipeline {
             let recipientMs = scopeStarted.timeIntervalSince(recipientStarted) * 1_000
             let scopeMs = Date().timeIntervalSince(scopeStarted) * 1_000
             Logger(subsystem: "com.ethansk.VoiceInkPlusPlus", category: "VIPPDebug").info(
-                "prompt preparation: recipientMs=\(recipientMs, privacy: .public) scopeMs=\(scopeMs, privacy: .public) candidateCount=\(ids.count, privacy: .public)")
+                "prompt preparation: recipientMs=\(recipientMs, privacy: .public) frontmostMs=\(frontmostMs, privacy: .public) appMetadataMs=\(appMetadataMs, privacy: .public) hostCheckMs=\(hostCheckMs, privacy: .public) scopeMs=\(scopeMs, privacy: .public) candidateCount=\(ids.count, privacy: .public)")
             let chatID = ids.count == 1 ? ids[0] : nil
             return try await AgentFlowPromptArchive.save(text, recordID: id, chatID: chatID)
         },

@@ -779,10 +779,10 @@ final class TranscriptionDelivery: TranscriptionDelivering {
         onQueuedAutoSendIssued: @escaping () -> Void
     ) async {
         vippLog.info("paste: primary current-input compatibility selected exactCaptureRequired=false appSpecificDelivery=false")
-        let pasteTask = CursorPaster.startPasteAtCursor(pastedText)
         defer { FocusLockService.shared.clearLock() }
-
-        let pasteResult = await pasteTask.value
+        // Primary already awaits this MainActor operation. Do not create a new
+        // queued Task only to await it; a busy HUD can delay that extra turn.
+        let pasteResult = await CursorPaster.pasteAtCursorAndWaitUntilPosted(pastedText)
         vippLog.info("paste: primary current-input command completed result=\(String(describing: pasteResult), privacy: .public) frontmostPid=\(NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1, privacy: .public)")
         switch pasteResult {
         case .actionGuardRefused, .commandNotPosted:
