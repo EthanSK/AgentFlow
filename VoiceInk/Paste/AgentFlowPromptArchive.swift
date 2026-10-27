@@ -3,6 +3,7 @@ import CryptoKit
 import Darwin
 import Foundation
 import ImageIO
+import os
 
 /// Full prompts are durable user documents, not temporary pasteboard payloads.
 /// Write and sync before handing out a path; never overwrite or auto-expire them.
@@ -19,8 +20,11 @@ enum AgentFlowPromptArchive {
 
     static func save(_ text: String, recordID: UUID, chatID: String? = nil) async throws -> URL {
         let destination = directory
-        return try await Task.detached(priority: .utility) {
+        // The user is waiting for a valid clickable prompt, not idle maintenance.
+        return try await Task.detached(priority: .userInitiated) {
+            let started = Date()
             let file = try write(text, recordID: recordID, directory: destination)
+            let canonicalFinished = Date()
             // Reserve once after the canonical prompt is durable. The archived
             // viewer retains this start; reopen/copy never advances the cursor.
             let start = AuthoredTextRainbow.reserveViewerStartIndex(chatID: chatID,
@@ -28,6 +32,10 @@ enum AgentFlowPromptArchive {
             // A human-readable companion is optional. Its failure must never
             // invalidate the complete durable prompt or stop a normal paste.
             try? writeViewer(text, for: file, rainbowStartIndex: start)
+            let canonicalMs = canonicalFinished.timeIntervalSince(started) * 1_000
+            let viewerMs = Date().timeIntervalSince(canonicalFinished) * 1_000
+            Logger(subsystem: "com.ethansk.VoiceInkPlusPlus", category: "VIPPDebug").info(
+                "prompt archive stages: canonicalMs=\(canonicalMs, privacy: .public) viewerMs=\(viewerMs, privacy: .public)")
             return file
         }.value
     }

@@ -1830,6 +1830,7 @@ struct RecorderTypedInputTests {
         }
         #expect(record.transcriptionStatus == TranscriptionStatus.completed.rawValue)
         #expect(audio.transcriptionCalls == (speech.isEmpty ? 0 : 1))
+        if speech.isEmpty { #expect(record.duration == 0) }
         if clipboardOnly {
             let reachedQueue = lateShift && lateShiftStage == "lease"
             #expect(targets == (reachedQueue ? 1 : 0) && leases == (reachedQueue ? 1 : 0))

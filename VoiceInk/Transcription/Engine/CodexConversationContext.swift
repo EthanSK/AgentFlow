@@ -36,7 +36,7 @@ enum CodexConversationContextPolicy {
     /// identity when another chat is also visible. No selected text is needed.
     static func visibleSelectionThreadIDs(from logText: String) -> [String] {
         var active: [String: Set<String>] = [:]
-        let events = logText.split(separator: "\n").filter { rawLine in
+        let events = selectionActivityLines(in: logText).filter { rawLine in
             // Native logs also echo tool arguments and message text. Only an
             // actual activity event may supply source metadata; finding its name
             // inside quoted words would attribute the selection to their content.
@@ -47,7 +47,7 @@ enum CodexConversationContextPolicy {
                                   options: .regularExpression) != nil else { return false }
             return prefix.count == 1 || Array(prefix.dropFirst()) == ["info"]
                 || Array(prefix.dropFirst()) == ["info", "[electron-message-handler]"]
-        }.map(String.init).sorted()
+        }.sorted()
         for line in events {
             guard (line.contains("rendererWindowAppearance=primary")
                     || line.contains("rendererWindowAppearance=hotkeyWindowThread")),
@@ -67,6 +67,50 @@ enum CodexConversationContextPolicy {
             return []
         }
         return ids.sorted()
+    }
+
+    /// Search the bounded buffer once, then materialize only candidate event lines.
+    /// Foundation's Unicode search on every unrelated line delayed typing finish
+    /// just to choose a viewer colour offset. Keep the same prefix validation and
+    /// event ordering; these IDs remain presentation/source labels, never paste authority.
+    private static func selectionActivityLines(in text: String) -> [String] {
+        let raw = text as NSString
+        var lines: [String] = []
+        var scan = 0
+        while scan < raw.length {
+            let marker = raw.range(of: "thread_stream_view_activity_changed ", options: .literal,
+                range: NSRange(location: scan, length: raw.length - scan))
+            guard marker.location != NSNotFound else { break }
+            var start = 0
+            var before = marker.location
+            while before > 0 {
+                let newline = raw.range(of: "\n", options: .backwards,
+                    range: NSRange(location: 0, length: before))
+                guard newline.location != NSNotFound else { break }
+                // Match String.split(separator: "\n"): CRLF is one Character,
+                // not a standalone LF separator. Preserve that existing policy.
+                if newline.location == 0 || raw.character(at: newline.location - 1) != 0x0D {
+                    start = NSMaxRange(newline)
+                    break
+                }
+                before = newline.location
+            }
+            var end = raw.length
+            var after = NSMaxRange(marker)
+            while after < raw.length {
+                let newline = raw.range(of: "\n", options: .literal,
+                    range: NSRange(location: after, length: raw.length - after))
+                guard newline.location != NSNotFound else { break }
+                if newline.location == 0 || raw.character(at: newline.location - 1) != 0x0D {
+                    end = newline.location
+                    break
+                }
+                after = NSMaxRange(newline)
+            }
+            lines.append(raw.substring(with: NSRange(location: start, length: end - start)))
+            scan = end < raw.length ? end + 1 : raw.length
+        }
+        return lines
     }
 
     // These limits are app choices, not an OpenAI-recommended conversation size. Proven
@@ -453,17 +497,13 @@ enum CodexConversationContextReader {
 
         let matchingURLs = candidateURLs.filter {
             $0.pathExtension == "log" && $0.lastPathComponent.contains(pidMarker)
-        }.filter {
-            ((try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) > 0
+        }.compactMap { url -> (url: URL, modified: Date)? in
+            guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
+                  (values.fileSize ?? 0) > 0 else { return nil }
+            return (url, values.contentModificationDate ?? .distantPast)
         }
-
-        return matchingURLs.sorted {
-            let left = try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-            let right = try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-            let leftDate = left ?? Date.distantPast
-            let rightDate = right ?? Date.distantPast
-            return leftDate > rightDate
-        }
+        // Read each file's metadata once, not on every sort comparison.
+        return matchingURLs.sorted { $0.modified > $1.modified }.map(\.url)
     }
 
     private static func rolloutURL(

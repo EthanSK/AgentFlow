@@ -114,6 +114,7 @@ class TranscriptionPipeline {
             // Presentation scope only, using existing app-owned selected-view
             // logs. Never capture/resolve an AX input or turn this into a Primary
             // destination. Multiple visible panes are ambiguous, not a guessed chat.
+            let recipientStarted = Date()
             let processID = await MainActor.run { () -> pid_t? in
                 let frontmost = NSWorkspace.shared.frontmostApplication
                 // The typing HUD may own focus. Reuse its already maintained
@@ -126,9 +127,14 @@ class TranscriptionPipeline {
                 else { return nil }
                 return app.processIdentifier
             }
+            let scopeStarted = Date()
             let ids = if let processID {
                 await CodexConversationContextReader.selectionThreadIDs(processIdentifier: processID)
             } else { [String]() }
+            let recipientMs = scopeStarted.timeIntervalSince(recipientStarted) * 1_000
+            let scopeMs = Date().timeIntervalSince(scopeStarted) * 1_000
+            Logger(subsystem: "com.ethansk.VoiceInkPlusPlus", category: "VIPPDebug").info(
+                "prompt preparation: recipientMs=\(recipientMs, privacy: .public) scopeMs=\(scopeMs, privacy: .public) candidateCount=\(ids.count, privacy: .public)")
             let chatID = ids.count == 1 ? ids[0] : nil
             return try await AgentFlowPromptArchive.save(text, recordID: id, chatID: chatID)
         },
@@ -552,7 +558,14 @@ class TranscriptionPipeline {
             }
             let cleanedText = text
 
-            let actualDuration = await AudioFileMetadata.duration(for: audioURL)
+            // Typing still owns a recovery WAV, but no audio was captured. Do not
+            // ask AVFoundation to open that empty file before delivering typed words.
+            let metadataStarted = Date()
+            let actualDuration = if hasCapturedAudio {
+                await AudioFileMetadata.duration(for: audioURL)
+            } else { TimeInterval.zero }
+            let metadataMs = Date().timeIntervalSince(metadataStarted) * 1_000
+            vippLog.info("pipeline: audio metadata captured=\(hasCapturedAudio, privacy: .public) elapsedMs=\(metadataMs, privacy: .public)")
 
             transcription.text = cleanedText
             transcription.duration = actualDuration

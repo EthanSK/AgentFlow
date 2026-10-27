@@ -148,12 +148,15 @@ class CursorPaster {
         _ text: String,
         canPost: @escaping @MainActor () -> Bool = { true }
     ) -> Task<PasteResult, Never> {
-        Task { @MainActor in
+        let queuedAt = Date()
+        return Task { @MainActor in
+            let queueMs = Date().timeIntervalSince(queuedAt) * 1_000
+            logger.info("Foreground paste worker started queueMs=\(queueMs, privacy: .public)")
             // A previous Primary result may finish during a newer recording.
             // Never feed it into our own authored-input HUD. This is only a local
             // responder guard, not saved-app capture, AX routing or focus repair;
             // refusal keeps the text on the clipboard and uses normal error handling.
-            await performPasteSession(text, canPost: {
+            return await performPasteSession(text, canPost: {
                 !RecorderTypingTextView.ownsKeyboard && canPost()
             })
         }
@@ -169,13 +172,19 @@ class CursorPaster {
         _ text: String,
         canPost: @escaping @MainActor () -> Bool
     ) async -> PasteResult {
+        let preparationStarted = Date()
         let pasteboard = NSPasteboard.general
         let shouldRestoreClipboard = UserDefaults.standard.bool(forKey: "restoreClipboardAfterPaste")
         let sessionID = UUID().uuidString
         let transactionID = UUID()
         let wasQueued = foregroundPasteCoordinator.activeLeaseID != nil
+        let preparedAt = Date()
         await foregroundPasteCoordinator.acquire(transactionID)
+        let acquiredAt = Date()
         var savedContents = shouldRestoreClipboard ? originalClipboardContents(on: pasteboard) : []
+        let setupMs = preparedAt.timeIntervalSince(preparationStarted) * 1_000
+        let waitMs = acquiredAt.timeIntervalSince(preparedAt) * 1_000
+        let snapshotMs = Date().timeIntervalSince(acquiredAt) * 1_000
         var settlementNanoseconds: UInt64 = 0
         defer {
             // Keep every VoiceInk foreground paste mutation FIFO. A successful Cmd-V
@@ -187,7 +196,7 @@ class CursorPaster {
                 settlementNanoseconds: settlementNanoseconds
             )
         }
-        logger.info("Foreground pasteboard transaction acquired queued=\(wasQueued, privacy: .public) waiting=\(foregroundPasteCoordinator.waitingCount, privacy: .public) textChars=\(text.count, privacy: .public)")
+        logger.info("Foreground pasteboard transaction acquired queued=\(wasQueued, privacy: .public) waiting=\(foregroundPasteCoordinator.waitingCount, privacy: .public) textChars=\(text.count, privacy: .public) setupMs=\(setupMs, privacy: .public) waitMs=\(waitMs, privacy: .public) snapshotMs=\(snapshotMs, privacy: .public)")
 
         var finalLease: ForegroundPasteboardLease?
         var commandResult: PasteCommandResult = .commandNotPosted
