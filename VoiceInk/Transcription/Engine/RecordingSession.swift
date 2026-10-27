@@ -629,9 +629,9 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
 
     // Four-key stop has a separate, exact-session late-Shift decision. The
     // Primary click policy must still freeze before processing, but a typing
-    // stop must not lose its second chance merely because its provider is fast.
-    // Keep this open through preparation/queue waiting, with half a second from
-    // stop for a human to release the chord and tap Shift on a typed-only result.
+    // stop keeps its second chance through genuine preparation/queue waiting.
+    // Ethan asked to "paste instantly": reserve no extra reaction interval.
+    // Shift can still choose Won't paste before the irreversible output boundary.
     // Only the irreversible-action boundary may seal it; never undo a paste.
     private var typingClipboardDeadline: ContinuousClock.Instant?
     private(set) var typingClipboardOnlySelected = false
@@ -641,7 +641,7 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
             && (phase == .transcribing || phase == .delivering)
     }
 
-    func armTypingClipboardOnlyCompletion(minimumInterval: TimeInterval = 0.5) {
+    func armTypingClipboardOnlyCompletion(minimumInterval: TimeInterval = 0) {
         guard phase == .recording, !shouldCancel else { return }
         typingClipboardOnlySelected = false
         typingClipboardDeadline = ContinuousClock.now.advanced(by: .seconds(max(0, minimumInterval)))
@@ -658,10 +658,11 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
 
     /// Read and seal atomically on MainActor immediately before any output
     /// effect (or assistant response request), after all asynchronous waits.
-    /// A preselected result finishes immediately; only a fast result waits
-    /// for the remainder of its bounded human reaction window.
+    /// The production default has no artificial wait. An explicit interval is
+    /// retained for the existing lifecycle tests; it never extends the output cutoff.
     func commitTypingCompletion() async -> Bool {
-        if let deadline = typingClipboardDeadline, !typingClipboardOnlySelected {
+        if let deadline = typingClipboardDeadline, !typingClipboardOnlySelected,
+           ContinuousClock.now < deadline {
             try? await Task.sleep(until: deadline, clock: .continuous)
         }
         typingClipboardDeadline = nil

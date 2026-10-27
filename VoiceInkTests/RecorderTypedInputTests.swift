@@ -1624,13 +1624,11 @@ struct RecorderTypedInputTests {
         #expect(!stopped.selectTypingClipboardOnlyCompletion())
 
         let ordinary = RecordingSession()
-        // Exercise the real half-second finish window as well as the short
-        // late-Shift fixture above; a fast typed result must still wait to seal.
+        // The real finish has no added reaction interval. Genuine preparation
+        // still accepts Shift, as covered by the injected wait fixture above.
         ordinary.armTypingClipboardOnlyCompletion()
         ordinary.phase = .transcribing
-        let started = ContinuousClock.now
         #expect(!(await ordinary.commitTypingCompletion()))
-        #expect(started.duration(to: .now) >= .milliseconds(450))
         #expect(!ordinary.acceptsTypingClipboardOnlyCompletion)
     }
 

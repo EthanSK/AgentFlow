@@ -442,8 +442,9 @@ is not evidence that the receiving field is an AI prompt.
 
 ## 2026-10-01 — Reusing the early Primary freeze for late typing Shift — REJECTED
 
-Timing override, user-requested 2026-10-27: retain this lifecycle separation but
-use the current half-second minimum instead of the historical one second below.
+Timing override, user-requested 2026-10-27: retain this lifecycle separation with
+no artificial reaction interval. The user superseded both one-second and
+half-second minimums with instant finish; the historical timing below is inactive.
 
 **Failure:** The standalone Shift second-chance handler used
 `acceptsCompletionDispositionChanges`. The provider-boundary freeze closes that

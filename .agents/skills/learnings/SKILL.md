@@ -353,8 +353,9 @@ Primary/Next and shared-monitor guards. See LEARNINGS.md, “Late Shift belongs 
 to the exact four-key-stopped result”.
 User-requested timing correction — 2026-10-01: keep a separate typing-stop
 choice open through formatting, archiving and the asynchronous delivery-queue
-wait, with at least half a second from stop for fast typed-only results. Ethan
-halved the former one-second window on 2026-10-27. Primary's
+wait, without an artificial reaction interval. Ethan superseded the one-second
+and half-second windows with "make it paste instantly" on 2026-10-27. Late Shift
+may select Won't paste only while genuine preparation/queue work is pending. Primary's
 earlier completion-policy freeze is not this cutoff. Seal/read the choice
 atomically after the queue wait, before paste/Return/custom commands, or before
 a Respond request starts; recheck cancellation/lineage after any grace wait.

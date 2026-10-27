@@ -1,6 +1,19 @@
 # Learnings
 
+## 2026-10-27 — Remove the typing-finish reaction delay entirely
+
+Ethan superseded the half-second request before candidate 467 was installed:
+"actually just make it paste instantly". Production typing finish now reserves
+zero extra reaction time. Standalone Shift can still choose the exact stopped
+session's Won't paste result during genuine formatting/archive/queue work, and
+the irreversible-action cutoff remains unchanged. Retain no guaranteed late-Shift
+window and never undo a paste. This is a local finish-policy change, not a
+transcription API/model-delay change. Candidate 467 was canceled; build 468 is
+the replacement. Test and installation qualification remain pending.
+
 ## 2026-10-27 — Half-second late-Shift window on typing finish
+
+Historical source checkpoint only; superseded by the instant-finish request above.
 
 Ethan asked to halve the deliberate one-second typing-finish reaction window.
 `RecordingSession.armTypingClipboardOnlyCompletion` now defaults to 0.5 seconds
