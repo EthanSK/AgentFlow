@@ -13,8 +13,13 @@ Keep the processing spinner's own rotation and normal capture/assistant animatio
 Freeze stopped references and transcript as Sendable values. Assemble recovery XML
 on a user-initiated worker instead of synchronously on MainActor, then join before
 saving History or enqueueing the existing pipeline. Never move capture reads,
-focus, final delivery or model state into that worker. Qualification is pending;
-these are verified source paths, not a measurement of Ethan's physical latency.
+focus, final delivery or model state into that worker. The 150 focused Mini tests
+plus all four mandatory Primary/Next/realtime
+contract guards pass. The native hosted view check verifies the collapsed state
+after one 30 ms display opportunity without moving the bottom edge; it is not a
+measurement of Ethan's physical shortcut latency. Build 469 is signed and staged
+with the unchanged designated requirement; the guarded installer is waiting for
+the current typing session to finish. The preceding build 468 is already running.
 
 ## 2026-10-27 — Remove the typing-finish reaction delay entirely
 
@@ -27,7 +32,9 @@ window and never undo a paste. This is a local finish-policy change, not a
 transcription API/model-delay change. Candidate 467 was canceled; build 468 is
 the replacement. Its immutable source `497eccd4` passed all 764 Mini tests in
 28 suites; Release signing uses the unchanged VoiceInk Local Signing identity.
-Installation and physical keyboard acceptance are recorded separately.
+Build 468 is installed (CDHash `2072c8a6f4c644e3e9e05ea23a571b6741557327`);
+its cooperative quit waited for live work to finish. Physical keyboard feel is
+not established by the automated tests.
 
 ## 2026-10-27 — Half-second late-Shift window on typing finish
 
