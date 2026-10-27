@@ -630,7 +630,7 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     // Four-key stop has a separate, exact-session late-Shift decision. The
     // Primary click policy must still freeze before processing, but a typing
     // stop must not lose its second chance merely because its provider is fast.
-    // Keep this open through preparation/queue waiting, with one second from
+    // Keep this open through preparation/queue waiting, with half a second from
     // stop for a human to release the chord and tap Shift on a typed-only result.
     // Only the irreversible-action boundary may seal it; never undo a paste.
     private var typingClipboardDeadline: ContinuousClock.Instant?
@@ -641,7 +641,7 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
             && (phase == .transcribing || phase == .delivering)
     }
 
-    func armTypingClipboardOnlyCompletion(minimumInterval: TimeInterval = 1) {
+    func armTypingClipboardOnlyCompletion(minimumInterval: TimeInterval = 0.5) {
         guard phase == .recording, !shouldCancel else { return }
         typingClipboardOnlySelected = false
         typingClipboardDeadline = ContinuousClock.now.advanced(by: .seconds(max(0, minimumInterval)))

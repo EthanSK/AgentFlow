@@ -1,5 +1,15 @@
 # Learnings
 
+## 2026-10-27 — Half-second late-Shift window on typing finish
+
+Ethan asked to halve the deliberate one-second typing-finish reaction window.
+`RecordingSession.armTypingClipboardOnlyCompletion` now defaults to 0.5 seconds
+from stop. Keep the existing exact-session late standalone Shift behavior, its
+queue/archive lifetime and its irreversible-action cutoff. This changes neither
+the Primary multi-click intervals nor transcription-model delay. The existing
+fast-result regression now exercises the production default as well as its
+short injected fixture. Native test and installation results remain pending.
+
 ## 2026-10-26 — Remove captured-reference hints from speech recognition
 
 Ethan explicitly rejected the recent feature that sent highlighted context to the
