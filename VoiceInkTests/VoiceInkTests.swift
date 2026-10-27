@@ -7758,11 +7758,17 @@ struct VoiceInkTests {
             encoding: .utf8
         )
         #expect(miniRecorderSource.contains(
-            "stateProvider.showsRealtimeTranscriptHUD"
+            "stateProvider.showsLiveContext"
         ))
         #expect(notchRecorderSource.contains(
-            "stateProvider.showsRealtimeTranscriptHUD"
+            "stateProvider.showsLiveContext"
         ))
+        // Visibility and height now share this gate so stopped cards do not
+        // measure hidden text. Realtime still opens the HUD before any partial.
+        let providerSource = try String(contentsOf: repositoryRoot.appendingPathComponent(
+            "VoiceInk/Views/Recorder/RecorderStateProvider.swift"), encoding: .utf8)
+        #expect(providerSource.contains("var showsLiveContext: Bool"))
+        #expect(providerSource.contains("showsRealtimeTranscriptHUD || canTypeInHUD"))
         #expect(miniRecorderSource.contains("text: stateProvider.partialTranscript"))
         #expect(notchRecorderSource.contains("text: stateProvider.partialTranscript"))
 
