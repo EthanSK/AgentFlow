@@ -8,6 +8,77 @@ import SwiftUI
 
 @Suite(.serialized)
 struct RecorderResponsivenessTests {
+    @Test @MainActor func finishedHUDDoesNotReadHiddenContextForVisibility() {
+        let probe = FinishedHUDContextProbe()
+        for state in [RecordingState.transcribing, .enhancing, .idle, .busy] {
+            probe.recordingState = state
+            #expect(!probe.showsLiveContext)
+        }
+        #expect(probe.referenceReads == 0)
+        probe.recordingState = .recording
+        #expect(probe.showsLiveContext && probe.referenceReads == 1)
+    }
+
+    @Test func finishLayoutSkipsTextMeasurementAndDoesNotFadeLoading() throws {
+        let stacks = try source("VoiceInk/Views/Recorder/RecorderStackView.swift")
+        for session in ["baseSession", "pillSession"] {
+            let gate = try #require(stacks.range(of: "guard let \(session), \(session).showsLiveContext else"))
+            let measured = try #require(stacks.range(of: "MiniRecorderLayoutMetrics.contextHeight(", range: gate.upperBound..<stacks.endIndex))
+            #expect(gate.lowerBound < measured.lowerBound)
+        }
+        let mini = try source("VoiceInk/Views/Recorder/MiniRecorderView.swift")
+        #expect(mini.contains(".animation(stateProvider.recordingState.isProcessing ? nil : .easeInOut(duration: 0.3), value: hasLiveTranscript)"))
+        let notch = try source("VoiceInk/Views/Recorder/NotchRecorderView.swift")
+        #expect(notch.contains("if stateProvider.recordingState.isProcessing { return nil }"))
+        let components = try source("VoiceInk/Views/Recorder/RecorderComponents.swift")
+        #expect(components.contains(".animation(currentState.isProcessing ? nil : .easeInOut(duration: 0.2), value: currentState)"))
+    }
+
+    @Test func stoppedRecoveryFormattingLeavesMainActorBeforeHardwareWait() throws {
+        let engine = try source("VoiceInk/Transcription/Engine/VoiceInkEngine.swift")
+        let stop = try #require(engine.range(of: "            RecorderTypingTextView.releaseKeyboardBeforeFinish()"))
+        let end = try #require(engine.range(of: "            // ── RAPID-SESSION MEDIA OWNERSHIP", range: stop.upperBound..<engine.endIndex))
+        let body = String(engine[stop.lowerBound..<end.lowerBound])
+        let freeze = try #require(body.range(of: "let stoppedReferences = active.liveSelectionReferencesForDelivery"))
+        let worker = try #require(body.range(of: "let recoveryDraft = Task.detached(priority: .userInitiated)"))
+        let hardware = try #require(body.range(of: "await recorder.stopRecording("))
+        let join = try #require(body.range(of: "active.recoverablePartialTranscript = await recoveryDraft.value"))
+        #expect(freeze.lowerBound < worker.lowerBound && worker.lowerBound < hardware.lowerBound)
+        #expect(hardware.lowerBound < join.lowerBound)
+        #expect(body.contains("stoppedReferences, with: stoppedTranscript, includeTiming: true"))
+    }
+
+    @Test @MainActor func miniFinishCollapsesOnFirstUpdateWithoutMovingBottomEdge() async throws {
+        let screen = try #require(NSScreen.main)
+        let session = RecordingSession()
+        session.microphoneOff = true
+        session.updateTypedInput(String(repeating: "Long typed draft with context ", count: 400))
+        let panel = MiniRecorderPanel(contentRect: NSRect(x: 100, y: 100, width: 640, height: 240))
+        let view = MiniRecorderView(stateProvider: session, liveTranscriptHeight: 180, liveTranscriptWidth: 640,
+            recorder: Recorder(), assistantSession: AssistantSession(), onRecordButtonTapped: {},
+            onCloseTapped: {}, onCancelTapped: {}, onAssistantFollowUp: { _ in })
+        let host = NSHostingView(rootView: view)
+        panel.contentView = host
+        panel.setFrame(NSRect(x: screen.frame.minX + 100, y: screen.frame.minY + 100,
+                              width: 640, height: 240), display: true)
+        panel.orderFrontRegardless()
+        defer { panel.orderOut(nil); panel.close() }
+        host.layoutSubtreeIfNeeded()
+        let bottom = panel.frame.minY
+        session.phase = .transcribing
+        session.liveRecordingState = .transcribing
+        // One display opportunity, well below the old 200/300 ms fade/collapse.
+        try await Task.sleep(for: .milliseconds(30))
+        host.layoutSubtreeIfNeeded()
+        let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        let scaleX = CGFloat(bitmap.pixelsWide) / host.bounds.width
+        let scaleY = CGFloat(bitmap.pixelsHigh) / host.bounds.height
+        let oldEditorPixel = try #require(bitmap.colorAt(x: Int(40 * scaleX), y: Int(100 * scaleY)))
+        #expect(oldEditorPixel.alphaComponent < 0.05)
+        #expect(panel.frame.minY == bottom)
+    }
+
     @Test @MainActor func miniRecorderHostedViewRendersFlushAtPhysicalBottom() async throws {
         let screen = try #require(NSScreen.main)
         let scale: CGFloat = 0.85
@@ -475,6 +546,19 @@ struct RecorderResponsivenessTests {
     private func source(_ path: String) throws -> String {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         return try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+    }
+}
+
+@MainActor private final class FinishedHUDContextProbe: RecorderStateProvider {
+    var recordingState = RecordingState.transcribing
+    var partialTranscript = ""
+    var skipPostProcessing = false
+    var pasteDestinationIndicatorTarget: FocusLockService.Target? { nil }
+    var iconActionPulse: RecorderIconActionPulse? { nil }
+    private(set) var referenceReads = 0
+    var liveSelectionReferences: [LiveSelectionReference] {
+        referenceReads += 1
+        return [LiveSelectionReference("selected context")!]
     }
 }
 

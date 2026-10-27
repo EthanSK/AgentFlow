@@ -1,5 +1,21 @@
 # Learnings
 
+## 2026-10-27 — Finish acknowledgement must not lay out hidden context
+
+The Mini and Notch stacks evaluated their transcript-height arguments even after
+capture ended and the transcript/editor was no longer visible. This recreated
+preview/TextKit work on the same actor that had to draw the first loading frame.
+The Mini also animated that collapse for 300 ms and the status changed with a
+separate 200 ms cross-fade. Use the same `showsLiveContext` gate for visibility
+and height calculation, and enter processing without those appearance animations.
+Keep the processing spinner's own rotation and normal capture/assistant animation.
+
+Freeze stopped references and transcript as Sendable values. Assemble recovery XML
+on a user-initiated worker instead of synchronously on MainActor, then join before
+saving History or enqueueing the existing pipeline. Never move capture reads,
+focus, final delivery or model state into that worker. Qualification is pending;
+these are verified source paths, not a measurement of Ethan's physical latency.
+
 ## 2026-10-27 — Remove the typing-finish reaction delay entirely
 
 Ethan superseded the half-second request before candidate 467 was installed:
@@ -9,7 +25,9 @@ session's Won't paste result during genuine formatting/archive/queue work, and
 the irreversible-action cutoff remains unchanged. Retain no guaranteed late-Shift
 window and never undo a paste. This is a local finish-policy change, not a
 transcription API/model-delay change. Candidate 467 was canceled; build 468 is
-the replacement. Test and installation qualification remain pending.
+the replacement. Its immutable source `497eccd4` passed all 764 Mini tests in
+28 suites; Release signing uses the unchanged VoiceInk Local Signing identity.
+Installation and physical keyboard acceptance are recorded separately.
 
 ## 2026-10-27 — Half-second late-Shift window on typing finish
 

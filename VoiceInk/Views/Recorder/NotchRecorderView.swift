@@ -41,10 +41,7 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
         case .recording, .paused:
             // Keep the realtime panel visible before the provider's first partial so
             // a slow Wi-Fi/WebSocket handshake cannot make streaming mode look off.
-            let shouldShowLive = stateProvider.showsRealtimeTranscriptHUD
-                || stateProvider.canTypeInHUD
-                || !stateProvider.liveSelectionReferences.isEmpty
-            return shouldShowLive ? .liveText : .active
+            return stateProvider.showsLiveContext ? .liveText : .active
         case .transcribing, .enhancing:
             return .active
         default:
@@ -147,8 +144,9 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     private let expandAnimation = Animation.spring(response: 0.42, dampingFraction: 0.80)
     private let collapseAnimation = Animation.spring(response: 0.45, dampingFraction: 1.0)
 
-    private var pillAnimation: Animation {
-        displayState == .collapsed ? collapseAnimation : expandAnimation
+    private var pillAnimation: Animation? {
+        if stateProvider.recordingState.isProcessing { return nil }
+        return displayState == .collapsed ? collapseAnimation : expandAnimation
     }
 
     // MARK: - Body

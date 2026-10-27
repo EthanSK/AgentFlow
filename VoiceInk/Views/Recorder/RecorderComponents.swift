@@ -991,7 +991,9 @@ struct RecorderStatusDisplay: View {
                     .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: currentState)
+        // A finish press swaps waveform for loading on this update; keep the
+        // spinner's own rotation, but do not fade the acknowledgement in late.
+        .animation(currentState.isProcessing ? nil : .easeInOut(duration: 0.2), value: currentState)
         .animation(.easeInOut(duration: 0.15), value: completionDisposition)
         .animation(.easeInOut(duration: 0.2), value: realtimeStreamSleeping)
     }

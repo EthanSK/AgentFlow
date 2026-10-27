@@ -8,12 +8,12 @@ import SQLite3
 /// shows only a compact preview; the full captured selection is added to the final
 /// destination message after transcription. It is never sent to the speech-to-text
 /// provider or used to change its prompt while recording.
-struct LiveSelectionReference: Equatable {
+struct LiveSelectionReference: Equatable, Sendable {
     // The durable prompt is the agent's complete input. Neither the HUD nor
     // the short chat bubble may impose a line/character cap on captured text.
     // Individual source transports can still have their own documented limits.
 
-    private enum Source: Equatable {
+    private enum Source: Equatable, Sendable {
         case codex
         case application(name: String, bundleID: String?)
     }
@@ -1041,7 +1041,7 @@ enum LiveContextPastePolicy {
 /// Optional Chrome-only enrichment from the same selected DOM range. A failed or
 /// blocked Apple Event is not permission to use the clipboard or guess a page.
 enum ChromeSelectionContextReader {
-    struct Context: Equatable {
+    struct Context: Equatable, Sendable {
         let selectedText: String
         let pageURL: String
         let pageTitle: String?

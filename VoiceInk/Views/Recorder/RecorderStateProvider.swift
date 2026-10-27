@@ -50,6 +50,13 @@ protocol RecorderStateProvider: AnyObject {
 }
 
 extension RecorderStateProvider {
+    // The editor disappears at finish. Do not measure its now-hidden transcript
+    // while showing the loading card; all mirrored layouts use this same gate.
+    var showsLiveContext: Bool {
+        (recordingState.isRecordingOrPaused || canTypeInHUD)
+            && (showsRealtimeTranscriptHUD || canTypeInHUD || !liveSelectionReferences.isEmpty)
+    }
+
     // Microphone-off typing can retain the recording state and the sleeping socket.
     // Its badge must not claim that microphone recording continues in that state.
     var showsRealtimeStreamSleepingBadge: Bool {

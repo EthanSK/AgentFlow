@@ -43,10 +43,7 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     // Realtime mode owns this panel immediately. LiveTranscriptView renders the
     // empty-state ellipsis, which never becomes speech or final delivery text.
     private var hasLiveTranscript: Bool {
-        (stateProvider.recordingState.isRecordingOrPaused || stateProvider.canTypeInHUD)
-            && (stateProvider.showsRealtimeTranscriptHUD
-                || stateProvider.canTypeInHUD
-                || !stateProvider.liveSelectionReferences.isEmpty)
+        stateProvider.showsLiveContext
     }
 
     private var hasAssistantResponse: Bool {
@@ -234,7 +231,9 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: hasLiveTranscript || hasAssistantResponse ? expandedCornerRadius : compactCornerRadius, style: .continuous))
-        .animation(.easeInOut(duration: 0.3), value: hasLiveTranscript)
+        // Finish must visibly acknowledge the first press, not first shrink the
+        // editor and cross-fade its loading indicator over another 300 ms.
+        .animation(stateProvider.recordingState.isProcessing ? nil : .easeInOut(duration: 0.3), value: hasLiveTranscript)
         .animation(.easeInOut(duration: 0.3), value: hasAssistantResponse)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
     }

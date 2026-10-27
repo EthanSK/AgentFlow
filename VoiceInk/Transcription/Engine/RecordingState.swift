@@ -15,4 +15,8 @@ enum RecordingState: Equatable {
     var isRecordingOrPaused: Bool {
         self == .recording || self == .paused
     }
+
+    var isProcessing: Bool {
+        self == .transcribing || self == .enhancing
+    }
 }

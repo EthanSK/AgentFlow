@@ -1026,26 +1026,34 @@ class VoiceInkEngine: NSObject, ObservableObject {
             active.phase = .transcribing
             active.liveRecordingState = .transcribing
             active.endLiveSelectionCapture()
-            // Finish is still owned by this session. Let an in-flight mic enable
-            // settle before closing its WAV or releasing the shared recorder.
-            await active.waitForMicrophoneTransition()
             // Realtime remains HUD-only while capture is live. At the irreversible
             // stop boundary, however, persist the last HUD text beside the original
             // WAV before starting asynchronous finalization. This is local recovery
             // state only: it never creates or mutates a destination-app draft. A
             // genuine Primary double-click therefore leaves a reopenable draft even
             // if the provider or app exits before the final clipboard result arrives.
-            active.recoverablePartialTranscript = LiveSelectionReference.interleaving(
-                active.liveSelectionReferencesForDelivery, with: active.partialTranscript,
-                includeTiming: true
-            )
+            // Freeze value snapshots before yielding. Building full recovery XML
+            // can include large selections; it must not block the first loading
+            // frame or recalculate from a newer recording's state. The single
+            // existing pipeline still owns final delivery, after recovery saves.
+            let stoppedReferences = active.liveSelectionReferencesForDelivery
+            let stoppedTranscript = active.partialTranscript
+            let recoveryDraft = Task.detached(priority: .userInitiated) {
+                LiveSelectionReference.interleaving(
+                    stoppedReferences, with: stoppedTranscript, includeTiming: true
+                )
+            }
             active.partialTranscript = ""
             active.startID = UUID() // invalidate the start handshake token (it has fully started)
             recomputeDerivedState()
 
+            // Finish is still owned by this session. Let an in-flight mic enable
+            // settle before closing its WAV or releasing the shared recorder.
+            await active.waitForMicrophoneTransition()
             await recorder.stopRecording(
                 playbackDisposition: stopPlaybackDisposition
             )
+            active.recoverablePartialTranscript = await recoveryDraft.value
             // ── RAPID-SESSION MEDIA OWNERSHIP ──
             // System-output unmute and playback restoration are intentionally separate.
             // PlaybackController retains the exact paused source under recording-scoped

@@ -138,7 +138,9 @@ struct MiniRecorderStackView: View {
     }
 
     private var liveTranscriptHeight: CGFloat {
-        guard let baseSession else { return MiniRecorderLayoutMetrics.liveTranscriptHeight }
+        guard let baseSession, baseSession.showsLiveContext else {
+            return MiniRecorderLayoutMetrics.liveTranscriptHeight
+        }
         let parts = baseSession.liveContextPreviewParts
         return MiniRecorderLayoutMetrics.contextHeight(
             parts: parts,
@@ -152,9 +154,7 @@ struct MiniRecorderStackView: View {
         if assistantSession.isVisible {
             return min(MiniRecorderLayoutMetrics.assistantPanelHeight, maximumContextHeight) + 41
         }
-        if let baseSession,
-           (baseSession.liveRecordingState.isRecordingOrPaused || baseSession.canTypeInHUD),
-           baseSession.showsRealtimeTranscriptHUD || baseSession.canTypeInHUD || !baseSession.liveSelectionReferences.isEmpty {
+        if let baseSession, baseSession.showsLiveContext {
             return liveTranscriptHeight + 41
         }
         return MiniRecorderLayoutMetrics.controlBarHeight
@@ -332,7 +332,9 @@ struct NotchRecorderStackView: View {
     }
 
     private var liveTranscriptHeight: CGFloat {
-        guard let pillSession else { return MiniRecorderLayoutMetrics.liveTranscriptHeight }
+        guard let pillSession, pillSession.showsLiveContext else {
+            return MiniRecorderLayoutMetrics.liveTranscriptHeight
+        }
         return MiniRecorderLayoutMetrics.contextHeight(
             parts: pillSession.liveContextPreviewParts,
             typedText: pillSession.canTypeInHUD ? pillSession.typedInput : nil,
@@ -345,9 +347,7 @@ struct NotchRecorderStackView: View {
         let pill: CGFloat
         if assistantSession.isVisible {
             pill = notchHeight + 6 + min(320, maximumContextHeight)
-        } else if let session = pillSession,
-                  (session.liveRecordingState.isRecordingOrPaused || session.canTypeInHUD),
-                  session.showsRealtimeTranscriptHUD || session.canTypeInHUD || !session.liveSelectionReferences.isEmpty {
+        } else if let session = pillSession, session.showsLiveContext {
             pill = notchHeight + 6 + liveTranscriptHeight + 1
         } else {
             pill = notchHeight + 6
