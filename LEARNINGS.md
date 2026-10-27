@@ -1,5 +1,49 @@
 # Learnings
 
+## 2026-10-27 — Typing finish can wait on presentation and local I/O
+
+Build 469 live typing-only traces explicitly report `network=false` and zero
+transcription time, but stop → pipeline still took about 273 ms. The interval
+from that zero-audio branch to prompt archive completion took 1.56–1.70 s;
+clipboard preparation then took 240–256 ms before the established 130 ms paste
+keystroke sequence. These are measured intervals, not proof that one sub-step
+caused the entire interval. A refused paste during a newer HUD typing session
+is the intended local responder guard, not evidence that the provider failed.
+
+The archive closure awaited a bounded Codex log scan solely for its per-chat
+viewer colour cursor. Build 470 searches the buffer for activity-event lines
+before applying the unchanged native-prefix, timestamp, UUID, visibility and
+multi-pane ambiguity policy. It reads each file's metadata once before sorting,
+keeps the same four 2 MiB tails, and neither caches stale scope nor adds polling.
+A frozen build-469 parser in the tests checks equivalence, including quoted
+markers, inactive panes, window ambiguity, CRLF and large Unicode buffers.
+
+On the Mini, the exact Release-optimized scanner benchmark reduced 8.3 MB ASCII
+buffers from 231–237 ms to about 10 ms; 8.9 MB Unicode buffers fell from
+245–253 ms to 31–43 ms. A per-line `contains` prefilter alone stayed around
+226–252 ms and did not remove the repeated work. These synthetic measurements
+are not a measured end-to-end MacBook improvement.
+
+Typing-only runs now skip the unused empty-WAV duration read. The archive worker
+uses userInitiated priority because the user is waiting for its files; canonical
+and HTML durability, working links and rainbow scope remain intact. Timing-only
+logs split recipient lookup, scope lookup, archive writes and paste scheduling /
+clipboard setup without storing message contents. No process-wide niceness or
+latencyCritical assertion was added: the live process had nice 0, while the
+existing capture queues and app-lifetime App Nap prevention already applied.
+The 247 focused and nine paste/route checks passed. The first full gate caught
+a stale source guard expecting synchronous recovery XML from before build 469;
+the corrected guard proves snapshot → worker → join → durable save → enqueue.
+The first command also included an unrelated UI target that could not initialize
+automation; the final native gate explicitly selects VoiceInkTests only. The
+final exact-source native gate passed all 770 unit tests in 28 suites.
+Signed build 470 is installed with CDHash
+`f896140e2495ae25cd0f2035beedd560440939bc` and the unchanged signing
+requirement. Cooperative termination, exact executable, Mode/language/context
+settings, clipboard preferences, icon and official VoiceInk preservation verified.
+The post-install process is persistent with nice 0 and active App Nap protection.
+No post-install physical typing-to-paste timing is claimed before a normal run.
+
 ## 2026-10-27 — Finish acknowledgement must not lay out hidden context
 
 The Mini and Notch stacks evaluated their transcript-height arguments even after

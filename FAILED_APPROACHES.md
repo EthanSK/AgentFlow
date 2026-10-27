@@ -1,5 +1,18 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-10-27 — A per-line contains check did not speed up Codex scope parsing
+
+**Mechanism:** Add `rawLine.contains(activityMarker)` before the existing
+Foundation range lookup on every line of the bounded Codex log tails.
+**Observed result:** On the Mini's Release-optimized 8.3 / 8.9 MB synthetic logs,
+this still took roughly 226–252 ms, similar to the original 231–253 ms. It did
+not remove the repeated unrelated-line work. Searching the whole buffer for
+candidate marker lines first took 10–43 ms with equivalent scope results.
+**Use instead:** Keep strict native-prefix and ambiguity checks on the sparse
+candidate lines, unchanged byte limits and no idle polling or stale scope cache.
+**Reconsider only if:** A measured implementation change demonstrates a benefit
+on representative buffers while preserving the frozen parser's scope results.
+
 ## 2026-10-26 — Captured-reference hints are no longer wanted in speech recognition
 
 - **State:** Rejected by Ethan; remove the feature completely, not a disabled flag.
