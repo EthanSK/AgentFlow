@@ -17,9 +17,11 @@ focus, final delivery or model state into that worker. The 150 focused Mini test
 plus all four mandatory Primary/Next/realtime
 contract guards pass. The native hosted view check verifies the collapsed state
 after one 30 ms display opportunity without moving the bottom edge; it is not a
-measurement of Ethan's physical shortcut latency. Build 469 is signed and staged
-with the unchanged designated requirement; the guarded installer is waiting for
-the current typing session to finish. The preceding build 468 is already running.
+measurement of Ethan's physical shortcut latency. Build 469 is installed (CDHash `11cc78c1d1d31f8257f9f17b77c5f7b3d14fed3d`)
+with the unchanged designated requirement. Its cooperative restart waited for the
+observed active typing draft to finish; no capture was ended by the installer.
+The installed executable, Mode/language/voice-context preferences, icon and
+official VoiceInk copy were independently verified after launch.
 
 ## 2026-10-27 — Remove the typing-finish reaction delay entirely
 
