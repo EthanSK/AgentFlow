@@ -2254,7 +2254,7 @@ struct VoiceInkTests {
             encoding: .utf8
         )
         let snapshot = try #require(source.range(
-            of: "active.recoverablePartialTranscript = LiveSelectionReference.interleaving("
+            of: "let stoppedReferences = active.liveSelectionReferencesForDelivery"
         ))
         let enqueue = try #require(source.range(
             of: "enqueueTranscription(for: active, transcription: transcription)",
@@ -2264,8 +2264,14 @@ struct VoiceInkTests {
 
         // Keyboard prose and source context are part of the recovery draft too;
         // a speech-only snapshot would silently lose them on failure or exit.
-        #expect(stopBody.contains("active.liveSelectionReferencesForDelivery, with: active.partialTranscript"))
+        #expect(stopBody.contains("let stoppedTranscript = active.partialTranscript"))
+        #expect(stopBody.contains("stoppedReferences, with: stoppedTranscript, includeTiming: true"))
         #expect(stopBody.contains("includeTiming: true"))
+
+        let worker = try #require(stopBody.range(of: "let recoveryDraft = Task.detached(priority: .userInitiated)"))
+        let joined = try #require(stopBody.range(of: "active.recoverablePartialTranscript = await recoveryDraft.value"))
+        let saved = try #require(stopBody.range(of: "try modelContext.save()"))
+        #expect(worker.lowerBound < joined.lowerBound && joined.lowerBound < saved.lowerBound)
 
         #expect(stopBody.contains(
             "realtimeDraftText: active.recoverablePartialTranscript"
