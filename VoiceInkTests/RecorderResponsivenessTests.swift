@@ -25,14 +25,23 @@ struct RecorderResponsivenessTests {
                 ("notch", AnyView(NotchRecorderView(stateProvider: session, recorder: recorder,
                     assistantSession: assistant, notchWidth: 180, notchHeight: 32,
                     liveTranscriptHeight: 56, onRecordButtonTapped: {}, onCloseTapped: {},
-                    onCancelTapped: {}, onAssistantFollowUp: { _ in })), 660),
+                    onCancelTapped: {}, onAssistantFollowUp: { _ in })), MiniRecorderLayoutMetrics.liveTranscriptWidth),
                 ("pending", AnyView(TranscribingChip(session: session, style: .mini, onCancel: {})), 200)
             ]
             for (name, view, width) in views {
-                let host = NSHostingView(rootView: view)
-                host.frame = NSRect(x: 0, y: 0, width: width, height: 160)
+                // Fit the full live-context width: a compact 660pt notch host
+                // clips the 1100pt recording layout. A non-key test panel gives
+                // GeometryReader settled window dimensions before pixel capture.
+                let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: width, height: 160),
+                                    styleMask: [.borderless, .nonactivatingPanel],
+                                    backing: .buffered, defer: false)
+                let host = NSHostingView(rootView: view.frame(width: width, height: 160))
+                panel.contentView = host
+                panel.orderFrontRegardless()
+                defer { panel.orderOut(nil); panel.close() }
                 host.layoutSubtreeIfNeeded()
-                try await Task.sleep(for: .milliseconds(100))
+                try await Task.sleep(for: .milliseconds(600))
+                host.layoutSubtreeIfNeeded()
                 let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
                 host.cacheDisplay(in: host.bounds, to: bitmap)
                 let image = try #require(bitmap.representation(using: .png, properties: [:]))

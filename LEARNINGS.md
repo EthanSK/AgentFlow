@@ -1,5 +1,39 @@
 # Learnings
 
+## 2026-10-31 — Remove the secondary app icon without changing delivery
+
+Ethan explicitly removed the recorder's "secondary app icon" because it was
+mostly an unused warning. Build 472 removes the saved-destination indicator
+from Mini, Notch and compact pending-transcription cards. Mini's compact widths
+and both styles' pending-card widths shrink by the removed slot's 26 points.
+The current-focus icon and Primary action pulse remain; it must not imply saved
+Next ownership. Delivery errors, the three destination routes, capture and
+microphone preferences are unchanged. The current UI override supersedes the
+historical mandatory two-icon/locked-outline presentation, not its delivery
+safety contracts. Keep AGENTS, terminology, destinations and the canonical
+learnings skill consistent so a future repair does not restore unwanted UI.
+
+The exact native commit `1d987c0d` compiled as a separate Mini Release candidate.
+All 772 named unit tests in 28 suites passed through Xcode's canonical test
+action, including the Primary, both Next-route and HUD-only streaming guards.
+The test-only screenshot fixture was then corrected and rerun separately: a
+660pt host clipped Notch's 1100pt live-context layout. The corrected single-test
+Xcode run passed, and the final Mini/Notch processing and capture layouts plus
+pending-card images were inspected. Native view screenshots
+must fit the real context width; empty/clipped fixture pixels are not evidence
+of a product regression. These renders do not prove a physical shortcut or
+end-to-end paste interaction.
+
+Signed build 472 is installed at `/Applications/AgentFlow.app` with CDHash
+`b5811f2d0366fbf6f7696945b343196ad06f9fe9`. Stable outer/framework signing,
+deep/strict validity, Automation/audio entitlements, rollback ZIP extraction,
+the real five-second warning, cooperative all-session guarded exit and the
+new persistent executable were verified. Protected preferences, app artwork
+and official `/Applications/VoiceInk.app` stayed unchanged. No active recording
+was interrupted. The existing install-first workflow was followed; the full
+test gate ran after installation, and its later test-fixture edits do not change
+the installed native executable.
+
 ## 2026-10-27 — Separate UI handoff time from actual prompt processing
 
 Build 470's recent successful typing-only trace took 1.260 s from Stop to the
