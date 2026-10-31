@@ -457,18 +457,14 @@ struct TranscribingChip: View {
                 .foregroundColor(.white.opacity(0.82))
                 .lineLimit(1)
 
-            PasteDestinationIndicator(
-                target: session.pasteDestinationIndicatorTarget,
-                context: .pendingPaste
-            ) // A session moved behind a newer recording still owns its target, so its compact chip must keep showing that target until delivery finishes.
-
+            // Pending cards omit the same secondary app/warning icon as the main bar.
             // Per-card cancel — stops THIS session's delivery only; recovery stays local.
             RecorderCancelButton(action: onCancel)
                 .scaleEffect(0.82)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
-        .frame(width: style == .mini ? 184 : 200)
+        .frame(width: style == .mini ? 158 : 174)
         .background(Color.black.opacity(style == .mini ? 1.0 : 0.92))
         .clipShape(RoundedRectangle(cornerRadius: style == .mini ? 16 : 12, style: .continuous))
         .overlay(

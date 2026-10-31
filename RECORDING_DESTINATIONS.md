@@ -1,5 +1,14 @@
 # Recording destination controls (VoiceInk++)
 
+## Current UI override — secondary app icon removed
+
+Ethan requested removal on 2026-10-31 because the secondary icon was mostly an unused
+warning. Mini and notch recorders now show only the current-focus app icon, and
+compact pending cards omit the saved-destination icon too. The old two-slot,
+locked-outline and Next-icon-pulse descriptions below are historical UI contracts.
+This presentation change does not alter capture, paste, Next eligibility, auto-send
+or real delivery-error reporting. The remaining icon never represents a saved target.
+
 ## Current override — original-input capture is unused/off
 
 At Ethan's request on 2026-10-17, candidate build 436 disables the unused

@@ -102,15 +102,6 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
             !assistantSession.isBusy
     }
 
-    private var shouldShowPasteDestinationIndicator: Bool {
-        switch stateProvider.recordingState {
-        case .starting, .recording, .paused, .transcribing, .enhancing:
-            return true
-        case .idle, .busy:
-            return false
-        }
-    }
-
     // Cancel ("X") visibility — mirrors the mini panel: reachable while RECORDING
     // (save a local draft) and while a transcription is IN-FLIGHT (.transcribing/.enhancing,
     // stop before paste) plus the brief .starting handshake. Hidden at .idle/.busy.
@@ -256,15 +247,7 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                 )
                     .padding(.leading, 8)
 
-                if shouldShowPasteDestinationIndicator {
-                    PasteDestinationIndicator(
-                        target: stateProvider.pasteDestinationIndicatorTarget,
-                        context: stateProvider.recordingState == .starting || stateProvider.recordingState.isRecordingOrPaused ? .nextTrackStop : .pendingPaste,
-                        actionPulseID: stateProvider.lockedDestinationIconActionPulseID
-                    ) // Mirrors the mini capsule and stays attached to this session until paste succeeds or visibly fails.
-                        .padding(.leading, 8)
-                        .transition(.opacity)
-                }
+                // Match the mini bar: Ethan no longer wants the secondary app/warning icon.
             }
             .padding(.trailing, sideEdgePadding)
             .frame(width: sideExpansion)

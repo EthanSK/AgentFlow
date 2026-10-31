@@ -8,6 +8,40 @@ import SwiftUI
 
 @Suite(.serialized)
 struct RecorderResponsivenessTests {
+    @Test @MainActor func recorderAppIconLayoutSnapshots() async throws {
+        // Render the real views without starting capture or posting shortcuts.
+        // These images let us inspect spacing after removing the secondary app icon.
+        let session = RecordingSession(phase: .recording)
+        let recorder = Recorder()
+        let assistant = AssistantSession()
+        for state in [RecordingState.recording, .paused, .transcribing] {
+            session.liveRecordingState = state
+            session.phase = state == .transcribing ? .transcribing : .recording
+            let views: [(String, AnyView, CGFloat)] = [
+                ("mini", AnyView(MiniRecorderView(stateProvider: session,
+                    liveTranscriptHeight: 56, liveTranscriptWidth: 640, recorder: recorder,
+                    assistantSession: assistant, onRecordButtonTapped: {}, onCloseTapped: {},
+                    onCancelTapped: {}, onAssistantFollowUp: { _ in })), 640),
+                ("notch", AnyView(NotchRecorderView(stateProvider: session, recorder: recorder,
+                    assistantSession: assistant, notchWidth: 180, notchHeight: 32,
+                    liveTranscriptHeight: 56, onRecordButtonTapped: {}, onCloseTapped: {},
+                    onCancelTapped: {}, onAssistantFollowUp: { _ in })), 660),
+                ("pending", AnyView(TranscribingChip(session: session, style: .mini, onCancel: {})), 200)
+            ]
+            for (name, view, width) in views {
+                let host = NSHostingView(rootView: view)
+                host.frame = NSRect(x: 0, y: 0, width: width, height: 160)
+                host.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(100))
+                let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                let image = try #require(bitmap.representation(using: .png, properties: [:]))
+                try image.write(to: URL(fileURLWithPath: NSTemporaryDirectory())
+                    .appendingPathComponent("Recorder-single-app-\(name)-\(state).png"))
+            }
+        }
+    }
+
     @Test func typingFinishDoesNotQueueMainActorWorkItAlreadyOwns() throws {
         let pipeline = try source("VoiceInk/Transcription/Engine/TranscriptionPipeline.swift")
         #expect(pipeline.contains("private let archivePrompt: @MainActor (String, UUID) async throws -> URL"))

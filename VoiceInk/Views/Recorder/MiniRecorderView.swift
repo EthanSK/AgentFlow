@@ -22,22 +22,14 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     private let compactCornerRadius: CGFloat = 20
     private let expandedCornerRadius: CGFloat = 14
 
-    private var shouldShowPasteDestinationIndicator: Bool {
-        switch stateProvider.recordingState {
-        case .starting, .recording, .paused, .transcribing, .enhancing:
-            return true
-        case .idle, .busy:
-            return false
-        }
-    }
-
     private var capsuleWidth: CGFloat {
         if hasAssistantResponse { return assistantWidth }
         if hasLiveTranscript { return expandedWidth }
-        // Leave room for the explicit Pause/Play control; do not squeeze the
-        // waveform or either destination slot on compact (non-realtime) sessions.
-        if stateProvider.recordingState.isRecordingOrPaused { return 350 }
-        return shouldShowPasteDestinationIndicator ? 280 : compactWidth
+        // Leave room for Pause/Play and the current app. Ethan removed the secondary
+        // app icon because its unused destination warning was mostly visual noise.
+        if stateProvider.recordingState.isRecordingOrPaused { return 324 }
+        return stateProvider.recordingState == .starting || stateProvider.recordingState.isProcessing
+            ? 254 : compactWidth
     }
 
     // Realtime mode owns this panel immediately. LiveTranscriptView renders the
@@ -157,20 +149,10 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                 .frame(maxHeight: .infinity)
                 .background(RecorderPanelDragSurface())
 
-            HStack(spacing: 6) {
-                CurrentFocusApplicationIndicator(
-                    actionPulseID: stateProvider.currentFocusIconActionPulseID
-                )
-
-                if shouldShowPasteDestinationIndicator {
-                    PasteDestinationIndicator(
-                        target: stateProvider.pasteDestinationIndicatorTarget,
-                        context: stateProvider.recordingState == .starting || stateProvider.recordingState.isRecordingOrPaused ? .nextTrackStop : .pendingPaste,
-                        actionPulseID: stateProvider.lockedDestinationIconActionPulseID
-                    ) // Do not hide this at stop: the same per-session icon confirms VoiceInk still owns the target while transcription is loading, and updates if Next Track retargets it.
-                        .transition(.opacity)
-                }
-            }
+            // Show current focus only; never relabel this icon as a saved Next target.
+            CurrentFocusApplicationIndicator(
+                actionPulseID: stateProvider.currentFocusIconActionPulseID
+            )
             .padding(.trailing, 12)
         }
         .frame(height: MiniRecorderLayoutMetrics.controlBarHeight)

@@ -1,5 +1,14 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-10-31 — Explicit removal of the secondary app icon
+
+Ethan now asks to remove the secondary app/warning icon because he does not use it.
+This supersedes the historical rules below requiring two visible icon slots and a
+locked outline. The earlier rejection concerned hiding a delivery regression without
+permission; this is an explicit UI preference. Keep the current-focus icon honest,
+preserve delivery behavior and real errors, and do not restore the secondary slot
+unless Ethan asks for it again.
+
 ## 2026-10-27 — A per-line contains check did not speed up Codex scope parsing
 
 **Mechanism:** Add `rawLine.contains(activityMarker)` before the existing
