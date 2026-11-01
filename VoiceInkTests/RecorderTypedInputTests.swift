@@ -1863,6 +1863,33 @@ struct RecorderTypedInputTests {
             history: record.enhancedText ?? record.text, archive: archived, link: link)
     }
 
+    @Test @MainActor func spokenWebsitesNormalizeWithoutRewritingTypingOrSelection() async throws {
+        let selected = try #require(LiveSelectionReference("Selected dot net stays literal"))
+        for clipboardOnly in [false, true] {
+            let result = try await clipboardPipelineFixture(clipboardOnly: clipboardOnly,
+                typed: "Typed dot net stays literal", speech: "Please open speedtest dot net.",
+                sourceReferences: [selected])
+            let history = HistoryContextPresentation.document(result.history).plainText
+            #expect(history.contains("Please open speedtest.net."))
+            #expect(history.contains("Typed dot net stays literal"))
+            #expect(history.contains("Selected dot net stays literal"))
+            #expect(result.archive.contains("speedtest.net"))
+            #expect(!result.archive.contains("speedtest dot net"))
+        }
+    }
+
+    @Test @MainActor func rawSpeechAndTypingOnlyDoNotNormalizeSpokenWebsiteWords() async throws {
+        let raw = try await clipboardPipelineFixture(clipboardOnly: false,
+            typed: "Typed dot net stays literal", speech: "Please open speedtest dot net.",
+            raw: true, includeContext: false)
+        #expect(raw.message.contains("Please open speedtest dot net."))
+        #expect(!raw.message.contains("speedtest.net"))
+        let typed = try await clipboardPipelineFixture(clipboardOnly: false,
+            typed: "Please open speedtest dot net.", includeContext: false)
+        #expect(typed.message.contains("Please open speedtest dot net."))
+        #expect(!typed.message.contains("speedtest.net"))
+    }
+
     @Test @MainActor func escapeClipboardFinishKeepsFormattedPromptAndHistoryWithoutOutputEffects() async throws {
         for mode in [ModeOutputMode.paste, .respond, .customCommand] {
             let result = try await clipboardPipelineFixture(
