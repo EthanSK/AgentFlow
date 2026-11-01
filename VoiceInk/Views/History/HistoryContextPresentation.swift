@@ -25,7 +25,7 @@ enum HistoryContextPresentation {
             let text: String
             let enhancedText: String?
             let draft: String?
-            let status: String
+            let status: String?
         }
         private struct Entry { let input: Input; let message: Message; let bytes: Int }
         private let lock = NSLock()
@@ -45,9 +45,9 @@ enum HistoryContextPresentation {
                               draft: record.realtimeDraftText, status: record.transcriptionStatus)
             if let hit = lock.withLock({ entries[key] }), hit.input == input { return hit.message }
             let message = build()
-            let cost = input.text.utf8.count + (input.enhancedText?.utf8.count ?? 0)
-                + (input.draft?.utf8.count ?? 0) + input.status.utf8.count
-                + message.text.utf8.count + message.rawText.utf8.count
+            let inputBytes = input.text.utf8.count + (input.enhancedText?.utf8.count ?? 0)
+                + (input.draft?.utf8.count ?? 0) + (input.status?.utf8.count ?? 0)
+            let cost = inputBytes + message.text.utf8.count + message.rawText.utf8.count
             lock.withLock {
                 if let previous = entries.removeValue(forKey: key) { bytes -= previous.bytes }
                 // Count source and output bytes conservatively even when Swift
