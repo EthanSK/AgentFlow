@@ -35,13 +35,16 @@ enum SpokenWebsiteAddressFormatter {
     ]
     private static let dotNetFrameworkLabels: Set<String> = ["microsoft", "asp", "vb", "ado"]
 
-    static func format(_ text: String, preserving protectedRanges: [NSRange] = []) -> String {
+    static func format(_ text: String, preserving protectedRanges: () -> [NSRange] = { [] }) -> String {
         guard text.localizedCaseInsensitiveContains("dot") || text.localizedCaseInsensitiveContains("slash"),
               let address else { return text }
         let source = text as NSString
         let fullRange = NSRange(location: 0, length: source.length)
-        let excludedRanges = protectedRanges + (inlineCode?.matches(in: text, range: fullRange).map(\.range) ?? [])
         let matches = address.matches(in: text, range: fullRange)
+        guard !matches.isEmpty else { return text }
+        // Ordinary dictation must not pay for another dictionary scan. Only
+        // resolve protection after this text actually contains an address shape.
+        let excludedRanges = protectedRanges() + (inlineCode?.matches(in: text, range: fullRange).map(\.range) ?? [])
         let result = NSMutableString(string: text)
         for match in matches.reversed() {
             guard !excludedRanges.contains(where: { NSIntersectionRange($0, match.range).length > 0 }) else { continue }
@@ -88,14 +91,15 @@ class WordReplacementService {
         // itself is never rewritten or subjected to a second cascading pass.
         // The pipeline's raw/skip branch bypasses this whole service.
         let fullRange = NSRange(text.startIndex..., in: text)
-        let protectedRanges = replacements.flatMap { replacement in
-            replacement.originalText.split(separator: ",").flatMap { variant -> [NSRange] in
-                let original = variant.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !original.isEmpty else { return [] }
-                return replacementExpression(for: original)?.matches(in: text, range: fullRange).map(\.range) ?? []
+        let formattedText = SpokenWebsiteAddressFormatter.format(text) {
+            replacements.flatMap { replacement in
+                replacement.originalText.split(separator: ",").flatMap { variant -> [NSRange] in
+                    let original = variant.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !original.isEmpty else { return [] }
+                    return self.replacementExpression(for: original)?.matches(in: text, range: fullRange).map(\.range) ?? []
+                }
             }
         }
-        let formattedText = SpokenWebsiteAddressFormatter.format(text, preserving: protectedRanges)
         var modifiedText = formattedText
 
         // Longest-first so specific triggers match before shorter overlapping ones

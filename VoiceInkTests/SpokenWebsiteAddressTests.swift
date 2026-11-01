@@ -5,6 +5,16 @@ import Testing
 @testable import VoiceInkPlusPlus
 
 struct SpokenWebsiteAddressTests {
+    @Test func ordinarySpeechDoesNotScanDictionaryProtection() {
+        var reads = 0
+        for text in ["Just an ordinary sentence.", "This dotted line is visible."] {
+            #expect(SpokenWebsiteAddressFormatter.format(text, preserving: { reads += 1; return [] }) == text)
+        }
+        #expect(reads == 0)
+        #expect(SpokenWebsiteAddressFormatter.format("speedtest dot net", preserving: { reads += 1; return [] }) == "speedtest.net")
+        #expect(reads == 1)
+    }
+
     @Test func spokenWebsiteAddressesBecomeDomainsInsideSentences() {
         #expect(SpokenWebsiteAddressFormatter.format("Please open speedtest dot net.")
             == "Please open speedtest.net.")
