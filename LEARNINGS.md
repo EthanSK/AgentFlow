@@ -1,5 +1,59 @@
 # Learnings
 
+## 2026-11-01 — Format explicit spoken website addresses locally
+
+Ethan wants to dictate website URLs, with `speedtest.net` as his example. A fresh
+synthetic-audio comparison reproduced the formatting gap: configured GPT Live
+Transcribe returned `speedtest dot net`, `example dot com` and `docs dot python
+dot org slash free`; completed GPT Transcribe rendered the same address forms
+with punctuation. The fixture actually said “three”, so “free” is a recognition
+error, not something punctuation formatting can safely infer or repair. Generated
+audio does not establish physical microphone or user-voice acceptance.
+
+The current OpenAI transcription guide describes prompts as topic/context hints
+and keywords as literal recognition hints, not a guaranteed output-format switch.
+Do not add a formatting command to Ethan's deliberately blank prompt or send
+captured selections to recognition to solve this. Build 474 adds a local
+`SpokenWebsiteAddressFormatter` through `WordReplacementService`: explicit English
+“dot”, “dash”/“hyphen” and simple “slash” components become common domain endings
+and paths, including subdomains. It does not open sites, guess domains from brand
+names, or claim arbitrary international domains/query syntax. Existing URLs, code,
+paragraph boundaries, ordinary dot prose and named .NET frameworks stay literal.
+New hostnames are lowercased while path case stays intact.
+
+Live/completed speech, imported audio and History retries share this existing
+service. Protect original phrases claimed by the user's dictionary using the
+same existing boundary matcher, normalize other spoken addresses, then run the
+existing dictionary pass once. Canonical URL rules can see the normalized URL;
+replacement output is not rewritten. Protection is lazy after an actual address
+shape, so ordinary dictation incurs no second dictionary scan. HUD typing and
+captured selections are composed later and remain literal; raw/skip bypasses the
+service. No extra provider request or prompt, microphone, Mode, media, startup,
+focus, paste or auto-send change was added.
+
+The final native source is `d7a1069d4fc57261b5801fc4dafd7a96f0dee831` (initial
+implementation `54cfafdc`). Canonical Mini Xcode qualification passed 17 selected
+tests, including real pipeline composition, raw/typed preservation, dictionary
+precedence, the no-extra-scan guard and mandatory Primary/Next/HUD-only guards.
+The final canonical full Mini Xcode action then passed 787 tests in 29 suites
+(job `20261101-023535-agent-flow-spoken-urls474-full-31949c`). Its compiled app/test
+source matches the signed Release byte-for-byte; the only added snapshot input is
+the existing tracked trace helper read by two source-contract tests. An earlier
+full run passed 785 cases and failed those two because the disposable sync
+manifest omitted the helper. Preserve that failed receipt; correcting test
+inputs did not change or reinstall the native app.
+
+The ordinary Release was rebuilt from the same 414-file source digest
+`a76b125cddf9067d7cc35c33ddd2d4c26789d6237a250ced06819587d3ad3971` through
+Fleet Runner, then signed on the Mini with the existing VoiceInk Local Signing
+identity and explicit outer Automation/audio entitlements. Build 474 is installed
+and persistently running with CDHash `9101eabbadacf99d0ff3f335dfda8387811e4d5b`.
+The real five-second warning, cooperative all-session quit, unchanged signing
+requirement, protected settings, artwork and official VoiceInk executable were
+verified. Build 473 remains a verified rollback ZIP. Exact receipts live in
+`Documents/Codex/2026-11-01/agentflow-spoken-urls/` and Fleet Runner's matching job
+folders; the Release app and matching dSYM UUID remain on the Mini.
+
 ## 2026-11-01 — Successful empty recognition is separate from provider failure
 
 Ethan wants to send screenshots without speaking. All seven saved Modes still use

@@ -1,5 +1,56 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-01 — Sync only app and test folders for the full native suite
+
+**Observed failure:** A disposable Fleet Runner manifest transferred `VoiceInk`,
+`VoiceInkTests`, the Xcode project and build configuration but omitted
+`.agents/skills/learnings/scripts/live-delivery-trace.sh`. The normal Xcode full
+run executed all 787 cases: 785 passed, while
+`liveTraceAllowsOnlyPrivacySafePasteboardLeaseMetadata` and
+`openAIRecoveryTelemetryIsAllowlistedWithoutTranscriptContents` threw a missing-
+file error while reading that tracked helper. This was missing test input, not
+an installed app failure; preserve the failed job receipt rather than hiding it.
+
+**Use instead:** Include the tracked trace helper in the native test snapshot.
+These tests read its source; syncing it does not authorize running the tracing
+script against a live app. Verify the runner's file plan before dispatch and
+compare every compiled source entry against the signed build's source manifest.
+Adding only this uncompiled test dependency does not require another app release.
+
+**Evidence:** Fleet job `20261101-022329-agent-flow-spoken-urls474-full-397cfa`;
+initial 414-file snapshot and corrected 415-file plan in the spoken-URL build-474
+receipt folder. The corrected canonical full run
+`20261101-023535-agent-flow-spoken-urls474-full-31949c` passed all 787 tests.
+Every compiled source entry matched the signed Release; only the read-only helper
+was added. The shared canonical Fleet adapter was not edited.
+
+**Reconsider only if:** The source-contract tests move or stop reading that helper;
+update their explicit repository test-input dependency at the same time.
+
+## 2026-11-01 — Normalize spoken URLs without respecting dictionary claims
+
+**Rejected before installation:** Running URL normalization before considering
+existing user dictionary triggers consumes phrases such as `speedtest dot net`
+that a configured spoken-form replacement already owns. Running the dictionary
+again after normalization would also introduce an extra cascading pass, changing
+existing replacement precedence.
+
+**Use instead:** Protect original matched phrases with the dictionary's existing
+case-insensitive boundary matcher, normalize the remaining explicit spoken
+addresses, then run the existing replacement pass exactly once. Canonical-domain
+rules can match newly formatted addresses; replacement output itself is not
+normalized. Resolve protection lazily only after an address-shaped match, so
+ordinary dictation does not pay for a second dictionary scan.
+
+**Evidence:** Pre-install review of build 474; native commits `54cfafdc` and
+`d7a1069d`. The canonical Mini Xcode action passed 17 focused tests, including
+`URLProtectionSharesWordBoundariesAndDoesNotRepeatDictionaryPasses` and
+`ordinarySpeechDoesNotScanDictionaryProtection`. No rejected candidate was installed.
+
+**Reconsider only if:** Ethan explicitly changes dictionary precedence and the
+spoken-trigger, canonical-trigger, replacement-output and no-extra-pass tests
+establish the new intended behavior.
+
 ## 2026-10-31 — Explicit removal of the secondary app icon
 
 Ethan now asks to remove the secondary app/warning icon because he does not use it.
