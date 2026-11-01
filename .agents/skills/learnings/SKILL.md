@@ -16,6 +16,12 @@ Improve this skill as part of using it. Whenever use, debugging, feature work, d
 Tell Ethan when this skill causes an action or pause, and briefly explain which project safety or
 validation contract applies.
 
+## Extra delays require consultation
+
+Never add an extra delay without explicitly consulting Ethan about it for any app from now on. User-requested — 2026-11-01; this also applies to Agent Flow.
+
+For both speech and typing, consult him before adding or increasing deliberate waits, including paste/Return settling, key-event spacing and recorder UI pauses. Explain the purpose and expected duration and wait for his agreement; “humanized” or defensive padding is not an exception. The global rule is owned by `development-workflow`. Preserve the reason: the user already waits for real work and wants finishing to be as fast as possible.
+
 ## Start with prior evidence
 
 Agent Flow must use Ethan's Scarlett 18i8 microphone. Warn him if another input

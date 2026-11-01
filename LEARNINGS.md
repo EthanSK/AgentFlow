@@ -1,5 +1,45 @@
 # Learnings
 
+## 2026-11-01 — Separate requested key waits from finish elapsed time
+
+A read-only audit of the build-474 natural finishes at 13:16 refined the earlier
+timing summary. Stop to enqueue took 81/83 ms, then enqueue to transcription start
+took 180/203 ms. The remaining pre-delivery preparation was 363/271 ms. These
+intervals include scheduling and awaited work; they are not CPU measurements.
+The existing retrospective metadata log had no finer prompt-stage records for
+these two samples, so no particular getter, formatter or disk write owns the
+unmeasured remainder.
+
+At audit time, builds 474/475's key path explicitly requested 100 ms before Cmd-V, three 10 ms
+key gaps, 220 ms before the final auto-send decision, and 30 ms Return-down/up
+when Return is issued. These are suspending Task sleeps, not busy computation.
+They total 380 ms on a single-paste/Return path, or 350 ms if the final queue
+decision suppresses Return. Clipboard restore and the 150 ms later-paste lease
+settlement are deferred work, not extra waits to add to this same result.
+
+The 2.345 s sample posted Cmd-V but intentionally withheld Return with
+`suppressionReason=pendingRecordingStart`; its endpoint is the delivery decision,
+not a successful submission. The 2.017 s sample issued HID Return. Both foreground
+clipboard acquisitions reported no queue and zero lease wait. Their elapsed time
+outside the transcription interval was 1.103/1.006 s; after requested key sleeps,
+0.753/0.626 s remains across local processing, IO and scheduling. Streaming's
+completion log also precedes provider cleanup and the pipeline's success log;
+do not label the whole transcription interval pure network/API time.
+
+Builds 468–471 removed a typing reaction timer, hidden HUD layout, repeated scope
+parsing and redundant actor/paste-task handoffs. Those mechanisms remain absent;
+the key waits remain deliberate. The build-470 Release parser benchmark proved
+a narrower CPU improvement, while its live typing trace still showed a 674–853 ms
+recipient envelope and a 202–231 ms extra paste-task wait. Build 471 removed the
+redundant handoffs, but its exact isolated physical improvement was not measured.
+Do not say all earlier fixes failed or that they proved instant end-to-end finish.
+
+Guard/evidence: native commits `497eccd4`, `8bc71fcf`, `945718d2`, `ad6ca925`, current
+`RecorderResponsivenessTests`, `CursorPaster` and `TranscriptionDelivery`; the dated
+metadata-only `agentflow-local-finish-investigation/refined-timing.json` receipt.
+Timed native files are unchanged between builds 474 and 475. This investigation
+changed no native source, started no capture/live monitor, and ran no native build.
+
 ---
 **Date:** 2026-11-01T13:47:50Z
 **Trigger:** Ethan asked for the floating Agent Flow background to change from black to orange while paused because he forgets capture is paused.
@@ -5893,3 +5933,24 @@ coordination and mandatory Primary/Next/HUD-only guards. It includes will-change
 ordering, all owners clearing, a new start before the scheduled check, cancellation
 of a scheduled check, and exactly one retry. Installed/physical acceptance remains
 separate from these hosted tests.
+
+
+## 2026-11-01 — Separate finish work, scheduling and presentation cost
+
+- Build 476 numeric receipts measured ordinary paragraph/replacement/presentation work at roughly 0–4 ms, archive scope elapsed at 242–287 ms, and FIFO queue residence at 265–272 ms in three natural finishes. Queue residence includes predecessor/reset barriers and scheduling; it is not a CPU attribution. The isolated optimized reader measured about 47–48 ms repeated on the MacBook, so the full awaited interval cannot be called parsing time alone.
+- Build 477 keeps numeric `scopeWorkMs` and `scopeWaitMs` separately. A byte scan of bounded UTF-8 log tails reduced the isolated repeated reader measurement to about 15 ms, preserving the old parser's native-prefix, CRLF, Unicode, activity-order and multiple-visible-chat semantics. No source text or IDs are added to timing logs; these local labels are presentation metadata, never delivery authority or speech-model context.
+- A two-second live sample of build 476 found HistoryCardRow in 621 of 1,438 main-thread samples, repeatedly calling message/document/copyText for unchanged legacy entries. This proves competing History work, not the source of every measured finish gap. The new History MessageCache holds immutable source-value projections only (64 entries/8 MiB conservative byte budget); text, enhancement, recovery draft, status and selected version determine freshness. Oversized entries remain complete and uncached. All 56 focused tests passed on the Mini, including three cache reuse/invalidation/budget tests and complete History/Primary/Next guards.
+- The zero-padding live Chrome fixture received Return before its paste event and submitted an empty value. Ethan then explicitly approved retaining a shorter paste-to-Send allowance: 150 ms replaces 220 ms; pre-paste 100 ms, three 10 ms key gaps and 30 ms Return hold were removed. A real 150 ms Chrome check received paste/input/Return in that order and submitted the full synthetic token. A busy-page attempt was refused when test-window focus changed; it is not a passed stress test. Generic Primary still owns no target/app classifier/readiness probe/retry.
+- The build-476 full suite executed 796 tests but failed one source-inspection test with two old source-layout assumptions. Numeric timing statements broke exact adjacency/240-character checks. Replace those with the synchronous release-before-capture-end contract; do not erase the initial failed receipt or describe it as a runtime failure. The first 477 focused run also exposed an incorrect test expectation: CoreGraphics normalizes modifier-key events to flagsChanged, while V remains keyDown/keyUp.
+- Evidence: private task artifacts `Documents/Codex/2026-11-01/agentflow-local-performance476/` and `agentflow-zero-padding477/`, native commits ea376a9c/6b72b011/eca5eb30/7c782eab. Signed installation and the final release-boundary suite are recorded separately after verification.
+
+
+### Build 477 installation receipt
+
+The ordinary Release for native commit `7c782eab29ed1a73d19245bf54da58d228be412e` was stable-signed on the Mini, transferred as a SHA-256-verified ZIP and installed after the real five-second notice and normal cooperative exit. Running CDHash: `17aaed2406e321012433031f327413840f722828`; executable SHA-256: `f3a91eb67579abd6792150bb68eb29a5e5e8bdd699a5415c88891ed60053ee22`; matching dSYM UUID: `73A463F1-D32C-340C-9367-6D12D97DB101`. Outer and whisper signing authorities and Automation/audio entitlements verify; base VoiceInk is unchanged. A verified build-476 rollback ZIP is retained.
+
+The Fleet deletes a completed job's transient source tree. Use its retained per-file source manifest/receipt to validate a small source/entitlements snapshot before later signing; never point codesign at an already removed job path or borrow the cached test app. The shared Mini resign helper can also name an older release; inspect its actual target, then use an isolated release-specific `resign-local.sh` wrapper with the existing signing identity. The first 477 signing attempt correctly failed on missing entitlement input; no incomplete candidate was installed.
+
+A two-second post-restart idle sample had no History projection stack, but its workload differs from the earlier active sample. This is not a measured whole-finish speedup or a comparable memory benchmark. New numeric finish receipts remain the way to measure natural use.
+
+The final canonical Mini release gate passed **804 tests in 31 suites** for native commit `7c782eab29ed1a73d19245bf54da58d228be412e` and build 477, with no recorded issues. The 56-test focused pass and the earlier failed receipts remain retained; passing unit tests do not prove every live recipient or total finish latency.

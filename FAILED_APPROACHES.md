@@ -2475,3 +2475,12 @@ measurement or replace the guard with HUD visibility.
 
 **Reconsider only if:** The running app already implements an independently
 verified deferred-termination callback; a process-exit wait alone cannot provide it.
+
+
+## 2026-11-01 — Back-to-back generic paste and Return — REJECTED
+
+**Observed failure:** A Mini-built diagnostic using the production four Cmd-V events and one HID Return pair, with zero sleeps, posted in 16.2 ms. A real disposable Chrome textarea processed Return while empty, then received paste/input. Ordered event emission is not proof that the receiving app has completed asynchronous clipboard insertion.
+
+**Accepted narrower change:** Ethan initially selected zero waits despite unreliable auto-send, then immediately superseded that choice with “retain that” and “Just make it lower.” Retain a user-approved 150 ms paste-to-Send allowance (previously 220 ms), remove the other keyboard padding, and preserve clipboard leases, balanced keys and FIFO Return suppression. One ordinary live Chrome check passed at 150 ms; focus-guarded refusal is not a busy-page pass or universal app guarantee.
+
+**Reconsider only if:** Actual receiving-app evidence proves an ordering mechanism that preserves generic current-input Primary without AX targeting, app classification or a new delivery route; or Ethan explicitly accepts the demonstrated empty-submit risk again. Any added/increased deliberate wait still requires consultation under the global/project rule.
