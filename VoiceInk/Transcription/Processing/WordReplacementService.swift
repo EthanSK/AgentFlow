@@ -1,7 +1,67 @@
-// Formats explicit spoken website separators before the user's dictionary rules.
+// Formats explicit spoken website separators before the user's dictionary rules,
+// then applies those rules through a shared compiled-expression cache.
 // All callers supply recognized speech, so HUD typing and captured context stay literal.
 import Foundation
 import SwiftData
+
+/// Dictionary rules and filler words rebuilt the same `NSRegularExpression`
+/// objects on every finish, on the UI actor. The objects are immutable and
+/// thread-safe, so keep a small bounded cache keyed by pattern text plus options.
+/// Keying by text (never by rule object) means an edited or deleted rule can
+/// never resurrect stale behavior; a changed rule simply compiles a new pattern.
+/// The cap is a memory bound, not an LRU: exceeding it clears everything, which
+/// only costs one recompilation pass.
+enum CompiledExpressionCache {
+    static let capacity = 512
+
+    private static let storage = Storage()
+
+    static var count: Int { storage.count }
+
+    static func expression(for pattern: String,
+                           options: NSRegularExpression.Options = []) -> NSRegularExpression? {
+        storage.expression(for: pattern, options: options)
+    }
+
+    // Same lock-protected storage shape as AuthoredTextRainbow.ViewerCursors, so
+    // off-main callers (imports, History retries) share it safely.
+    private final class Storage: @unchecked Sendable {
+        private struct Key: Hashable {
+            let pattern: String
+            let options: UInt
+        }
+
+        private let lock = NSLock()
+        private var expressions: [Key: NSRegularExpression] = [:]
+
+        var count: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return expressions.count
+        }
+
+        func expression(for pattern: String,
+                        options: NSRegularExpression.Options) -> NSRegularExpression? {
+            let key = Key(pattern: pattern, options: options.rawValue)
+            lock.lock()
+            if let cached = expressions[key] {
+                lock.unlock()
+                return cached
+            }
+            lock.unlock()
+            // Compile outside the lock; an invalid pattern stays uncached and nil,
+            // exactly as the former `try?` construction behaved.
+            guard let compiled = try? NSRegularExpression(pattern: pattern, options: options) else { return nil }
+            lock.lock()
+            defer { lock.unlock() }
+            if expressions.count >= CompiledExpressionCache.capacity {
+                expressions.removeAll(keepingCapacity: true)
+            }
+            expressions[key] = compiled
+            return compiled
+        }
+    }
+}
 
 /// Ethan's "speak the URL" means spelling a website, not opening it or guessing
 /// a domain from a brand name. This local pass costs no extra model request.
@@ -149,7 +209,9 @@ class WordReplacementService {
         // Lookarounds instead of \b so punctuation acts as a word boundary.
         let pattern = usesWordBoundaries(for: original)
             ? "(?<![a-zA-Z0-9])\(escaped)(?![a-zA-Z0-9])" : escaped
-        return try? NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+        // Every finish rebuilt one expression per rule variant (twice when URL
+        // protection ran). Reuse the compiled object; behavior is unchanged.
+        return CompiledExpressionCache.expression(for: pattern, options: .caseInsensitive)
     }
 
     private func usesWordBoundaries(for text: String) -> Bool {
