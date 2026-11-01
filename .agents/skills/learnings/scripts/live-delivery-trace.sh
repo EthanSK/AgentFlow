@@ -286,6 +286,8 @@ run_trace() {
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'pipeline: about to DELIVER'*|\
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'pipeline: delivery RETURNED'*|\
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'pipeline: local stages'*|\
+      *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'prompt preparation:'*|\
+      *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'prompt archive stages:'*|\
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'paste:'*|\
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'toggleRecord:'*|\
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'toggleRecorderPanel:'*|\
