@@ -127,7 +127,9 @@ struct RecorderResponsivenessTests {
         let archive = pipeline[archiveStart.lowerBound..<archiveEnd.lowerBound]
         #expect(!archive.contains("await MainActor.run"))
         // Heavy scope/file work must still leave the UI actor.
-        #expect(archive.contains("await CodexConversationContextReader.selectionThreadIDs"))
+        #expect(archive.contains("await CodexConversationContextReader.selectionThreadRead"))
+        let scope = try source("VoiceInk/Transcription/Engine/CodexConversationContext.swift")
+        #expect(scope.contains("await CodexSelectionLogWorker.shared.read"))
         #expect(archive.contains("await AgentFlowPromptArchive.save"))
 
         let paster = try source("VoiceInk/Paste/CursorPaster.swift")

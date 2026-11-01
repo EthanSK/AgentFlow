@@ -70,45 +70,36 @@ enum CodexConversationContextPolicy {
     }
 
     /// Search the bounded buffer once, then materialize only candidate event lines.
-    /// Foundation's Unicode search on every unrelated line delayed typing finish
-    /// just to choose a viewer colour offset. Keep the same prefix validation and
+    /// Scan UTF-8 bytes rather than repeatedly bridging the buffer to UTF-16 and
+    /// running Foundation Unicode searches just to choose a viewer colour offset.
+    /// Keep the same prefix validation and
     /// event ordering; these IDs remain presentation/source labels, never paste authority.
     private static func selectionActivityLines(in text: String) -> [String] {
-        let raw = text as NSString
+        let raw = Array(text.utf8)
+        let needle = Array("thread_stream_view_activity_changed ".utf8)
         var lines: [String] = []
         var scan = 0
-        while scan < raw.length {
-            let marker = raw.range(of: "thread_stream_view_activity_changed ", options: .literal,
-                range: NSRange(location: scan, length: raw.length - scan))
-            guard marker.location != NSNotFound else { break }
-            var start = 0
-            var before = marker.location
-            while before > 0 {
-                let newline = raw.range(of: "\n", options: .backwards,
-                    range: NSRange(location: 0, length: before))
-                guard newline.location != NSNotFound else { break }
-                // Match String.split(separator: "\n"): CRLF is one Character,
-                // not a standalone LF separator. Preserve that existing policy.
-                if newline.location == 0 || raw.character(at: newline.location - 1) != 0x0D {
-                    start = NSMaxRange(newline)
-                    break
-                }
-                before = newline.location
+        while scan + needle.count <= raw.count {
+            if raw[scan] != needle[0]
+                || !raw[scan..<(scan + needle.count)].elementsEqual(needle) {
+                scan += 1
+                continue
             }
-            var end = raw.length
-            var after = NSMaxRange(marker)
-            while after < raw.length {
-                let newline = raw.range(of: "\n", options: .literal,
-                    range: NSRange(location: after, length: raw.length - after))
-                guard newline.location != NSNotFound else { break }
-                if newline.location == 0 || raw.character(at: newline.location - 1) != 0x0D {
-                    end = newline.location
-                    break
-                }
-                after = NSMaxRange(newline)
+            var start = scan
+            // Match String.split(separator: "\n"): CRLF is one Character,
+            // not a standalone LF separator. UTF-8 never embeds ASCII LF inside
+            // another code point, so slicing at these boundaries preserves text.
+            while start > 0 {
+                if raw[start - 1] == 0x0A && (start < 2 || raw[start - 2] != 0x0D) { break }
+                start -= 1
             }
-            lines.append(raw.substring(with: NSRange(location: start, length: end - start)))
-            scan = end < raw.length ? end + 1 : raw.length
+            var end = scan + needle.count
+            while end < raw.count {
+                if raw[end] == 0x0A && (end == 0 || raw[end - 1] != 0x0D) { break }
+                end += 1
+            }
+            lines.append(String(decoding: raw[start..<end], as: UTF8.self))
+            scan = end < raw.count ? end + 1 : raw.count
         }
         return lines
     }
@@ -340,9 +331,21 @@ enum CodexConversationContextPolicy {
 /// or participates in VoiceInk++ destination/delivery selection.
 @MainActor
 enum CodexConversationContextReader {
+    struct SelectionThreadRead: Sendable {
+        let ids: [String]
+        let workMs: Double
+        static let empty = Self(ids: [], workMs: 0)
+    }
+
     /// Optional labels must not block mouse dispatch or the recorder HUD.
     /// A serial worker bounds concurrent scans without any idle polling/cache.
     nonisolated static func selectionThreadIDs(processIdentifier: pid_t) async -> [String] {
+        await selectionThreadRead(processIdentifier: processIdentifier).ids
+    }
+
+    /// Numeric work time separates parsing from time waiting for a worker or for
+    /// MainActor to resume. It carries no text or additional identity lookup.
+    nonisolated static func selectionThreadRead(processIdentifier: pid_t) async -> SelectionThreadRead {
         await CodexSelectionLogWorker.shared.read(processIdentifier: processIdentifier)
     }
 
@@ -557,8 +560,11 @@ enum CodexConversationContextReader {
 
 private actor CodexSelectionLogWorker {
     static let shared = CodexSelectionLogWorker()
-    func read(processIdentifier: pid_t) -> [String] {
-        guard !Task.isCancelled else { return [] }
-        return CodexConversationContextReader.readSelectionThreadIDs(processIdentifier: processIdentifier)
+    func read(processIdentifier: pid_t) -> CodexConversationContextReader.SelectionThreadRead {
+        guard !Task.isCancelled else { return .empty }
+        let start = ContinuousClock.now
+        let ids = CodexConversationContextReader.readSelectionThreadIDs(processIdentifier: processIdentifier)
+        let d = start.duration(to: ContinuousClock.now).components
+        return .init(ids: ids, workMs: Double(d.seconds) * 1_000 + Double(d.attoseconds) / 1e15)
     }
 }

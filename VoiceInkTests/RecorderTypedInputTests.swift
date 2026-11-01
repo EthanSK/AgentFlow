@@ -3217,7 +3217,11 @@ struct RecorderTypedInputTests {
         let paste = try source("VoiceInk/Paste/CursorPaster.swift")
         #expect(paste.contains("!RecorderTypingTextView.ownsKeyboard && requestedCanPost()"))
         let engine = try source("VoiceInk/Transcription/Engine/VoiceInkEngine.swift")
-        #expect(engine.contains("RecorderTypingTextView.releaseKeyboardBeforeFinish()\n            active.phase = .transcribing"))
+        let stopRelease = try #require(engine.range(of: "RecorderTypingTextView.releaseKeyboardBeforeFinish()"))
+        let stoppedCapture = try #require(engine.range(of: "active.endLiveSelectionCapture()", range: stopRelease.upperBound..<engine.endIndex))
+        let stopTransition = engine[stopRelease.upperBound..<stoppedCapture.lowerBound]
+        #expect(stopTransition.contains("active.phase = .transcribing"))
+        #expect(!stopTransition.contains("await "))
         #expect(engine.contains("session.restoreLiveContextForRetry(liveContextReferences)"))
         // An uncommitted run is not in the committed timeline; startup failure
         // must still find and preserve it rather than discarding typed prose.
@@ -3228,7 +3232,10 @@ struct RecorderTypedInputTests {
         let releases = engine.components(separatedBy: "RecorderTypingTextView.releaseKeyboardBeforeFinish()").dropFirst()
         #expect(!releases.isEmpty)
         for following in releases {
-            #expect(following.prefix(240).contains("endLiveSelectionCapture()"))
+            // Bound by the end of the immediate synchronous block rather than
+            // a character count that timing comments can accidentally exceed.
+            let immediate = following.components(separatedBy: "await ").first ?? ""
+            #expect(immediate.contains("endLiveSelectionCapture()"))
         }
     }
 }

@@ -5155,23 +5155,17 @@ struct VoiceInkTests {
 
     @Test func foregroundPasteChecksExactLeaseBeforeEveryIrreversibleKeyBoundary() throws {
         let source = try repositorySource("VoiceInk/Paste/CursorPaster.swift")
-        let start = try #require(source.range(
-            of: "    private static func pasteFromClipboard("
-        ))
-        let end = try #require(source.range(
-            of: "    private static func wait(",
-            range: start.upperBound..<source.endIndex
-        ))
-        let body = String(source[start.lowerBound..<end.lowerBound])
-        let commandLease = try #require(body.range(of: "boundary: \"beforeCommandDown\""))
-        let commandDown = try #require(body.range(of: "cmdDown.post(tap: .cghidEventTap)"))
-        let vLease = try #require(body.range(of: "boundary: \"beforeVDown\""))
-        let vDown = try #require(body.range(of: "vDown.post(tap: .cghidEventTap)"))
-
+        let sequence = try repositorySource("VoiceInk/Paste/ForegroundKeyboardSequence.swift")
+        let commandLease = try #require(sequence.range(of: "ownsClipboard(\"beforeCommandDown\")"))
+        let commandDown = try #require(sequence.range(of: "emit(cmdDown)"))
+        let vLease = try #require(sequence.range(of: "ownsClipboard(\"beforeVDown\")"))
+        let vDown = try #require(sequence.range(of: "emit(vDown)"))
         #expect(commandLease.lowerBound < commandDown.lowerBound)
         #expect(commandDown.lowerBound < vLease.lowerBound)
         #expect(vLease.lowerBound < vDown.lowerBound)
-        #expect(body.contains("cmdUp.post(tap: .cghidEventTap)"))
+        #expect(sequence.contains("emit(cmdUp)"))
+        #expect(source.contains("ForegroundKeyboardSequence.commandV(canPost: canPost, ownsClipboard:"))
+        #expect(source.contains("logPasteboardOwnership(lease, on: pasteboard, boundary: boundary)"))
 
         let transactionStart = try #require(source.range(
             of: "    private static func performPasteSession("
@@ -6047,18 +6041,20 @@ struct VoiceInkTests {
         let primaryBody = deliverySource[
             primaryStart.lowerBound..<exactStart.lowerBound
         ]
-        let settle = try #require(primaryBody.range(
-            of: "Self.primaryCurrentInputSettleNanoseconds"
+        let pastePosted = try #require(primaryBody.range(
+            of: "await CursorPaster.pasteAtCursorAndWaitUntilPosted(pastedText)"
         ))
         let queuePolicy = try #require(primaryBody.range(
             of: "let queuedAutoSend = resolveQueuedAutoSend(autoSendKey)",
-            range: settle.upperBound..<primaryBody.endIndex
+            range: pastePosted.upperBound..<primaryBody.endIndex
         ))
         let returnPost = try #require(primaryBody.range(
             of: "CursorPaster.performAutoSend(",
             range: queuePolicy.upperBound..<primaryBody.endIndex
         ))
-        #expect(settle.lowerBound < queuePolicy.lowerBound)
+        #expect(pastePosted.lowerBound < queuePolicy.lowerBound)
+        let settle = try #require(primaryBody.range(of: "Self.primaryCurrentInputSettleNanoseconds"))
+        #expect(pastePosted.lowerBound < settle.lowerBound && settle.lowerBound < queuePolicy.lowerBound)
         #expect(queuePolicy.lowerBound < returnPost.lowerBound)
         #expect(primaryBody.contains(
             "auto-send deferred because a newer recording exists"
@@ -7861,9 +7857,8 @@ struct VoiceInkTests {
 
         #expect(primaryBody.contains("await CursorPaster.pasteAtCursorAndWaitUntilPosted(pastedText)"))
         #expect(!primaryBody.contains("CursorPaster.startPasteAtCursor"))
-        #expect(primaryBody.contains(
-            "Self.primaryCurrentInputSettleNanoseconds"
-        ))
+        #expect(primaryBody.contains("Self.primaryCurrentInputSettleNanoseconds"))
+        #expect(!primaryBody.contains("NSWorkspace"))
         #expect(primaryBody.contains("method: .cgEvent"))
         #expect(primaryBody.contains(
             "primary current-input HID auto-send issued=true"
@@ -7880,9 +7875,7 @@ struct VoiceInkTests {
         #expect(!primaryBody.contains("telegramTargetedHIDReturn"))
         #expect(!primaryBody.contains("pressNearbySubmitButton"))
         #expect(!primaryBody.contains("foregroundOpenAIVerificationContext"))
-        #expect(deliverySource.contains(
-            "primaryCurrentInputSettleNanoseconds: UInt64 = 220_000_000"
-        ))
+        #expect(deliverySource.contains("primaryCurrentInputSettleNanoseconds: UInt64 = 150_000_000"))
 
         let engineSource = try String(
             contentsOf: repositoryRoot.appendingPathComponent(

@@ -32,7 +32,7 @@ const allowed = [
   '[com.prakashjoshipax.voiceink:RecordingShortcutManager] Recording shortcut key-down action=primaryRecording dispatchLatencyMs=2',
   '[com.ethansk.VoiceInkPlusPlus:VIPPDebug] pipeline remove generation=2 sequence=1 recordingSessionID=synthetic',
   // Build 476 finish-stage receipts: numeric milliseconds and job lineage only.
-  '[com.ethansk.VoiceInkPlusPlus:VIPPDebug] prompt preparation: recipientMs=2 frontmostMs=1 appMetadataMs=0.3 hostCheckMs=0.7 scopeMs=4 candidateCount=1',
+  '[com.ethansk.VoiceInkPlusPlus:VIPPDebug] prompt preparation: recipientMs=2 frontmostMs=1 appMetadataMs=0.3 hostCheckMs=0.7 scopeMs=4 scopeWorkMs=1 scopeWaitMs=3 candidateCount=1',
   '[com.ethansk.VoiceInkPlusPlus:VIPPDebug] prompt archive stages: canonicalMs=2.3 viewerMs=1.8',
   '[com.ethansk.VoiceInkPlusPlus:VIPPDebug] toggleRecord: stop stages stopPrepMs=0.4 micTransitionMs=0.2 hardwareStopMs=41.0 recoveryJoinMs=0.3 historySaveMs=12.5 enqueueMs=1.1 session=synthetic',
   '[com.ethansk.VoiceInkPlusPlus:VIPPDebug] pipeline run START queueWaitMs=180.4 generation=2 sequence=1 recordingSessionID=synthetic',

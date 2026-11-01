@@ -16,12 +16,11 @@ final class TranscriptionDelivery: TranscriptionDelivering {
     init(recoveryPasteOverride: ((Request, Actions) async -> Void)? = nil) {
         self.recoveryPasteOverride = recoveryPasteOverride
     }
-    // Upstream VoiceInk waits 500 ms after Cmd-V before generic auto-send. Primary
-    // keeps the same base current-input architecture, but 220 ms matches the proven
-    // effective timing of the former System Events path while staying well below
-    // the old half-second lag. The earlier 100 ms HID attempt could overtake Cmd-V
-    // in a lagging Electron input.
-    private static let primaryCurrentInputSettleNanoseconds: UInt64 = 220_000_000
+    // Ethan approved retaining a shorter paste-to-Send wait (2026-11-01).
+    // A real zero-wait Chrome check processed Return before the paste event.
+    // Keep only this 150 ms consumer allowance, down from 220 ms; it is not
+    // transcription/local text work or an exact-input/readiness lookup.
+    static let primaryCurrentInputSettleNanoseconds: UInt64 = 150_000_000
 
     enum BackgroundAutoSendVerification: Equatable {
         case verifiedCleared
@@ -590,7 +589,7 @@ final class TranscriptionDelivery: TranscriptionDelivering {
     ) async {
         let appendSpace = UserDefaults.standard.bool(forKey: "AppendTrailingSpace")
         let pastedText = text + (appendSpace ? " " : "")
-        vippLog.info("paste: BEGIN len=\(pastedText.count, privacy: .public) destination=\(String(describing: target.destination), privacy: .public) targetCaptured=\(target.focusedInput != nil, privacy: .public) exactInput=\(target.focusedInput?.hasExactInput ?? false, privacy: .public) frontmostPid=\(NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1, privacy: .public)")
+        vippLog.info("paste: BEGIN len=\(pastedText.count, privacy: .public) destination=\(String(describing: target.destination), privacy: .public) targetCaptured=\(target.focusedInput != nil, privacy: .public) exactInput=\(target.focusedInput?.hasExactInput ?? false, privacy: .public)")
         SoundManager.shared.playStopSound()
         FocusLockService.shared.setStartInputIndicatorVisible(target.destination == .recordingStart)
         await actions.dismiss()
@@ -783,7 +782,7 @@ final class TranscriptionDelivery: TranscriptionDelivering {
         // Primary already awaits this MainActor operation. Do not create a new
         // queued Task only to await it; a busy HUD can delay that extra turn.
         let pasteResult = await CursorPaster.pasteAtCursorAndWaitUntilPosted(pastedText)
-        vippLog.info("paste: primary current-input command completed result=\(String(describing: pasteResult), privacy: .public) frontmostPid=\(NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1, privacy: .public)")
+        vippLog.info("paste: primary current-input command completed result=\(String(describing: pasteResult), privacy: .public) currentInput=true")
         switch pasteResult {
         case .actionGuardRefused, .commandNotPosted:
             _ = ClipboardManager.copyToClipboard(pastedText)
@@ -797,16 +796,11 @@ final class TranscriptionDelivery: TranscriptionDelivering {
             break
         }
 
-        // Keep this generic and current-input-driven: no app classifier, saved AX
-        // wrapper, semantic Send, or verification. Upstream VoiceInk waits 500 ms
-        // here; 220 ms preserves the effective delay of the last successful System
-        // Events route while giving a lagging Electron input time to consume Cmd-V.
-        // A Mode with auto-send disabled needs no delay, but still reports its
-        // successful tail paste so any earlier cohort suppression can resolve.
+        // Only configured automatic Send needs this user-approved shorter wait.
+        // Paste-only Modes have no wait here. Primary stays generic: no app
+        // classification, saved AX input, readiness probe, focus rewrite or retry.
         if autoSendKey.isEnabled {
-            try? await Task.sleep(
-                nanoseconds: Self.primaryCurrentInputSettleNanoseconds
-            )
+            try? await Task.sleep(nanoseconds: Self.primaryCurrentInputSettleNanoseconds)
         }
         // This is the last safe boundary before the irreversible generic Return.
         // The delivery lease prevents a newer microphone capture from starting while
@@ -829,15 +823,14 @@ final class TranscriptionDelivery: TranscriptionDelivering {
             return
         }
 
-        let currentPID = NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1
         let sendResult = await CursorPaster.performAutoSend(
             queuedAutoSend.effectiveKey,
-            targetPID: currentPID,
             // Keep Primary generic and current-input-driven. Do not send through
             // the shared System Events process: killing a timed-out osascript does
             // not cancel the Apple Event already wedged inside that singleton, so
             // every later recording can lose Return. Post exactly one global HID
-            // down/up after the bounded settle—no retry, app classifier, or target.
+            // down/up after the approved paste allowance—no key hold, retry,
+            // app classifier or target.
             method: .cgEvent,
             // This app's editor is never a destination for its own finished
             // message. Inspect only our local responder, not a saved input/app.
@@ -846,7 +839,7 @@ final class TranscriptionDelivery: TranscriptionDelivering {
         switch sendResult {
         case .commandPosted:
             onQueuedAutoSendIssued()
-            vippLog.info("paste: primary current-input HID auto-send issued=true verification=notRequired settleMs=220 key=\(queuedAutoSend.effectiveKey.rawValue, privacy: .public) frontmostPid=\(NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1, privacy: .public)")
+            vippLog.info("paste: primary current-input HID auto-send issued=true verification=notRequired settleMs=150 key=\(queuedAutoSend.effectiveKey.rawValue, privacy: .public) currentInput=true")
         case .actionGuardRefused:
             showAutoSendFailure(
                 "Transcription pasted, but Return could not be issued",

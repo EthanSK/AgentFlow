@@ -141,13 +141,14 @@ class TranscriptionPipeline {
                 return app.processIdentifier
             }()
             let scopeStarted = Date()
-            let ids = if let processID {
-                await CodexConversationContextReader.selectionThreadIDs(processIdentifier: processID)
-            } else { [String]() }
+            let scopeRead = if let processID {
+                await CodexConversationContextReader.selectionThreadRead(processIdentifier: processID)
+            } else { CodexConversationContextReader.SelectionThreadRead.empty }
+            let ids = scopeRead.ids
             let recipientMs = scopeStarted.timeIntervalSince(recipientStarted) * 1_000
             let scopeMs = Date().timeIntervalSince(scopeStarted) * 1_000
             Logger(subsystem: "com.ethansk.VoiceInkPlusPlus", category: "VIPPDebug").info(
-                "prompt preparation: recipientMs=\(recipientMs, privacy: .public) frontmostMs=\(frontmostMs, privacy: .public) appMetadataMs=\(appMetadataMs, privacy: .public) hostCheckMs=\(hostCheckMs, privacy: .public) scopeMs=\(scopeMs, privacy: .public) candidateCount=\(ids.count, privacy: .public)")
+                "prompt preparation: recipientMs=\(recipientMs, privacy: .public) frontmostMs=\(frontmostMs, privacy: .public) appMetadataMs=\(appMetadataMs, privacy: .public) hostCheckMs=\(hostCheckMs, privacy: .public) scopeMs=\(scopeMs, privacy: .public) scopeWorkMs=\(scopeRead.workMs, privacy: .public) scopeWaitMs=\(max(0, scopeMs - scopeRead.workMs), privacy: .public) candidateCount=\(ids.count, privacy: .public)")
             let chatID = ids.count == 1 ? ids[0] : nil
             return try await AgentFlowPromptArchive.save(text, recordID: id, chatID: chatID)
         },
