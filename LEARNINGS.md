@@ -1,5 +1,27 @@
 # Learnings
 
+---
+**Date:** 2026-11-01T13:47:50Z
+**Trigger:** Ethan asked for the floating Agent Flow background to change from black to orange while paused because he forgets capture is paused.
+**Symptom:** The small pause indicator did not make a paused capture session obvious enough.
+**Root cause:** Mini and Notch recorder backgrounds used black or their transcript gradient regardless of the existing shared recordingState.
+**Fix:** Build 475 uses the same RecorderPanelAppearance dark orange on both whole HUD surfaces only when recordingState is paused. Resume returns to the existing black/gradient; typing-only microphoneOff is not pause. The existing Play control becomes white for contrast. No recording, provider, timing, delivery, settings or focus logic changed.
+**Commit:** d943e00fbd62c73331ee30eab44374dc9b46dd31
+**Guard:** The real hosted Mini/Notch transition test checks short and expanded surfaces through recording, typing-only, paused and resumed states. All 12 focused and 788 full tests in 29 suites passed using canonical Mini xcodebuild; focused, ordinary Release and full jobs have identical selected source digests. Both paused layouts and black recording counterparts were visually inspected. Stable local outer/nested signing and Automation/audio-input entitlements verified; build 475 installed through the real five-second warning and cooperative all-session quit guard, with verified 474 rollback ZIP. New PID/signature/executable were verified, protected preferences and official VoiceInk remained unchanged. Physical user gesture acceptance was not exercised.
+---
+
+
+---
+**Date:** 2026-11-01T13:38:39Z
+**Trigger:** none
+**Symptom:** Voice finish can spend seconds loading after capture stops, including occasional much longer stalls.
+**Root cause:** Existing build-474 metadata separated variable voice finalization from local elapsed handoffs. Two complete real finishes took 2.017/2.345 seconds after Stop: 1.011/1.242 seconds transcription; 0.286/0.261 before transcription; 0.271/0.363 preparation; 0.449/0.479 generic paste/Return. The release-to-Stop gesture added 0.478/0.460 seconds. One other live final wait returned no segment after 11.333 seconds, then completed-WAV fallback recovered 94 characters in 1.316 seconds. The missing reply cause was not established.
+**Fix:** For diagnosis first reuse bounded metadata logging: Notice provider completion plus a short allowlisted live delivery trace can measure phases without retaining content or changing the app. The trace was stopped after the sample. Provider-to-MainActor handoff in eight recent matched completions was 0.154–2.135 ms, so those multi-second waits were not explained by UI delivery of a completed response. No model, prompt, microphone, timing or delivery setting was changed.
+**Commit:** d7a1069d4fc57261b5801fc4dafd7a96f0dee831
+**Guard:** Elapsed local preparation includes scheduling and IO, not measured CPU time. Streaming totals include drain/final processing and do not isolate broadband from provider computation. Generic paste/Return completion does not prove recipient pixels. Empty live and batch recognition can be no speech rather than a provider error; distinguish that from a recovered nonempty fallback. The Primary multi-click decision is intentional and must not be removed as a logging optimization.
+---
+
+
 ## 2026-11-01 — Format explicit spoken website addresses locally
 
 Ethan wants to dictate website URLs, with `speedtest.net` as his example. A fresh
