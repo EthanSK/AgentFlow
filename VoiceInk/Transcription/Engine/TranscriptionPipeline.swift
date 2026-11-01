@@ -491,11 +491,29 @@ class TranscriptionPipeline {
             completionDispositionNow = completionPolicyNow.completionDisposition
             autoSendDispositionNow = completionPolicyNow.autoSendDisposition
             transcription.preservesOriginalAudioForRecovery = transcription.preservesOriginalAudioForRecovery || completionDispositionNow == .clipboardOnly
+            // Ethan also sends screenshots without speaking. OpenAI's completed-
+            // WAV adapter returns an empty String only after HTTP success and a
+            // valid string-valued `text` field. Realtime empty/failed results still
+            // take that existing WAV fallback; transport/decode errors still throw.
+            // Classify BEFORE output filtering so discarded provider boilerplate
+            // cannot masquerade as a successful empty recognition. Other providers
+            // retain their stricter empty-result contract.
+            let completedWithoutRecognizedSpeech = model.provider == .openAI
+                && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             text = TranscriptionOutputFilter.filter(text)
-            if hasCapturedAudio && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                // Providers differ on whether an empty 200 throws. Never silently
-                // turn lost speech into a successful typed-only auto-submission.
+            if hasCapturedAudio && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && !completedWithoutRecognizedSpeech {
+                // An unqualified empty result remains failure, preserving typed-
+                // draft recovery without auto-send for other providers.
                 throw VoiceInkEngineError.transcriptionFailed
+            }
+            if hasCapturedAudio && completedWithoutRecognizedSpeech {
+                // Preserve the WAV if recognition missed real speech. This result
+                // means no recognized words, not proof that the microphone was silent.
+                // Context uses the ordinary final-message route below; no context and
+                // no words remains a no-op before paste/Return.
+                transcription.preservesOriginalAudioForRecovery = true
+                vippLog.info("pipeline: OpenAI completed with no recognized speech; retaining captured context and audio")
             }
             let transcriptionDuration = Date().timeIntervalSince(transcriptionStart)
             vippLog.info("pipeline: transcribe SUCCESS chars=\(text.count, privacy: .public) digest=\(TranscriptionLineageDigest.make(text), privacy: .public) elapsed=\(transcriptionDuration, format: .fixed(precision: 3), privacy: .public)s \(jobIdentity.logDescription, privacy: .public)")

@@ -5729,6 +5729,18 @@ struct VoiceInkTests {
         #expect(abortBody.contains("Recording stopped before startup completed"))
     }
 
+    @Test func openAICompletedResponseSeparatesEmptyTextFromMalformedPayload() throws {
+        for text in ["", " \n ", "Recognized speech"] {
+            let data = try JSONSerialization.data(withJSONObject: ["text": text])
+            #expect(try OpenAICompletedAudioTranscriber.decodeCompletedResponse(data) == text)
+        }
+        for malformed in ["{}", "{\"text\":null}", "{\"text\":42}", "{\"error\":{\"message\":\"failure\"}}", "invalid JSON"] {
+            #expect(throws: DecodingError.self) {
+                try OpenAICompletedAudioTranscriber.decodeCompletedResponse(Data(malformed.utf8))
+            }
+        }
+    }
+
     @Test func providerFailureRecoveryDistinguishesSilentExitAudioAndHUDText() {
         #expect(TranscriptionFailureRecoveryDisposition.resolve(
             shouldSuppressFailureNotification: true,

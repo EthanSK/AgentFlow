@@ -1649,7 +1649,8 @@ struct RecorderTypedInputTests {
         lateShiftStage: String = "beforePolicy", providerFails: Bool = false,
         canceled: Bool = false, authorized: Bool = true, emptyProvider: Bool = false,
         realRecoveryGate: Bool = false, hudRecovery: String = "", enhancementResult: String? = nil,
-        finishWithEscape: Bool = false
+        finishWithEscape: Bool = false, usesOpenAIAudio: Bool = false,
+        sourceReferences: [LiveSelectionReference]? = nil
     ) async throws -> ClipboardPipelineResult {
         let schema = Schema([Transcription.self, WordReplacement.self, SessionMetric.self])
         let container = try ModelContainer(for: schema,
@@ -1699,7 +1700,9 @@ struct RecorderTypedInputTests {
         if let entry = LiveSelectionReference(typedText: typed) {
             references.append(entry.timed(at: Date(timeIntervalSince1970: 99), startedAt: Date(timeIntervalSince1970: 98)))
         }
-        if includeContext {
+        if let sourceReferences {
+            references.append(contentsOf: sourceReferences)
+        } else if includeContext {
             references.append(try #require(LiveSelectionReference("Selected exact content & metadata"))
                 .anchored(after: "Speech before").timed(at: Date(timeIntervalSince1970: 100)))
             references.append(try #require(LiveSelectionReference(screenshotURL: URL(fileURLWithPath: "/tmp/no-private-image.png")))
@@ -1712,7 +1715,8 @@ struct RecorderTypedInputTests {
         let record = Transcription(text: "", duration: 0)
         context.insert(record)
         let url = directory.appendingPathComponent("unused.wav")
-        let model = NativeAppleModel(name: "unused", displayName: "Unused", description: "Test", isMultilingualModel: false, supportedLanguages: [:])
+        let model: any TranscriptionModel = usesOpenAIAudio ? OpenAIProvider().models[0]
+            : NativeAppleModel(name: "unused", displayName: "Unused", description: "Test", isMultilingualModel: false, supportedLanguages: [:])
         let mode = ModeConfig(name: "Test", isAIEnhancementEnabled: false, outputMode: outputMode,
             autoSendKey: .enter, isStyledContextEnabled: styled)
         let stoppedSession = RecordingSession()
@@ -1760,7 +1764,7 @@ struct RecorderTypedInputTests {
                 requestContext: .init(language: "en", prompt: nil)),
             jobIdentity: .init(generation: 1, enqueueSequence: 1, recordingSessionID: UUID(), transcriptionID: record.id, audioURL: url),
             formattingConfiguration: { .init(mode: mode, isTextFormattingEnabled: false) },
-            session: audio, hasCapturedAudio: providerFails || !speech.isEmpty,
+            session: audio, hasCapturedAudio: usesOpenAIAudio || providerFails || !speech.isEmpty,
             enhancementConfiguration: {
                 enhancement == nil ? nil : .init(mode: mode, isEnabled: true, prompt: nil,
                     provider: nil, modelName: nil, useClipboardContext: false,
@@ -1792,6 +1796,18 @@ struct RecorderTypedInputTests {
                 return true
             }, onCancel: {}, onDismiss: {}, onTranscriptionFailure: { _ in failureCount += 1 },
             onFailureCopyText: { failureCopy = $0 })
+        if usesOpenAIAudio && !providerFails && !canceled {
+            #expect(audio.transcriptionCalls == 1)
+            #expect(record.transcriptionStatus == TranscriptionStatus.completed.rawValue)
+            #expect(record.preservesOriginalAudioForRecovery && failureCount == 0)
+            let hasContent = !references.isEmpty || !typed.isEmpty
+            #expect(output.messages.count == (hasContent && !clipboardOnly && !raw ? 1 : 0))
+            #expect(output.keys.count == output.messages.count)
+            if output.messages.isEmpty { #expect(output.keys.isEmpty) }
+            else { #expect(output.keys == [.enter]) }
+            return .init(message: clipboardOnly ? (board.string(forType: .string) ?? "") : (output.messages.first ?? ""),
+                history: record.enhancedText ?? record.text, archive: archived, link: link)
+        }
         if providerFails || canceled {
             #expect(record.preservesOriginalAudioForRecovery)
             #expect(output.keys.allSatisfy { $0 == .none })
@@ -1902,6 +1918,37 @@ struct RecorderTypedInputTests {
             typed: "Never silently drop these", providerFails: true, emptyProvider: true,
             realRecoveryGate: true)
         #expect(result.message.contains("Never silently drop these"))
+    }
+
+    @Test @MainActor func successfulOpenAIEmptyRecognitionDeliversScreenshotWithoutWords() async throws {
+        let screenshot = try #require(LiveSelectionReference(screenshotURL: URL(fileURLWithPath: "/tmp/screenshot-only.png")))
+        for clipboardOnly in [false, true] {
+            let result = try await clipboardPipelineFixture(clipboardOnly: clipboardOnly,
+                typed: "", usesOpenAIAudio: true, sourceReferences: [screenshot])
+            #expect(result.archive.contains("<local_screenshot path=\"/tmp/screenshot-only.png\""))
+            #expect(!result.archive.contains("<speech") && !result.archive.contains("<typed_text"))
+            #expect(!result.link.isEmpty)
+            #expect(result.message.contains("screenshot-only.png") || result.message.contains(result.link))
+            #expect(!result.message.contains("Transcription Failed:"))
+        }
+    }
+
+    @Test @MainActor func successfulOpenAIEmptyRecognitionWithoutContextNeverPastesOrSends() async throws {
+        let result = try await clipboardPipelineFixture(clipboardOnly: false, typed: "",
+            includeContext: false, usesOpenAIAudio: true)
+        #expect(result.message.isEmpty && result.archive.isEmpty && result.history.isEmpty)
+    }
+
+    @Test @MainActor func failedOpenAIRequestDoesNotSendScreenshotAsSuccessfulSpeech() async throws {
+        let result = try await clipboardPipelineFixture(clipboardOnly: false, typed: "",
+            providerFails: true, usesOpenAIAudio: true)
+        #expect(result.archive.isEmpty)
+    }
+
+    @Test @MainActor func successfulOpenAIEmptyRecognitionStillHonorsRawSkipContextOptOut() async throws {
+        let result = try await clipboardPipelineFixture(clipboardOnly: false, typed: "",
+            raw: true, usesOpenAIAudio: true)
+        #expect(result.message.isEmpty && result.archive.isEmpty)
     }
 
     @Test @MainActor func voiceOnlyFailureNeverAcquiresDestinationAndWontPasteStaysFailed() async throws {
