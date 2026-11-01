@@ -1,5 +1,48 @@
 # Learnings
 
+## 2026-11-01 — Successful empty recognition is separate from provider failure
+
+Ethan wants to send screenshots without speaking. All seven saved Modes still use
+English GPT Live Transcribe. Current OpenAI documentation distinguishes completed
+transcription from failed/error events, but GPT Live supplies no confidence or
+guaranteed no-speech flag and does not support server VAD. A valid empty transcript
+means no words were recognized; neither file size, quiet PCM nor an empty detected-
+language list proves acoustic silence.
+
+A fresh three-second generated-silence WAV returned HTTP 200 from `gpt-transcribe`
+with a valid string `text` of length zero. The existing synthetic provider probe
+received session.updated, 19 live deltas, and 101-character live and batch results.
+No microphone, private recording, setting or captured-reference prompt was used.
+
+Build 473 accepts a valid empty completed-WAV OpenAI result instead of throwing
+`noTranscriptionReturned`. Empty/failed live transcription still uses the existing
+single full-WAV fallback. The pipeline qualifies empty OpenAI success before output
+filtering, keeps its WAV recoverable, and composes screenshots/typing using the
+unchanged final-message route. Missing/null/non-string text, malformed JSON, HTTP
+and transport failures still fail; unqualified empty results from other providers
+still use failed-voice recovery without Return. With no authored/context content,
+the existing empty-delivery guard prevents paste and Return. Raw/skip continues to
+exclude screenshots and selections. This changes result handling, not recognition
+settings, capture or destination ownership.
+
+The final focused canonical Mini Xcode selection passed 14 tests: structured
+response decoding, screenshot-only automatic/clipboard completion, entirely empty
+no-op, raw context opt-out, real failure behavior, typed recovery, empty-live
+fallback, same-item delta recovery, Primary isolation, both Next-route boundaries
+and HUD-only realtime output. The exact native commit
+`e113866f6f84efce77f99cf5eea8c2668ba4577a` then passed the canonical full Mini Xcode
+test action: 777 named tests in 28 suites, with zero failures. The transferred
+build 473 was signed with the existing VoiceInk Local Signing identity, preserved
+its designated requirement and Automation/audio entitlements, and installed after
+the five-second warning and the old app's cooperative all-session quit guard.
+The new running PID was 69248 and its CDHash was
+`93fd611260b6b7254c76cfa11f8625ce7a501c71`. Protected microphone/Mode/context
+preferences, the app icon and the separate official VoiceInk executable were
+unchanged. The verified build-472 ZIP remains in Release Rollbacks/Archives.
+Receipts are in `Documents/Codex/2026-11-01/agentflow-empty-speech473/`; the full
+Mini log is `AgentFlow-new-chat463.noindex/full473.log`. A synthetic pipeline sink
+does not prove physical screenshot-only paste, which was not exercised here.
+
 ## 2026-10-31 — Remove the secondary app icon without changing delivery
 
 Ethan explicitly removed the recorder's "secondary app icon" because it was

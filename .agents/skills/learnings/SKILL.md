@@ -559,6 +559,16 @@ against the source audio rather than treating text fluency as ground truth.
 
 For a realtime stop that pastes nothing or appears to skip Return, separate transcription finalization from delivery before touching Primary or Next routing. Correlate `Streaming stop completed ... finalChars=` with `pipeline: about to DELIVER finalChars=` and the selected Mode. `finalChars=0` is not a successful final: the completed audio must take the existing batch fallback before any delivery route runs. A non-empty Primary trace with `targetAutoSend=none` instead means the current input app's Mode intentionally disabled Return; do not reinterpret it as latch contamination.
 
+Distinguish that empty live result from OpenAI's successful completed-WAV response
+with a valid but empty string `text`. The latter means no words were recognized:
+retain the audio, allow captured screenshot/selection or typed content through the
+normal final-message path, and keep an entirely empty message a no-op. It is not
+proof of acoustic silence. HTTP, transport, missing/null text and decoding failures
+remain errors; other providers retain their existing empty-result checks. Never
+infer silence from file size, volume, an empty language list or missing confidence.
+Self-improved — 2026-11-01: real synthetic silence returned HTTP 200 with zero text,
+speech passed live/batch, and the 14 focused Mini checks preserved these boundaries.
+
 ## Normalize the two mouse controls before reasoning
 
 - **Primary button** is the preferred name for Ethan's normal recording control. **Normal button**, **thumb button**, **toggle button**, **recording button**, **same button**, and historical **G5** are aliases. First press starts. While recording, one press performs a base VoiceInk normal stop after the shorter of the macOS double-click interval and 0.45 seconds into whichever system keyboard input is focused at final delivery (`primaryCurrentInput`). Two presses cancel that pending stop and, if no third press arrives through the full macOS multi-click interval, finish the session to a recoverable local audio/HUD draft plus final clipboard text without paste, auto-send, Mode command/response, or playback mutation. A third press inside that interval cancels the clipboard finish and pauses capture; a fourth press inside one more full-system continuation finalizes normal Primary paste with only that session's configured auto-send suppressed. Ignore a fifth press inside the consumed gesture. While paused, one fresh press resumes after the short second-press decision window; two fresh presses inside it propose the same clipboard-only/no-paste route, but a third inside the full continuation clears it and resumes the same capture. Primary owns no exact input or destination Mode.
