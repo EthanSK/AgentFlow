@@ -1,3 +1,4 @@
+// Top-anchored recorder card; appearance follows the shared live capture state.
 import SwiftUI
 
 struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
@@ -159,7 +160,9 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
         }
         .frame(width: pillWidth, height: pillHeight)
         .background {
-            if displayState == .liveText && liveTranscriptHeight > 100 {
+            if stateProvider.recordingState == .paused {
+                RecorderPanelAppearance.pausedBackground
+            } else if displayState == .liveText && liveTranscriptHeight > 100 {
                 LinearGradient(
                     colors: [.black.opacity(0.55), .black.opacity(0.82), .black],
                     startPoint: .top,

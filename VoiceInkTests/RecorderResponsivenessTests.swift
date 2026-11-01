@@ -1,3 +1,4 @@
+// Exercise real hosted recorder layouts without microphone capture or shortcuts.
 import Darwin
 import Foundation
 import Testing
@@ -8,6 +9,73 @@ import SwiftUI
 
 @Suite(.serialized)
 struct RecorderResponsivenessTests {
+    @Test @MainActor func pausedRecorderBackgroundTracksStateAcrossBothStyles() async throws {
+        let session = RecordingSession(phase: .recording)
+        session.partialTranscript = "A retained transcript remains visible while paused."
+        let recorder = Recorder()
+        let assistant = AssistantSession()
+        for height in [CGFloat(56), CGFloat(180)] {
+            let views: [(String, AnyView, CGFloat)] = [
+                ("mini", AnyView(MiniRecorderView(stateProvider: session,
+                    liveTranscriptHeight: height, liveTranscriptWidth: 640, recorder: recorder,
+                    assistantSession: assistant, onRecordButtonTapped: {}, onCloseTapped: {},
+                    onCancelTapped: {}, onAssistantFollowUp: { _ in })), 640),
+                ("notch", AnyView(NotchRecorderView(stateProvider: session, recorder: recorder,
+                    assistantSession: assistant, notchWidth: 180, notchHeight: 32,
+                    liveTranscriptHeight: height, onRecordButtonTapped: {}, onCloseTapped: {},
+                    onCancelTapped: {}, onAssistantFollowUp: { _ in })), MiniRecorderLayoutMetrics.liveTranscriptWidth)
+            ]
+            for (style, view, width) in views {
+                let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: width, height: 300),
+                                    styleMask: [.borderless, .nonactivatingPanel],
+                                    backing: .buffered, defer: false)
+                panel.isOpaque = false
+                panel.backgroundColor = .clear
+                let host = NSHostingView(rootView: view.frame(width: width, height: 300))
+                panel.contentView = host
+                panel.orderFrontRegardless()
+                defer { panel.orderOut(nil); panel.close() }
+                // Reuse each host across transitions: a static paused rendering
+                // alone would not prove that Resume restores the ordinary surface.
+                for (name, state, microphoneOff) in [
+                    ("recording", RecordingState.recording, false),
+                    ("typing", .recording, true),
+                    ("paused", .paused, false),
+                    ("resumed", .recording, false)
+                ] {
+                    session.microphoneOff = microphoneOff
+                    session.liveRecordingState = state
+                    host.layoutSubtreeIfNeeded()
+                    try await Task.sleep(for: .milliseconds(150))
+                    host.layoutSubtreeIfNeeded()
+                    let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                    host.cacheDisplay(in: host.bounds, to: bitmap)
+                    var painted = 0
+                    var orange = 0
+                    for y in stride(from: 0, to: bitmap.pixelsHigh, by: 4) {
+                        for x in stride(from: 0, to: bitmap.pixelsWide, by: 4) {
+                            guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB),
+                                  color.alphaComponent > 0.2 else { continue }
+                            painted += 1
+                            if color.redComponent > 0.35, color.greenComponent > 0.10,
+                               color.greenComponent < 0.45, color.blueComponent < 0.12,
+                               color.redComponent > color.greenComponent * 1.5 { orange += 1 }
+                        }
+                    }
+                    #expect(painted > 100)
+                    let orangeFraction = Double(orange) / Double(max(painted, 1))
+                    #expect(state == .paused ? orangeFraction > 0.65 : orangeFraction < 0.08)
+                    if let directory = ProcessInfo.processInfo.environment["VIPP_PAUSE_SNAPSHOT_DIR"] {
+                        let folder = URL(fileURLWithPath: directory, isDirectory: true)
+                        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                        let image = try #require(bitmap.representation(using: .png, properties: [:]))
+                        try image.write(to: folder.appendingPathComponent("\(style)-\(Int(height))-\(name).png"))
+                    }
+                }
+            }
+        }
+    }
+
     @Test @MainActor func recorderAppIconLayoutSnapshots() async throws {
         // Render the real views without starting capture or posting shortcuts.
         // These images let us inspect spacing after removing the secondary app icon.

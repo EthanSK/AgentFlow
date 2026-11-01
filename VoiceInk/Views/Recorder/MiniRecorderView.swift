@@ -1,3 +1,4 @@
+// Bottom-anchored recorder card; every monitor observes the same live session.
 import SwiftUI
 
 struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
@@ -202,7 +203,9 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
         }
         .frame(width: capsuleWidth)
         .background {
-            if hasLiveTranscript && liveTranscriptHeight > 100 {
+            if stateProvider.recordingState == .paused {
+                RecorderPanelAppearance.pausedBackground
+            } else if hasLiveTranscript && liveTranscriptHeight > 100 {
                 LinearGradient(
                     colors: [.black.opacity(0.55), .black.opacity(0.82), .black],
                     startPoint: .top,

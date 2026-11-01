@@ -1,5 +1,12 @@
+// Shared recorder controls and appearance for every mirrored Mini/Notch HUD.
 import SwiftUI
 import AppKit
+
+enum RecorderPanelAppearance {
+    // Ethan forgets when capture is paused: use the whole surface as the signal,
+    // with a dark orange that keeps white text and the Resume control readable.
+    static let pausedBackground = Color(red: 0.60, green: 0.25, blue: 0)
+}
 
 // MARK: - App Version
 
@@ -663,7 +670,7 @@ struct RecorderPauseButton<S: RecorderStateProvider & ObservableObject>: View {
         Button(action: stateProvider.togglePause) {
             Image(systemName: symbolName)
                 .font(.system(size: 12))
-                .foregroundStyle(stateProvider.recordingState == .paused ? .orange : .white.opacity(0.75))
+                .foregroundStyle(stateProvider.recordingState == .paused ? .white : .white.opacity(0.75))
                 .frame(width: 24, height: 24)
         }
         .buttonStyle(.plain)
