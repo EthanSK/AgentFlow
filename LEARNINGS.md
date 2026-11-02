@@ -18,6 +18,10 @@ signing fixtures and the separate helper build passed on the Mini. Its default N
 26 installation could not load a Homebrew library; the already installed Node 22
 ran the checks, without repairing or changing system packages.
 
+Release notes must link the canonical current setup guide, while their GPL source
+link stays bound to the artifact commit. The artifact commit precedes the later
+download-link update, so pinning setup to it offered the previous app download.
+
 Developer ID signing/notarization, downloaded-checksum verification and isolated skill
 installation are separate from a fresh macOS-account permissions/recording test. Never
 call the latter complete from these receipts. The owner's running app, settings and

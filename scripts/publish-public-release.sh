@@ -39,13 +39,14 @@ if gh release view "$tag" --repo "$repo" >/dev/null 2>&1; then
   echo "Release $tag already exists. Refusing to overwrite its assets." >&2
   exit 1
 fi
+# Setup follows the canonical current guide; the GPL source remains bound to this exact artifact.
 notes="Developer ID-signed and Apple-notarized Agent Flow for Apple silicon and Intel, macOS 14.4 or later.
 
 Download the ZIP, extract AgentFlow.app, and move it to Applications. Grant Microphone and Accessibility, choose your microphone, then use the local model or your own supported provider/key. The context skill has a standalone installer for Codex and Claude Code. The YouTube Bridge, Chrome extension and Agentic Mouse remain separate optional setup steps.
 
 This is a public download, not an automatic in-app update. Before replacing an existing Agent Flow or VoiceInk++ install, finish any recording/transcription and keep a ZIP backup of the old app. The official VoiceInk app is a separate product.
 
-Setup: https://github.com/$repo/blob/$source_sha/SETUP.md
+Setup: https://github.com/$repo/blob/main/SETUP.md
 Corresponding GPLv3 source: https://github.com/$repo/tree/$source_sha
 SHA-256: $expected_sha"
 gh release create "$tag" --repo "$repo" --target "$source_sha" --draft \
