@@ -1530,14 +1530,20 @@ final class LiveSelectionCapture {
             app, fileManager: .default
         )
         captureTask?.cancel()
+        let readRequestedAt = DispatchTime.now().uptimeNanoseconds
         captureTask = Task { @MainActor [weak self] in
             async let beforeLabels: [String] = isCodex
                 ? CodexConversationContextReader.selectionThreadIDs(processIdentifier: sourcePID) : []
             let startedAt = DispatchTime.now().uptimeNanoseconds
+            var readStartedAt: UInt64?
+            var readReturnedAt: UInt64?
+            var commitStartedAt: UInt64?
             var outcome = "canceled-by-new-gesture-or-stop"
             defer {
                 LiveSelectionDiagnostics.finished(
-                    outcome: outcome, bundleID: bundleID, startedAt: startedAt
+                    outcome: outcome, bundleID: bundleID, startedAt: startedAt,
+                    requestedAt: readRequestedAt, readReturnedAt: readReturnedAt,
+                    readStartedAt: readStartedAt, commitStartedAt: commitStartedAt
                 )
             }
             // The target app finishes its own mouse-up selection update before
@@ -1559,6 +1565,7 @@ final class LiveSelectionCapture {
                 outcome = "gesture-outside-source-window"
                 return
             }
+            readStartedAt = DispatchTime.now().uptimeNanoseconds
             let chromeContext = bundleID == "com.google.Chrome" && Self.isFrontmost(sourcePID)
                 ? await ChromeSelectionContextReader.capture() : nil
             let selectedText: String?
@@ -1583,6 +1590,7 @@ final class LiveSelectionCapture {
                 selectedText = result.text
                 accessibility = result.resolution
             }
+            readReturnedAt = DispatchTime.now().uptimeNanoseconds
             guard !Task.isCancelled else { return }
             guard Self.canRead(identity) else {
                 outcome = "source-changed-during-read"
@@ -1616,6 +1624,7 @@ final class LiveSelectionCapture {
             // Commit proven text before optional labels. A new click can cancel
             // metadata work, but must not erase an already-read highlight or
             // move it after newer speech/context while a log scan finishes.
+            commitStartedAt = DispatchTime.now().uptimeNanoseconds
             self.onCapture(captured.timed(at: selectedAt).identifiedForCapture(captureID),
                            precedesSpeech, spokenAnchor)
             outcome = "emitted-to-session"

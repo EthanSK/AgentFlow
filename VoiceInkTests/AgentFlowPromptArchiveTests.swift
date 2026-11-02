@@ -6,6 +6,17 @@ import Testing
 
 @MainActor
 struct AgentFlowPromptArchiveTests {
+    @Test func archiveHandoffSeparatesWorkerJoinFromMainResumeWithoutContent() {
+        let timing = AgentFlowPromptArchive.HandoffTiming(submitted: 0,
+            workerStarted: 1_000_000, workFinished: 3_000_000,
+            returnReady: 4_000_000, joined: 9_000_000,
+            workerWasMainThread: false, joinWasMainThread: false)
+        #expect(timing.description(resumedAt: 20_000_000) ==
+            "workerQueueMs=1.0 workerWorkMs=2.0 workerLogMs=1.0 workerJoinMs=5.0 mainResumeMs=11.0 workerMain=false joinMain=false")
+        #expect(AgentFlowPromptArchive.HandoffTiming.milliseconds(from: 2, to: 1) == -1)
+        #expect(AgentFlowPromptArchive.HandoffTiming.milliseconds(from: 2, to: 2) == 0)
+    }
+
     @Test func oneParsedPromptPreservesViewerContentAndAuthoredWordCount() {
         let source = "Unmatched opening\n<typed_text>one &amp; two\nthree</typed_text>\n"
             + "<app_selection><text>context only</text></app_selection>\n"
@@ -27,6 +38,12 @@ struct AgentFlowPromptArchiveTests {
         let cursor = AuthoredTextRainbow.Cursor()
         let text = "<typed_text>complete worker-owned prompt</typed_text>"
         let saved = try await AgentFlowPromptArchive.save(text, recordID: UUID(), directory: root, colorCursor: cursor)
+        let timing = try #require(saved.handoffTiming)
+        #expect(timing.submitted <= timing.workerStarted)
+        #expect(timing.workerStarted <= timing.workFinished)
+        #expect(timing.workFinished <= timing.returnReady)
+        #expect(timing.returnReady <= timing.joined)
+        #expect(!timing.workerWasMainThread)
         #expect(saved.rainbowStartIndex == 0)
         #expect(try String(contentsOf: saved.url, encoding: .utf8) == AgentFlowPromptArchive.interpretationReminder + text)
         let viewer = try #require(AgentFlowPromptArchive.viewerURL(for: saved.url))

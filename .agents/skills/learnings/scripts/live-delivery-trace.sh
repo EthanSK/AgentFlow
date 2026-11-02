@@ -15,7 +15,7 @@ LOCK_PID_FILE="$LOCK_DIR/pid"
 LAUNCHD_LABEL="com.ethansk.voiceink.live-delivery-trace.$(id -u)"
 LAUNCHD_SERVICE="gui/$(id -u)/$LAUNCHD_LABEL"
 
-PREDICATE='(process == "VoiceInkPlusPlus" || process == "AgentFlow") && ((subsystem == "com.ethansk.VoiceInkPlusPlus" && (category == "VIPPDebug" || category == "FocusLock" || category == "CodexConversationContext" || category == "TranscriptionRequestContext")) || (subsystem == "com.prakashjoshipax.voiceink" && (category == "ShortcutMonitor" || category == "RecordingShortcutManager" || category == "CursorPaster" || category == "StreamingTranscriptionSession" || category == "StreamingTranscriptionService" || category == "OpenAIStreamingProvider" || category == "Recorder" || category == "CoreAudioRecorder")))'
+PREDICATE='(process == "VoiceInkPlusPlus" || process == "AgentFlow") && ((subsystem == "com.ethansk.VoiceInkPlusPlus" && (category == "VIPPDebug" || category == "FocusLock" || category == "CodexConversationContext" || category == "TranscriptionRequestContext" || category == "TypingFocus" || category == "LiveSelection")) || (subsystem == "com.prakashjoshipax.voiceink" && (category == "ShortcutMonitor" || category == "RecordingShortcutManager" || category == "CursorPaster" || category == "StreamingTranscriptionSession" || category == "StreamingTranscriptionService" || category == "OpenAIStreamingProvider" || category == "Recorder" || category == "CoreAudioRecorder")))'
 
 usage() {
   printf 'usage: %s start|status|stop|show [line-count]\n' "$0" >&2
@@ -265,6 +265,12 @@ run_trace() {
       ensure_trace_file "$active_day" >/dev/null
     fi
     case "$line" in
+      *'[com.ethansk.VoiceInkPlusPlus:TypingFocus]'*'typing focus: request finished '*|\
+      *'[com.ethansk.VoiceInkPlusPlus:TypingFocus]'*'typing focus: restored '*|\
+      *'[com.ethansk.VoiceInkPlusPlus:LiveSelection]'*'Live selection finished '*|\
+      *'[com.ethansk.VoiceInkPlusPlus:LiveSelection]'*'Live selection gesture '*|\
+      *'[com.ethansk.VoiceInkPlusPlus:LiveSelection]'*'Live selection captured '*|\
+      *'[com.ethansk.VoiceInkPlusPlus:LiveSelection]'*'Live selection unavailable '*|\
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'paste retarget:'*|\
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'primary mouse: readiness ready='*|\
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'primary mouse: edge source='*|\
@@ -288,6 +294,7 @@ run_trace() {
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'pipeline: local stages'*|\
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'prompt preparation:'*|\
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'prompt archive stages:'*|\
+      *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'pipeline: archive handoff '*|\
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'paste:'*|\
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'toggleRecord:'*|\
       *'[com.ethansk.VoiceInkPlusPlus:VIPPDebug]'*'toggleRecorderPanel:'*|\

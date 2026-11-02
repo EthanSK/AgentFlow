@@ -13,6 +13,41 @@ enum AgentFlowPromptArchive {
     struct SavedPrompt: Sendable {
         let url: URL
         let rainbowStartIndex: Int
+        let handoffTiming: HandoffTiming?
+
+        init(url: URL, rainbowStartIndex: Int, handoffTiming: HandoffTiming? = nil) {
+            self.url = url
+            self.rainbowStartIndex = rainbowStartIndex
+            self.handoffTiming = handoffTiming
+        }
+    }
+
+    /// Ethan's "local prep" gap spans worker completion and the UI continuation.
+    /// Measure those boundaries independently: the earlier worker log preceded
+    /// its return and therefore could not prove that the main actor was blocked.
+    /// These clocks contain no prompt, path, window identity or selected text.
+    struct HandoffTiming: Sendable {
+        let submitted: UInt64
+        let workerStarted: UInt64
+        let workFinished: UInt64
+        let returnReady: UInt64
+        let joined: UInt64
+        let workerWasMainThread: Bool
+        let joinWasMainThread: Bool
+
+        static func milliseconds(from start: UInt64, to end: UInt64) -> Double {
+            guard end >= start else { return -1 }
+            return Double(end - start) / 1_000_000
+        }
+
+        func description(resumedAt: UInt64) -> String {
+            "workerQueueMs=\(Self.milliseconds(from: submitted, to: workerStarted)) " +
+            "workerWorkMs=\(Self.milliseconds(from: workerStarted, to: workFinished)) " +
+            "workerLogMs=\(Self.milliseconds(from: workFinished, to: returnReady)) " +
+            "workerJoinMs=\(Self.milliseconds(from: returnReady, to: joined)) " +
+            "mainResumeMs=\(Self.milliseconds(from: joined, to: resumedAt)) " +
+            "workerMain=\(workerWasMainThread) joinMain=\(joinWasMainThread)"
+        }
     }
     // The canonical file is the agent's prompt, while its viewer shows only
     // user events. Keep this one-line skill reminder out of the event stream
@@ -32,7 +67,10 @@ enum AgentFlowPromptArchive {
     ) async throws -> SavedPrompt {
         let destination = destinationOverride ?? directory
         // The user is waiting for a valid clickable prompt, not idle maintenance.
-        return try await Task.detached(priority: .userInitiated) {
+        let submitted = DispatchTime.now().uptimeNanoseconds
+        let result = try await Task.detached(priority: .userInitiated) {
+            let workerStarted = DispatchTime.now().uptimeNanoseconds
+            let workerWasMainThread = Thread.isMainThread
             let started = Date()
             let file = try write(text, recordID: recordID, directory: destination)
             let canonicalFinished = Date()
@@ -45,10 +83,19 @@ enum AgentFlowPromptArchive {
             try? writeViewer(prompt, for: file, rainbowStartIndex: start)
             let canonicalMs = canonicalFinished.timeIntervalSince(started) * 1_000
             let viewerMs = Date().timeIntervalSince(canonicalFinished) * 1_000
+            let workFinished = DispatchTime.now().uptimeNanoseconds
             Logger(subsystem: "com.ethansk.VoiceInkPlusPlus", category: "VIPPDebug").info(
                 "prompt archive stages: canonicalMs=\(canonicalMs, privacy: .public) viewerMs=\(viewerMs, privacy: .public)")
-            return SavedPrompt(url: file, rainbowStartIndex: start)
+            let returnReady = DispatchTime.now().uptimeNanoseconds
+            return (file, start, workerStarted, workFinished, returnReady, workerWasMainThread)
         }.value
+        // No new task, timer, sleep or UI hop here: timestamp the existing await.
+        // The caller's first instruction measures the separate main-actor hop.
+        let joined = DispatchTime.now().uptimeNanoseconds
+        return SavedPrompt(url: result.0, rainbowStartIndex: result.1,
+            handoffTiming: HandoffTiming(submitted: submitted, workerStarted: result.2,
+                workFinished: result.3, returnReady: result.4, joined: joined,
+                workerWasMainThread: result.5, joinWasMainThread: Thread.isMainThread))
     }
 
     static func write(_ text: String, recordID: UUID, directory: URL) throws -> URL {

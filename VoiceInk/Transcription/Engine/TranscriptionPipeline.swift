@@ -334,8 +334,12 @@ class TranscriptionPipeline {
             completePromptText = text
             do {
                 let saved = try await archivePrompt(text, transcription.id)
+                let archiveResumedAt = DispatchTime.now().uptimeNanoseconds
                 archivedPromptURL = saved.url
                 archivedRainbowStartIndex = saved.rainbowStartIndex
+                if let timing = saved.handoffTiming {
+                    vippLog.notice("pipeline: archive handoff \(timing.description(resumedAt: archiveResumedAt), privacy: .public) \(jobIdentity.logDescription, privacy: .public)")
+                }
                 vippLog.info("pipeline: complete prompt archived chars=\(text.count, privacy: .public) record=\(transcription.id.uuidString, privacy: .public)")
             } catch {
                 archiveFailed = true

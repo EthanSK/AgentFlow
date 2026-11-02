@@ -441,9 +441,18 @@ final class RecorderTypingFocus: ObservableObject {
         returnTask?.cancel()
         let attempts = maximumAttempts
         let delay = retryDelay
+        let requestedAt = DispatchTime.now().uptimeNanoseconds
         returnTask = Task { @MainActor [weak self] in
+            var outcome = "canceled-or-session-changed"
+            var attempted = 0
             defer {
                 if self?.generation == expectedGeneration { self?.returnTask = nil }
+                // Ethan's "another window opens" report needs evidence of who
+                // actually requested focus. This is one receipt per existing
+                // bounded request, with no new observer, AX read or window title.
+                let elapsed = AgentFlowPromptArchive.HandoffTiming.milliseconds(
+                    from: requestedAt, to: DispatchTime.now().uptimeNanoseconds)
+                Self.log.notice("typing focus: request finished generation=\(expectedGeneration) initial=\(initial) outcome=\(outcome, privacy: .public) attempts=\(attempted) durationMs=\(elapsed)")
             }
             // Event-driven, coalesced and bounded to two seconds, not an idle
             // focus watcher. Mouse-up, screenshot UI teardown and editor mounting
@@ -451,11 +460,15 @@ final class RecorderTypingFocus: ObservableObject {
             // silently discarded those requests. Never interrupt a held drag,
             // activate another app, or focus a session after finish/cancellation.
             for attempt in 0..<attempts {
+                attempted = attempt + 1
                 guard !Task.isCancelled, let self, self.isEnabled, self.canFocus(),
                       self.generation == expectedGeneration else { return }
                 // Recheck the explicit opt-out at the actual focus boundary;
                 // it cannot cancel an explicitly requested keyboard-mode start.
-                guard initial || (self.automaticReturnEnabled() && self.canAutomaticallyReturn()) else { return }
+                guard initial || (self.automaticReturnEnabled() && self.canAutomaticallyReturn()) else {
+                    outcome = "automatic-return-disabled-or-voice-only"
+                    return
+                }
                 if !self.mouseButtonsPressed() {
                     let editor: RecorderTypingTextView?
                     if initial {
@@ -470,12 +483,15 @@ final class RecorderTypingFocus: ObservableObject {
                         editor = self.preferredEditor
                     }
                     if let editor, let window = editor.window, window.isVisible {
+                        let appWasActive = NSApp.isActive
+                        let keyWasOwn = window.isKeyWindow
                         window.makeKey()
                         let accepted = window.makeFirstResponder(editor)
                         if accepted, window.isKeyWindow, window.firstResponder === editor {
                             self.preferredEditor = editor
                             self.initialFocusPending = false
-                            Self.log.info("typing focus: restored initial=\(initial) attempt=\(attempt + 1)")
+                            outcome = "restored"
+                            Self.log.notice("typing focus: restored initial=\(initial) attempt=\(attempt + 1) generation=\(expectedGeneration) appWasActive=\(appWasActive) keyWasOwn=\(keyWasOwn)")
                             return
                         }
                     }
@@ -484,6 +500,7 @@ final class RecorderTypingFocus: ObservableObject {
                     do { try await Task.sleep(nanoseconds: delay) } catch { return }
                 }
             }
+            outcome = "expired"
             Self.log.notice("typing focus: return expired initial=\(initial) attempts=\(attempts)")
         }
     }

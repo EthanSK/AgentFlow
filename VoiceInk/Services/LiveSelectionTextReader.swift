@@ -985,9 +985,17 @@ enum LiveSelectionDiagnostics {
     /// One persisted, text-free outcome per attempted gesture. Info-only AX
     /// traces were absent from historical logs, and a successful AX read did
     /// not prove that focus/cancellation checks allowed it into the HUD.
-    static func finished(outcome: String, bundleID: String?, startedAt: UInt64) {
+    static func finished(outcome: String, bundleID: String?, startedAt: UInt64,
+                         requestedAt: UInt64? = nil, readReturnedAt: UInt64? = nil,
+                         readStartedAt: UInt64? = nil, commitStartedAt: UInt64? = nil) {
+        let queueMs = requestedAt.map { AgentFlowPromptArchive.HandoffTiming.milliseconds(from: $0, to: startedAt) } ?? -1
+        let settleMs = readStartedAt.map { AgentFlowPromptArchive.HandoffTiming.milliseconds(from: startedAt, to: $0) } ?? -1
+        let readMs = readReturnedAt.map { AgentFlowPromptArchive.HandoffTiming.milliseconds(from: readStartedAt ?? startedAt, to: $0) } ?? -1
+        let afterReadMs = readReturnedAt.flatMap { read in
+            commitStartedAt.map { AgentFlowPromptArchive.HandoffTiming.milliseconds(from: read, to: $0) }
+        } ?? -1
         logger.notice(
-            "Live selection finished outcome=\(outcome, privacy: .public) bundle=\(bundleID ?? "unknown", privacy: .public) durationMs=\(elapsedMilliseconds(since: startedAt), privacy: .public)"
+            "Live selection finished outcome=\(outcome, privacy: .public) bundle=\(bundleID ?? "unknown", privacy: .public) durationMs=\(elapsedMilliseconds(since: startedAt), privacy: .public) queueMs=\(queueMs, privacy: .public) settleMs=\(settleMs, privacy: .public) readMs=\(readMs, privacy: .public) afterReadMs=\(afterReadMs, privacy: .public)"
         )
     }
 
