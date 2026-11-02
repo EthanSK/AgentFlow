@@ -2484,3 +2484,8 @@ verified deferred-termination callback; a process-exit wait alone cannot provide
 **Accepted narrower change:** Ethan initially selected zero waits despite unreliable auto-send, then immediately superseded that choice with “retain that” and “Just make it lower.” Retain a user-approved 150 ms paste-to-Send allowance (previously 220 ms), remove the other keyboard padding, and preserve clipboard leases, balanced keys and FIFO Return suppression. One ordinary live Chrome check passed at 150 ms; focus-guarded refusal is not a busy-page pass or universal app guarantee.
 
 **Reconsider only if:** Actual receiving-app evidence proves an ordering mechanism that preserves generic current-input Primary without AX targeting, app classification or a new delivery route; or Ethan explicitly accepts the demonstrated empty-submit risk again. Any added/increased deliberate wait still requires consultation under the global/project rule.
+
+
+## 2026-11-02 — Do not accept an isolated History click pass as full-suite proof
+
+The unmodified History copy fixture passed alone and with either preceding window test, but failed in its complete 11-test suite and twice in the 809-test run on Mini macOS 27.2. Removing only the explicit duplicate mouse-up while retaining the original mixed queued/direct event dispatch produced four other copy failures, so that partial adjustment was rejected. Queue both down and up and pump them through normal AppKit dispatch exactly once; preserve every full-content and interaction assertion. Reconsider a different event sequence only with the full window-suite and release-suite evidence, not a lone passing copy test. No production Copy behavior was changed to accommodate this fixture.
