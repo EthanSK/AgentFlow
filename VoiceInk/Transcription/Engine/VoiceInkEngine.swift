@@ -1,9 +1,12 @@
+// Recording engine: start/stop lifecycle, immutable job enqueue, serial pipeline
+// dispatch, FIFO Primary auto-send policy and per-session cleanup.
 import Foundation
 import SwiftUI
 import AVFoundation
 import SwiftData
 import AppKit
 import os
+import Combine
 
 /// Runtime payload for one registry-approved queue identity. Audio, transcription
 /// configuration, streaming session, and SwiftData record are captured once when the
@@ -252,7 +255,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
     // Reservation across requestRecordPermission → startNewSession scheduling. Without
     // this synchronous token, two rapid Primary start events can both observe no active
     // session before either scheduled MainActor task appends one, creating two mic owners.
-    private var recordingStartReservation = RecordingStartReservation()
+    @Published private var recordingStartReservation = RecordingStartReservation()
     private var preparedRecordingStart: PreparedRecordingStart?
     private var typingFocusStartID: UUID?
 
@@ -350,10 +353,38 @@ class VoiceInkEngine: NSObject, ObservableObject {
         recordingStartReservation.pendingID != nil
     }
 
+    /// Status edges only: no transcript/waveform subscription or idle timer. A
+    /// canceled startup with no session card must also release a deferred quit.
+    var terminationActivityChanges: AnyPublisher<Void, Never> {
+        Publishers.Merge(
+            $sessions.map { _ in () },
+            $recordingStartReservation.map { _ in () }
+        ).eraseToAnyPublisher()
+    }
+
     /// One stable identity across reservation and microphone startup, used only
     /// to prevent a delayed physical mouse release from acting on a new capture.
     var primaryMouseCaptureStartID: UUID? {
         activeRecordingSession?.startID ?? recordingStartReservation.pendingID
+    }
+
+    /// Double Top may create a chat for the voice start already requested by its
+    /// first press. This is passive lifecycle identity, never a saved destination.
+    var newChatRecordingCapture: NewChatRecordingCapture {
+        if let session = activeRecordingSession {
+            guard !session.microphoneOff,
+                  session.liveRecordingState == .starting || session.liveRecordingState == .recording else {
+                return .unavailable
+            }
+            return .voice(session.startID)
+        }
+        if let id = recordingStartReservation.pendingID {
+            return typingFocusStartID == id ? .unavailable : .voice(id)
+        }
+        guard !hasActiveCaptureOwner, !assistantSession.isVisible, !isResettingRecordingSession else {
+            return .unavailable
+        }
+        return .idle
     }
 
     /// Includes both a start reservation and a materialized recording session. This
@@ -994,29 +1025,43 @@ class VoiceInkEngine: NSObject, ObservableObject {
             vippLog.info("toggleRecord: STOP session \(active.id.uuidString, privacy: .public) → .transcribing destination=\(String(describing: stopPasteDestination), privacy: .public) targetCaptured=\(active.pasteTarget.focusedInput != nil, privacy: .public) deliveryPolicy=\(stopPasteDestination.usesBaseCurrentInputDelivery ? "baseCurrentInput" : "exactNextLatch", privacy: .public) autoSendDisposition=\(String(describing: autoSendDisposition), privacy: .public) shouldCancel=\(active.shouldCancel, privacy: .public)")
 
             RecorderTypingTextView.releaseKeyboardBeforeFinish()
+            // Stop-stage stamps are numeric receipts only; see the log below.
+            let stopStagesStarted = ContinuousClock.now
             active.phase = .transcribing
             active.liveRecordingState = .transcribing
             active.endLiveSelectionCapture()
-            // Finish is still owned by this session. Let an in-flight mic enable
-            // settle before closing its WAV or releasing the shared recorder.
-            await active.waitForMicrophoneTransition()
             // Realtime remains HUD-only while capture is live. At the irreversible
             // stop boundary, however, persist the last HUD text beside the original
             // WAV before starting asynchronous finalization. This is local recovery
             // state only: it never creates or mutates a destination-app draft. A
             // genuine Primary double-click therefore leaves a reopenable draft even
             // if the provider or app exits before the final clipboard result arrives.
-            active.recoverablePartialTranscript = LiveSelectionReference.interleaving(
-                active.liveSelectionReferencesForDelivery, with: active.partialTranscript,
-                includeTiming: true
-            )
+            // Freeze value snapshots before yielding. Building full recovery XML
+            // can include large selections; it must not block the first loading
+            // frame or recalculate from a newer recording's state. The single
+            // existing pipeline still owns final delivery, after recovery saves.
+            let stoppedReferences = active.liveSelectionReferencesForDelivery
+            let stoppedTranscript = active.partialTranscript
+            let recoveryDraft = Task.detached(priority: .userInitiated) {
+                LiveSelectionReference.interleaving(
+                    stoppedReferences, with: stoppedTranscript, includeTiming: true
+                )
+            }
             active.partialTranscript = ""
             active.startID = UUID() // invalidate the start handshake token (it has fully started)
             recomputeDerivedState()
 
+            // Finish is still owned by this session. Let an in-flight mic enable
+            // settle before closing its WAV or releasing the shared recorder.
+            let stopPreparedAt = ContinuousClock.now
+            await active.waitForMicrophoneTransition()
+            let microphoneSettledAt = ContinuousClock.now
             await recorder.stopRecording(
                 playbackDisposition: stopPlaybackDisposition
             )
+            let hardwareStoppedAt = ContinuousClock.now
+            active.recoverablePartialTranscript = await recoveryDraft.value
+            let recoveryJoinedAt = ContinuousClock.now
             // ── RAPID-SESSION MEDIA OWNERSHIP ──
             // System-output unmute and playback restoration are intentionally separate.
             // PlaybackController retains the exact paused source under recording-scoped
@@ -1060,9 +1105,21 @@ class VoiceInkEngine: NSObject, ObservableObject {
                         clearRecoveryJournal(for: active)
                         NotificationCenter.default.post(name: .transcriptionCreated, object: transcription)
                     }
+                    let historySavedAt = ContinuousClock.now
 
                     active.pipelineTranscriptionID = transcription.id
                     enqueueTranscription(for: active, transcription: transcription)
+                    // Numeric stop-stage receipt (milliseconds plus session ID only).
+                    // stopPrepMs: synchronous state flips, snapshot freeze and derived-
+                    // state publish; micTransitionMs: the in-flight mic enable settling;
+                    // hardwareStopMs: AUHAL stop and WAV close on the audio queue;
+                    // recoveryJoinMs: remaining wait for the worker's recovery draft;
+                    // historySaveMs: row build/insert/save, journal removal and the
+                    // synchronous .transcriptionCreated observers; enqueueMs: registry
+                    // binding, eager provider finalization start and queue task
+                    // creation. Together they separate the measured stop→enqueue
+                    // interval; the later queue wait is reported at `pipeline run START`.
+                    vippLog.info("toggleRecord: stop stages stopPrepMs=\(PipelineStageTimings.milliseconds(from: stopStagesStarted, to: stopPreparedAt), format: .fixed(precision: 1), privacy: .public) micTransitionMs=\(PipelineStageTimings.milliseconds(from: stopPreparedAt, to: microphoneSettledAt), format: .fixed(precision: 1), privacy: .public) hardwareStopMs=\(PipelineStageTimings.milliseconds(from: microphoneSettledAt, to: hardwareStoppedAt), format: .fixed(precision: 1), privacy: .public) recoveryJoinMs=\(PipelineStageTimings.milliseconds(from: hardwareStoppedAt, to: recoveryJoinedAt), format: .fixed(precision: 1), privacy: .public) historySaveMs=\(PipelineStageTimings.milliseconds(from: recoveryJoinedAt, to: historySavedAt), format: .fixed(precision: 1), privacy: .public) enqueueMs=\(PipelineStageTimings.milliseconds(from: historySavedAt, to: ContinuousClock.now), format: .fixed(precision: 1), privacy: .public) session=\(active.id.uuidString, privacy: .public)")
                 } else {
                     // Cancelled while recording → save a canceled record, no pipeline.
                     await finishCanceledRecording(active)
@@ -1517,6 +1574,15 @@ class VoiceInkEngine: NSObject, ObservableObject {
                                 self.partialTranscript = partial
                             }
                         }
+                    },
+                    onRealtimeSilenceSleepChange: { [weak session] sleeping, generation in
+                        // Presentation only: the optional GPT Live silence sleep reports
+                        // that this session's network stream is resting. The microphone,
+                        // WAV, destination, Mode and delivery are untouched. Generations
+                        // discard a stale update that arrives out of order.
+                        Task { @MainActor in
+                            session?.applyRealtimeStreamSleeping(sleeping, generation: generation)
+                        }
                     }
                 )
                 session.transcriptionSession = streamingSession
@@ -1748,6 +1814,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
         job.transcriptionSession?.beginFinalization(audioURL: audioURL)
         vippLog.info("pipeline enqueue \(identity.logDescription, privacy: .public) model=\(transcriptionConfiguration.model.displayName, privacy: .public)")
 
+        let enqueuedAt = ContinuousClock.now
         transcriptionJobQueue.enqueue(
             identity,
             isCurrent: { [weak self, weak session, weak transcription] queuedIdentity in
@@ -1768,7 +1835,13 @@ class VoiceInkEngine: NSObject, ObservableObject {
             },
             operation: { [weak self] _ in
                 guard let self else { return }
-                let failureNotice = await self.runPipeline(for: job)
+                // Elapsed queue residence until this job can run. This includes
+                // both MainActor scheduling and the intentional previous-job/reset
+                // drain barrier in SerialTranscriptionJobQueue. It cannot alone
+                // attribute a wait to UI contention or CPU work. Eager provider
+                // finalization can already overlap this interval.
+                let queueWaitMs = PipelineStageTimings.milliseconds(from: enqueuedAt, to: ContinuousClock.now)
+                let failureNotice = await self.runPipeline(for: job, queueWaitMs: queueWaitMs)
                 self.transcriptionJobRegistry.remove(identity)
                 self.reportUnresolvedPrimaryAutoSendIfQueueDrained()
                 self.vippLog.info("pipeline remove \(identity.logDescription, privacy: .public)")
@@ -2002,7 +2075,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
     // Run the full transcribe→enhance→deliver pipeline for ONE immutable job. Only
     // destination/Mode retarget state remains intentionally late-bound on the owning
     // RecordingSession. Audio/config/transcription identity can never be read from B.
-    private func runPipeline(for job: QueuedTranscriptionJob) async -> TranscriptionFailureNotice? {
+    private func runPipeline(for job: QueuedTranscriptionJob, queueWaitMs: Double) async -> TranscriptionFailureNotice? {
         let session = job.recordingSession
         let transcription = job.transcription
         let transcriptionID = job.identity.transcriptionID
@@ -2027,7 +2100,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
                 || (session?.shouldCancel ?? false)
         }
 
-        vippLog.info("pipeline run START \(job.identity.logDescription, privacy: .public)")
+        vippLog.info("pipeline run START queueWaitMs=\(queueWaitMs, format: .fixed(precision: 1), privacy: .public) \(job.identity.logDescription, privacy: .public)")
 
         await pipeline.run(
             transcription: transcription,

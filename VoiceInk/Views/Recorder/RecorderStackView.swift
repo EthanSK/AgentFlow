@@ -138,7 +138,9 @@ struct MiniRecorderStackView: View {
     }
 
     private var liveTranscriptHeight: CGFloat {
-        guard let baseSession else { return MiniRecorderLayoutMetrics.liveTranscriptHeight }
+        guard let baseSession, baseSession.showsLiveContext else {
+            return MiniRecorderLayoutMetrics.liveTranscriptHeight
+        }
         let parts = baseSession.liveContextPreviewParts
         return MiniRecorderLayoutMetrics.contextHeight(
             parts: parts,
@@ -152,9 +154,7 @@ struct MiniRecorderStackView: View {
         if assistantSession.isVisible {
             return min(MiniRecorderLayoutMetrics.assistantPanelHeight, maximumContextHeight) + 41
         }
-        if let baseSession,
-           (baseSession.liveRecordingState.isRecordingOrPaused || baseSession.canTypeInHUD),
-           baseSession.showsRealtimeTranscriptHUD || baseSession.canTypeInHUD || !baseSession.liveSelectionReferences.isEmpty {
+        if let baseSession, baseSession.showsLiveContext {
             return liveTranscriptHeight + 41
         }
         return MiniRecorderLayoutMetrics.controlBarHeight
@@ -332,7 +332,9 @@ struct NotchRecorderStackView: View {
     }
 
     private var liveTranscriptHeight: CGFloat {
-        guard let pillSession else { return MiniRecorderLayoutMetrics.liveTranscriptHeight }
+        guard let pillSession, pillSession.showsLiveContext else {
+            return MiniRecorderLayoutMetrics.liveTranscriptHeight
+        }
         return MiniRecorderLayoutMetrics.contextHeight(
             parts: pillSession.liveContextPreviewParts,
             typedText: pillSession.canTypeInHUD ? pillSession.typedInput : nil,
@@ -345,9 +347,7 @@ struct NotchRecorderStackView: View {
         let pill: CGFloat
         if assistantSession.isVisible {
             pill = notchHeight + 6 + min(320, maximumContextHeight)
-        } else if let session = pillSession,
-                  (session.liveRecordingState.isRecordingOrPaused || session.canTypeInHUD),
-                  session.showsRealtimeTranscriptHUD || session.canTypeInHUD || !session.liveSelectionReferences.isEmpty {
+        } else if let session = pillSession, session.showsLiveContext {
             pill = notchHeight + 6 + liveTranscriptHeight + 1
         } else {
             pill = notchHeight + 6
@@ -457,18 +457,14 @@ struct TranscribingChip: View {
                 .foregroundColor(.white.opacity(0.82))
                 .lineLimit(1)
 
-            PasteDestinationIndicator(
-                target: session.pasteDestinationIndicatorTarget,
-                context: .pendingPaste
-            ) // A session moved behind a newer recording still owns its target, so its compact chip must keep showing that target until delivery finishes.
-
+            // Pending cards omit the same secondary app/warning icon as the main bar.
             // Per-card cancel — stops THIS session's delivery only; recovery stays local.
             RecorderCancelButton(action: onCancel)
                 .scaleEffect(0.82)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
-        .frame(width: style == .mini ? 184 : 200)
+        .frame(width: style == .mini ? 158 : 174)
         .background(Color.black.opacity(style == .mini ? 1.0 : 0.92))
         .clipShape(RoundedRectangle(cornerRadius: style == .mini ? 16 : 12, style: .continuous))
         .overlay(

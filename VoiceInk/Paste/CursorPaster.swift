@@ -101,8 +101,6 @@ class CursorPaster {
         case cgEvent
     }
 
-    private static let prePasteDelay: TimeInterval = 0.10
-    private static let pasteShortcutEventDelay: TimeInterval = 0.01
     private static let minimumClipboardRestoreDelay: TimeInterval = 0.25
     private static let appleScriptPasteTimeout: TimeInterval = 2.0
     private static let systemEventsAutoSendTimeout: TimeInterval = 1.0
@@ -148,34 +146,45 @@ class CursorPaster {
         _ text: String,
         canPost: @escaping @MainActor () -> Bool = { true }
     ) -> Task<PasteResult, Never> {
-        Task { @MainActor in
-            // A previous Primary result may finish during a newer recording.
-            // Never feed it into our own authored-input HUD. This is only a local
-            // responder guard, not saved-app capture, AX routing or focus repair;
-            // refusal keeps the text on the clipboard and uses normal error handling.
-            await performPasteSession(text, canPost: {
-                !RecorderTypingTextView.ownsKeyboard && canPost()
-            })
+        let queuedAt = Date()
+        return Task { @MainActor in
+            let queueMs = Date().timeIntervalSince(queuedAt) * 1_000
+            logger.info("Foreground paste worker started queueMs=\(queueMs, privacy: .public)")
+            return await performPasteSession(text, canPost: canPost)
         }
     }
 
     @MainActor
     static func pasteAtCursorAndWaitUntilPosted(_ text: String) async -> PasteResult {
-        await startPasteAtCursor(text).value
+        // An already-awaited Primary paste needs no new Task/main-run-loop turn.
+        // Keep the same FIFO lease, own-HUD guard and one system-focused Cmd-V.
+        await performPasteSession(text, canPost: { true })
     }
 
     @MainActor
     private static func performPasteSession(
         _ text: String,
-        canPost: @escaping @MainActor () -> Bool
+        canPost requestedCanPost: @escaping @MainActor () -> Bool
     ) async -> PasteResult {
+        // Refactor of the existing startPasteAtCursor responder guard: both
+        // queued and directly awaited entry points must reject our own typing HUD.
+        // This is local responder safety, never AX targeting or focus repair.
+        let canPost: @MainActor () -> Bool = {
+            !RecorderTypingTextView.ownsKeyboard && requestedCanPost()
+        }
+        let preparationStarted = Date()
         let pasteboard = NSPasteboard.general
         let shouldRestoreClipboard = UserDefaults.standard.bool(forKey: "restoreClipboardAfterPaste")
         let sessionID = UUID().uuidString
         let transactionID = UUID()
         let wasQueued = foregroundPasteCoordinator.activeLeaseID != nil
+        let preparedAt = Date()
         await foregroundPasteCoordinator.acquire(transactionID)
+        let acquiredAt = Date()
         var savedContents = shouldRestoreClipboard ? originalClipboardContents(on: pasteboard) : []
+        let setupMs = preparedAt.timeIntervalSince(preparationStarted) * 1_000
+        let waitMs = acquiredAt.timeIntervalSince(preparedAt) * 1_000
+        let snapshotMs = Date().timeIntervalSince(acquiredAt) * 1_000
         var settlementNanoseconds: UInt64 = 0
         defer {
             // Keep every VoiceInk foreground paste mutation FIFO. A successful Cmd-V
@@ -187,7 +196,7 @@ class CursorPaster {
                 settlementNanoseconds: settlementNanoseconds
             )
         }
-        logger.info("Foreground pasteboard transaction acquired queued=\(wasQueued, privacy: .public) waiting=\(foregroundPasteCoordinator.waitingCount, privacy: .public) textChars=\(text.count, privacy: .public)")
+        logger.info("Foreground pasteboard transaction acquired queued=\(wasQueued, privacy: .public) waiting=\(foregroundPasteCoordinator.waitingCount, privacy: .public) textChars=\(text.count, privacy: .public) setupMs=\(setupMs, privacy: .public) waitMs=\(waitMs, privacy: .public) snapshotMs=\(snapshotMs, privacy: .public)")
 
         var finalLease: ForegroundPasteboardLease?
         var commandResult: PasteCommandResult = .commandNotPosted
@@ -205,11 +214,11 @@ class CursorPaster {
             finalLease = lease
             logger.info("Foreground pasteboard lease prepared lease=\(lease.logID, privacy: .public) attempt=\(attempt, privacy: .public) ownershipVerified=true changeCount=\(lease.changeCount, privacy: .public) textChars=\(text.count, privacy: .public) payloadDigest=\(TranscriptionLineageDigest.make(text), privacy: .public)")
 
-            await wait(attempt == 1 ? prePasteDelay : pasteShortcutEventDelay)
-
-            // Clipboard preparation intentionally precedes the delay, but Cmd-V is
-            // irreversible. Revalidate both the current-input action boundary and our
-            // exact pasteboard lease. A lost lease is rewritten once; V is never posted
+            // Ethan requested no artificial finish padding (2026-11-01). Prepare
+            // the pasteboard synchronously, then revalidate the current-input boundary
+            // immediately before Cmd-V. Never substitute time for the existing
+            // action and pasteboard ownership checks: Cmd-V is irreversible.
+            // A lost lease is rewritten once; V is never posted
             // while the pasteboard contains pre-existing or another session's payload.
             guard canPost() else {
                 logger.error("Refused foreground paste because the exact-input action guard changed")
@@ -313,7 +322,7 @@ class CursorPaster {
         if PasteMethod.current() == .appleScript {
             return await pasteUsingAppleScript() ? .commandPosted : .commandNotPosted
         } else {
-            return await pasteFromClipboard(
+            return pasteFromClipboard(
                 canPost: canPost,
                 lease: lease,
                 on: pasteboard
@@ -418,50 +427,23 @@ class CursorPaster {
         canPost: @escaping @MainActor () -> Bool,
         lease: ForegroundPasteboardLease,
         on pasteboard: NSPasteboard
-    ) async -> PasteCommandResult {
+    ) -> PasteCommandResult {
         guard AXIsProcessTrusted() else {
             logger.error("Accessibility permission is required to paste with simulated key events")
             return .commandNotPosted
         }
 
-        let source = CGEventSource(stateID: .privateState)
-
-        guard let cmdDown = CGEvent(keyboardEventSource: source, virtualKey: 0x37, keyDown: true),
-              let vDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true),
-              let vUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false),
-              let cmdUp = CGEvent(keyboardEventSource: source, virtualKey: 0x37, keyDown: false) else {
-            logger.error("Failed to create Cmd+V keyboard events")
-            return .commandNotPosted
+        // Extraction of the same four events; only artificial key gaps were
+        // removed. Keep action and exact clipboard ownership checks at both
+        // irreversible boundaries. No application-specific target is captured.
+        switch ForegroundKeyboardSequence.commandV(canPost: canPost, ownsClipboard: { boundary in
+            logPasteboardOwnership(lease, on: pasteboard, boundary: boundary)
+        }) {
+        case .posted: return .commandPosted
+        case .unavailable: return .commandNotPosted
+        case .actionGuardRefused: return .actionGuardRefused
+        case .clipboardLeaseLost: return .clipboardLeaseLost
         }
-
-        cmdDown.flags = .maskCommand
-        vDown.flags   = .maskCommand
-        vUp.flags     = .maskCommand
-
-        guard canPost() else { return .actionGuardRefused }
-        guard logPasteboardOwnership(lease, on: pasteboard, boundary: "beforeCommandDown") else {
-            return .clipboardLeaseLost
-        }
-        cmdDown.post(tap: .cghidEventTap)
-        await wait(pasteShortcutEventDelay)
-        // Cmd-down and V-down are separated only to match a real shortcut. Re-prove
-        // the exact input after that suspension; on refusal, release Command without
-        // ever posting V so a newer click cannot receive the transcript.
-        guard canPost() else {
-            cmdUp.post(tap: .cghidEventTap)
-            return .actionGuardRefused
-        }
-        guard logPasteboardOwnership(lease, on: pasteboard, boundary: "beforeVDown") else {
-            cmdUp.post(tap: .cghidEventTap)
-            return .clipboardLeaseLost
-        }
-        vDown.post(tap: .cghidEventTap)
-        await wait(pasteShortcutEventDelay)
-        vUp.post(tap: .cghidEventTap)
-        await wait(pasteShortcutEventDelay)
-        cmdUp.post(tap: .cghidEventTap)
-
-        return .commandPosted
     }
 
     private static func wait(_ seconds: TimeInterval) async {
@@ -836,7 +818,9 @@ class CursorPaster {
     @MainActor
     static func performAutoSend(
         _ key: AutoSendKey,
-        targetPID: pid_t,
+        // Diagnostic only. Primary intentionally owns no PID and omits it;
+        // exact Next callers retain their separately proven identity/preflight.
+        targetPID: pid_t? = nil,
         method: AutoSendMethod = .cgEvent,
         canPost: @escaping @MainActor () -> Bool
     ) async -> AutoSendResult {
@@ -849,7 +833,7 @@ class CursorPaster {
             return .commandNotPosted
         }
         guard canPost() else {
-            logger.error("Refused to auto-send Return because the exact input no longer owns system keyboard focus targetPid=\(targetPID, privacy: .public) frontmostPid=\(NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1, privacy: .public)")
+            logger.error("Refused to auto-send Return because the exact input no longer owns system keyboard focus targetPid=\(targetPID ?? -1, privacy: .public)")
             return .actionGuardRefused
         }
 
@@ -872,7 +856,7 @@ class CursorPaster {
         case .systemEvents:
             return await issueAutoSendUsingSystemEvents(key, preflight: preflight)
         case .cgEvent:
-            return await issueAutoSendUsingCGEvent(key, preflight: preflight)
+            return issueAutoSendUsingCGEvent(key, preflight: preflight)
         }
     }
 
@@ -925,40 +909,22 @@ class CursorPaster {
     private static func issueAutoSendUsingCGEvent(
         _ key: AutoSendKey,
         preflight: (() -> Bool)?
-    ) async -> AutoSendResult {
-        // HID system state plus a real down/up interval more closely resembles a
-        // physical key press than the old back-to-back private-state events. The old
-        // pair worked in Terminal but was ignored by the OpenAI Electron composer.
-        let source = CGEventSource(stateID: .hidSystemState)
-        guard let enterDown = CGEvent(keyboardEventSource: source, virtualKey: 0x24, keyDown: true),
-              let enterUp = CGEvent(keyboardEventSource: source, virtualKey: 0x24, keyDown: false) else {
-            logger.error("Failed to create auto-send Return keyboard events")
-            return .commandNotPosted
-        }
-
+    ) -> AutoSendResult {
+        let flags: CGEventFlags
         switch key {
-        case .none:
-            logger.error("Refused to auto-send .none")
-            return .commandNotPosted
-        case .enter:
-            enterDown.flags = []
-            enterUp.flags = []
-        case .shiftEnter:
-            enterDown.flags = .maskShift
-            enterUp.flags = .maskShift
-        case .commandEnter:
-            enterDown.flags = .maskCommand
-            enterUp.flags = .maskCommand
+        case .none: return .commandNotPosted
+        case .enter: flags = []
+        case .shiftEnter: flags = .maskShift
+        case .commandEnter: flags = .maskCommand
         }
-
-        guard preflight?() != false else {
-            logger.notice("Cancelled humanized CGEvent auto-send because the exact-input preflight changed immediately before Return-down")
-            return .commandNotPosted
+        // Extraction of the one accepted global HID Return. No artificial hold,
+        // retry, app classifier or process targeting is introduced by this helper.
+        switch ForegroundKeyboardSequence.returnKey(flags: flags, canPost: { preflight?() != false }) {
+        case .posted:
+            logger.info("Issued immediate foreground CGEvent auto-send key=\(key.rawValue, privacy: .public)")
+            return .commandPosted
+        case .actionGuardRefused: return .commandNotPosted
+        case .unavailable, .clipboardLeaseLost: return .commandNotPosted
         }
-        enterDown.post(tap: .cghidEventTap)
-        await wait(0.03)
-        enterUp.post(tap: .cghidEventTap)
-        logger.info("Issued humanized foreground CGEvent auto-send key=\(key.rawValue, privacy: .public)")
-        return .commandPosted
     }
 }

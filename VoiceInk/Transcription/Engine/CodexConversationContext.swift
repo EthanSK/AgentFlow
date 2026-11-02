@@ -36,9 +36,18 @@ enum CodexConversationContextPolicy {
     /// identity when another chat is also visible. No selected text is needed.
     static func visibleSelectionThreadIDs(from logText: String) -> [String] {
         var active: [String: Set<String>] = [:]
-        let events = logText.split(separator: "\n").filter {
-            $0.contains("thread_stream_view_activity_changed")
-        }.map(String.init).sorted()
+        let events = selectionActivityLines(in: logText).filter { rawLine in
+            // Native logs also echo tool arguments and message text. Only an
+            // actual activity event may supply source metadata; finding its name
+            // inside quoted words would attribute the selection to their content.
+            guard let marker = rawLine.range(of: "thread_stream_view_activity_changed ") else { return false }
+            let prefix = rawLine[..<marker.lowerBound].split(whereSeparator: \.isWhitespace).map(String.init)
+            guard let timestamp = prefix.first,
+                  timestamp.range(of: #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$"#,
+                                  options: .regularExpression) != nil else { return false }
+            return prefix.count == 1 || Array(prefix.dropFirst()) == ["info"]
+                || Array(prefix.dropFirst()) == ["info", "[electron-message-handler]"]
+        }.sorted()
         for line in events {
             guard (line.contains("rendererWindowAppearance=primary")
                     || line.contains("rendererWindowAppearance=hotkeyWindowThread")),
@@ -58,6 +67,41 @@ enum CodexConversationContextPolicy {
             return []
         }
         return ids.sorted()
+    }
+
+    /// Search the bounded buffer once, then materialize only candidate event lines.
+    /// Scan UTF-8 bytes rather than repeatedly bridging the buffer to UTF-16 and
+    /// running Foundation Unicode searches just to choose a viewer colour offset.
+    /// Keep the same prefix validation and
+    /// event ordering; these IDs remain presentation/source labels, never paste authority.
+    private static func selectionActivityLines(in text: String) -> [String] {
+        let raw = Array(text.utf8)
+        let needle = Array("thread_stream_view_activity_changed ".utf8)
+        var lines: [String] = []
+        var scan = 0
+        while scan + needle.count <= raw.count {
+            if raw[scan] != needle[0]
+                || !raw[scan..<(scan + needle.count)].elementsEqual(needle) {
+                scan += 1
+                continue
+            }
+            var start = scan
+            // Match String.split(separator: "\n"): CRLF is one Character,
+            // not a standalone LF separator. UTF-8 never embeds ASCII LF inside
+            // another code point, so slicing at these boundaries preserves text.
+            while start > 0 {
+                if raw[start - 1] == 0x0A && (start < 2 || raw[start - 2] != 0x0D) { break }
+                start -= 1
+            }
+            var end = scan + needle.count
+            while end < raw.count {
+                if raw[end] == 0x0A && (end == 0 || raw[end - 1] != 0x0D) { break }
+                end += 1
+            }
+            lines.append(String(decoding: raw[start..<end], as: UTF8.self))
+            scan = end < raw.count ? end + 1 : raw.count
+        }
+        return lines
     }
 
     // These limits are app choices, not an OpenAI-recommended conversation size. Proven
@@ -287,9 +331,21 @@ enum CodexConversationContextPolicy {
 /// or participates in VoiceInk++ destination/delivery selection.
 @MainActor
 enum CodexConversationContextReader {
+    struct SelectionThreadRead: Sendable {
+        let ids: [String]
+        let workMs: Double
+        static let empty = Self(ids: [], workMs: 0)
+    }
+
     /// Optional labels must not block mouse dispatch or the recorder HUD.
     /// A serial worker bounds concurrent scans without any idle polling/cache.
     nonisolated static func selectionThreadIDs(processIdentifier: pid_t) async -> [String] {
+        await selectionThreadRead(processIdentifier: processIdentifier).ids
+    }
+
+    /// Numeric work time separates parsing from time waiting for a worker or for
+    /// MainActor to resume. It carries no text or additional identity lookup.
+    nonisolated static func selectionThreadRead(processIdentifier: pid_t) async -> SelectionThreadRead {
         await CodexSelectionLogWorker.shared.read(processIdentifier: processIdentifier)
     }
 
@@ -385,15 +441,28 @@ enum CodexConversationContextReader {
         _ app: NSRunningApplication,
         fileManager: FileManager
     ) -> Bool {
-        guard app.bundleIdentifier == CodexConversationContextPolicy.bundleIdentifier,
-              let bundleURL = app.bundleURL else {
+        isSupportedCodexBundle(
+            identifier: app.bundleIdentifier, url: app.bundleURL, fileManager: fileManager
+        )
+    }
+
+    /// A bundle name/ID alone cannot distinguish the Codex host from ChatGPT.
+    /// New hosts moved the bundled CLI into CodexCLI.app; checking only the old
+    /// Resources/codex silently disabled Ethan's selection source-chat labels.
+    /// Keep both measured layouts read-only and require a real executable file.
+    static func isSupportedCodexBundle(
+        identifier: String?, url: URL?, fileManager: FileManager = .default
+    ) -> Bool {
+        guard identifier == CodexConversationContextPolicy.bundleIdentifier,
+              let url else {
             return false
         }
-        let codexBinary = bundleURL
-            .appendingPathComponent("Contents")
-            .appendingPathComponent("Resources")
-            .appendingPathComponent("codex")
-        return fileManager.isExecutableFile(atPath: codexBinary.path)
+        let resources = url.appendingPathComponent("Contents/Resources", isDirectory: true)
+        return ["codex", "codex-cli/CodexCLI.app/Contents/MacOS/codex"].contains { path in
+            let executable = resources.appendingPathComponent(path)
+            return (try? executable.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+                && fileManager.isExecutableFile(atPath: executable.path)
+        }
     }
 
     nonisolated private static func codexLogURLs(
@@ -431,17 +500,13 @@ enum CodexConversationContextReader {
 
         let matchingURLs = candidateURLs.filter {
             $0.pathExtension == "log" && $0.lastPathComponent.contains(pidMarker)
-        }.filter {
-            ((try? $0.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) > 0
+        }.compactMap { url -> (url: URL, modified: Date)? in
+            guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]),
+                  (values.fileSize ?? 0) > 0 else { return nil }
+            return (url, values.contentModificationDate ?? .distantPast)
         }
-
-        return matchingURLs.sorted {
-            let left = try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-            let right = try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
-            let leftDate = left ?? Date.distantPast
-            let rightDate = right ?? Date.distantPast
-            return leftDate > rightDate
-        }
+        // Read each file's metadata once, not on every sort comparison.
+        return matchingURLs.sorted { $0.modified > $1.modified }.map(\.url)
     }
 
     private static func rolloutURL(
@@ -495,8 +560,11 @@ enum CodexConversationContextReader {
 
 private actor CodexSelectionLogWorker {
     static let shared = CodexSelectionLogWorker()
-    func read(processIdentifier: pid_t) -> [String] {
-        guard !Task.isCancelled else { return [] }
-        return CodexConversationContextReader.readSelectionThreadIDs(processIdentifier: processIdentifier)
+    func read(processIdentifier: pid_t) -> CodexConversationContextReader.SelectionThreadRead {
+        guard !Task.isCancelled else { return .empty }
+        let start = ContinuousClock.now
+        let ids = CodexConversationContextReader.readSelectionThreadIDs(processIdentifier: processIdentifier)
+        let d = start.duration(to: ContinuousClock.now).components
+        return .init(ids: ids, workMs: Double(d.seconds) * 1_000 + Double(d.attoseconds) / 1e15)
     }
 }

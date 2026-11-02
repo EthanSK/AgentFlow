@@ -224,7 +224,15 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
 
     // Coarse lifecycle phase (drives stack membership / which card is the base). @Published
     // so the owning engine's array observers and this session's card both react.
-    @Published var phase: Phase
+    @Published var phase: Phase {
+        didSet {
+            // The resting-stream marker describes live capture only. Clear it as soon as
+            // this session stops recording so a transcribing card never shows it.
+            if phase != .recording, realtimeStreamSleeping {
+                realtimeStreamSleeping = false
+            }
+        }
+    }
 
     // Fine-grained recorder UI state for THIS card (idle/recording/transcribing/enhancing).
     // The pipeline pushes .enhancing here via onStateChange; the card's RecorderStatusDisplay
@@ -472,6 +480,7 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         typedInput = value
         if typedRunStartedAt == nil { typedRunStartedAt = date }
         typedRunLatestEditAt = date
+        noteRealtimeSessionActivity()
     }
 
     /// Enter, leaving the editor, and a mirrored panel's end callback commit the
@@ -490,12 +499,14 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         guard canTypeInHUD,
               let index = liveSelectionReferences.lastIndex(where: \.isTypedText) else { return false }
         undoneTypedRuns.append((index, liveSelectionReferences.remove(at: index)))
+        noteRealtimeSessionActivity()
         return true
     }
 
     @discardableResult func redoCommittedTyping() -> Bool {
         guard canTypeInHUD, let run = undoneTypedRuns.popLast() else { return false }
         liveSelectionReferences.insert(run.reference, at: min(run.index, liveSelectionReferences.count))
+        noteRealtimeSessionActivity()
         return true
     }
 
@@ -551,6 +562,31 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     // state renders only an ellipsis; it is never treated as transcript content.
     @Published var showsRealtimeTranscriptHUD = false
 
+    // Optional GPT Live silence sleep: true only while this recording's network stream
+    // is resting during clearly quiet audio. Capture continues (waveform, WAV, recovery),
+    // so this is NOT gesture-Pause and NOT microphone-off; the HUD shows a small symbol,
+    // never routine status text. Only this session's own streaming service writes it.
+    @Published private(set) var realtimeStreamSleeping = false
+    private var realtimeStreamSleepGeneration: UInt64 = 0
+
+    /// Applies one ordered update from this session's silence sleep. A stale generation
+    /// (an update that hopped to the main actor late) is ignored so the HUD can never be
+    /// left claiming rest after the stream woke. Sleeping is shown only while recording.
+    func applyRealtimeStreamSleeping(_ sleeping: Bool, generation: UInt64) {
+        guard generation > realtimeStreamSleepGeneration else { return }
+        realtimeStreamSleepGeneration = generation
+        let visible = sleeping && phase == .recording
+        if realtimeStreamSleeping != visible {
+            realtimeStreamSleeping = visible
+        }
+    }
+
+    /// Authored activity in this session keeps its optional silence sleep awake. This is
+    /// a notification only: typing, selection capture and their timeline are unchanged.
+    private func noteRealtimeSessionActivity() {
+        transcriptionSession?.noteSessionActivity()
+    }
+
     // ── VIPP (skip-mode-processing feature) — per-session ONE-SHOT bypass flag ──
     //
     // WHAT: when true, THIS recording's pipeline skips ALL of the active Mode's
@@ -593,9 +629,9 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
 
     // Four-key stop has a separate, exact-session late-Shift decision. The
     // Primary click policy must still freeze before processing, but a typing
-    // stop must not lose its second chance merely because its provider is fast.
-    // Keep this open through preparation/queue waiting, with one second from
-    // stop for a human to release the chord and tap Shift on a typed-only result.
+    // stop keeps its second chance through genuine preparation/queue waiting.
+    // Ethan asked to "paste instantly": reserve no extra reaction interval.
+    // Shift can still choose Won't paste before the irreversible output boundary.
     // Only the irreversible-action boundary may seal it; never undo a paste.
     private var typingClipboardDeadline: ContinuousClock.Instant?
     private(set) var typingClipboardOnlySelected = false
@@ -605,7 +641,7 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
             && (phase == .transcribing || phase == .delivering)
     }
 
-    func armTypingClipboardOnlyCompletion(minimumInterval: TimeInterval = 1) {
+    func armTypingClipboardOnlyCompletion(minimumInterval: TimeInterval = 0) {
         guard phase == .recording, !shouldCancel else { return }
         typingClipboardOnlySelected = false
         typingClipboardDeadline = ContinuousClock.now.advanced(by: .seconds(max(0, minimumInterval)))
@@ -622,10 +658,11 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
 
     /// Read and seal atomically on MainActor immediately before any output
     /// effect (or assistant response request), after all asynchronous waits.
-    /// A preselected result finishes immediately; only a fast result waits
-    /// for the remainder of its bounded human reaction window.
+    /// The production default has no artificial wait. An explicit interval is
+    /// retained for the existing lifecycle tests; it never extends the output cutoff.
     func commitTypingCompletion() async -> Bool {
-        if let deadline = typingClipboardDeadline, !typingClipboardOnlySelected {
+        if let deadline = typingClipboardDeadline, !typingClipboardOnlySelected,
+           ContinuousClock.now < deadline {
             try? await Task.sleep(until: deadline, clock: .continuous)
         }
         typingClipboardDeadline = nil
@@ -800,8 +837,8 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
 
     // Streaming/file transcription session prepared at record-start, used by the pipeline.
     var transcriptionSession: TranscriptionSession?
-    // Mode-resolved transcription engine settings captured at record-start (so the pipeline
-    // uses the config that was active WHEN this recording started, not whatever is active now).
+    // Model and request guidance stay frozen at recording start. Captured selections
+    // belong only to the final message; Ethan removed the live recognition-hint path.
     var transcriptionConfiguration: TranscriptionRuntimeConfiguration?
     // App/window context snapshot store for AI enhancement context.
     var contextStore: RecordingContextSnapshotStore?
@@ -854,6 +891,7 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         } else {
             liveSelectionReferences.append(anchored)
         }
+        noteRealtimeSessionActivity()
         typingFocus.returnAfterContext()
     }
 

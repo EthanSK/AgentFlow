@@ -1,8 +1,11 @@
+// Durable prompt archives, the offline HTML viewer, and the compact local-Codex
+// paste preview plus its recipient classifier.
 import AppKit
 import CryptoKit
 import Darwin
 import Foundation
 import ImageIO
+import os
 
 /// Full prompts are durable user documents, not temporary pasteboard payloads.
 /// Write and sync before handing out a path; never overwrite or auto-expire them.
@@ -19,8 +22,11 @@ enum AgentFlowPromptArchive {
 
     static func save(_ text: String, recordID: UUID, chatID: String? = nil) async throws -> URL {
         let destination = directory
-        return try await Task.detached(priority: .utility) {
+        // The user is waiting for a valid clickable prompt, not idle maintenance.
+        return try await Task.detached(priority: .userInitiated) {
+            let started = Date()
             let file = try write(text, recordID: recordID, directory: destination)
+            let canonicalFinished = Date()
             // Reserve once after the canonical prompt is durable. The archived
             // viewer retains this start; reopen/copy never advances the cursor.
             let start = AuthoredTextRainbow.reserveViewerStartIndex(chatID: chatID,
@@ -28,6 +34,10 @@ enum AgentFlowPromptArchive {
             // A human-readable companion is optional. Its failure must never
             // invalidate the complete durable prompt or stop a normal paste.
             try? writeViewer(text, for: file, rainbowStartIndex: start)
+            let canonicalMs = canonicalFinished.timeIntervalSince(started) * 1_000
+            let viewerMs = Date().timeIntervalSince(canonicalFinished) * 1_000
+            Logger(subsystem: "com.ethansk.VoiceInkPlusPlus", category: "VIPPDebug").info(
+                "prompt archive stages: canonicalMs=\(canonicalMs, privacy: .public) viewerMs=\(viewerMs, privacy: .public)")
             return file
         }.value
     }
@@ -124,12 +134,16 @@ enum AgentFlowPromptViewer {
     }
 
     static let fragmentPattern = #"(?ms)^[\t ]*<(speech|speech_segment|typed_text|potential_tts|app_selection|codex_selection)\b[^>]*>.*?</\1>|^[\t ]*<(?:local_screenshot|app_selection_image)\b[^>]*?/>"#
+    // Compiled once. `events` and `mapTimeline` run several times per finish on
+    // the UI actor (archive word count, compact preview, inline colouring);
+    // recompiling this fixed pattern each time was avoidable finish-path work.
+    static let fragmentExpression = try! NSRegularExpression(pattern: fragmentPattern)
 
     /// Parse only known, line-delimited top-level fragments, never tags that
     /// merely occur inside a quoted selection. A malformed fragment is shown
     /// verbatim rather than silently dropping text or guessing a repaired XML.
     static func events(_ source: String) -> [Event] {
-        let expression = try! NSRegularExpression(pattern: fragmentPattern)
+        let expression = fragmentExpression
         let ns = source as NSString
         var result: [Event] = []
         var end = 0
@@ -453,10 +467,13 @@ enum AgentFlowPromptPreview {
         }
     }
 
+    // Fixed pattern, compiled once for the same finish-path reason as `fragmentExpression`.
+    private static let selectionFragmentExpression = try? NSRegularExpression(
+        pattern: #"(?s)^(\s*<(?:app_selection|codex_selection)\b[^>]*>)\s*(<text\b[^>]*>)(.*)(</text>)\s*(</(?:app_selection|codex_selection)>)$"#)
+
     private static func compactFragment(_ fragment: String, tag: String) -> String {
         if ["app_selection", "codex_selection"].contains(tag) {
-            let pattern = #"(?s)^(\s*<(?:app_selection|codex_selection)\b[^>]*>)\s*(<text\b[^>]*>)(.*)(</text>)\s*(</(?:app_selection|codex_selection)>)$"#
-            guard let expression = try? NSRegularExpression(pattern: pattern),
+            guard let expression = selectionFragmentExpression,
                   let match = expression.firstMatch(in: fragment, range: NSRange(fragment.startIndex..., in: fragment)) else { return fragment }
             let ns = fragment as NSString
             return (1...5).map { ns.substring(with: match.range(at: $0)) }.joined()
@@ -473,7 +490,7 @@ enum AgentFlowPromptPreview {
     }
 
     private static func mapTimeline(_ source: String, transform: (String, AgentFlowPromptViewer.Event) -> String) -> String {
-        guard let expression = try? NSRegularExpression(pattern: AgentFlowPromptViewer.fragmentPattern) else { return source }
+        let expression = AgentFlowPromptViewer.fragmentExpression
         let ns = source as NSString
         var output = "", end = 0
         for match in expression.matches(in: source, range: NSRange(location: 0, length: ns.length)) {
@@ -493,15 +510,19 @@ enum AgentFlowPromptPreview {
     struct Recipient {
         var bundleID: String?
         var bundleURL: URL?
+        // Retained for fixtures that prove version/build never pin presentation.
+        // Production classification reads neither; `current()` leaves them nil.
         var version: String?
         var build: String?
 
+        /// Presentation needs only the frontmost identity pair. The classifier
+        /// below deliberately ignores release version/build so Codex hosts can
+        /// update without re-pinning, so loading the recipient's Info.plist here
+        /// was avoidable UI-actor file work on every finish. This still never
+        /// captures an AX input or grants exact-delivery authority.
         @MainActor static func current() -> Self {
             let app = NSWorkspace.shared.frontmostApplication
-            let info = app?.bundleURL.flatMap { Bundle(url: $0)?.infoDictionary }
-            return Self(bundleID: app?.bundleIdentifier, bundleURL: app?.bundleURL,
-                        version: info?["CFBundleShortVersionString"] as? String,
-                        build: info?["CFBundleVersion"] as? String)
+            return Self(bundleID: app?.bundleIdentifier, bundleURL: app?.bundleURL)
         }
         var supportsLocalFilePrompt: Bool {
             AgentFlowPromptPreview.supportsLocalFilePrompt(bundleID: bundleID,

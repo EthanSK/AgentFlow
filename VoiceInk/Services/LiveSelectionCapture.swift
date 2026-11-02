@@ -6,13 +6,14 @@ import SQLite3
 
 /// A per-recording reference to text selected in the frontmost app. The HUD
 /// shows only a compact preview; the full captured selection is added to the final
-/// destination message after transcription, never to live provider context.
-struct LiveSelectionReference: Equatable {
+/// destination message after transcription. It is never sent to the speech-to-text
+/// provider or used to change its prompt while recording.
+struct LiveSelectionReference: Equatable, Sendable {
     // The durable prompt is the agent's complete input. Neither the HUD nor
     // the short chat bubble may impose a line/character cap on captured text.
     // Individual source transports can still have their own documented limits.
 
-    private enum Source: Equatable {
+    private enum Source: Equatable, Sendable {
         case codex
         case application(name: String, bundleID: String?)
     }
@@ -85,6 +86,7 @@ struct LiveSelectionReference: Equatable {
     private var codexThreadID: String?
     private var codexThreadTitle: String?
     private var visibleCodexThreadIDs: [String] = []
+    private var hasCodexScopeObservation = false
     private var chromeContext: ChromeSelectionContextReader.Context?
     private var source: Source = .codex
     private(set) var captureID: UUID?
@@ -103,6 +105,7 @@ struct LiveSelectionReference: Equatable {
         copy.codexThreadID = labeled.codexThreadID
         copy.codexThreadTitle = labeled.codexThreadTitle
         copy.visibleCodexThreadIDs = labeled.visibleCodexThreadIDs
+        copy.hasCodexScopeObservation = labeled.hasCodexScopeObservation
         copy.chromeContext = labeled.chromeContext
         return copy
     }
@@ -134,8 +137,8 @@ struct LiveSelectionReference: Equatable {
         }
     }
 
-    /// Only a saved macOS screenshot's path is carried into the final message;
-    /// image pixels and clipboard contents are never read by this recorder path.
+    /// Only a saved macOS screenshot's path is carried into the final message.
+    /// Recognition never opens or OCRs this image; the receiving agent reads it.
     init?(screenshotURL: URL) {
         guard screenshotURL.isFileURL,
               screenshotURL.path.hasPrefix("/") else { return nil }
@@ -257,6 +260,7 @@ struct LiveSelectionReference: Equatable {
         copy.codexThreadID = id.lowercased()
         copy.codexThreadTitle = title
         copy.visibleCodexThreadIDs = []
+        copy.hasCodexScopeObservation = true
         return copy
     }
 
@@ -267,6 +271,7 @@ struct LiveSelectionReference: Equatable {
         var copy = self
         copy.codexThreadID = nil
         copy.codexThreadTitle = nil
+        copy.hasCodexScopeObservation = true
         copy.visibleCodexThreadIDs = Array(Set(ids.filter {
             UUID(uuidString: $0) != nil
         }.map { $0.lowercased() })).sorted()
@@ -300,6 +305,7 @@ struct LiveSelectionReference: Equatable {
         copy.codexThreadID = nil
         copy.codexThreadTitle = nil
         copy.visibleCodexThreadIDs = []
+        copy.hasCodexScopeObservation = false
         return copy
     }
 
@@ -659,6 +665,14 @@ struct LiveSelectionReference: Equatable {
         if case .codex = source, visibleCodexThreadIDs.count > 1 {
             attributes += " task_scope=\"multiple_visible_chats\""
             attributes += " visible_task_ids=\"\(visibleCodexThreadIDs.joined(separator: ","))\""
+        } else if case .codex = source, hasCodexScopeObservation, codexThreadID == nil {
+            // A missing/changing log boundary is not a source-chat identity.
+            // Be explicit even when optional metadata work was canceled by a
+            // newer highlight; the already captured text must remain available.
+            attributes += " task_scope=\"unknown\""
+            if let candidate = visibleCodexThreadIDs.first {
+                attributes += " visible_task_ids=\"\(candidate)\""
+            }
         }
         attributes += timing + displayCopy
         // Separate metadata from the payload visibly without adding whitespace
@@ -1027,7 +1041,7 @@ enum LiveContextPastePolicy {
 /// Optional Chrome-only enrichment from the same selected DOM range. A failed or
 /// blocked Apple Event is not permission to use the clipboard or guess a page.
 enum ChromeSelectionContextReader {
-    struct Context: Equatable {
+    struct Context: Equatable, Sendable {
         let selectedText: String
         let pageURL: String
         let pageTitle: String?
@@ -1596,7 +1610,7 @@ final class LiveSelectionCapture {
             }
             guard let self, self.isAttached else { return }
             let captureID = UUID()
-            let captured = isCodex ? reference : reference.scopedToApplication(
+            let captured = isCodex ? reference.scopedToVisibleCodexThreads([]) : reference.scopedToApplication(
                 name: app.localizedName, bundleID: app.bundleIdentifier
             ).scopedToChrome(chromeContext)
             // Commit proven text before optional labels. A new click can cancel
@@ -1616,19 +1630,16 @@ final class LiveSelectionCapture {
             guard isCodex else { return }
             let labeled: LiveSelectionReference
             if isCodex {
-                // Only the verified Codex app may add a task label. A task
-                // switch during selection leaves the existing plain tag.
+                // Activity logs identify candidates, not the selected pane.
+                // Their bounded tail can omit older close events, so even one
+                // remaining ID is not proof. Reserve task_id/task_title for a
+                // future read-only source that binds the actual selected pane.
                 let threadsBefore = await beforeLabels
                 let threadsAfter = await CodexConversationContextReader.selectionThreadIDs(processIdentifier: sourcePID)
-                if threadsBefore == threadsAfter, threadsBefore.count == 1,
-                   let id = threadsBefore.first {
-                    labeled = reference.scopedToCodexThread(
-                        id: id, title: CodexSelectionThreadTitleReader.title(for: id)
-                    )
-                } else if threadsBefore == threadsAfter {
+                if threadsBefore == threadsAfter {
                     labeled = reference.scopedToVisibleCodexThreads(threadsBefore)
                 } else {
-                    labeled = reference
+                    labeled = reference.scopedToVisibleCodexThreads([])
                 }
             } else {
                 // Generic apps expose an app identity, not a proven document,

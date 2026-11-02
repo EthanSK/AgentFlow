@@ -4,6 +4,103 @@ Read before changing OpenAI transcription prompts, Vocabulary hints, language, d
 session reuse, or quality claims. Research checked 2026-09-05. Re-fetch the cited model
 documentation when changing its contract; this is a dated audit, not a frozen API manual.
 
+## 2026-10-26: captured-reference transcription hints removed
+
+Ethan requested: "remove the recent addition where we send ChatGPT the context
+of what we're highlighting, the real-time voice model" and "Undo it completely."
+Selections and screenshot paths belong to the final message only. Do not add them
+to the speech-to-text prompt at startup, update the prompt during recording, OCR
+captured images for recognition, or split audio into intermediate turns for hints.
+The removal restores one Stop-owned commit and the original frozen request guidance.
+It leaves Vocabulary, the independently configured recent-Codex-message context,
+the quiet-upload sleep feature, final references, and Primary/Next delivery intact.
+
+The 25 October evidence below is historical, not permission to restore the feature.
+Reconsider only after a new explicit request; API acceptance and synthetic tests
+alone do not override this product decision. Removal verification and installation
+status are recorded in `LEARNINGS.md`.
+
+## Historical 2026-10-25 captured-reference updates: real API audio-integrity hold
+
+Ethan clarified that highlights/screenshots should help Agent Flow's own speech
+transcription, not connect to Codex Voice. The current
+[transcription guide](https://developers.openai.com/api/docs/guides/realtime-transcription#add-transcription-context)
+explicitly permits another `session.update` within an existing transcription session.
+This is a separate feature from automatic active-Codex excerpts and conversational
+`session.thinking.append`; neither Codex nor a second voice session is required.
+
+The held feature accepts a short topic hint from deliberately captured selections,
+or local OCR of their already captured images. It never feeds typed prose, HUD
+partials or History back into recognition, changes permanent Vocabulary, captures
+extra screens, or appends reference text to the spoken transcript locally. Treat
+recognition hints as untrusted source data; JSON quoting is not an instruction sandbox.
+
+The [update contract](https://developers.openai.com/api/reference/resources/realtime/client-events#session.update)
+describes merging supplied fields. Actual protocol testing rejected a prompt-only
+nested object with `missing_required_parameter` for
+`session.audio.input.transcription.model`. Repeating the same frozen model,
+language, Vocabulary and delay was accepted; an explicit empty prompt cleared a
+hint. The server did not echo keywords or delay even at startup, so omission from
+that acknowledgement does not itself prove they were reset.
+
+Acceptance did not preserve the pending audio. Three same-audio synthetic control
+recordings (4.51075 seconds, one startup update and one Stop commit) retained all
+three spoken markers in order, with 81-character finals and `usage.seconds=5`.
+Full-envelope updates and the narrower transcription-only shape both returned only
+the last phrase (26 characters). Two fully traced narrow runs had one matching
+committed/completed item, no early completion/cleared event, and `usage.seconds=2`.
+This rejects safe mid-recording updates for this observed API, without proving the
+server's internal reset mechanism or a general recognition-quality improvement.
+
+The initial production capability was hard-disabled until a different route was
+qualified. The candidate quiet-boundary route first commits the prior audio, binds
+its exact item identity and awaits completion, then changes context. Never revive
+an update over uncommitted audio. Arbitrary mid-phrase commits lost a marker; three
+quiet-gap probes matched the whole control transcript. Per-turn rounding reported
+nine billed seconds versus eight for the same7.51s audio, so updates are coalesced,
+rate/count bounded and deduplicated against acknowledged startup/current state.
+
+The actual native adapter has passed synthetic real-API single-turn, joined-turn,
+no-following-audio Stop and10ms quiet final-fragment cases. Each emitted one final,
+no early final/errors and every expected marker. Empty audible turns fail closed;
+only proven quiet empty turns may be skipped. A short final fragment after an
+intermediate turn receives enough network-only zero PCM to reach120ms; WAV capture
+is unchanged. Source guards must assert the two commit-helper CALLERS, not merely
+count the JSON string, which is shared by Stop and explicit-hint boundaries.
+
+Use the conservative classifier as a separate observation policy. Wait for a fully
+analysed quiet second, require fresh quiet evidence after each change, and never
+cut continuous speech. Unstarted hints are discarded at Stop; no hint-only turn
+may start during drain. Bound updates to10 per recording and one per10seconds;
+expire a pending offer after120seconds without erasing applied-prompt identity.
+Original-language/Vocabulary context remains frozen, and audio/provider failure
+uses one original-guidance full-WAV fallback even with silence sleep off.
+
+Release-suite, signed installation and human voice accuracy remain distinct. Keep
+same-audio controls, all spoken markers, numeric usage and item identity in future
+provider changes. This evidence does not establish the server's internal reset
+mechanism, an optimal acoustic threshold or improved human recognition.
+
+For any future supported adapter, serialize updates with the existing audio sender,
+wait for `session.updated`; discard unstarted pending context at Stop. That
+acknowledgement has no matching client event ID. Close new offers at Stop, discard
+them at Cancel, and reject late OCR by recording/generation ownership. After a
+rejected/unacknowledged hint, use original frozen prompt/Vocabulary for the single
+completed-WAV fallback instead of resubmitting the suspect addition.
+
+Self-improved — 2026-10-25: official merge semantics and Mini regressions establish
+these validation boundaries. `LiveTranscriptionContextTests` covers conservative
+UTF-8 prompt fitting, long no-space text, local Vision OCR, delayed acknowledgement,
+rejected-hint fallback, startup/overlap/stop lifetime and unchanged other providers.
+Preserve those tests plus existing context, audio, startup, Primary/Next and HUD-only
+guards. The dated frozen-prompt audit below predates this explicit-reference exception.
+The subsequent real API evidence above supersedes the earlier source-only clean
+review. Native tests cover quiet-boundary ownership; they do not qualify raw live
+updates. Build 462 from native source `4caf9076` subsequently passed all 796 Mini
+tests in 29 suites and signed installation after Ethan's explicit authorization.
+The installed executable matches the qualified artifact. No paired human-reference
+accuracy result or physical microphone/typing acceptance was established.
+
 ## Identify the actual model
 
 VoiceInk++ uses `gpt-live-transcribe` for microphone streaming, not a conversational

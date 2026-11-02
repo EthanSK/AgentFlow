@@ -18,10 +18,17 @@ protocol TranscriptionSession: AnyObject {
 
     /// Cancel the session and clean up resources.
     func cancel()
+
+    /// This recording's own authored activity (typing, an accepted selection or
+    /// screenshot). Only the optional GPT Live silence sleep listens: activity keeps its
+    /// network stream awake. It is a presentation-free hint, never a delivery, commit,
+    /// destination, or capture decision. Declared here so fakes can observe it.
+    func noteSessionActivity()
 }
 
 extension TranscriptionSession {
     func beginFinalization(audioURL _: URL) {}
+    func noteSessionActivity() {}
 }
 
 /// Owns exactly one asynchronous final result for exactly one recorded file.
@@ -291,5 +298,9 @@ final class StreamingTranscriptionSession: TranscriptionSession {
         startupTask = nil
         startupTaskID = nil
         streamingService.cancel()
+    }
+
+    func noteSessionActivity() {
+        streamingService.noteSessionActivity()
     }
 }

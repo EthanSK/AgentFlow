@@ -15,6 +15,57 @@ enum HistoryContextPresentation {
         let hasFlowMarkers: Bool
     }
 
+    /// History repainting must not repeatedly decode unchanged legacy messages
+    /// on the UI thread while Stop/recording work is waiting. Cache only immutable
+    /// projections, never SwiftData models. Compare the actual source values so
+    /// provider completion, recovery and enhanced-tab changes invalidate naturally.
+    final class MessageCache {
+        private struct Key: Hashable { let id: UUID; let enhanced: Bool }
+        private struct Input: Equatable {
+            let text: String
+            let enhancedText: String?
+            let draft: String?
+            let status: String?
+        }
+        private struct Entry { let input: Input; let message: Message; let bytes: Int }
+        private let lock = NSLock()
+        private var entries: [Key: Entry] = [:]
+        private var bytes = 0
+        private let maximumEntries: Int
+        private let maximumBytes: Int
+
+        init(maximumEntries: Int = 64, maximumBytes: Int = 8 * 1_024 * 1_024) {
+            self.maximumEntries = maximumEntries
+            self.maximumBytes = maximumBytes
+        }
+
+        func value(for record: Transcription, enhanced: Bool, build: () -> Message) -> Message {
+            let key = Key(id: record.id, enhanced: enhanced)
+            let input = Input(text: record.text, enhancedText: record.enhancedText,
+                              draft: record.realtimeDraftText, status: record.transcriptionStatus)
+            if let hit = lock.withLock({ entries[key] }), hit.input == input { return hit.message }
+            let message = build()
+            let inputBytes = input.text.utf8.count + (input.enhancedText?.utf8.count ?? 0)
+                + (input.draft?.utf8.count ?? 0) + (input.status?.utf8.count ?? 0)
+            let cost = inputBytes + message.text.utf8.count + message.rawText.utf8.count
+            lock.withLock {
+                if let previous = entries.removeValue(forKey: key) { bytes -= previous.bytes }
+                // Count source and output bytes conservatively even when Swift
+                // shares their storage. Huge records remain complete, uncached.
+                guard maximumEntries > 0, cost <= maximumBytes else { return }
+                if entries.count >= maximumEntries || bytes + cost > maximumBytes {
+                    entries.removeAll(keepingCapacity: true)
+                    bytes = 0
+                }
+                entries[key] = Entry(input: input, message: message, bytes: cost)
+                bytes += cost
+            }
+            return message
+        }
+    }
+
+    private static let messageCache = MessageCache()
+
     static func hasFlowMarkers(_ source: String) -> Bool {
         guard source.contains("<") else { return false }
         return AgentFlowPromptViewer.events(source).contains {
@@ -24,6 +75,12 @@ enum HistoryContextPresentation {
     }
 
     static func message(for transcription: Transcription, enhanced: Bool = false) -> Message {
+        messageCache.value(for: transcription, enhanced: enhanced) {
+            makeMessage(for: transcription, enhanced: enhanced)
+        }
+    }
+
+    private static func makeMessage(for transcription: Transcription, enhanced: Bool) -> Message {
         let original = transcription.historyDisplayText
         let selected = enhanced ? transcription.enhancedText ?? original : original
         let readable = document(selected).plainText

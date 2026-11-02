@@ -1,5 +1,10 @@
 # VoiceInk++ terminology
 
+**2026-10-31 UI override:** Ethan's "secondary app icon" means the saved-destination
+app/warning slot, not the physical Next button. He asked to remove that slot from
+the recorder and pending cards. Only the current-focus app icon remains; historical
+locked-icon descriptions below no longer describe the visible UI. Delivery is unchanged.
+
 This is the canonical glossary for Ethan's mouse controls and recording destinations. Read it before interpreting phrases such as “same button,” “toggle,” “secondary behavior,” “latch,” “original input,” or “current input.” Timing is part of the meaning.
 
 **2026-10-17 current override (candidate 436, not yet installed):** Ethan retired

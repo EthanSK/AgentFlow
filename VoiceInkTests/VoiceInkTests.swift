@@ -474,7 +474,8 @@ struct VoiceInkTests {
         #expect(!retry.contains("captureFocusedInput"))
         #expect(!retry.contains("playStartSound"))
         #expect(!retry.contains("AudioTranscriptionService"))
-        let retired = try #require(engine.range(of: "self.transcriptionJobRegistry.remove(identity)", range: engine.range(of: "let failureNotice = await self.runPipeline(for: job)")!.upperBound..<engine.endIndex))
+        let pipelineRun = try #require(engine.range(of: "let failureNotice = await self.runPipeline(for: job,"))
+        let retired = try #require(engine.range(of: "self.transcriptionJobRegistry.remove(identity)", range: pipelineRun.upperBound..<engine.endIndex))
         let presented = try #require(engine.range(of: "self.showTranscriptionFailure(failureNotice)"))
         #expect(retired.lowerBound < presented.lowerBound)
         #expect(engine.contains("identity.generation == self.transcriptionJobRegistry.generation"))
@@ -2254,7 +2255,7 @@ struct VoiceInkTests {
             encoding: .utf8
         )
         let snapshot = try #require(source.range(
-            of: "active.recoverablePartialTranscript = LiveSelectionReference.interleaving("
+            of: "let stoppedReferences = active.liveSelectionReferencesForDelivery"
         ))
         let enqueue = try #require(source.range(
             of: "enqueueTranscription(for: active, transcription: transcription)",
@@ -2264,8 +2265,14 @@ struct VoiceInkTests {
 
         // Keyboard prose and source context are part of the recovery draft too;
         // a speech-only snapshot would silently lose them on failure or exit.
-        #expect(stopBody.contains("active.liveSelectionReferencesForDelivery, with: active.partialTranscript"))
+        #expect(stopBody.contains("let stoppedTranscript = active.partialTranscript"))
+        #expect(stopBody.contains("stoppedReferences, with: stoppedTranscript, includeTiming: true"))
         #expect(stopBody.contains("includeTiming: true"))
+
+        let worker = try #require(stopBody.range(of: "let recoveryDraft = Task.detached(priority: .userInitiated)"))
+        let joined = try #require(stopBody.range(of: "active.recoverablePartialTranscript = await recoveryDraft.value"))
+        let saved = try #require(stopBody.range(of: "try modelContext.save()"))
+        #expect(worker.lowerBound < joined.lowerBound && joined.lowerBound < saved.lowerBound)
 
         #expect(stopBody.contains(
             "realtimeDraftText: active.recoverablePartialTranscript"
@@ -5148,23 +5155,17 @@ struct VoiceInkTests {
 
     @Test func foregroundPasteChecksExactLeaseBeforeEveryIrreversibleKeyBoundary() throws {
         let source = try repositorySource("VoiceInk/Paste/CursorPaster.swift")
-        let start = try #require(source.range(
-            of: "    private static func pasteFromClipboard("
-        ))
-        let end = try #require(source.range(
-            of: "    private static func wait(",
-            range: start.upperBound..<source.endIndex
-        ))
-        let body = String(source[start.lowerBound..<end.lowerBound])
-        let commandLease = try #require(body.range(of: "boundary: \"beforeCommandDown\""))
-        let commandDown = try #require(body.range(of: "cmdDown.post(tap: .cghidEventTap)"))
-        let vLease = try #require(body.range(of: "boundary: \"beforeVDown\""))
-        let vDown = try #require(body.range(of: "vDown.post(tap: .cghidEventTap)"))
-
+        let sequence = try repositorySource("VoiceInk/Paste/ForegroundKeyboardSequence.swift")
+        let commandLease = try #require(sequence.range(of: "ownsClipboard(\"beforeCommandDown\")"))
+        let commandDown = try #require(sequence.range(of: "emit(cmdDown)"))
+        let vLease = try #require(sequence.range(of: "ownsClipboard(\"beforeVDown\")"))
+        let vDown = try #require(sequence.range(of: "emit(vDown)"))
         #expect(commandLease.lowerBound < commandDown.lowerBound)
         #expect(commandDown.lowerBound < vLease.lowerBound)
         #expect(vLease.lowerBound < vDown.lowerBound)
-        #expect(body.contains("cmdUp.post(tap: .cghidEventTap)"))
+        #expect(sequence.contains("emit(cmdUp)"))
+        #expect(source.contains("ForegroundKeyboardSequence.commandV(canPost: canPost, ownsClipboard:"))
+        #expect(source.contains("logPasteboardOwnership(lease, on: pasteboard, boundary: boundary)"))
 
         let transactionStart = try #require(source.range(
             of: "    private static func performPasteSession("
@@ -5723,6 +5724,18 @@ struct VoiceInkTests {
         #expect(abortBody.contains("Recording stopped before startup completed"))
     }
 
+    @Test func openAICompletedResponseSeparatesEmptyTextFromMalformedPayload() throws {
+        for text in ["", " \n ", "Recognized speech"] {
+            let data = try JSONSerialization.data(withJSONObject: ["text": text])
+            #expect(try OpenAICompletedAudioTranscriber.decodeCompletedResponse(data) == text)
+        }
+        for malformed in ["{}", "{\"text\":null}", "{\"text\":42}", "{\"error\":{\"message\":\"failure\"}}", "invalid JSON"] {
+            #expect(throws: DecodingError.self) {
+                try OpenAICompletedAudioTranscriber.decodeCompletedResponse(Data(malformed.utf8))
+            }
+        }
+    }
+
     @Test func providerFailureRecoveryDistinguishesSilentExitAudioAndHUDText() {
         #expect(TranscriptionFailureRecoveryDisposition.resolve(
             shouldSuppressFailureNotification: true,
@@ -6028,18 +6041,20 @@ struct VoiceInkTests {
         let primaryBody = deliverySource[
             primaryStart.lowerBound..<exactStart.lowerBound
         ]
-        let settle = try #require(primaryBody.range(
-            of: "Self.primaryCurrentInputSettleNanoseconds"
+        let pastePosted = try #require(primaryBody.range(
+            of: "await CursorPaster.pasteAtCursorAndWaitUntilPosted(pastedText)"
         ))
         let queuePolicy = try #require(primaryBody.range(
             of: "let queuedAutoSend = resolveQueuedAutoSend(autoSendKey)",
-            range: settle.upperBound..<primaryBody.endIndex
+            range: pastePosted.upperBound..<primaryBody.endIndex
         ))
         let returnPost = try #require(primaryBody.range(
             of: "CursorPaster.performAutoSend(",
             range: queuePolicy.upperBound..<primaryBody.endIndex
         ))
-        #expect(settle.lowerBound < queuePolicy.lowerBound)
+        #expect(pastePosted.lowerBound < queuePolicy.lowerBound)
+        let settle = try #require(primaryBody.range(of: "Self.primaryCurrentInputSettleNanoseconds"))
+        #expect(pastePosted.lowerBound < settle.lowerBound && settle.lowerBound < queuePolicy.lowerBound)
         #expect(queuePolicy.lowerBound < returnPost.lowerBound)
         #expect(primaryBody.contains(
             "auto-send deferred because a newer recording exists"
@@ -7758,11 +7773,17 @@ struct VoiceInkTests {
             encoding: .utf8
         )
         #expect(miniRecorderSource.contains(
-            "stateProvider.showsRealtimeTranscriptHUD"
+            "stateProvider.showsLiveContext"
         ))
         #expect(notchRecorderSource.contains(
-            "stateProvider.showsRealtimeTranscriptHUD"
+            "stateProvider.showsLiveContext"
         ))
+        // Visibility and height now share this gate so stopped cards do not
+        // measure hidden text. Realtime still opens the HUD before any partial.
+        let providerSource = try String(contentsOf: repositoryRoot.appendingPathComponent(
+            "VoiceInk/Views/Recorder/RecorderStateProvider.swift"), encoding: .utf8)
+        #expect(providerSource.contains("var showsLiveContext: Bool"))
+        #expect(providerSource.contains("showsRealtimeTranscriptHUD || canTypeInHUD"))
         #expect(miniRecorderSource.contains("text: stateProvider.partialTranscript"))
         #expect(notchRecorderSource.contains("text: stateProvider.partialTranscript"))
 
@@ -7834,10 +7855,10 @@ struct VoiceInkTests {
             primaryStart.lowerBound..<backgroundStart.lowerBound
         ]
 
-        #expect(primaryBody.contains("startPasteAtCursor(pastedText)"))
-        #expect(primaryBody.contains(
-            "Self.primaryCurrentInputSettleNanoseconds"
-        ))
+        #expect(primaryBody.contains("await CursorPaster.pasteAtCursorAndWaitUntilPosted(pastedText)"))
+        #expect(!primaryBody.contains("CursorPaster.startPasteAtCursor"))
+        #expect(primaryBody.contains("Self.primaryCurrentInputSettleNanoseconds"))
+        #expect(!primaryBody.contains("NSWorkspace"))
         #expect(primaryBody.contains("method: .cgEvent"))
         #expect(primaryBody.contains(
             "primary current-input HID auto-send issued=true"
@@ -7854,9 +7875,7 @@ struct VoiceInkTests {
         #expect(!primaryBody.contains("telegramTargetedHIDReturn"))
         #expect(!primaryBody.contains("pressNearbySubmitButton"))
         #expect(!primaryBody.contains("foregroundOpenAIVerificationContext"))
-        #expect(deliverySource.contains(
-            "primaryCurrentInputSettleNanoseconds: UInt64 = 220_000_000"
-        ))
+        #expect(deliverySource.contains("primaryCurrentInputSettleNanoseconds: UInt64 = 150_000_000"))
 
         let engineSource = try String(
             contentsOf: repositoryRoot.appendingPathComponent(

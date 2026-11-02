@@ -16,6 +16,12 @@ Improve this skill as part of using it. Whenever use, debugging, feature work, d
 Tell Ethan when this skill causes an action or pause, and briefly explain which project safety or
 validation contract applies.
 
+## Extra delays require consultation
+
+Never add an extra delay without explicitly consulting Ethan about it for any app from now on. User-requested — 2026-11-01; this also applies to Agent Flow.
+
+For both speech and typing, consult him before adding or increasing deliberate waits, including paste/Return settling, key-event spacing and recorder UI pauses. Explain the purpose and expected duration and wait for his agreement; “humanized” or defensive padding is not an exception. The global rule is owned by `development-workflow`. Preserve the reason: the user already waits for real work and wants finishing to be as fast as possible.
+
 ## Start with prior evidence
 
 Agent Flow must use Ethan's Scarlett 18i8 microphone. Warn him if another input
@@ -32,12 +38,14 @@ an install or restart, even when the build and tests are ready. A missing record
 window or an apparently idle Accessibility snapshot is not proof that the session
 ended; the recorder may be hidden or recovering. Monitor safely and continue the
 authorized installation automatically when the current session finishes; do not
-ask Ethan to confirm an ordinary session end. Use cheap read-only checks every
-few seconds while this task is active, not repeated model turns or UI probes.
+ask Ethan to confirm an ordinary session end. From build 465 use the app's
+event-driven deferred quit and the installer's process-exit wait; **I've finished**
+is an optional immediate recheck. Older builds may need a fresh ordinary quit
+after work ends. Never infer continued activity solely from an earlier veto.
 Require the installed app's `applicationShouldTerminate` all-session veto at the
 final cooperative quit boundary: recording, typing, paused capture, transcription
 and delivery all count as active. Give the real five-second restart warning,
-recheck immediately afterward, and treat a refused quit as continued activity;
+recheck immediately afterward, and treat a refused quit as activity at that moment;
 never escalate to TERM, KILL or another forced exit. Keep a bounded watcher, and
 use the product's thread heartbeat only if continuation must survive yielding;
 pause that heartbeat once installation is verified. Unknown identity/state is
@@ -157,6 +165,18 @@ local context-log count, synthetic probe, or catalog score as that evidence.
 When reducing Vocabulary hints, preserve stored terms and every non-OpenAI provider; review
 the OpenAI-only exclusion set rather than lowering an alphabetical keyword cap. Confirm the
 per-recording realtime/fallback list is identical and the current live setting separately.
+For explicit captured-reference hints, read the reference's dated audio-integrity evidence;
+do not apply conversational Voice events to a transcription session or enable a live
+update merely because it is documented/acknowledged. Raw OpenAI updates over uncommitted audio remain rejected after losing earlier
+speech. Use only the qualified quiet-boundary commit/completion/update route, with
+one final assembly, audible-empty rejection, short-final padding and deduplication
+against acknowledged prompts. Preserve fresh quiet evidence, Stop/cancel ownership,
+late-OCR rejection and original-guidance fallback. Recheck all-marker/duration and
+item identity in real API probes; fake acknowledgements alone are insufficient.
+Self-improved — 2026-10-25: raw updates and arbitrary commits lost words; quiet-gap
+and actual native-adapter probes preserved them. Four Opus findings added empty-turn,
+minimum-duration, source-guard and applied-context regressions. See `FAILED_APPROACHES.md`
+and the linked quality reference; human recognition benefit remains unproven.
 
 For OpenAI GPT Live Transcribe work, use `scripts/openai-transcription-probe.swift` with synthetic PCM16 mono 24 kHz plus its WAV equivalent before building, installing, or changing active Modes. Require `session.updated`, at least one real delta, a non-empty completion, and a successful `gpt-transcribe` completed-audio fallback. The WebSocket connection is `wss://api.openai.com/v1/realtime?intent=transcription`; `gpt-live-transcribe` belongs only in `audio.input.transcription.model`. Never revive either rejected `?model=gpt-live-transcribe` or `?model=gpt-realtime-*` connection form. The probe reads the VoiceInk++ key from local secure preferences and must not print transcript contents or credentials.
 
@@ -188,6 +208,13 @@ long messages, escaped expansion, no-context fallback, and post-fit counts; a ze
 can otherwise look healthy while ordinary dictations lose all useful context. Keep task identity,
 message, transcript, prompt, and keyword text out of logs. The retired History policy lives only in
 test fixtures to preserve its comments and negative evidence; never restore its runtime query.
+
+Ethan removed captured-reference speech-to-text hints entirely on 2026-10-26.
+Keep selections and screenshot paths in the final message only: no startup hint,
+mid-recording prompt update, recognition OCR, or intermediate audio turn for them.
+This does not disable the separately configured recent-Codex-message context or
+Vocabulary. Read the newest removal contract in
+`references/openai-transcription-quality.md` before revisiting that feature.
 
 For live Codex selected-text and screenshot context, keep one per-recording chronological
 stream: bounded selected-text excerpts, saved native screenshot **paths only**, and HUD-only
@@ -332,7 +359,9 @@ Primary/Next and shared-monitor guards. See LEARNINGS.md, “Late Shift belongs 
 to the exact four-key-stopped result”.
 User-requested timing correction — 2026-10-01: keep a separate typing-stop
 choice open through formatting, archiving and the asynchronous delivery-queue
-wait, with at least one second from stop for fast typed-only results. Primary's
+wait, without an artificial reaction interval. Ethan superseded the one-second
+and half-second windows with "make it paste instantly" on 2026-10-27. Late Shift
+may select Won't paste only while genuine preparation/queue work is pending. Primary's
 earlier completion-policy freeze is not this cutoff. Seal/read the choice
 atomically after the queue wait, before paste/Return/custom commands, or before
 a Respond request starts; recheck cancellation/lineage after any grace wait.
@@ -536,6 +565,16 @@ against the source audio rather than treating text fluency as ground truth.
 
 For a realtime stop that pastes nothing or appears to skip Return, separate transcription finalization from delivery before touching Primary or Next routing. Correlate `Streaming stop completed ... finalChars=` with `pipeline: about to DELIVER finalChars=` and the selected Mode. `finalChars=0` is not a successful final: the completed audio must take the existing batch fallback before any delivery route runs. A non-empty Primary trace with `targetAutoSend=none` instead means the current input app's Mode intentionally disabled Return; do not reinterpret it as latch contamination.
 
+Distinguish that empty live result from OpenAI's successful completed-WAV response
+with a valid but empty string `text`. The latter means no words were recognized:
+retain the audio, allow captured screenshot/selection or typed content through the
+normal final-message path, and keep an entirely empty message a no-op. It is not
+proof of acoustic silence. HTTP, transport, missing/null text and decoding failures
+remain errors; other providers retain their existing empty-result checks. Never
+infer silence from file size, volume, an empty language list or missing confidence.
+Self-improved — 2026-11-01: real synthetic silence returned HTTP 200 with zero text,
+speech passed live/batch, and the 14 focused Mini checks preserved these boundaries.
+
 ## Normalize the two mouse controls before reasoning
 
 - **Primary button** is the preferred name for Ethan's normal recording control. **Normal button**, **thumb button**, **toggle button**, **recording button**, **same button**, and historical **G5** are aliases. First press starts. While recording, one press performs a base VoiceInk normal stop after the shorter of the macOS double-click interval and 0.45 seconds into whichever system keyboard input is focused at final delivery (`primaryCurrentInput`). Two presses cancel that pending stop and, if no third press arrives through the full macOS multi-click interval, finish the session to a recoverable local audio/HUD draft plus final clipboard text without paste, auto-send, Mode command/response, or playback mutation. A third press inside that interval cancels the clipboard finish and pauses capture; a fourth press inside one more full-system continuation finalizes normal Primary paste with only that session's configured auto-send suppressed. Ignore a fifth press inside the consumed gesture. While paused, one fresh press resumes after the short second-press decision window; two fresh presses inside it propose the same clipboard-only/no-paste route, but a third inside the full continuation clears it and resumes the same capture. Primary owns no exact input or destination Mode.
@@ -718,14 +757,22 @@ existing destination. Pass Next Track through to media only after the bar is hid
 an attempted VoiceInk++ latch can never become an unrelated Next Song action because of
 an internal timing race.
 
-Preserve the recorder's action feedback mapping on every mirrored panel: a primary normal stop pulses the left/current-focus app icon; Next while recording and a successful second-chance Next latch pulse the right/locked-destination icon. Failed retargets and pass-through media presses do not pulse. Keep the Reduce Motion variant non-scaling.
+Ethan removed the "secondary app icon" on 2026-10-31 because it was mostly an unused
+warning. Mini, notch and compact pending cards must omit that saved-destination slot.
+Keep only the current-focus app icon and its Primary-stop pulse, with the non-scaling
+Reduce Motion variant. This is a UI preference, not permission to remove delivery
+routes, weaken exact-input checks or hide real delivery errors. The current-focus
+icon must never imply a saved Next target. This supersedes the historical two-icon
+rules in older learning and failure entries.
 
 Keep visible warning/error bars above the bottom-anchored mini recorder's actual rendered envelope.
 The compact control bar, expanded real-time transcript, assistant panel, and stacked transcription
 cards must share layout metrics with notification placement; never reintroduce a fixed compact-height
 offset that overlaps a taller recorder state.
 
-Treat transient action feedback and persistent destination ownership as separate UI state. After any stop route freezes a real exact input, keep only the stable right/locked-destination icon outlined through transcription and delivery (including compact background chips) until success, visible failure, or cancellation. Do not outline a recording-time preview, missing target, or app-only no-caret fallback until exact-composer promotion succeeds. Never persistently outline the live left/current-focus icon; it may change after the route decision and cannot represent session ownership.
+Keep the remaining current-focus icon unoutlined: it may change before delivery and
+cannot represent saved-input ownership. Do not replace the removed secondary icon
+with a success toast or silently restore it during a routing repair.
 
 For delivery, never use process-targeted Command-V or generic process-targeted Return and never activate a saved target that is currently backgrounded. Exact background text may use bounded Unicode only inside the exact-input session that resolves the saved window/editor (or meets Telegram's allowlisted retained-internal-focus fallback with independently matching chat identity), prepares one activation-state session when needed, verifies exact insertion, and proves from immediate pre/post Accessibility focus that the target did not take control. For long text, run the expensive context resolver before, at bounded periodic checkpoints, and after typing; use only a fast exact PID/window/editor/focus boundary per chunk. Codex/ChatGPT, Chrome/Chromium, and Notion may reuse renderer wrappers: empty context requires a revalidated semantic task/document scope; a stable or UUID-shaped editor/window identifier alone never proves the selected task. Telegram requires either readable matching AX chat anchors or, only for an exact audited app/version/build/layout with Screen Recording permission, a stable capture-time SHA-256 digest of the selected-chat avatar plus primary-title row that re-matches immediately before each irreversible boundary. Exclude its independently changing lower status/activity row; the complete-header digest is rejected evidence. The visual path stores and logs no screenshot, OCR, title, message, or crop bytes; any missing permission, blank/protected capture, tuple/layout drift, or stable-digest mismatch fails closed. Auto-send must use a semantic AX action, an ordinary HID key only while the exact target owns system keyboard focus, or a host-native exact-session API such as Terminal/iTerm scripting. The only accepted background Return exception is pinned Telegram 12.9/282526 after fresh exact-chat revalidation: one HID-system modifier-boundary plus Return down/up and live modifier restoration posted to Telegram's PID, followed by composer-clear verification. It is Telegram-only, one-shot, and never a generic fallback. Use the same non-activating route when the target app is frontmost but Ethan is working in a different input in that app; that case permits verified `AXSelectedText` and a proven semantic action only, never an internal-focus rewrite or generic whole-`AXValue` replacement. Rich/contenteditable surfaces such as Notion fail closed when selected-text insertion is unavailable. Ethan may switch between other apps while delivery runs; do not require his starting foreground PID to stay frozen. At recording start only, an already-active app/window/task with no caret may passively identify one proven main composer for a later Next route; it must never set `AXFocused`, move the caret, or disturb a secondary field that Primary should continue to use.
 

@@ -17,6 +17,7 @@ struct VoiceInkApp: App {
     @StateObject private var transcriptionModelManager: TranscriptionModelManager
     @StateObject private var recorderUIManager: RecorderUIManager
     @StateObject private var recordingShortcutManager: RecordingShortcutManager
+    @StateObject private var newChatRecordingService: NewChatRecordingService
     @StateObject private var updaterViewModel: UpdaterViewModel
     @StateObject private var menuBarManager: MenuBarManager
     @StateObject private var aiService = AIService()
@@ -160,6 +161,10 @@ struct VoiceInkApp: App {
         // 7. Create other services that depend on engine
         let recordingShortcutManager = RecordingShortcutManager(engine: engine, recorderUIManager: recorderUIManager)
         _recordingShortcutManager = StateObject(wrappedValue: recordingShortcutManager)
+        let newChatRecordingService = NewChatRecordingService(
+            engine: engine, recorderUI: recorderUIManager
+        )
+        _newChatRecordingService = StateObject(wrappedValue: newChatRecordingService)
 
         let menuBarManager = MenuBarManager()
         _menuBarManager = StateObject(wrappedValue: menuBarManager)
@@ -185,6 +190,7 @@ struct VoiceInkApp: App {
         // consult the live session collection before terminating. This prevents a
         // release restart from cutting off microphone audio or queued transcription.
         appDelegate.voiceInkEngine = engine
+        appDelegate.newChatRecordingService = newChatRecordingService
 
         // Ensure no lingering recording state from previous runs
         Task {

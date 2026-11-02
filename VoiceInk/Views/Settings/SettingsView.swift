@@ -18,6 +18,7 @@ struct SettingsView: View {
     @AppStorage("clipboardRestoreDelay") private var clipboardRestoreDelay = 2.0
     @AppStorage(TelegramSelectionImageCapture.preferenceKey) private var telegramHighlightImages = false
     @AppStorage(PasteMethod.userDefaultsKey) private var pasteMethodRawValue = PasteMethod.standard.rawValue
+    @AppStorage(NewChatRecordingHarness.preferenceKey) private var newChatApp = NewChatRecordingHarness.codex.rawValue
     @State private var showResetOnboardingAlert = false
     @State private var hasCancelRecordingShortcut = ShortcutStore.shortcut(for: .cancelRecorder) != nil
 
@@ -67,6 +68,16 @@ struct SettingsView: View {
                 }
             } header: {
                 Text("Shortcuts")
+            }
+
+            Section("New Chats") {
+                // Double Top reads this same preference once per request. The receiver and
+                // native launcher deliberately keep no second app choice that could drift.
+                Picker("App", selection: $newChatApp) {
+                    Text("Codex").tag(NewChatRecordingHarness.codex.rawValue)
+                    Text("Claude Code").tag(NewChatRecordingHarness.claudeCode.rawValue)
+                }
+                .accessibilityLabel("New Chat App")
             }
 
             Section("Additional Shortcuts") {

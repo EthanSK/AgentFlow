@@ -5,6 +5,60 @@ import Testing
 @testable import VoiceInkPlusPlus
 
 struct HistoryContextPresentationTests {
+    @Test func historyProjectionCacheReusesOnlyUnchangedSourceValues() {
+        let cache = HistoryContextPresentation.MessageCache()
+        let record = Transcription(text: "Original", duration: 0, enhancedText: "Enhanced")
+        var builds = 0
+        func read(_ enhanced: Bool = false) -> String {
+            cache.value(for: record, enhanced: enhanced) {
+                builds += 1
+                return .init(text: "build-\(builds)", rawText: "raw", hasFlowMarkers: false)
+            }.text
+        }
+        #expect(read() == "build-1" && read() == "build-1")
+        #expect(read(true) == "build-2" && read() == "build-1")
+        record.text = "Corrected"
+        #expect(read() == "build-3" && read() == "build-3")
+        record.enhancedText = "Enhanced correction"
+        #expect(read() == "build-4")
+        record.realtimeDraftText = "<speech>Recovered</speech>"
+        #expect(read() == "build-5")
+        record.transcriptionStatus = TranscriptionStatus.recoveredAfterInterruption.rawValue
+        #expect(read() == "build-6" && read() == "build-6")
+        #expect(builds == 6)
+    }
+
+    @Test func historyProjectionCacheBoundsRetentionWithoutTruncatingOutput() {
+        let cache = HistoryContextPresentation.MessageCache(maximumEntries: 2, maximumBytes: 100)
+        let records = (0..<3).map { Transcription(text: "r\($0)", duration: 0) }
+        var builds = 0
+        func read(_ record: Transcription) -> String {
+            cache.value(for: record, enhanced: false) {
+                builds += 1
+                return .init(text: record.text, rawText: record.text, hasFlowMarkers: false)
+            }.text
+        }
+        #expect(read(records[0]) == "r0" && read(records[1]) == "r1")
+        #expect(read(records[0]) == "r0" && builds == 2)
+        #expect(read(records[2]) == "r2" && read(records[0]) == "r0" && builds == 4)
+        let huge = Transcription(text: String(repeating: "complete🌊", count: 100), duration: 0)
+        #expect(read(huge) == huge.text && read(huge) == huge.text && builds == 6)
+    }
+
+    @Test func cachedHistoryProjectionRefreshesActualFlowAndRawCopyAfterCompletion() {
+        let record = Transcription(text: "Old words", duration: 0,
+            realtimeDraftText: "<speech>Old draft</speech>")
+        let initial = HistoryContextPresentation.message(for: record)
+        #expect(initial.text == "<speech>Old draft</speech>" && initial.rawText == "Old words")
+        record.text = "<speech>Final corrected words</speech>"
+        let final = HistoryContextPresentation.message(for: record)
+        #expect(final.text == record.text && final.rawText == "Final corrected words")
+        record.enhancedText = "Enhanced answer"
+        #expect(HistoryContextPresentation.message(for: record, enhanced: true).text == "Enhanced answer")
+        record.enhancedText = "Updated answer"
+        #expect(HistoryContextPresentation.message(for: record, enhanced: true).text == "Updated answer")
+    }
+
     @Test func copyActionUsesFullFormattingLabelAndContentSizedWidth() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         let presentation = try String(contentsOf: root.appendingPathComponent("VoiceInk/Views/History/HistoryContextPresentation.swift"), encoding: .utf8)

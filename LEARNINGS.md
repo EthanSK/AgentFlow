@@ -1,5 +1,682 @@
 # Learnings
 
+## 2026-11-01 — Separate requested key waits from finish elapsed time
+
+A read-only audit of the build-474 natural finishes at 13:16 refined the earlier
+timing summary. Stop to enqueue took 81/83 ms, then enqueue to transcription start
+took 180/203 ms. The remaining pre-delivery preparation was 363/271 ms. These
+intervals include scheduling and awaited work; they are not CPU measurements.
+The existing retrospective metadata log had no finer prompt-stage records for
+these two samples, so no particular getter, formatter or disk write owns the
+unmeasured remainder.
+
+At audit time, builds 474/475's key path explicitly requested 100 ms before Cmd-V, three 10 ms
+key gaps, 220 ms before the final auto-send decision, and 30 ms Return-down/up
+when Return is issued. These are suspending Task sleeps, not busy computation.
+They total 380 ms on a single-paste/Return path, or 350 ms if the final queue
+decision suppresses Return. Clipboard restore and the 150 ms later-paste lease
+settlement are deferred work, not extra waits to add to this same result.
+
+The 2.345 s sample posted Cmd-V but intentionally withheld Return with
+`suppressionReason=pendingRecordingStart`; its endpoint is the delivery decision,
+not a successful submission. The 2.017 s sample issued HID Return. Both foreground
+clipboard acquisitions reported no queue and zero lease wait. Their elapsed time
+outside the transcription interval was 1.103/1.006 s; after requested key sleeps,
+0.753/0.626 s remains across local processing, IO and scheduling. Streaming's
+completion log also precedes provider cleanup and the pipeline's success log;
+do not label the whole transcription interval pure network/API time.
+
+Builds 468–471 removed a typing reaction timer, hidden HUD layout, repeated scope
+parsing and redundant actor/paste-task handoffs. Those mechanisms remain absent;
+the key waits remain deliberate. The build-470 Release parser benchmark proved
+a narrower CPU improvement, while its live typing trace still showed a 674–853 ms
+recipient envelope and a 202–231 ms extra paste-task wait. Build 471 removed the
+redundant handoffs, but its exact isolated physical improvement was not measured.
+Do not say all earlier fixes failed or that they proved instant end-to-end finish.
+
+Guard/evidence: native commits `497eccd4`, `8bc71fcf`, `945718d2`, `ad6ca925`, current
+`RecorderResponsivenessTests`, `CursorPaster` and `TranscriptionDelivery`; the dated
+metadata-only `agentflow-local-finish-investigation/refined-timing.json` receipt.
+Timed native files are unchanged between builds 474 and 475. This investigation
+changed no native source, started no capture/live monitor, and ran no native build.
+
+---
+**Date:** 2026-11-01T13:47:50Z
+**Trigger:** Ethan asked for the floating Agent Flow background to change from black to orange while paused because he forgets capture is paused.
+**Symptom:** The small pause indicator did not make a paused capture session obvious enough.
+**Root cause:** Mini and Notch recorder backgrounds used black or their transcript gradient regardless of the existing shared recordingState.
+**Fix:** Build 475 uses the same RecorderPanelAppearance dark orange on both whole HUD surfaces only when recordingState is paused. Resume returns to the existing black/gradient; typing-only microphoneOff is not pause. The existing Play control becomes white for contrast. No recording, provider, timing, delivery, settings or focus logic changed.
+**Commit:** d943e00fbd62c73331ee30eab44374dc9b46dd31
+**Guard:** The real hosted Mini/Notch transition test checks short and expanded surfaces through recording, typing-only, paused and resumed states. All 12 focused and 788 full tests in 29 suites passed using canonical Mini xcodebuild; focused, ordinary Release and full jobs have identical selected source digests. Both paused layouts and black recording counterparts were visually inspected. Stable local outer/nested signing and Automation/audio-input entitlements verified; build 475 installed through the real five-second warning and cooperative all-session quit guard, with verified 474 rollback ZIP. New PID/signature/executable were verified, protected preferences and official VoiceInk remained unchanged. Physical user gesture acceptance was not exercised.
+---
+
+
+---
+**Date:** 2026-11-01T13:38:39Z
+**Trigger:** none
+**Symptom:** Voice finish can spend seconds loading after capture stops, including occasional much longer stalls.
+**Root cause:** Existing build-474 metadata separated variable voice finalization from local elapsed handoffs. Two complete real finishes took 2.017/2.345 seconds after Stop: 1.011/1.242 seconds transcription; 0.286/0.261 before transcription; 0.271/0.363 preparation; 0.449/0.479 generic paste/Return. The release-to-Stop gesture added 0.478/0.460 seconds. One other live final wait returned no segment after 11.333 seconds, then completed-WAV fallback recovered 94 characters in 1.316 seconds. The missing reply cause was not established.
+**Fix:** For diagnosis first reuse bounded metadata logging: Notice provider completion plus a short allowlisted live delivery trace can measure phases without retaining content or changing the app. The trace was stopped after the sample. Provider-to-MainActor handoff in eight recent matched completions was 0.154–2.135 ms, so those multi-second waits were not explained by UI delivery of a completed response. No model, prompt, microphone, timing or delivery setting was changed.
+**Commit:** d7a1069d4fc57261b5801fc4dafd7a96f0dee831
+**Guard:** Elapsed local preparation includes scheduling and IO, not measured CPU time. Streaming totals include drain/final processing and do not isolate broadband from provider computation. Generic paste/Return completion does not prove recipient pixels. Empty live and batch recognition can be no speech rather than a provider error; distinguish that from a recovered nonempty fallback. The Primary multi-click decision is intentional and must not be removed as a logging optimization.
+---
+
+
+## 2026-11-01 — Format explicit spoken website addresses locally
+
+Ethan wants to dictate website URLs, with `speedtest.net` as his example. A fresh
+synthetic-audio comparison reproduced the formatting gap: configured GPT Live
+Transcribe returned `speedtest dot net`, `example dot com` and `docs dot python
+dot org slash free`; completed GPT Transcribe rendered the same address forms
+with punctuation. The fixture actually said “three”, so “free” is a recognition
+error, not something punctuation formatting can safely infer or repair. Generated
+audio does not establish physical microphone or user-voice acceptance.
+
+The current OpenAI transcription guide describes prompts as topic/context hints
+and keywords as literal recognition hints, not a guaranteed output-format switch.
+Do not add a formatting command to Ethan's deliberately blank prompt or send
+captured selections to recognition to solve this. Build 474 adds a local
+`SpokenWebsiteAddressFormatter` through `WordReplacementService`: explicit English
+“dot”, “dash”/“hyphen” and simple “slash” components become common domain endings
+and paths, including subdomains. It does not open sites, guess domains from brand
+names, or claim arbitrary international domains/query syntax. Existing URLs, code,
+paragraph boundaries, ordinary dot prose and named .NET frameworks stay literal.
+New hostnames are lowercased while path case stays intact.
+
+Live/completed speech, imported audio and History retries share this existing
+service. Protect original phrases claimed by the user's dictionary using the
+same existing boundary matcher, normalize other spoken addresses, then run the
+existing dictionary pass once. Canonical URL rules can see the normalized URL;
+replacement output is not rewritten. Protection is lazy after an actual address
+shape, so ordinary dictation incurs no second dictionary scan. HUD typing and
+captured selections are composed later and remain literal; raw/skip bypasses the
+service. No extra provider request or prompt, microphone, Mode, media, startup,
+focus, paste or auto-send change was added.
+
+The final native source is `d7a1069d4fc57261b5801fc4dafd7a96f0dee831` (initial
+implementation `54cfafdc`). Canonical Mini Xcode qualification passed 17 selected
+tests, including real pipeline composition, raw/typed preservation, dictionary
+precedence, the no-extra-scan guard and mandatory Primary/Next/HUD-only guards.
+The final canonical full Mini Xcode action then passed 787 tests in 29 suites
+(job `20261101-023535-agent-flow-spoken-urls474-full-31949c`). Its compiled app/test
+source matches the signed Release byte-for-byte; the only added snapshot input is
+the existing tracked trace helper read by two source-contract tests. An earlier
+full run passed 785 cases and failed those two because the disposable sync
+manifest omitted the helper. Preserve that failed receipt; correcting test
+inputs did not change or reinstall the native app.
+
+The ordinary Release was rebuilt from the same 414-file source digest
+`a76b125cddf9067d7cc35c33ddd2d4c26789d6237a250ced06819587d3ad3971` through
+Fleet Runner, then signed on the Mini with the existing VoiceInk Local Signing
+identity and explicit outer Automation/audio entitlements. Build 474 is installed
+and persistently running with CDHash `9101eabbadacf99d0ff3f335dfda8387811e4d5b`.
+The real five-second warning, cooperative all-session quit, unchanged signing
+requirement, protected settings, artwork and official VoiceInk executable were
+verified. Build 473 remains a verified rollback ZIP. Exact receipts live in
+`Documents/Codex/2026-11-01/agentflow-spoken-urls/` and Fleet Runner's matching job
+folders; the Release app and matching dSYM UUID remain on the Mini.
+
+## 2026-11-01 — Successful empty recognition is separate from provider failure
+
+Ethan wants to send screenshots without speaking. All seven saved Modes still use
+English GPT Live Transcribe. Current OpenAI documentation distinguishes completed
+transcription from failed/error events, but GPT Live supplies no confidence or
+guaranteed no-speech flag and does not support server VAD. A valid empty transcript
+means no words were recognized; neither file size, quiet PCM nor an empty detected-
+language list proves acoustic silence.
+
+A fresh three-second generated-silence WAV returned HTTP 200 from `gpt-transcribe`
+with a valid string `text` of length zero. The existing synthetic provider probe
+received session.updated, 19 live deltas, and 101-character live and batch results.
+No microphone, private recording, setting or captured-reference prompt was used.
+
+Build 473 accepts a valid empty completed-WAV OpenAI result instead of throwing
+`noTranscriptionReturned`. Empty/failed live transcription still uses the existing
+single full-WAV fallback. The pipeline qualifies empty OpenAI success before output
+filtering, keeps its WAV recoverable, and composes screenshots/typing using the
+unchanged final-message route. Missing/null/non-string text, malformed JSON, HTTP
+and transport failures still fail; unqualified empty results from other providers
+still use failed-voice recovery without Return. With no authored/context content,
+the existing empty-delivery guard prevents paste and Return. Raw/skip continues to
+exclude screenshots and selections. This changes result handling, not recognition
+settings, capture or destination ownership.
+
+The final focused canonical Mini Xcode selection passed 14 tests: structured
+response decoding, screenshot-only automatic/clipboard completion, entirely empty
+no-op, raw context opt-out, real failure behavior, typed recovery, empty-live
+fallback, same-item delta recovery, Primary isolation, both Next-route boundaries
+and HUD-only realtime output. The exact native commit
+`e113866f6f84efce77f99cf5eea8c2668ba4577a` then passed the canonical full Mini Xcode
+test action: 777 named tests in 28 suites, with zero failures. The transferred
+build 473 was signed with the existing VoiceInk Local Signing identity, preserved
+its designated requirement and Automation/audio entitlements, and installed after
+the five-second warning and the old app's cooperative all-session quit guard.
+The new running PID was 69248 and its CDHash was
+`93fd611260b6b7254c76cfa11f8625ce7a501c71`. Protected microphone/Mode/context
+preferences, the app icon and the separate official VoiceInk executable were
+unchanged. The verified build-472 ZIP remains in Release Rollbacks/Archives.
+Receipts are in `Documents/Codex/2026-11-01/agentflow-empty-speech473/`; the full
+Mini log is `AgentFlow-new-chat463.noindex/full473.log`. A synthetic pipeline sink
+does not prove physical screenshot-only paste, which was not exercised here.
+
+## 2026-10-31 — Remove the secondary app icon without changing delivery
+
+Ethan explicitly removed the recorder's "secondary app icon" because it was
+mostly an unused warning. Build 472 removes the saved-destination indicator
+from Mini, Notch and compact pending-transcription cards. Mini's compact widths
+and both styles' pending-card widths shrink by the removed slot's 26 points.
+The current-focus icon and Primary action pulse remain; it must not imply saved
+Next ownership. Delivery errors, the three destination routes, capture and
+microphone preferences are unchanged. The current UI override supersedes the
+historical mandatory two-icon/locked-outline presentation, not its delivery
+safety contracts. Keep AGENTS, terminology, destinations and the canonical
+learnings skill consistent so a future repair does not restore unwanted UI.
+
+The exact native commit `1d987c0d` compiled as a separate Mini Release candidate.
+All 772 named unit tests in 28 suites passed through Xcode's canonical test
+action, including the Primary, both Next-route and HUD-only streaming guards.
+The test-only screenshot fixture was then corrected and rerun separately: a
+660pt host clipped Notch's 1100pt live-context layout. The corrected single-test
+Xcode run passed, and the final Mini/Notch processing and capture layouts plus
+pending-card images were inspected. Native view screenshots
+must fit the real context width; empty/clipped fixture pixels are not evidence
+of a product regression. These renders do not prove a physical shortcut or
+end-to-end paste interaction.
+
+Signed build 472 is installed at `/Applications/AgentFlow.app` with CDHash
+`b5811f2d0366fbf6f7696945b343196ad06f9fe9`. Stable outer/framework signing,
+deep/strict validity, Automation/audio entitlements, rollback ZIP extraction,
+the real five-second warning, cooperative all-session guarded exit and the
+new persistent executable were verified. Protected preferences, app artwork
+and official `/Applications/VoiceInk.app` stayed unchanged. No active recording
+was interrupted. The existing install-first workflow was followed; the full
+test gate ran after installation, and its later test-fixture edits do not change
+the installed native executable.
+
+## 2026-10-27 — Separate UI handoff time from actual prompt processing
+
+Build 470's recent successful typing-only trace took 1.260 s from Stop to the
+posted Cmd-V and 1.517 s through auto-send. Stop/recovery occupied 228 ms;
+the app-recipient/MainActor envelope occupied 674 ms; log scope took 13 ms;
+canonical plus viewer writes took about 3 ms; a newly queued paste Task waited
+202 ms before starting. Clipboard setup itself was effectively zero, followed
+by the established roughly 135 ms paste event sequence and 220 ms auto-send wait.
+A second run's recipient envelope was 853 ms and queued paste wait 231 ms. Its
+own-HUD refusal while a newer typing editor held the keyboard was intentional.
+Do not call these intervals heavy XML computation or a one-second reaction timer.
+The recipient envelope includes scheduling and synchronous app-property checks;
+it does not prove which of those caused all the elapsed time.
+
+Build 471 keeps the archive callback explicitly MainActor-isolated, matching its
+already isolated pipeline caller, and removes the generic-executor → MainActor.run
+round trip. The heavy log scan and archive writer still run on their workers.
+Primary now directly awaits the existing cursor paste operation instead of
+creating a fresh MainActor Task solely to await it. The local own-HUD veto lives
+once in the shared paste session, preserving queued Next callers too. FIFO leases,
+clipboard restoration, key guards, destination routes and keyboard waits remain.
+Fine-grained recipient timings now distinguish frontmost lookup, app metadata and
+host validation. Do not claim the entire 674 ms was removed without a new trace.
+
+Two focused Xcode actions compiled but stalled before naming any test. Only those
+attributed runners were canceled; no other Mini Xcode job was active. The existing
+user `com.apple.testmanagerd` repair again allowed the same canonical selection
+to execute: 155 checks passed in four suites. The final exact-source native gate
+passed all 771 tests in 28 suites at source `ad6ca925`. No direct focused xctest
+fallback, Developer Mode change, new E2E run or MacBook app termination was used
+for the runner repair. Signed build 471 is installed with CDHash
+`c7dba72cec2bfa1bc968907da86df4f66531eca2` and the unchanged requirement.
+The five-second notice, cooperative process exit, persistent new PID, executable,
+Mode/language/context and clipboard preferences, icon and untouched official
+VoiceInk all verified. Post-install physical typing latency remains unmeasured
+until the next normal finish; do not call the source change zero-latency proof.
+
+## 2026-10-27 — Typing finish can wait on presentation and local I/O
+
+Build 469 live typing-only traces explicitly report `network=false` and zero
+transcription time, but stop → pipeline still took about 273 ms. The interval
+from that zero-audio branch to prompt archive completion took 1.56–1.70 s;
+clipboard preparation then took 240–256 ms before the established 130 ms paste
+keystroke sequence. These are measured intervals, not proof that one sub-step
+caused the entire interval. A refused paste during a newer HUD typing session
+is the intended local responder guard, not evidence that the provider failed.
+
+The archive closure awaited a bounded Codex log scan solely for its per-chat
+viewer colour cursor. Build 470 searches the buffer for activity-event lines
+before applying the unchanged native-prefix, timestamp, UUID, visibility and
+multi-pane ambiguity policy. It reads each file's metadata once before sorting,
+keeps the same four 2 MiB tails, and neither caches stale scope nor adds polling.
+A frozen build-469 parser in the tests checks equivalence, including quoted
+markers, inactive panes, window ambiguity, CRLF and large Unicode buffers.
+
+On the Mini, the exact Release-optimized scanner benchmark reduced 8.3 MB ASCII
+buffers from 231–237 ms to about 10 ms; 8.9 MB Unicode buffers fell from
+245–253 ms to 31–43 ms. A per-line `contains` prefilter alone stayed around
+226–252 ms and did not remove the repeated work. These synthetic measurements
+are not a measured end-to-end MacBook improvement.
+
+Typing-only runs now skip the unused empty-WAV duration read. The archive worker
+uses userInitiated priority because the user is waiting for its files; canonical
+and HTML durability, working links and rainbow scope remain intact. Timing-only
+logs split recipient lookup, scope lookup, archive writes and paste scheduling /
+clipboard setup without storing message contents. No process-wide niceness or
+latencyCritical assertion was added: the live process had nice 0, while the
+existing capture queues and app-lifetime App Nap prevention already applied.
+The 247 focused and nine paste/route checks passed. The first full gate caught
+a stale source guard expecting synchronous recovery XML from before build 469;
+the corrected guard proves snapshot → worker → join → durable save → enqueue.
+The first command also included an unrelated UI target that could not initialize
+automation; the final native gate explicitly selects VoiceInkTests only. The
+final exact-source native gate passed all 770 unit tests in 28 suites.
+Signed build 470 is installed with CDHash
+`f896140e2495ae25cd0f2035beedd560440939bc` and the unchanged signing
+requirement. Cooperative termination, exact executable, Mode/language/context
+settings, clipboard preferences, icon and official VoiceInk preservation verified.
+The post-install process is persistent with nice 0 and active App Nap protection.
+No post-install physical typing-to-paste timing is claimed before a normal run.
+
+## 2026-10-27 — Finish acknowledgement must not lay out hidden context
+
+The Mini and Notch stacks evaluated their transcript-height arguments even after
+capture ended and the transcript/editor was no longer visible. This recreated
+preview/TextKit work on the same actor that had to draw the first loading frame.
+The Mini also animated that collapse for 300 ms and the status changed with a
+separate 200 ms cross-fade. Use the same `showsLiveContext` gate for visibility
+and height calculation, and enter processing without those appearance animations.
+Keep the processing spinner's own rotation and normal capture/assistant animation.
+
+Freeze stopped references and transcript as Sendable values. Assemble recovery XML
+on a user-initiated worker instead of synchronously on MainActor, then join before
+saving History or enqueueing the existing pipeline. Never move capture reads,
+focus, final delivery or model state into that worker. The 150 focused Mini tests
+plus all four mandatory Primary/Next/realtime
+contract guards pass. The native hosted view check verifies the collapsed state
+after one 30 ms display opportunity without moving the bottom edge; it is not a
+measurement of Ethan's physical shortcut latency. Build 469 is installed (CDHash `11cc78c1d1d31f8257f9f17b77c5f7b3d14fed3d`)
+with the unchanged designated requirement. Its cooperative restart waited for the
+observed active typing draft to finish; no capture was ended by the installer.
+The installed executable, Mode/language/voice-context preferences, icon and
+official VoiceInk copy were independently verified after launch.
+
+## 2026-10-27 — Remove the typing-finish reaction delay entirely
+
+Ethan superseded the half-second request before candidate 467 was installed:
+"actually just make it paste instantly". Production typing finish now reserves
+zero extra reaction time. Standalone Shift can still choose the exact stopped
+session's Won't paste result during genuine formatting/archive/queue work, and
+the irreversible-action cutoff remains unchanged. Retain no guaranteed late-Shift
+window and never undo a paste. This is a local finish-policy change, not a
+transcription API/model-delay change. Candidate 467 was canceled; build 468 is
+the replacement. Its immutable source `497eccd4` passed all 764 Mini tests in
+28 suites; Release signing uses the unchanged VoiceInk Local Signing identity.
+Build 468 is installed (CDHash `2072c8a6f4c644e3e9e05ea23a571b6741557327`);
+its cooperative quit waited for live work to finish. Physical keyboard feel is
+not established by the automated tests.
+
+## 2026-10-27 — Half-second late-Shift window on typing finish
+
+Historical source checkpoint only; superseded by the instant-finish request above.
+
+Ethan asked to halve the deliberate one-second typing-finish reaction window.
+`RecordingSession.armTypingClipboardOnlyCompletion` now defaults to 0.5 seconds
+from stop. Keep the existing exact-session late standalone Shift behavior, its
+queue/archive lifetime and its irreversible-action cutoff. This changes neither
+the Primary multi-click intervals nor transcription-model delay. The existing
+fast-result regression now exercises the production default as well as its
+short injected fixture. Native test and installation results remain pending.
+
+## 2026-10-26 — Remove captured-reference hints from speech recognition
+
+Ethan explicitly rejected the recent feature that sent highlighted context to the
+realtime transcription model and asked to undo it completely. Source removal
+restores the pre-feature streaming adapter and sender: one frozen initial request,
+one Stop-owned commit, no captured-reference mailbox, no recognition OCR and no
+intermediate audio turns to change the prompt. The complete original selections
+and screenshot paths still enter final messages. Vocabulary, independently opted-in
+recent Codex conversation context, quiet-upload sleep and the Primary/Next routes
+remain unchanged. The newer deferred-quit and new-chat changes remain intact.
+
+This supersedes the 25 October product acceptance below; those protocol findings
+remain historical evidence. The new isolation regressions check that references
+remain available to delivery without altering the recognition request, and that
+the removed update hooks cannot silently return. At this source-edit checkpoint,
+the Mini is unreachable and these tests have not run; build 465 is still installed.
+Do not claim runtime removal until a replacement is built, tested and installed.
+
+## 2026-10-25 — Quiet owned turns preserve audio across captured-hint updates
+
+This supersedes the temporary hard hold below for the new quiet-boundary route,
+not the rejected raw update over uncommitted speech. Ethan explicitly asked to
+finish and install after the earlier source-only status. Build 462 from native
+source `4caf9076` passed release qualification and was installed after the cooperative
+all-session idle guard allowed an ordinary quit. The feature remains on
+`codex/agentflow-idle-sleep`.
+
+Actual API checks established the distinction: arbitrary within-phrase commits
+lost a marker; three quiet-gap commit/completion/update runs retained every phrase,
+exactly matching the 81-character control. The same 7.51075 seconds reported eight
+billed seconds in one turn and nine across three turns (per-turn rounding). Bound
+and coalesce hints rather than treating extra commits as free.
+
+The native adapter now owns every committed item and assembles one final transcript.
+The serial sender permits a hint before audio or after a fully analysed quiet second,
+with three seconds of initial audio, ten seconds between updates, at most ten updates
+and 120-second pending-hint expiry. Fresh quiet evidence is required per turn;
+continuous speech/noise simply defers the hint. This observer never withholds PCM.
+Intermediate commits do not flush the resampler. Stop discards unstarted hints and
+keeps the existing one final delivery through unchanged Primary/Next routes.
+
+Four independent Opus review findings were fixed: audible empty turns fail closed
+instead of disappearing beside nonempty turns; final fragments after a boundary
+receive only enough network-only zeros to reach 120ms (server minimum100ms), without
+changing the WAV; structural guards assert the two actual commit-helper callers;
+applied/in-flight/pending hints are distinct and seeded from acknowledged startup,
+so expiry and no-text OCR cannot cause duplicate billable turns. A revert during an
+in-flight change survives its acknowledgement. Provider errors require original-
+guidance WAV fallback even when silence sleep is off.
+
+All 156 focused native tests in 10 suites passed on the Mini, followed by the
+canonical full release gate: 796 tests in 29 suites, all passed on exact source
+`4caf9076`. This includes the mandatory Primary, both Next-route and HUD-only guards.
+The actual native provider compiled from source passed legacy single-turn, joined
+turns, Stop without new audio after an update, and a 10ms quiet final fragment.
+Each produced one final, no early final/errors and every expected marker. No private
+speech, physical microphone capture, MacBook input automation or model change was
+used. Final joined/short-fragment probes also compared every reference word.
+
+The installed universal build 462 passed deep/strict signing, retained the same
+designated requirement and outer permissions, and preserved all 198 selected
+settings, its icon and the official VoiceInk installation. The old 460 bundle was
+retired to Trash after a verified rollback ZIP was saved. Runtime identity and
+installed executable SHA-256 matched the qualified artifact. Ten-second quiet
+upload sleep remains enabled; the model remains `gpt-live-transcribe`. These
+checks do not prove physical compatibility, zero possible regressions or improved
+human word accuracy.
+
+## 2026-10-25 — Accepted live hint updates lost earlier speech; production updates held
+
+Historical checkpoint: the later quiet-owned-turn qualification above supersedes
+this temporary hold, but does not qualify raw updates over uncommitted speech.
+
+Real API testing superseded the source-only qualification below. A prompt-only
+`session.update` was rejected because the nested transcription model is required.
+Repeating the unchanged model/language/Vocabulary/delay made full and narrower
+transcription-only updates acceptable, but neither shape preserved earlier speech.
+
+On the Mini, three synthetic clips said “The first marker is cedar”, “The second
+marker is maple”, and “The last marker is willow” (4.51075 seconds total). Three
+control runs without mid-session updates kept all markers in order, with 81-character
+finals and five billed seconds. Accepted updates between clips yielded only the
+last phrase, 26 characters; two fully traced narrow runs reported two billed seconds,
+exactly one matching committed/completed item, no early completion and no cleared
+event. This isolates a real audio-integrity failure associated with these updates;
+it does not establish the server's internal mechanism. No user audio was uploaded.
+
+The feature branch now hard-disables actual OpenAI mid-recording context updates
+at both the serial sender's capability check and the provider's direct-call boundary.
+There is no runtime preference to bypass the hold. References available at prepare
+can still enter startup context; later captures retain their full final-message
+references and can guide an otherwise-needed completed-WAV fallback. Ignoring an
+unsupported update does not trigger another paid request. The installed build 460
+remains unchanged and installation remains forbidden.
+
+Before enabling updates, require same-audio controls plus every spoken marker,
+full numeric usage duration and Stop-owned item identity in successful update runs.
+The current single-final provider also needs explicit early/mismatched-item and
+pre-Stop-error rejection before any multi-turn design: source-only mock acknowledgement
+checks did not prove that invariant. Do not repeatedly replay whole audio per hint.
+The linked transcription-quality skill reference carries the reusable procedure.
+
+Source hold `60fa66c7` passed 97 focused native tests in seven suites on the Mini,
+including unsupported-provider/no-extra-fallback and direct-adapter bypass guards.
+The resumed Claude Opus 5.5 hold review found no confirmed defect in the hold;
+it did not qualify mid-recording updates or physical recognition. The source-only
+132-test typing/sleep supplement below remains historical evidence, not another
+post-hold run. Skill validation and all three learning-index parser tests passed.
+
+## 2026-10-25 — Direct Agent Flow transcription-context prototype, source-only qualification
+
+Ethan explicitly corrected the target to Agent Flow's own speech-to-text session.
+The conversational Voice investigation below concerns a different API and must not
+be treated as a dependency of this feature. Current official transcription docs
+explicitly allow another `session.update` during an existing `gpt-live-transcribe`
+session. The model accepts text/audio, so already captured images require local
+OCR rather than an image append. No second conversational session is involved.
+
+Implementation `a53c5a14` is held on `codex/agentflow-idle-sleep`, uninstalled:
+
+- Deliberately captured selections, or local OCR of their existing image files,
+  supply one latest short topic hint. Typed prose, History and HUD partials never
+  become hints. Full original references remain in the final message unchanged.
+- Static prompt, frozen Vocabulary, Mode language, `xhigh`, PCM/WAV and all other
+  providers retain their contracts. The composed JSON prompt fits a conservative
+  992-byte UTF-8 ceiling; no-space passages use bounded Character prefixes.
+- One recording-owned mailbox coalesces updates. The existing serial audio sender
+  orders them with PCM and waits for acknowledgement. Stop closes offers and drains
+  the final pending hint before its sole commit; Cancel discards it. Late OCR is
+  generation/lifecycle guarded, and stateless image recognition runs serially with
+  bounded file/image dimensions. No screen polling, focus or input mutation is added.
+- Update payloads merge only the prompt. Clearing requires an explicit empty
+  prompt: omission preserves stale server state. Server errors are not logged with
+  echoed private request data. A failed startup/update removes the optional hint
+  from the one completed-WAV fallback while retaining original prompt/Vocabulary;
+  explicit failed-recording retries also retain the original baseline.
+- Native privacy wording now discloses short highlight and screenshot-text hints
+  during recognition, separately from complete final-message references.
+
+All 95 focused Mini tests in seven suites passed through the canonical Xcode test
+action, including real Vision OCR of a synthetic saved image, acknowledgement
+blocking, rejected startup/update fallback, pre-attachment selection replay,
+Unicode/JSON fitting, overlap/stop lifetime, unchanged other providers and the
+mandatory Primary/Next/HUD-only guards. Codex and resumed Claude Opus 5.5 resolved
+four confirmed review findings; the final source review found none remaining.
+The installed build-460 executable was independently unchanged.
+
+A supplementary canonical Mini run passed 132 tests in `RealtimeSilenceSleepTests`
+and `RecorderTypedInputTests`, including the hosted typing/focus scenarios. Together
+the two disjoint focused selections cover 227 tests in nine suites. This still does
+not establish physical keyboard or microphone acceptance.
+
+These are source/offline qualifications, not real API acceptance, physical typing
+acceptance or a demonstrated speech-recognition improvement. Mid-session server
+timing, late-hint influence on earlier audio, unspoken hint insertions and human
+accuracy still need direct evaluation. Do not install under the current hold.
+The first test-without-building attempt had missing task-owned build products and
+executed no tests; a separate `.noindex` derived folder plus the canonical combined
+build/test action passed. Do not count that failed launch or guess its cleanup cause.
+
+Sources checked on this date:
+- https://developers.openai.com/api/docs/guides/realtime-transcription#add-transcription-context
+- https://developers.openai.com/api/reference/resources/realtime/client-events#session.update
+- https://developers.openai.com/api/docs/models/gpt-live-transcribe
+
+## 2026-10-25 — Selection context for conversational Voice is a separate integration
+
+Read-only source inspection confirms `LiveSelectionReference` is assembled into
+the final destination message after transcription; it is not streamed into the
+transcription provider. `OpenAIStreamingProvider` starts an intent-scoped
+transcription session using frozen prompt/Vocabulary context. Neither that path
+nor the recorder's separate assistant chat implements a bridge into the existing
+Codex/ChatGPT conversational Voice session. Do not confuse transcription hints,
+final prompt context and live voice-conversation context.
+
+Official GPT-Live documentation checked on this date explicitly supports page and
+selection changes through `session.thinking.append` with `delegation_id: null`:
+send concise factual updates, deduplicate/combine rapid changes, and treat page
+content as reference data rather than trusted instructions. Each append has a
+500-token limit. This requires control of the owning Live session; API support
+does not prove that an external app can attach to the desktop product's call.
+The current exposed Codex tools offer on-demand screen context during active
+Voice, but no external automatic selection-append control was established.
+
+GPT-Live 1 accepts audio/text, so a screenshot needs OCR or backend vision rather
+than a raw image append to that model. Desktop Voice already documents optional
+Screen context/Appshots on demand. No live call was inspected, modified or tested
+in this investigation. Sources:
+- https://developers.openai.com/api/docs/guides/live-delegation#share-ui-context
+- https://developers.openai.com/api/docs/guides/live-conversations#add-context-during-the-conversation
+- https://developers.openai.com/api/docs/models/gpt-live-1
+- https://learn.chatgpt.com/docs/features/voice#show-chatgpt-what-you-see
+
+## 2026-10-25 — Chrome/Opera doubled typing recovered after a shared Computer Use helper reset
+
+**Verified recovery, not a proven internal root cause:** after the accepted
+Agent Flow build 460 was restarted without changing its executable, Ethan still
+reported doubled physical typing in Chrome and Opera, while Codex typed normally.
+The shared `SkyComputerUseService` held enabled, filtering, app-targeted keyboard
+taps for both affected browser processes (`mask=1c00`, `options=0`). Restarting
+that helper removed the old taps, and Ethan then confirmed: “Oh, it's fixed now”.
+Chrome, Opera, Codex's host and Agent Flow remained on their original processes
+during this helper reset. No browser tabs were closed, no app was installed, and
+no keyboard layout, microphone or recording setting was changed by the repair.
+
+For a matching recurrence, recover the current ownership rather than copying old
+PIDs or blaming Agent Flow's latest feature:
+
+1. Use a read-only `CGGetEventTapList` snapshot to match the affected browser PIDs
+   to the current helper's filtering keyboard taps. A tap's presence alone is
+   correlation; keep other explanations open.
+2. Check active browser automation and preserve its work. Stop this task's native
+   input calls into the affected browsers. Resolve the helper's exact executable,
+   current PID and owner afresh; never kill an unattributed Computer Use kernel.
+3. For an authorized reset, give the native advance warning, wait five seconds,
+   recheck identity and held modifiers, then request termination of only that
+   helper. The successful operation used one `SIGTERM`; it did not terminate
+   Codex/ChatGPT, Agent Flow, either browser, or unrelated input utilities.
+4. The supported CUA app-inventory call reconnected successfully and a fresh
+   helper appeared. Verify that the old per-app keyboard taps are absent and the
+   browser/host/Agent Flow processes stayed unchanged. Do not immediately select
+   or inject input into those browsers and reinstall the suspect hooks.
+5. Ask Ethan for a physical typing check in both affected browsers. Metadata,
+   a successful signal, helper respawn or synthetic text insertion is not physical
+   recovery. A terminated helper can remain as a zombie until its parent reaps
+   it; `kill(pid, 0)` alone therefore does not establish that it is still running.
+   Never restart the host merely to remove that exited process.
+
+This isolates a successful recovery operation for this episode. It does not
+prove whether a hook, injected event, private focus state or another interaction
+inside the helper duplicated the keys, nor establish the cause of the earlier
+Codex or September incidents. A universal absence of recurrence is untested.
+The ten-second native candidate remains held and uninstalled.
+
+Private receipts are under `~/.codex/outputs/2026-10-25-agent-flow-offline-review/`:
+`current-double-input/browser-helper-reset.json`, before/after tap snapshots and
+`opus-browser-008`. The original Agent Flow acceptance prompt is
+`prompt-5d915ca6-2713-4ba5-bccd-c3461d5346f9`, linked in chat
+`01a16f01-aa71-7432-a81c-4cf6edb7bc1c`. The physical confirmation came after
+Codex's helper reset and the completed resumed Opus assessment.
+
+## 2026-10-25 — Doubled-character text predates the quiet-upload feature
+
+An original user message in **🌈 Ye Olde Meme Game 2** on 8 September 2026 at
+14:43:14 UTC contains `meemmee ccrreeaattoorr` inside otherwise ordinary text.
+Earlier that day, at 12:16:58 UTC, Ethan reported that background game testing
+was interfering with his typing; the agent stopped Computer Use and suspended
+the test game. The complaint and doubled text are about 2.5 hours apart: neither
+their timing nor the recorded Computer Use calls establish one causal mechanism.
+The original archive is thread `01a07dbe-7ce0-7cd3-828a-2d8a68b79f6e`, September
+7 segment, lines 3442/3453/3505/5060. This text pattern predates the October
+quiet-upload feature; do not assume the ten-second change originated it, or infer
+that the current build cannot contribute to a separate recurrence.
+
+The 30 September Codex/Opus keyboard audit is a different episode: ordinary typing
+stopped, Device Hub capture was implicated by isolated recovery, and the deeper
+Apple/Computer Use focus/release mechanism remained unproven. It does not prove
+the cause of doubled characters. The midday rollback changed both the installed
+build and the Computer Use session, so that early recovery cannot isolate either
+as the fix. The later isolated helper reset and physical acceptance are recorded
+in the newer recovery entry above.
+Retain the no-install hold and distinguish source/test clearance from a resolved
+physical-input incident. Bounded original extracts and the historical report
+pointers are in this task's `historical-input-evidence.md` qualification evidence.
+
+At 17:22 UTC Ethan reported the Chrome selections `eerriikkaa kkiirrkk` and `aa`
+while installed build 460 was independently verified. The rollback therefore
+does not establish physical-input acceptance. Device Hub was absent. A bounded,
+listen-only HID/session diagnostic saw no key presses, so it was inconclusive;
+zero observed input is never a passing typing check. Resetting this chat's
+Computer Use kernel left the shared helper's Chrome keyboard hook present and
+does not itself prove recovery or identify that hook as the cause.
+
+## 2026-10-25 — Hosted typing checks must cover real sleep transitions and focus lifetime
+
+The quiet-upload gate has no demonstrated causal link to the reported doubled
+characters. Codex and an independent Opus 5.5 review found no confirmed source
+defect. Preserve that narrower conclusion: source inspection cannot rule out all
+window-server, input-method, keyboard-monitor or cross-process inspection effects.
+
+The Mini regression now hosts two actual Mini or Notch HUD roots, dispatches one
+in-process native key event per character and checks exact editor/model/mirror
+text after every event. A real gate receives background synthetic audio and sends
+ordered MainActor sleep updates. End each update alternately awake/asleep and let
+the view settle; wake-and-sleep in one burst may coalesce before rendering. Keep
+one activity notification per real edit, stable editor identity, one committed
+run at blur, a 2.2-second no-return wait, and the microphone-off accepted-context
+positive control using the session's actual production focus controller.
+
+An activating NSWindow could not gain key ownership in the inactive test host,
+even with sleep updates disabled. A plain test-owned nonactivating NSPanel plus
+explicit ownership preconditions corrects that fixture failure; it is not an app
+fix. Refuse unsuitable defaults/held-mouse state rather than changing user input
+or duplicating production focus gates. All 43 final focused tests passed; the
+745-test full run passed before the last test-only tightening. Neither result is
+physical/CUA acceptance or permission to install the held candidate.
+
+## 2026-10-25 — Ten-second candidate failed live acceptance; keep it off the installed app
+
+Build 461 passed 42 focused and 744 full Mini tests, but Ethan reported focus
+interference and doubled typing during an agent's Audio-settings inspection while
+he was actively using typing mode. The production change from accepted build 460
+only changed the quiet and activity delays; the causal mechanism is unproven.
+The UI-control session was stopped/reset and the exact signed build 460 restored.
+
+Ethan explicitly required the new change to stay on its feature branch until it
+works and has been tested on the Mini. Do not re-install 461 merely because the
+same unit suite passes again. Reproduce and qualify focus plus ordinary typing on
+a disposable Mini target, including concurrent inspection, before proposing a
+new release. Preserve the rollback and do not inject test input into his live work.
+His subsequent instruction explicitly forbade installation while Codex and Claude
+iterate. Mini test/review completion does not authorize another installation.
+
+## 2026-10-25 — Keep quiet-upload delay and activity hold at ten seconds
+
+Ethan changed the GPT Live quiet-upload delay from five to ten seconds. Both the
+audio quiet period and time since the latest words, typing or accepted context
+must reach ten seconds. The settings tooltip reads the production configuration,
+so it must not acquire a separately maintained numeric value. Keep short algorithm
+test fixtures explicit and separately exercise the real ten-second policy.
+
+This remains one open transcription connection with omitted quiet appends, not
+separate transcripts joined locally. Resume replays the small onset buffer; only
+the user's final Stop commits the transcript. Full WAV recovery stays continuous.
+
+## 2026-10-24 — Realtime idle savings must gate uploads, never capture
+
+For GPT Live Transcribe, a synthetic production-WebSocket comparison billed
+21 seconds when a 15-second gap was sent as silence and 6 seconds when no audio
+was appended during the gap. Retained margins billed 8 seconds for 7.46 seconds
+of audio; a five-minute no-append gap preserved both phrases and the same 8-second
+usage. This is evidence for these sessions, not all provider idle limits or
+microphones. See `REALTIME_SILENCE_SLEEP.md` for the bounded probe conditions.
+
+Gate only the outgoing PCM downstream of both recorder sinks. Keep the full WAV,
+one open realtime connection, one Stop commit, and the existing final delivery.
+Count intentional quiet omission separately from queue loss; provider errors,
+including those arriving after drain, still require the complete-WAV fallback.
+Per-session words, typing and accepted context can wake only their own stream.
+
+The first −50 dBFS / 9 dB adaptive gate discarded a synthetic −62 dBFS phrase
+over a −60 dBFS tone which OpenAI recognized in the unfiltered input. More
+conservative thresholds preserved the fixture byte-for-byte. Do not train the
+noise estimate on already-active frames: sustained soft speech can otherwise
+become its own noise floor. Audible background sound may deliberately prevent
+savings. Invalid odd-byte chunks must disable omission, since withholding an
+odd byte count misaligns every later PCM16 sample in the incremental resampler.
+
+This is network sleep, not manual Pause: keep waveform/WAV capture, media,
+YouTube lifecycle, input device and Primary/Next ownership unchanged. The setting
+is opt-in and frozen per recording. Physical microphone/room acceptance remains
+separate from synthetic audio and native regression evidence.
+
 ## 2026-10-22 — Public release and first-use setup must be qualified independently
 
 The installed native app was build 458 while the public downloadable app was still
@@ -5233,3 +5910,84 @@ Each entry looks like:
 **Commit:** 570a6fa
 **Guard:** Thorough comments at start()/handleFrontmostAppActivation/resolveAndApplyConfiguration; ignores own bundle id + nil bundle id; [weak self] in observer + async hop to avoid retain cycle / actor violation
 ---
+## 2026-10-25 — Codex selection attribution depends on the bundled CLI layout
+
+The live `ChatGPT.app` Codex host (26.1021.31345 / 21828) retains
+`com.openai.codex` but moved its executable from `Contents/Resources/codex` to
+`Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex`. The old single-path
+host check therefore classified its highlights as generic `app_selection` and
+skipped all source-chat metadata. Commit `087732c1` recognizes both measured
+layouts, requiring the expected bundle ID and a regular executable file rather
+than trusting the app name or an executable directory.
+
+The existing capture-time before/after identity check and optional title lookup
+remain separate from selected text and delivery. Log candidates no longer call
+the exact-ID/title API: even a lone remaining ID cannot prove its selected pane.
+The stable-ID/title serializer remains available for a future read-only source
+that actually binds a selection to its pane. Unknown, changing or over-cap
+activity-log scope is now explicitly `task_scope="unknown"`, including the first
+text capture before optional labels finish. Multiple candidates remain
+`task_scope="multiple_visible_chats"`, never a guessed source pane. The current
+bounded log sample retained seven active IDs while a complete sample retained
+three: a bounded tail is not a complete visibility snapshot or proof of the
+selected pane. Never infer source identity from quoted chat names, newest activity
+or the receiving task. Commit `38920cfb` accepts only native activity-event lines,
+excluding message/tool log echoes containing the same event name. No new
+Accessibility query, clipboard operation or polling
+was added. Native guards are `codexHostRecognitionAcceptsBothBundledCLILayouts`,
+`unresolvedCodexScopeIsExplicitWithoutInventingASource` and the existing main/side
+candidate and XML/title round-trip tests; physical selected-pane acceptance is
+separate from source and fixture evidence.
+
+
+## 2026-10-26 — Double Top owns one start-only chat-creation operation
+
+- `NewChatRecordingCoordinator` snapshots the sole `VIPPNewChatRecordingHarness` preference and adopts an existing voice start ID; it never reuses the ordinary toggle as a second press or changes Primary/Next delivery ownership.
+- Reserve a request UUID before invoking the native launcher so synchronous replies and duplicate requests cannot create another chat. Guard duplicate ready replies before starting asynchronous capture; retain bounded result tombstones beyond the wire freshness window.
+- Pending native chat creation must join `AppDelegate`'s cooperative quit veto even before a recording reservation exists. Its busy state comes from the active operation, not the latest published result: a concurrent rejected request can otherwise hide real work.
+- Attach the service to the app delegate only after all SwiftUI stored state has initialized, alongside the existing engine/menu-bar assignments.
+- The final 18 focused tests on the Mini passed for the coordinator, quit veto and Primary/Next/HUD-only guards. The complete native unit run passed 810 tests in 30 suites. Final integrated/physical release acceptance is separate; do not infer installation or a native launcher receipt from these unit tests.
+
+## 2026-10-26 — A refused quit must resume after the work finishes
+
+The build-462 update received a cooperative quit while audio was active. The
+recording then stopped and cleanup completed, but the app had returned
+`terminateCancel` without retaining a retry. Waiting only for process exit could
+therefore wait forever after all real work had ended. The earlier veto was not
+evidence that the user was still recording minutes later.
+
+Build 465 retains that quit intent and observes session membership, pending start
+reservations, History retry IDs and pending new-chat creation. A coalesced next-main-
+turn check reads the final state after `@Published` changes and retries ordinary
+termination only when all owners are idle. The existing all-session guard runs
+again at that boundary. No stop/cancel command, forced exit, capture reset,
+transcript subscription or repeating timer is added. **I've finished** remains an
+optional immediate retry. Cancelled start reservations must publish too, including
+when no session card was ever added.
+
+The final focused Mini action passed 33 tests across stop safety, new-chat
+coordination and mandatory Primary/Next/HUD-only guards. It includes will-change
+ordering, all owners clearing, a new start before the scheduled check, cancellation
+of a scheduled check, and exactly one retry. Installed/physical acceptance remains
+separate from these hosted tests.
+
+
+## 2026-11-01 — Separate finish work, scheduling and presentation cost
+
+- Build 476 numeric receipts measured ordinary paragraph/replacement/presentation work at roughly 0–4 ms, archive scope elapsed at 242–287 ms, and FIFO queue residence at 265–272 ms in three natural finishes. Queue residence includes predecessor/reset barriers and scheduling; it is not a CPU attribution. The isolated optimized reader measured about 47–48 ms repeated on the MacBook, so the full awaited interval cannot be called parsing time alone.
+- Build 477 keeps numeric `scopeWorkMs` and `scopeWaitMs` separately. A byte scan of bounded UTF-8 log tails reduced the isolated repeated reader measurement to about 15 ms, preserving the old parser's native-prefix, CRLF, Unicode, activity-order and multiple-visible-chat semantics. No source text or IDs are added to timing logs; these local labels are presentation metadata, never delivery authority or speech-model context.
+- A two-second live sample of build 476 found HistoryCardRow in 621 of 1,438 main-thread samples, repeatedly calling message/document/copyText for unchanged legacy entries. This proves competing History work, not the source of every measured finish gap. The new History MessageCache holds immutable source-value projections only (64 entries/8 MiB conservative byte budget); text, enhancement, recovery draft, status and selected version determine freshness. Oversized entries remain complete and uncached. All 56 focused tests passed on the Mini, including three cache reuse/invalidation/budget tests and complete History/Primary/Next guards.
+- The zero-padding live Chrome fixture received Return before its paste event and submitted an empty value. Ethan then explicitly approved retaining a shorter paste-to-Send allowance: 150 ms replaces 220 ms; pre-paste 100 ms, three 10 ms key gaps and 30 ms Return hold were removed. A real 150 ms Chrome check received paste/input/Return in that order and submitted the full synthetic token. A busy-page attempt was refused when test-window focus changed; it is not a passed stress test. Generic Primary still owns no target/app classifier/readiness probe/retry.
+- The build-476 full suite executed 796 tests but failed one source-inspection test with two old source-layout assumptions. Numeric timing statements broke exact adjacency/240-character checks. Replace those with the synchronous release-before-capture-end contract; do not erase the initial failed receipt or describe it as a runtime failure. The first 477 focused run also exposed an incorrect test expectation: CoreGraphics normalizes modifier-key events to flagsChanged, while V remains keyDown/keyUp.
+- Evidence: private task artifacts `Documents/Codex/2026-11-01/agentflow-local-performance476/` and `agentflow-zero-padding477/`, native commits ea376a9c/6b72b011/eca5eb30/7c782eab. Signed installation and the final release-boundary suite are recorded separately after verification.
+
+
+### Build 477 installation receipt
+
+The ordinary Release for native commit `7c782eab29ed1a73d19245bf54da58d228be412e` was stable-signed on the Mini, transferred as a SHA-256-verified ZIP and installed after the real five-second notice and normal cooperative exit. Running CDHash: `17aaed2406e321012433031f327413840f722828`; executable SHA-256: `f3a91eb67579abd6792150bb68eb29a5e5e8bdd699a5415c88891ed60053ee22`; matching dSYM UUID: `73A463F1-D32C-340C-9367-6D12D97DB101`. Outer and whisper signing authorities and Automation/audio entitlements verify; base VoiceInk is unchanged. A verified build-476 rollback ZIP is retained.
+
+The Fleet deletes a completed job's transient source tree. Use its retained per-file source manifest/receipt to validate a small source/entitlements snapshot before later signing; never point codesign at an already removed job path or borrow the cached test app. The shared Mini resign helper can also name an older release; inspect its actual target, then use an isolated release-specific `resign-local.sh` wrapper with the existing signing identity. The first 477 signing attempt correctly failed on missing entitlement input; no incomplete candidate was installed.
+
+A two-second post-restart idle sample had no History projection stack, but its workload differs from the earlier active sample. This is not a measured whole-finish speedup or a comparable memory benchmark. New numeric finish receipts remain the way to measure natural use.
+
+The final canonical Mini release gate passed **804 tests in 31 suites** for native commit `7c782eab29ed1a73d19245bf54da58d228be412e` and build 477, with no recorded issues. The 56-test focused pass and the earlier failed receipts remain retained; passing unit tests do not prove every live recipient or total finish latency.

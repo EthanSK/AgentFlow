@@ -200,7 +200,7 @@ enum OpenAITranscriptionConfiguration {
     }
 }
 
-private enum OpenAICompletedAudioTranscriber {
+enum OpenAICompletedAudioTranscriber {
     private struct Response: Decodable {
         let text: String
     }
@@ -249,16 +249,20 @@ private enum OpenAICompletedAudioTranscriber {
                 )
             }
 
-            let text = try JSONDecoder().decode(Response.self, from: data).text
-            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                throw CloudTranscriptionError.noTranscriptionReturned
-            }
-            return text
+            return try decodeCompletedResponse(data)
         } catch let error as CloudTranscriptionError {
             throw error
         } catch {
             throw CloudTranscriptionError.networkError(error)
         }
+    }
+
+    static func decodeCompletedResponse(_ data: Data) throws -> String {
+        // A successful response with text:"" means no words were recognized, not
+        // a failed request. Missing/null/non-string text still fails decoding.
+        // Keep this separate from acoustic silence: GPT Transcribe supplies no
+        // guaranteed silence verdict, and file size/volume cannot establish one.
+        try JSONDecoder().decode(Response.self, from: data).text
     }
 
     private static func multipartBody(

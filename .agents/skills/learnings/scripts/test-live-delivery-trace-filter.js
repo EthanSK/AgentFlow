@@ -30,7 +30,13 @@ const allowed = [
   '[com.prakashjoshipax.voiceink:ShortcutMonitor] Primary shortcut event received eventTimestampNs=123000000 callbackUptime=0.125',
   '[com.prakashjoshipax.voiceink:ShortcutMonitor] Typing shortcut accepted owner=recording chord=bothCommandAndOption',
   '[com.prakashjoshipax.voiceink:RecordingShortcutManager] Recording shortcut key-down action=primaryRecording dispatchLatencyMs=2',
-  '[com.ethansk.VoiceInkPlusPlus:VIPPDebug] pipeline remove generation=2 sequence=1 recordingSessionID=synthetic'
+  '[com.ethansk.VoiceInkPlusPlus:VIPPDebug] pipeline remove generation=2 sequence=1 recordingSessionID=synthetic',
+  // Build 476 finish-stage receipts: numeric milliseconds and job lineage only.
+  '[com.ethansk.VoiceInkPlusPlus:VIPPDebug] prompt preparation: recipientMs=2 frontmostMs=1 appMetadataMs=0.3 hostCheckMs=0.7 scopeMs=4 scopeWorkMs=1 scopeWaitMs=3 candidateCount=1',
+  '[com.ethansk.VoiceInkPlusPlus:VIPPDebug] prompt archive stages: canonicalMs=2.3 viewerMs=1.8',
+  '[com.ethansk.VoiceInkPlusPlus:VIPPDebug] toggleRecord: stop stages stopPrepMs=0.4 micTransitionMs=0.2 hardwareStopMs=41.0 recoveryJoinMs=0.3 historySaveMs=12.5 enqueueMs=1.1 session=synthetic',
+  '[com.ethansk.VoiceInkPlusPlus:VIPPDebug] pipeline run START queueWaitMs=180.4 generation=2 sequence=1 recordingSessionID=synthetic',
+  '[com.ethansk.VoiceInkPlusPlus:VIPPDebug] pipeline: local stages completionPolicyWaitMs=0.1 triggerWordMs=0.2 modeResolveMs=0.3 paragraphFormatMs=4.0 wordReplacementMs=2.5 audioMetadataWaitMs=0.0 archiveMs=9.8 pasteTargetMs=0.1 leaseWaitMs=0.0 typingCommitMs=0.0 presentationMs=1.4 totalMs=18.4 generation=2 sequence=1'
 ].map(line => prefix + line);
 const denied = [
   '[com.ethansk.VoiceInkPlusPlus:VIPPDebug] primary mouse: payload=PRIVATE-COMMAND',
@@ -47,4 +53,4 @@ assert.deepEqual(result.slice(0, allowed.length), allowed);
 assert.equal(result.length, allowed.length + 1);
 assert(result.at(-1).includes('error=<redacted> generation=2 sequence=1'));
 assert(!result.join('\n').includes('PRIVATE-'));
-console.log('PASS: nine metadata receipts retained, five content messages excluded, provider error redacted');
+console.log('PASS: fourteen metadata receipts retained, five content messages excluded, provider error redacted');

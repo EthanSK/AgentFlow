@@ -1,3 +1,4 @@
+// Top-anchored recorder card; appearance follows the shared live capture state.
 import SwiftUI
 
 struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
@@ -41,10 +42,7 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
         case .recording, .paused:
             // Keep the realtime panel visible before the provider's first partial so
             // a slow Wi-Fi/WebSocket handshake cannot make streaming mode look off.
-            let shouldShowLive = stateProvider.showsRealtimeTranscriptHUD
-                || stateProvider.canTypeInHUD
-                || !stateProvider.liveSelectionReferences.isEmpty
-            return shouldShowLive ? .liveText : .active
+            return stateProvider.showsLiveContext ? .liveText : .active
         case .transcribing, .enhancing:
             return .active
         default:
@@ -105,15 +103,6 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
             !assistantSession.isBusy
     }
 
-    private var shouldShowPasteDestinationIndicator: Bool {
-        switch stateProvider.recordingState {
-        case .starting, .recording, .paused, .transcribing, .enhancing:
-            return true
-        case .idle, .busy:
-            return false
-        }
-    }
-
     // Cancel ("X") visibility — mirrors the mini panel: reachable while RECORDING
     // (save a local draft) and while a transcription is IN-FLIGHT (.transcribing/.enhancing,
     // stop before paste) plus the brief .starting handshake. Hidden at .idle/.busy.
@@ -147,8 +136,9 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     private let expandAnimation = Animation.spring(response: 0.42, dampingFraction: 0.80)
     private let collapseAnimation = Animation.spring(response: 0.45, dampingFraction: 1.0)
 
-    private var pillAnimation: Animation {
-        displayState == .collapsed ? collapseAnimation : expandAnimation
+    private var pillAnimation: Animation? {
+        if stateProvider.recordingState.isProcessing { return nil }
+        return displayState == .collapsed ? collapseAnimation : expandAnimation
     }
 
     // MARK: - Body
@@ -170,7 +160,9 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
         }
         .frame(width: pillWidth, height: pillHeight)
         .background {
-            if displayState == .liveText && liveTranscriptHeight > 100 {
+            if stateProvider.recordingState == .paused {
+                RecorderPanelAppearance.pausedBackground
+            } else if displayState == .liveText && liveTranscriptHeight > 100 {
                 LinearGradient(
                     colors: [.black.opacity(0.55), .black.opacity(0.82), .black],
                     startPoint: .top,
@@ -249,7 +241,8 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                     currentState: stateProvider.recordingState,
                     completionDisposition: stateProvider.completionDisposition,
                     recorder: recorder,
-                    menuBarHeight: notchHeight
+                    menuBarHeight: notchHeight,
+                    realtimeStreamSleeping: stateProvider.showsRealtimeStreamSleepingBadge
                 )
 
                 CurrentFocusApplicationIndicator(
@@ -257,15 +250,7 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                 )
                     .padding(.leading, 8)
 
-                if shouldShowPasteDestinationIndicator {
-                    PasteDestinationIndicator(
-                        target: stateProvider.pasteDestinationIndicatorTarget,
-                        context: stateProvider.recordingState == .starting || stateProvider.recordingState.isRecordingOrPaused ? .nextTrackStop : .pendingPaste,
-                        actionPulseID: stateProvider.lockedDestinationIconActionPulseID
-                    ) // Mirrors the mini capsule and stays attached to this session until paste succeeds or visibly fails.
-                        .padding(.leading, 8)
-                        .transition(.opacity)
-                }
+                // Match the mini bar: Ethan no longer wants the secondary app/warning icon.
             }
             .padding(.trailing, sideEdgePadding)
             .frame(width: sideExpansion)

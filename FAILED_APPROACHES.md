@@ -1,5 +1,228 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-01 — Sync only app and test folders for the full native suite
+
+**Observed failure:** A disposable Fleet Runner manifest transferred `VoiceInk`,
+`VoiceInkTests`, the Xcode project and build configuration but omitted
+`.agents/skills/learnings/scripts/live-delivery-trace.sh`. The normal Xcode full
+run executed all 787 cases: 785 passed, while
+`liveTraceAllowsOnlyPrivacySafePasteboardLeaseMetadata` and
+`openAIRecoveryTelemetryIsAllowlistedWithoutTranscriptContents` threw a missing-
+file error while reading that tracked helper. This was missing test input, not
+an installed app failure; preserve the failed job receipt rather than hiding it.
+
+**Use instead:** Include the tracked trace helper in the native test snapshot.
+These tests read its source; syncing it does not authorize running the tracing
+script against a live app. Verify the runner's file plan before dispatch and
+compare every compiled source entry against the signed build's source manifest.
+Adding only this uncompiled test dependency does not require another app release.
+
+**Evidence:** Fleet job `20261101-022329-agent-flow-spoken-urls474-full-397cfa`;
+initial 414-file snapshot and corrected 415-file plan in the spoken-URL build-474
+receipt folder. The corrected canonical full run
+`20261101-023535-agent-flow-spoken-urls474-full-31949c` passed all 787 tests.
+Every compiled source entry matched the signed Release; only the read-only helper
+was added. The shared canonical Fleet adapter was not edited.
+
+**Reconsider only if:** The source-contract tests move or stop reading that helper;
+update their explicit repository test-input dependency at the same time.
+
+## 2026-11-01 — Normalize spoken URLs without respecting dictionary claims
+
+**Rejected before installation:** Running URL normalization before considering
+existing user dictionary triggers consumes phrases such as `speedtest dot net`
+that a configured spoken-form replacement already owns. Running the dictionary
+again after normalization would also introduce an extra cascading pass, changing
+existing replacement precedence.
+
+**Use instead:** Protect original matched phrases with the dictionary's existing
+case-insensitive boundary matcher, normalize the remaining explicit spoken
+addresses, then run the existing replacement pass exactly once. Canonical-domain
+rules can match newly formatted addresses; replacement output itself is not
+normalized. Resolve protection lazily only after an address-shaped match, so
+ordinary dictation does not pay for a second dictionary scan.
+
+**Evidence:** Pre-install review of build 474; native commits `54cfafdc` and
+`d7a1069d`. The canonical Mini Xcode action passed 17 focused tests, including
+`URLProtectionSharesWordBoundariesAndDoesNotRepeatDictionaryPasses` and
+`ordinarySpeechDoesNotScanDictionaryProtection`. No rejected candidate was installed.
+
+**Reconsider only if:** Ethan explicitly changes dictionary precedence and the
+spoken-trigger, canonical-trigger, replacement-output and no-extra-pass tests
+establish the new intended behavior.
+
+## 2026-10-31 — Explicit removal of the secondary app icon
+
+Ethan now asks to remove the secondary app/warning icon because he does not use it.
+This supersedes the historical rules below requiring two visible icon slots and a
+locked outline. The earlier rejection concerned hiding a delivery regression without
+permission; this is an explicit UI preference. Keep the current-focus icon honest,
+preserve delivery behavior and real errors, and do not restore the secondary slot
+unless Ethan asks for it again.
+
+## 2026-10-27 — A per-line contains check did not speed up Codex scope parsing
+
+**Mechanism:** Add `rawLine.contains(activityMarker)` before the existing
+Foundation range lookup on every line of the bounded Codex log tails.
+**Observed result:** On the Mini's Release-optimized 8.3 / 8.9 MB synthetic logs,
+this still took roughly 226–252 ms, similar to the original 231–253 ms. It did
+not remove the repeated unrelated-line work. Searching the whole buffer for
+candidate marker lines first took 10–43 ms with equivalent scope results.
+**Use instead:** Keep strict native-prefix and ambiguity checks on the sparse
+candidate lines, unchanged byte limits and no idle polling or stale scope cache.
+**Reconsider only if:** A measured implementation change demonstrates a benefit
+on representative buffers while preserving the frozen parser's scope results.
+
+## 2026-10-26 — Captured-reference hints are no longer wanted in speech recognition
+
+- **State:** Rejected by Ethan; remove the feature completely, not a disabled flag.
+- **Removed approach:** Startup and live transcription hints from captured selections
+  or screenshot OCR, with intermediate audio commits for prompt changes.
+- **Reason:** Ethan explicitly asked to undo this recent addition. Earlier synthetic
+  protocol success did not establish that its live behavior met his needs; it must
+  not be treated as current product acceptance.
+- **Use instead:** Frozen original recognition guidance and one Stop-owned commit;
+  preserve selections and screenshot paths for the final message only. Vocabulary,
+  separately configured recent-chat context, and quiet-upload sleep are independent.
+- **Reconsider only if:** Ethan explicitly requests captured-reference recognition
+  again. Any future design still needs independent audio-integrity and human-voice
+  qualification; the historical 25 October measurements alone are insufficient.
+
+## 2026-10-25 — Commit a context update at an arbitrary point in speech
+
+- **State:** Rejected by a real split-phrase negative control.
+- **Attempt:** Commit each buffered item before updating context, but cut immediately
+  at the selection change rather than waiting for acoustic quiet.
+- **Observed:** Whole-phrase cuts preserved all three markers; arbitrary cuts at
+  0.7s and2.4s lost a marker on identical audio, despite matching commit/completion IDs.
+- **Use instead:** A fully analysed conservative quiet gap, exact item ownership and
+  in-order private assembly into one final. Continuous sound retains the prior hint.
+  Empty audible items must fail the recording, not be skipped; pad an undersized
+  final network fragment to120ms without changing the WAV. Seed and preserve applied
+  prompt identity so no-op/expired hints do not add unnecessary billable turns.
+- **Reconsider only if:** A directly verified provider contract supplies word-safe
+  boundaries or continuous context without splitting words. Do not replay the full
+  recording per hint or claim socket acknowledgement proves word preservation.
+- **Evidence:** Synthetic API runs 011–016 and native adapter runs 018–027;
+  final native joined/short-fragment probes compared every reference word. The
+  focused Mini tests and independent Opus review were followed by the 796-test
+  release gate for installed build 462, 2026-10-25.
+
+## 2026-10-25 — Treat accepted session.update as proof of preserved live audio
+
+- **State:** Rejected by real same-audio API probes; production capability held off.
+- **Attempt:** Send bounded captured-reference hints during an uncommitted GPT Live
+  recording, waiting for `session.updated` before continuing PCM and one final commit.
+- **Observed failure:** A prompt-only nested object first failed validation because
+  `session.audio.input.transcription.model` was required. Both a full-envelope update
+  and a narrow transcription-only update with the same frozen model, keywords,
+  languages and delay were subsequently accepted but retained only the last spoken
+  phrase. Three no-update controls retained all three markers (81 characters, five
+  billed seconds); two traced narrow-update runs had 26-character finals and two
+  billed seconds, one matching committed/completed item and no early completion or
+  cleared event. Narrowing out PCM format and turn detection did not fix the loss.
+- **Use instead:** Keep actual OpenAI mid-recording updates hard-disabled in both
+  sender and adapter. Permit startup hints, preserve final references and the full
+  WAV, and never force a paid fallback just because a live hint is unsupported.
+  Acknowledgement, serialized socket sends, byte accounting and mock-provider tests
+  alone cannot qualify this path. Do not infer the server's private reset mechanism.
+- **Reconsider only if:** Identical audio with updates reliably preserves every
+  spoken marker, full duration and Stop-owned item identity. Reject early/mismatched
+  completions and provider errors even without silence sleep before considering a
+  multi-turn/chunking design. Keep real human accuracy qualification separate.
+- **Evidence:** Mini synthetic probes on 2026-10-25; private counts-only wire results
+  004–010, Codex control/update comparison and Claude Opus 5.5 protocol review.
+  No app installation, microphone capture or private speech upload was performed.
+
+## 2026-10-25 — Omit a live prompt to clear it, or reuse a rejected hint in fallback
+
+- **State:** Rejected during source/protocol review before installation.
+- **Attempt:** Compose live captured-reference hints using the startup payload's
+  omission-for-empty convention, then reuse the latest captured hint after a failed
+  live update in the completed-WAV request.
+- **Failure condition:** Official `session.update` semantics merge supplied fields
+  only, so omitting `prompt` retains the previous hint. An explicitly rejected hint
+  can also poison the fallback if it is submitted again. The latter was reproduced
+  with an offline rejecting provider; no live provider failure is claimed.
+- **Use instead:** Keep live updates held as described above. Any future qualified
+  update must explicitly clear the prompt and include the required frozen model.
+  After failed startup/update, use original prompt, language and Vocabulary
+  for the single fallback. Keep explicit retries on the original baseline. Fit
+  structured hints before JSON encoding with a conservative UTF-8 ceiling, and
+  retain bounded prefixes for no-space text rather than silently clearing it.
+- **Evidence:** `a53c5a14`, `LiveTranscriptionContextTests`, current official update
+  contract and 95 passing focused Mini tests; final Codex/Opus source review.
+- **Reconsider only if:** A documented, directly verified provider contract changes
+  merge/clear semantics. Do not treat a successful socket send as acknowledgement
+  or as proof of recognition accuracy.
+
+## 2026-10-25 — Treat an Agent Flow restart or task-local CUA reset as a shared-hook reset
+
+**Observed failure:** this task's CUA JavaScript-kernel reset left the shared
+`SkyComputerUseService` and its Chrome keyboard tap present. A later isolated
+restart of the unchanged Agent Flow build 460 also left Chrome doubling; Ethan
+then reported Opera doubling while Codex typed normally. Neither action proved
+that the shared browser input state had been reset. A zero-event passive sample
+likewise proved no physical recovery.
+
+**Use instead:** for this observed Chrome/Opera signature, freshly identify the
+shared helper and its app-targeted filtering keyboard taps. Preserve concurrent
+automation, warn before a bounded authorized helper-only reset, verify tap removal
+without closing the browsers, and require Ethan's physical check. That operation
+was accepted in this episode; the exact internal duplication mechanism is still
+unproven. See the newest recovery entry in `LEARNINGS.md`.
+
+**Reconsider these earlier actions as the repair only if:** new ownership or
+controlled before/after evidence shows the fault actually belongs to Agent Flow
+or the task-local kernel. Do not generalize this recovery into automatic helper
+termination for every typing complaint, or resume installing the held candidate.
+
+## 2026-10-25 — Treat doubled input as a newly introduced quiet-upload symptom
+
+Original 8 September user text already contains doubled characters, before the
+quiet-upload feature existed. That rejects the assumption that this class of
+symptom began with the new feature; it does not exonerate build 461 from a distinct
+contribution today or prove a common cause across incidents. The midday rollback
+and Computer Use reset occurred together, so that early recovery isolates neither
+action. Later Chrome/Opera recovery after a helper-only reset is separately
+recorded in `LEARNINGS.md`; it does not establish the cause of every older case.
+
+**Use instead:** Preserve original dated records, distinguish blocked typing from
+doubled characters, and correlate the actual input/automation path before assigning
+causality. A source review or another passing unit suite is not that evidence.
+**Reconsider a specific causal assignment only if:** controlled input-path evidence
+separates the candidate, prior build and automation/session state on disposable
+targets. Do not run that experiment against Ethan's live MacBook typing.
+
+## 2026-10-25 — Unit tests alone did not qualify build 461 for live typing
+
+The ten-second quiet-upload candidate passed 42 focused and 744 full native Mini
+tests. During the subsequent MacBook Audio-panel inspection, Ethan reported focus
+interference and visibly doubled characters, then demanded rollback. The agent
+stopped/reset Computer Use and restored the exact previous signed build 460.
+
+This rejects the candidate's live acceptance, not a proven root cause in its two
+timing constants. Do not attribute the duplication to silence detection or claim
+it fixed from unit counts alone. Reconsider deployment only after the reported
+focus/typing interaction is understood and verified on a disposable Mini target;
+keep the change on its feature branch in the meantime, as Ethan requested.
+
+## 2026-10-24 — Do not learn audible speech into a realtime silence floor
+
+An initial upload gate using a −50 dBFS ceiling and 9 dB margin learned a quiet
+background tone as its floor. It then withheld a synthetic −62 dBFS phrase over
+that −60 dBFS tone. The full input produced the correct phrase through the actual
+OpenAI GPT Live Transcribe endpoint; the gated input produced an empty final.
+Keeping the full WAV alone did not make the realtime result safe.
+
+Rejected: treating all stable low-level sound as removable silence, updating the
+floor from already-active frames, or treating byte totals as proof that words
+were preserved. The accepted direction uses conservative thresholds, excludes
+active frames from floor learning, and fails open for audible/uncertain sound.
+Reconsider a more aggressive detector only with representative soft-speech,
+music/noise and onset fixtures plus actual provider recognition evidence; a
+better savings ratio by itself is not sufficient. See `REALTIME_SILENCE_SLEEP.md`.
+
 ## 2026-10-17 — Treat a click-pane result or Demo panel as live keyboard focus — REJECTED
 
 **Failure condition:** The first inspector only walked the clicked element's
@@ -291,6 +514,10 @@ is not evidence that the receiving field is an AI prompt.
 
 
 ## 2026-10-01 — Reusing the early Primary freeze for late typing Shift — REJECTED
+
+Timing override, user-requested 2026-10-27: retain this lifecycle separation with
+no artificial reaction interval. The user superseded both one-second and
+half-second minimums with instant finish; the historical timing below is inactive.
 
 **Failure:** The standalone Shift second-chance handler used
 `acceptsCompletionDispositionChanges`. The provider-boundary freeze closes that
@@ -2234,3 +2461,26 @@ A future agent may revisit a rejected mechanism only when all of these are writt
 
 If those answers are absent, use the current accepted path or fail closed. Do not rediscover this
 week by iteration.
+# 2026-10-26 — Wait for process exit after a one-time rejected quit — REJECTED
+
+**Failure condition:** `applicationShouldTerminate` returned `terminateCancel`
+during real work. The work finished, but no further quit request happened; a
+kernel process-exit wait never woke and the old warning falsely looked current.
+
+**Use instead:** Retain deferred quit intent in the app, observe every owner that
+can block termination, and retry ordinary quit after a next-turn read proves all
+are idle. Keep the same guard at the final boundary and keep **I've finished** as
+an optional immediate check. Never treat one old refusal as a current recording
+measurement or replace the guard with HUD visibility.
+
+**Reconsider only if:** The running app already implements an independently
+verified deferred-termination callback; a process-exit wait alone cannot provide it.
+
+
+## 2026-11-01 — Back-to-back generic paste and Return — REJECTED
+
+**Observed failure:** A Mini-built diagnostic using the production four Cmd-V events and one HID Return pair, with zero sleeps, posted in 16.2 ms. A real disposable Chrome textarea processed Return while empty, then received paste/input. Ordered event emission is not proof that the receiving app has completed asynchronous clipboard insertion.
+
+**Accepted narrower change:** Ethan initially selected zero waits despite unreliable auto-send, then immediately superseded that choice with “retain that” and “Just make it lower.” Retain a user-approved 150 ms paste-to-Send allowance (previously 220 ms), remove the other keyboard padding, and preserve clipboard leases, balanced keys and FIFO Return suppression. One ordinary live Chrome check passed at 150 ms; focus-guarded refusal is not a busy-page pass or universal app guarantee.
+
+**Reconsider only if:** Actual receiving-app evidence proves an ordering mechanism that preserves generic current-input Primary without AX targeting, app classification or a new delivery route; or Ethan explicitly accepts the demonstrated empty-submit risk again. Any added/increased deliberate wait still requires consultation under the global/project rule.

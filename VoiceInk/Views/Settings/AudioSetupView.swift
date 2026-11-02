@@ -5,6 +5,10 @@ struct AudioSetupView: View {
     @ObservedObject private var audioDeviceManager = AudioDeviceManager.shared
     @ObservedObject private var mediaController = MediaController.shared
     @ObservedObject private var playbackController = PlaybackController.shared
+    // Opt-in. The requesting user's installation may enable it after validation.
+    // Read once per recording when its realtime session is created.
+    @AppStorage(RealtimeSilenceSleepPolicy.userDefaultsKey)
+    private var sleepsGPTLiveDuringSilence = RealtimeSilenceSleepPolicy.defaultEnabled
     @State private var microphoneSourceBeforePriorityOrder: MicrophoneSourceSelection = .systemDefault
     @State private var refreshIconRotation = 0.0
 
@@ -40,6 +44,12 @@ struct AudioSetupView: View {
                     isOn: $playbackController.isPauseMediaOnBuiltInSpeakersEnabled
                 )
                 .help("When MacBook speakers are the system output, pause the Spotify playback detected at recording start. Agent Flow resumes only the same Spotify process and track.")
+
+                // Network-stream omission for GPT Live Transcribe only; capture and the
+                // WAV keep every frame. Synthetic per-session billing probes confirmed
+                // no-append gaps save billed audio time; noisy rooms may stay awake.
+                Toggle("Sleep GPT Live During Silence", isOn: $sleepsGPTLiveDuringSilence)
+                    .help(sleepGPTLiveHelp)
 
                 LabeledContent("Resume Delay") {
                     resumeDelayMenu
@@ -295,6 +305,11 @@ struct AudioSetupView: View {
         }
         .pickerStyle(.menu)
         .labelsHidden()
+    }
+
+    private var sleepGPTLiveHelp: String {
+        let seconds = Int(RealtimeSilenceSleepGate.Configuration.gptLiveDefault.trailingQuietSeconds)
+        return String(localized: "After \(seconds) seconds without audible sound, words, typing or selections, stop streaming audio to GPT Live Transcribe. Any of these resumes it instantly. Recording keeps all audio.")
     }
 
     private var canEditResumeDelay: Bool {

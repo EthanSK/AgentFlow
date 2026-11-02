@@ -1,3 +1,4 @@
+// Exercise real hosted recorder layouts without microphone capture or shortcuts.
 import Darwin
 import Foundation
 import Testing
@@ -8,6 +9,213 @@ import SwiftUI
 
 @Suite(.serialized)
 struct RecorderResponsivenessTests {
+    @Test @MainActor func pausedRecorderBackgroundTracksStateAcrossBothStyles() async throws {
+        let session = RecordingSession(phase: .recording)
+        session.partialTranscript = "A retained transcript remains visible while paused."
+        let recorder = Recorder()
+        let assistant = AssistantSession()
+        for height in [CGFloat(56), CGFloat(180)] {
+            let views: [(String, AnyView, CGFloat)] = [
+                ("mini", AnyView(MiniRecorderView(stateProvider: session,
+                    liveTranscriptHeight: height, liveTranscriptWidth: 640, recorder: recorder,
+                    assistantSession: assistant, onRecordButtonTapped: {}, onCloseTapped: {},
+                    onCancelTapped: {}, onAssistantFollowUp: { _ in })), 640),
+                ("notch", AnyView(NotchRecorderView(stateProvider: session, recorder: recorder,
+                    assistantSession: assistant, notchWidth: 180, notchHeight: 32,
+                    liveTranscriptHeight: height, onRecordButtonTapped: {}, onCloseTapped: {},
+                    onCancelTapped: {}, onAssistantFollowUp: { _ in })), MiniRecorderLayoutMetrics.liveTranscriptWidth)
+            ]
+            for (style, view, width) in views {
+                let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: width, height: 300),
+                                    styleMask: [.borderless, .nonactivatingPanel],
+                                    backing: .buffered, defer: false)
+                panel.isOpaque = false
+                panel.backgroundColor = .clear
+                let host = NSHostingView(rootView: view.frame(width: width, height: 300))
+                panel.contentView = host
+                panel.orderFrontRegardless()
+                defer { panel.orderOut(nil); panel.close() }
+                // Reuse each host across transitions: a static paused rendering
+                // alone would not prove that Resume restores the ordinary surface.
+                for (name, state, microphoneOff) in [
+                    ("recording", RecordingState.recording, false),
+                    ("typing", .recording, true),
+                    ("paused", .paused, false),
+                    ("resumed", .recording, false)
+                ] {
+                    session.microphoneOff = microphoneOff
+                    session.liveRecordingState = state
+                    host.layoutSubtreeIfNeeded()
+                    try await Task.sleep(for: .milliseconds(150))
+                    host.layoutSubtreeIfNeeded()
+                    let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                    host.cacheDisplay(in: host.bounds, to: bitmap)
+                    var painted = 0
+                    var orange = 0
+                    for y in stride(from: 0, to: bitmap.pixelsHigh, by: 4) {
+                        for x in stride(from: 0, to: bitmap.pixelsWide, by: 4) {
+                            guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB),
+                                  color.alphaComponent > 0.2 else { continue }
+                            painted += 1
+                            if color.redComponent > 0.35, color.greenComponent > 0.10,
+                               color.greenComponent < 0.45, color.blueComponent < 0.12,
+                               color.redComponent > color.greenComponent * 1.5 { orange += 1 }
+                        }
+                    }
+                    #expect(painted > 100)
+                    let orangeFraction = Double(orange) / Double(max(painted, 1))
+                    #expect(state == .paused ? orangeFraction > 0.65 : orangeFraction < 0.08)
+                    if let directory = ProcessInfo.processInfo.environment["VIPP_PAUSE_SNAPSHOT_DIR"] {
+                        let folder = URL(fileURLWithPath: directory, isDirectory: true)
+                        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                        let image = try #require(bitmap.representation(using: .png, properties: [:]))
+                        try image.write(to: folder.appendingPathComponent("\(style)-\(Int(height))-\(name).png"))
+                    }
+                }
+            }
+        }
+    }
+
+    @Test @MainActor func recorderAppIconLayoutSnapshots() async throws {
+        // Render the real views without starting capture or posting shortcuts.
+        // These images let us inspect spacing after removing the secondary app icon.
+        let session = RecordingSession(phase: .recording)
+        let recorder = Recorder()
+        let assistant = AssistantSession()
+        for state in [RecordingState.recording, .paused, .transcribing] {
+            session.liveRecordingState = state
+            session.phase = state == .transcribing ? .transcribing : .recording
+            let views: [(String, AnyView, CGFloat)] = [
+                ("mini", AnyView(MiniRecorderView(stateProvider: session,
+                    liveTranscriptHeight: 56, liveTranscriptWidth: 640, recorder: recorder,
+                    assistantSession: assistant, onRecordButtonTapped: {}, onCloseTapped: {},
+                    onCancelTapped: {}, onAssistantFollowUp: { _ in })), 640),
+                ("notch", AnyView(NotchRecorderView(stateProvider: session, recorder: recorder,
+                    assistantSession: assistant, notchWidth: 180, notchHeight: 32,
+                    liveTranscriptHeight: 56, onRecordButtonTapped: {}, onCloseTapped: {},
+                    onCancelTapped: {}, onAssistantFollowUp: { _ in })), MiniRecorderLayoutMetrics.liveTranscriptWidth),
+                ("pending", AnyView(TranscribingChip(session: session, style: .mini, onCancel: {})), 200)
+            ]
+            for (name, view, width) in views {
+                // Fit the full live-context width: a compact 660pt notch host
+                // clips the 1100pt recording layout. A non-key test panel gives
+                // GeometryReader settled window dimensions before pixel capture.
+                let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: width, height: 160),
+                                    styleMask: [.borderless, .nonactivatingPanel],
+                                    backing: .buffered, defer: false)
+                let host = NSHostingView(rootView: view.frame(width: width, height: 160))
+                panel.contentView = host
+                panel.orderFrontRegardless()
+                defer { panel.orderOut(nil); panel.close() }
+                host.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(600))
+                host.layoutSubtreeIfNeeded()
+                let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                let image = try #require(bitmap.representation(using: .png, properties: [:]))
+                try image.write(to: URL(fileURLWithPath: NSTemporaryDirectory())
+                    .appendingPathComponent("Recorder-single-app-\(name)-\(state).png"))
+            }
+        }
+    }
+
+    @Test func typingFinishDoesNotQueueMainActorWorkItAlreadyOwns() throws {
+        let pipeline = try source("VoiceInk/Transcription/Engine/TranscriptionPipeline.swift")
+        #expect(pipeline.contains("private let archivePrompt: @MainActor (String, UUID) async throws -> URL"))
+        let archiveStart = try #require(pipeline.range(of: "archivePrompt: @escaping @MainActor"))
+        let archiveEnd = try #require(pipeline.range(of: "currentPromptRecipient:", range: archiveStart.upperBound..<pipeline.endIndex))
+        let archive = pipeline[archiveStart.lowerBound..<archiveEnd.lowerBound]
+        #expect(!archive.contains("await MainActor.run"))
+        // Heavy scope/file work must still leave the UI actor.
+        #expect(archive.contains("await CodexConversationContextReader.selectionThreadRead"))
+        let scope = try source("VoiceInk/Transcription/Engine/CodexConversationContext.swift")
+        #expect(scope.contains("await CodexSelectionLogWorker.shared.read"))
+        #expect(archive.contains("await AgentFlowPromptArchive.save"))
+
+        let paster = try source("VoiceInk/Paste/CursorPaster.swift")
+        let directStart = try #require(paster.range(of: "static func pasteAtCursorAndWaitUntilPosted("))
+        let directEnd = try #require(paster.range(of: "private static func performPasteSession(", range: directStart.upperBound..<paster.endIndex))
+        let direct = paster[directStart.lowerBound..<directEnd.lowerBound]
+        #expect(direct.contains("await performPasteSession"))
+        #expect(!direct.contains("startPasteAtCursor("))
+        #expect(!direct.contains("Task {"))
+        // Both entry points retain the local typing-HUD veto; faster delivery
+        // must never paste a previous result into a newer Agent Flow editor.
+        let shared = paster[directEnd.lowerBound...]
+        #expect(shared.contains("!RecorderTypingTextView.ownsKeyboard && requestedCanPost()"))
+    }
+
+    @Test @MainActor func finishedHUDDoesNotReadHiddenContextForVisibility() {
+        let probe = FinishedHUDContextProbe()
+        for state in [RecordingState.transcribing, .enhancing, .idle, .busy] {
+            probe.recordingState = state
+            #expect(!probe.showsLiveContext)
+        }
+        #expect(probe.referenceReads == 0)
+        probe.recordingState = .recording
+        #expect(probe.showsLiveContext && probe.referenceReads == 1)
+    }
+
+    @Test func finishLayoutSkipsTextMeasurementAndDoesNotFadeLoading() throws {
+        let stacks = try source("VoiceInk/Views/Recorder/RecorderStackView.swift")
+        for session in ["baseSession", "pillSession"] {
+            let gate = try #require(stacks.range(of: "guard let \(session), \(session).showsLiveContext else"))
+            let measured = try #require(stacks.range(of: "MiniRecorderLayoutMetrics.contextHeight(", range: gate.upperBound..<stacks.endIndex))
+            #expect(gate.lowerBound < measured.lowerBound)
+        }
+        let mini = try source("VoiceInk/Views/Recorder/MiniRecorderView.swift")
+        #expect(mini.contains(".animation(stateProvider.recordingState.isProcessing ? nil : .easeInOut(duration: 0.3), value: hasLiveTranscript)"))
+        let notch = try source("VoiceInk/Views/Recorder/NotchRecorderView.swift")
+        #expect(notch.contains("if stateProvider.recordingState.isProcessing { return nil }"))
+        let components = try source("VoiceInk/Views/Recorder/RecorderComponents.swift")
+        #expect(components.contains(".animation(currentState.isProcessing ? nil : .easeInOut(duration: 0.2), value: currentState)"))
+    }
+
+    @Test func stoppedRecoveryFormattingLeavesMainActorBeforeHardwareWait() throws {
+        let engine = try source("VoiceInk/Transcription/Engine/VoiceInkEngine.swift")
+        let stop = try #require(engine.range(of: "            RecorderTypingTextView.releaseKeyboardBeforeFinish()"))
+        let end = try #require(engine.range(of: "            // ── RAPID-SESSION MEDIA OWNERSHIP", range: stop.upperBound..<engine.endIndex))
+        let body = String(engine[stop.lowerBound..<end.lowerBound])
+        let freeze = try #require(body.range(of: "let stoppedReferences = active.liveSelectionReferencesForDelivery"))
+        let worker = try #require(body.range(of: "let recoveryDraft = Task.detached(priority: .userInitiated)"))
+        let hardware = try #require(body.range(of: "await recorder.stopRecording("))
+        let join = try #require(body.range(of: "active.recoverablePartialTranscript = await recoveryDraft.value"))
+        #expect(freeze.lowerBound < worker.lowerBound && worker.lowerBound < hardware.lowerBound)
+        #expect(hardware.lowerBound < join.lowerBound)
+        #expect(body.contains("stoppedReferences, with: stoppedTranscript, includeTiming: true"))
+    }
+
+    @Test @MainActor func miniFinishCollapsesOnFirstUpdateWithoutMovingBottomEdge() async throws {
+        let screen = try #require(NSScreen.main)
+        let session = RecordingSession()
+        session.microphoneOff = true
+        session.updateTypedInput(String(repeating: "Long typed draft with context ", count: 400))
+        let panel = MiniRecorderPanel(contentRect: NSRect(x: 100, y: 100, width: 640, height: 240))
+        let view = MiniRecorderView(stateProvider: session, liveTranscriptHeight: 180, liveTranscriptWidth: 640,
+            recorder: Recorder(), assistantSession: AssistantSession(), onRecordButtonTapped: {},
+            onCloseTapped: {}, onCancelTapped: {}, onAssistantFollowUp: { _ in })
+        let host = NSHostingView(rootView: view)
+        panel.contentView = host
+        panel.setFrame(NSRect(x: screen.frame.minX + 100, y: screen.frame.minY + 100,
+                              width: 640, height: 240), display: true)
+        panel.orderFrontRegardless()
+        defer { panel.orderOut(nil); panel.close() }
+        host.layoutSubtreeIfNeeded()
+        let bottom = panel.frame.minY
+        session.phase = .transcribing
+        session.liveRecordingState = .transcribing
+        // One display opportunity, well below the old 200/300 ms fade/collapse.
+        try await Task.sleep(for: .milliseconds(30))
+        host.layoutSubtreeIfNeeded()
+        let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        let scaleX = CGFloat(bitmap.pixelsWide) / host.bounds.width
+        let scaleY = CGFloat(bitmap.pixelsHigh) / host.bounds.height
+        let oldEditorPixel = try #require(bitmap.colorAt(x: Int(40 * scaleX), y: Int(100 * scaleY)))
+        #expect(oldEditorPixel.alphaComponent < 0.05)
+        #expect(panel.frame.minY == bottom)
+    }
+
     @Test @MainActor func miniRecorderHostedViewRendersFlushAtPhysicalBottom() async throws {
         let screen = try #require(NSScreen.main)
         let scale: CGFloat = 0.85
@@ -475,6 +683,19 @@ struct RecorderResponsivenessTests {
     private func source(_ path: String) throws -> String {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         return try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+    }
+}
+
+@MainActor private final class FinishedHUDContextProbe: RecorderStateProvider {
+    var recordingState = RecordingState.transcribing
+    var partialTranscript = ""
+    var skipPostProcessing = false
+    var pasteDestinationIndicatorTarget: FocusLockService.Target? { nil }
+    var iconActionPulse: RecorderIconActionPulse? { nil }
+    private(set) var referenceReads = 0
+    var liveSelectionReferences: [LiveSelectionReference] {
+        referenceReads += 1
+        return [LiveSelectionReference("selected context")!]
     }
 }
 

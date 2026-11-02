@@ -145,9 +145,11 @@ relaunch it, and verify the new PID plus the strict/deep code signature and stab
 requirement. Do not claim a live fix while an older PID/build remains running.
 
 If the all-session veto refuses, leave the running app and staged candidate
-untouched. Build 454's warning stays visible with **I've finished**: that button
-retries ordinary termination and checks all active sessions again; it does not
-stop, cancel or discard them. The waiting installer, not the button, owns the
+untouched. From build 465, the app observes session, start-reservation, History retry
+and new-chat-creation changes and retries ordinary termination when all are idle.
+The warning's **I've finished** button remains an optional immediate recheck; it
+does not stop, cancel or discard work. On older builds the button is still needed
+after a refused quit. The waiting installer, not the button, owns the
 verified replacement and background relaunch. For a user-driven deferred update,
 wait with `python3 scripts/wait-for-agent-flow-exit.py <verified-pid>` instead of
 repeated quit attempts or model polling. It uses one bounded Darwin process-exit

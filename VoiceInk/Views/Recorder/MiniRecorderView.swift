@@ -1,3 +1,4 @@
+// Bottom-anchored recorder card; every monitor observes the same live session.
 import SwiftUI
 
 struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
@@ -22,31 +23,20 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     private let compactCornerRadius: CGFloat = 20
     private let expandedCornerRadius: CGFloat = 14
 
-    private var shouldShowPasteDestinationIndicator: Bool {
-        switch stateProvider.recordingState {
-        case .starting, .recording, .paused, .transcribing, .enhancing:
-            return true
-        case .idle, .busy:
-            return false
-        }
-    }
-
     private var capsuleWidth: CGFloat {
         if hasAssistantResponse { return assistantWidth }
         if hasLiveTranscript { return expandedWidth }
-        // Leave room for the explicit Pause/Play control; do not squeeze the
-        // waveform or either destination slot on compact (non-realtime) sessions.
-        if stateProvider.recordingState.isRecordingOrPaused { return 350 }
-        return shouldShowPasteDestinationIndicator ? 280 : compactWidth
+        // Leave room for Pause/Play and the current app. Ethan removed the secondary
+        // app icon because its unused destination warning was mostly visual noise.
+        if stateProvider.recordingState.isRecordingOrPaused { return 324 }
+        return stateProvider.recordingState == .starting || stateProvider.recordingState.isProcessing
+            ? 254 : compactWidth
     }
 
     // Realtime mode owns this panel immediately. LiveTranscriptView renders the
     // empty-state ellipsis, which never becomes speech or final delivery text.
     private var hasLiveTranscript: Bool {
-        (stateProvider.recordingState.isRecordingOrPaused || stateProvider.canTypeInHUD)
-            && (stateProvider.showsRealtimeTranscriptHUD
-                || stateProvider.canTypeInHUD
-                || !stateProvider.liveSelectionReferences.isEmpty)
+        stateProvider.showsLiveContext
     }
 
     private var hasAssistantResponse: Bool {
@@ -150,7 +140,8 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                 RecorderStatusDisplay(
                     currentState: stateProvider.recordingState,
                     completionDisposition: stateProvider.completionDisposition,
-                    recorder: recorder
+                    recorder: recorder,
+                    realtimeStreamSleeping: stateProvider.showsRealtimeStreamSleepingBadge
                 )
                 .background(RecorderPanelDragSurface())
             }
@@ -159,20 +150,10 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                 .frame(maxHeight: .infinity)
                 .background(RecorderPanelDragSurface())
 
-            HStack(spacing: 6) {
-                CurrentFocusApplicationIndicator(
-                    actionPulseID: stateProvider.currentFocusIconActionPulseID
-                )
-
-                if shouldShowPasteDestinationIndicator {
-                    PasteDestinationIndicator(
-                        target: stateProvider.pasteDestinationIndicatorTarget,
-                        context: stateProvider.recordingState == .starting || stateProvider.recordingState.isRecordingOrPaused ? .nextTrackStop : .pendingPaste,
-                        actionPulseID: stateProvider.lockedDestinationIconActionPulseID
-                    ) // Do not hide this at stop: the same per-session icon confirms VoiceInk still owns the target while transcription is loading, and updates if Next Track retargets it.
-                        .transition(.opacity)
-                }
-            }
+            // Show current focus only; never relabel this icon as a saved Next target.
+            CurrentFocusApplicationIndicator(
+                actionPulseID: stateProvider.currentFocusIconActionPulseID
+            )
             .padding(.trailing, 12)
         }
         .frame(height: MiniRecorderLayoutMetrics.controlBarHeight)
@@ -222,7 +203,9 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
         }
         .frame(width: capsuleWidth)
         .background {
-            if hasLiveTranscript && liveTranscriptHeight > 100 {
+            if stateProvider.recordingState == .paused {
+                RecorderPanelAppearance.pausedBackground
+            } else if hasLiveTranscript && liveTranscriptHeight > 100 {
                 LinearGradient(
                     colors: [.black.opacity(0.55), .black.opacity(0.82), .black],
                     startPoint: .top,
@@ -233,7 +216,9 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: hasLiveTranscript || hasAssistantResponse ? expandedCornerRadius : compactCornerRadius, style: .continuous))
-        .animation(.easeInOut(duration: 0.3), value: hasLiveTranscript)
+        // Finish must visibly acknowledge the first press, not first shrink the
+        // editor and cross-fade its loading indicator over another 300 ms.
+        .animation(stateProvider.recordingState.isProcessing ? nil : .easeInOut(duration: 0.3), value: hasLiveTranscript)
         .animation(.easeInOut(duration: 0.3), value: hasAssistantResponse)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
     }

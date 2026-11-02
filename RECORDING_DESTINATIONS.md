@@ -1,5 +1,14 @@
 # Recording destination controls (VoiceInk++)
 
+## Current UI override — secondary app icon removed
+
+Ethan requested removal on 2026-10-31 because the secondary icon was mostly an unused
+warning. Mini and notch recorders now show only the current-focus app icon, and
+compact pending cards omit the saved-destination icon too. The old two-slot,
+locked-outline and Next-icon-pulse descriptions below are historical UI contracts.
+This presentation change does not alter capture, paste, Next eligibility, auto-send
+or real delivery-error reporting. The remaining icon never represents a saved target.
+
 ## Current override — original-input capture is unused/off
 
 At Ethan's request on 2026-10-17, candidate build 436 disables the unused
@@ -473,3 +482,41 @@ The important destination values are:
 - `VoiceInk/Paste/CursorPaster.swift` implements bounded targeted Unicode/key events and foreground fallbacks.
 - `VoiceInk/Transcription/Engine/TranscriptionDelivery.swift` isolates base current-input Primary
   delivery from app-specific foreground/background exact delivery used only by Next routes.
+
+## Double Top: create a chat before dictation (build 464)
+
+This start-only orchestration is not a fourth delivery destination. The receiver sends one UUID
+intent to Agent Flow; the app reads `VIPPNewChatRecordingHarness` once (`codex` by default or
+`claudeCode`). Settings → New Chats → App edits this same key. An unknown explicit value fails closed. The receiver must not maintain a second
+harness preference. Claude Code means a fresh terminal CLI session, not Claude Desktop.
+
+`NewChatRecordingService` uses these app-lifetime DistributedNotificationCenter messages:
+
+| Direction | Name | Object and userInfo |
+| --- | --- | --- |
+| Receiver → Agent Flow | `com.ethansk.AgentFlow.newChatRecording.v1` | UUID; `version:1`, `action:"start"`, `sentAt` Unix seconds |
+| Agent Flow → status consumer | `com.ethansk.AgentFlow.newChatRecording.result.v1` | same UUID; `version:1`, `phase:"creating"|"ready"|"failed"`, optional target and bounded reason |
+| Agent Flow → native launcher | `com.ethansk.AgenticMouse.newChat.v1` | same UUID; `version:1`, `target:"codex"|"claudeCode"`, `sentAt` |
+| Native launcher → Agent Flow | `com.ethansk.AgenticMouse.newChat.result.v1` | same UUID; `version:1`, `status:"ready"|"failed"` |
+| Agent Flow → native cancel | `com.ethansk.AgenticMouse.newChat.cancel.v1` | same UUID; `version:1` |
+
+The receiver freezes the original `sentAt` across retries. New requests expire after five seconds;
+UUID statuses remain for sixty seconds, at most 128 entries. Retrying a known UUID only replays
+status. Busy requests never replace the active operation. This is same-user local coordination,
+not an authenticated boundary against malicious code running as the user.
+
+The native launcher owns app activation and new-empty-composer verification. `ready` means the
+chosen app and its fresh input really own focus; posting a shortcut alone is insufficient.
+The ten-second Agent Flow deadline, capture changes, lock or sleep cancel pending creation.
+The native launcher must honor cancellation and guard each delayed mutation. Agent Flow never
+retries an uncertain creation or stops an existing recording to recover it.
+
+If the first Top already started voice capture, keep that same stable start ID. Otherwise use the
+existing reserved-start overload only after the native ready reply. Typing-only, paused, replaced
+or ended capture cannot be adopted. Pending creation participates in the app's cooperative quit
+veto. Ordinary single Top, microphone selection, streamed HUD text and final Primary/Next delivery
+remain unchanged; manual later focus changes still determine normal Primary paste.
+
+The orchestration unit tests are separate from native launcher/physical gesture acceptance.
+A successful unit suite does not establish that either external launcher is installed or that
+Double Top works on the physical wand.

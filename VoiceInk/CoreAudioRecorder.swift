@@ -1237,7 +1237,10 @@ final class CoreAudioRecorder: @unchecked Sendable {
         )
 
         // Reminders annotate speech downstream; retain Ethan's overlapping words in both
-        // sinks. Only the existing manual Pause gates microphone PCM.
+        // sinks. Only the existing manual Pause gates microphone PCM. The optional GPT
+        // Live silence sleep is not a capture gate: it omits clearly quiet audio only from
+        // the network stream, downstream in StreamingTranscriptionService, so this WAV
+        // write and the realtime callback below still receive every captured frame.
         let writeStatus = ExtAudioFileWrite(file, outputFrameCount, &outputBufferList)
         if let audioChunk = onAudioChunk {
             let byteCount = Int(outputFrameCount) * MemoryLayout<Int16>.size

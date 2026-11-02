@@ -1,3 +1,5 @@
+// Post-recording pipeline for one immutable job: provider result → completion
+// policy freeze → local formatting → durable archive → exactly one delivery.
 import Foundation
 import AppKit
 import SwiftData
@@ -97,7 +99,7 @@ class TranscriptionPipeline {
     private let serviceRegistry: TranscriptionServiceRegistry
     private let enhancementService: AIEnhancementService?
     private let delivery: any TranscriptionDelivering
-    private let archivePrompt: (String, UUID) async throws -> URL
+    private let archivePrompt: @MainActor (String, UUID) async throws -> URL
     private let currentPromptRecipient: () -> AgentFlowPromptPreview.Recipient
     private let copyCompletedText: (String) -> Bool
     private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "TranscriptionPipeline")
@@ -110,25 +112,43 @@ class TranscriptionPipeline {
         serviceRegistry: TranscriptionServiceRegistry,
         enhancementService: AIEnhancementService?,
         delivery: (any TranscriptionDelivering)? = nil,
-        archivePrompt: @escaping (String, UUID) async throws -> URL = { text, id in
+        archivePrompt: @escaping @MainActor (String, UUID) async throws -> URL = { text, id in
             // Presentation scope only, using existing app-owned selected-view
             // logs. Never capture/resolve an AX input or turn this into a Primary
             // destination. Multiple visible panes are ambiguous, not a guessed chat.
-            let processID = await MainActor.run { () -> pid_t? in
+            // The pipeline already owns MainActor. Keep the app snapshot
+            // here instead of hopping to a generic async executor and queueing
+            // MainActor.run again. Log scanning and file writes still use workers.
+            let recipientStarted = Date()
+            var frontmostMs = 0.0
+            var appMetadataMs = 0.0
+            var hostCheckMs = 0.0
+            let processID: pid_t? = {
                 let frontmost = NSWorkspace.shared.frontmostApplication
+                let frontmostFinished = Date()
+                frontmostMs = frontmostFinished.timeIntervalSince(recipientStarted) * 1_000
                 // The typing HUD may own focus. Reuse its already maintained
                 // external-app indicator, not a recording-start input or new AX
                 // probe. A real external app switch still overrides that indicator.
                 let app = frontmost?.bundleIdentifier == Bundle.main.bundleIdentifier
                     ? ActiveWindowService.shared.currentApplication : frontmost
+                let metadataFinished = Date()
+                appMetadataMs = metadataFinished.timeIntervalSince(frontmostFinished) * 1_000
+                defer { hostCheckMs = Date().timeIntervalSince(metadataFinished) * 1_000 }
                 guard let app, !app.isTerminated,
                       CodexConversationContextReader.isSupportedCodexApplication(app, fileManager: .default)
                 else { return nil }
                 return app.processIdentifier
-            }
-            let ids = if let processID {
-                await CodexConversationContextReader.selectionThreadIDs(processIdentifier: processID)
-            } else { [String]() }
+            }()
+            let scopeStarted = Date()
+            let scopeRead = if let processID {
+                await CodexConversationContextReader.selectionThreadRead(processIdentifier: processID)
+            } else { CodexConversationContextReader.SelectionThreadRead.empty }
+            let ids = scopeRead.ids
+            let recipientMs = scopeStarted.timeIntervalSince(recipientStarted) * 1_000
+            let scopeMs = Date().timeIntervalSince(scopeStarted) * 1_000
+            Logger(subsystem: "com.ethansk.VoiceInkPlusPlus", category: "VIPPDebug").info(
+                "prompt preparation: recipientMs=\(recipientMs, privacy: .public) frontmostMs=\(frontmostMs, privacy: .public) appMetadataMs=\(appMetadataMs, privacy: .public) hostCheckMs=\(hostCheckMs, privacy: .public) scopeMs=\(scopeMs, privacy: .public) scopeWorkMs=\(scopeRead.workMs, privacy: .public) scopeWaitMs=\(max(0, scopeMs - scopeRead.workMs), privacy: .public) candidateCount=\(ids.count, privacy: .public)")
             let chatID = ids.count == 1 ? ids[0] : nil
             return try await AgentFlowPromptArchive.save(text, recordID: id, chatID: chatID)
         },
@@ -259,6 +279,20 @@ class TranscriptionPipeline {
         var completionDispositionNow = RecordingCompletionDisposition.normalDelivery
         var autoSendDispositionNow = RecordingAutoSendDisposition.configured
         let recoverablePartialTranscriptNow = recoverablePartialTranscript()
+        // Numeric stage timings only (milliseconds). They separate the local
+        // finish costs that earlier elapsed-interval traces could not assign.
+        var stageTimings = PipelineStageTimings()
+        var providerFinishedAt: ContinuousClock.Instant?
+        // Start reading the finalized WAV's duration beside provider finalization
+        // instead of after it. The file was closed before this job was enqueued,
+        // so the read is pure value work on a worker; awaiting it only where the
+        // History row needs it removes an AVFoundation asset load from the
+        // post-provider critical path. Typing-only sessions keep build 470's
+        // contract and never open their empty recovery WAV. The task touches no
+        // session, SwiftData, AX or delivery state and can never deliver text.
+        let audioDurationTask: Task<TimeInterval, Never>? = hasCapturedAudio
+            ? Task.detached(priority: .userInitiated) { await AudioFileMetadata.duration(for: audioURL) }
+            : nil
 
         func attachLiveSelectionsToFinalText(
             includeSourceContext: Bool = true,
@@ -422,7 +456,13 @@ class TranscriptionPipeline {
             if transcription.duration > 0 {
                 canceledDuration = nil
             } else {
-                let duration = await AudioFileMetadata.duration(for: audioURL)
+                // Reuse the overlapped read. A typing-only cancel keeps its
+                // historical direct read so History semantics stay identical.
+                let duration = if let audioDurationTask {
+                    await audioDurationTask.value
+                } else {
+                    await AudioFileMetadata.duration(for: audioURL)
+                }
                 canceledDuration = duration > 0 ? duration : nil
             }
 
@@ -470,15 +510,40 @@ class TranscriptionPipeline {
                     context: transcriptionConfiguration.requestContext
                 )
             }
+            // Local finish accounting starts once the provider result is in hand.
+            // The policy wait below is deliberate: while a newer Primary press owns
+            // an open pending-result decision window, this freeze waits for that
+            // bounded gesture, so a large value here is gesture time, not CPU.
+            let providerResultAt = ContinuousClock.now
+            providerFinishedAt = providerResultAt
             let completionPolicyNow = await completionPolicy() // A pending Primary sequence may still become double-click Won't paste or quadruple-click paste-without-Return. Freeze both axes together after the provider, before any Mode effect or delivery.
+            stageTimings.add("completionPolicyWaitMs", since: providerResultAt)
             completionDispositionNow = completionPolicyNow.completionDisposition
             autoSendDispositionNow = completionPolicyNow.autoSendDisposition
             transcription.preservesOriginalAudioForRecovery = transcription.preservesOriginalAudioForRecovery || completionDispositionNow == .clipboardOnly
+            // Ethan also sends screenshots without speaking. OpenAI's completed-
+            // WAV adapter returns an empty String only after HTTP success and a
+            // valid string-valued `text` field. Realtime empty/failed results still
+            // take that existing WAV fallback; transport/decode errors still throw.
+            // Classify BEFORE output filtering so discarded provider boilerplate
+            // cannot masquerade as a successful empty recognition. Other providers
+            // retain their stricter empty-result contract.
+            let completedWithoutRecognizedSpeech = model.provider == .openAI
+                && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             text = TranscriptionOutputFilter.filter(text)
-            if hasCapturedAudio && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                // Providers differ on whether an empty 200 throws. Never silently
-                // turn lost speech into a successful typed-only auto-submission.
+            if hasCapturedAudio && text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && !completedWithoutRecognizedSpeech {
+                // An unqualified empty result remains failure, preserving typed-
+                // draft recovery without auto-send for other providers.
                 throw VoiceInkEngineError.transcriptionFailed
+            }
+            if hasCapturedAudio && completedWithoutRecognizedSpeech {
+                // Preserve the WAV if recognition missed real speech. This result
+                // means no recognized words, not proof that the microphone was silent.
+                // Context uses the ordinary final-message route below; no context and
+                // no words remains a no-op before paste/Return.
+                transcription.preservesOriginalAudioForRecovery = true
+                vippLog.info("pipeline: OpenAI completed with no recognized speech; retaining captured context and audio")
             }
             let transcriptionDuration = Date().timeIntervalSince(transcriptionStart)
             vippLog.info("pipeline: transcribe SUCCESS chars=\(text.count, privacy: .public) digest=\(TranscriptionLineageDigest.make(text), privacy: .public) elapsed=\(transcriptionDuration, format: .fixed(precision: 3), privacy: .public)s \(jobIdentity.logDescription, privacy: .public)")
@@ -522,12 +587,15 @@ class TranscriptionPipeline {
             // one-shot RAW transcript the user explicitly wants NEITHER — no mode switching,
             // no text mutation. So skip it entirely when the bypass is on. (Codex review
             // finding #2: skip must also avoid the pre-delivery text/mode mutations.)
+            let triggerWordStarted = ContinuousClock.now
             if !assistant.isFollowUp,
                !skipPostProcessingNow,
                let processedText = triggerWordModeSelection(text) {
                 text = processedText
             }
+            stageTimings.add("triggerWordMs", since: triggerWordStarted)
 
+            let modeResolveStarted = ContinuousClock.now
             let formattingConfiguration = resolveFormattingConfiguration()
             let resolvedEnhancementConfiguration = enhancementConfiguration()
             let resolvedOutputConfiguration = outputConfiguration()
@@ -537,22 +605,34 @@ class TranscriptionPipeline {
                     resolvedOutputConfiguration.mode ??
                     transcriptionConfiguration.mode
             )
+            stageTimings.add("modeResolveMs", since: modeResolveStarted)
 
             // ── VIPP (skip-mode-processing feature) — keep the transcript RAW ──
             // Paragraph formatting and word-replacement are part of the mode's
             // post-processing. The one-shot raw bypass should deliver the verbatim
             // transcription, so skip BOTH when it's engaged. (Codex review finding #2.)
             // The transcription record still stores exactly what we paste.
+            let paragraphFormatStarted = ContinuousClock.now
             if !skipPostProcessingNow, formattingConfiguration.isTextFormattingEnabled {
                 text = ParagraphFormatter.format(text)
             }
+            stageTimings.add("paragraphFormatMs", since: paragraphFormatStarted)
 
+            let wordReplacementStarted = ContinuousClock.now
             if !skipPostProcessingNow {
                 text = WordReplacementService.shared.applyReplacements(to: text, using: modelContext)
             }
+            stageTimings.add("wordReplacementMs", since: wordReplacementStarted)
             let cleanedText = text
 
-            let actualDuration = await AudioFileMetadata.duration(for: audioURL)
+            // The WAV duration read began beside provider finalization above, so
+            // only its remaining wait (normally none) is still on this path. A
+            // typing-only session started no read and keeps its zero duration.
+            let metadataStarted = ContinuousClock.now
+            let actualDuration = if let audioDurationTask {
+                await audioDurationTask.value
+            } else { TimeInterval.zero }
+            stageTimings.add("audioMetadataWaitMs", since: metadataStarted)
 
             transcription.text = cleanedText
             transcription.duration = actualDuration
@@ -654,6 +734,7 @@ class TranscriptionPipeline {
                         await assistant.startResponse(textForAI, resolvedEnhancementConfiguration)
                     }
 
+                    let enhancementStarted = ContinuousClock.now
                     do {
                         let contextSnapshot = await recordingContextSnapshot()
                         let (enhancedText, enhancementDuration, promptName) = try await enhancementService.enhance(
@@ -686,6 +767,9 @@ class TranscriptionPipeline {
                         }
                         if shouldCancel() { await finishCanceledTranscription(); return }
                     }
+                    // Provider/network time for the enhancement request, kept
+                    // separate so it is never mistaken for local formatting cost.
+                    stageTimings.add("enhancementMs", since: enhancementStarted)
                 }
             }
 
@@ -838,10 +922,13 @@ class TranscriptionPipeline {
             // canonical request: the readable opening belongs only in the chat
             // preview, not a second copy in the saved file or its viewer. Raw
             // mode keeps its explicit no-optional-context contract.
+            let archiveStarted = ContinuousClock.now
             let references = liveSelectionReferences().filter { !skipPostProcessingNow || $0.isTypedText }
             let complete = responseConfig != nil && responseError == nil ? transcription.text : LiveSelectionReference.interleaving(references, with: current,
                 includeTiming: !skipPostProcessingNow, includeReadablePreview: false)
             await preservePrompt(complete)
+            // Includes the recipient/scope lookup and the worker's durable writes.
+            stageTimings.add("archiveMs", since: archiveStarted)
         }
 
         // FINAL pre-delivery cancel gate. Same defensive logic as the post-transcribe
@@ -934,7 +1021,9 @@ class TranscriptionPipeline {
             return
         }
 
+        let pasteTargetStarted = ContinuousClock.now
         let pasteTargetForDelivery = await resolvePasteTarget()
+        stageTimings.add("pasteTargetMs", since: pasteTargetStarted)
         // Re-resolve after the target is frozen so a second-chance Next-button press
         // that arrived during transcription/enhancement supplies the latest target's
         // complete Mode (output action, command, and Return), not just its input. The
@@ -993,6 +1082,7 @@ class TranscriptionPipeline {
                 ? .primaryPasteDuringCapture
                 : .exclusive
 
+        let leaseStarted = ContinuousClock.now
         guard await acquireDeliveryLease(deliveryLeasePolicy) else {
             if shouldCancel() {
                 vippLog.info("pipeline: delivery lease refused for cancellation → retain result without delivery")
@@ -1004,11 +1094,15 @@ class TranscriptionPipeline {
             return
         }
         defer { releaseDeliveryLease() }
+        // A non-zero value is FIFO/capture ordering (an older job or a live newer
+        // recording), never local computation.
+        stageTimings.add("leaseWaitMs", since: leaseStarted)
 
         // Keep Shift eligible across this queue wait. Commit only after it, and
         // recheck lifecycle authorization below after the human reaction grace.
         // A selected result reuses the identical clipboard/archive path above;
         // it never reaches delivery, Return, custom commands or assistant output.
+        let typingCommitStarted = ContinuousClock.now
         if await commitTypingCompletion() {
             if shouldCancel() {
                 await finishCanceledTranscription(recoveredText: finalText)
@@ -1019,6 +1113,7 @@ class TranscriptionPipeline {
             }
             return
         }
+        stageTimings.add("typingCommitMs", since: typingCommitStarted)
 
         // The lease rechecks cancellation/reset before any paste/Return/command or
         // response. A Primary cohort paste may coexist with the current capture, but
@@ -1043,6 +1138,7 @@ class TranscriptionPipeline {
         // paste, saved Primary destination or extra delivery. The immutable
         // archive retains the complete context; Won't paste is separate because
         // a later manual paste has no known recipient at completion time.
+        let presentationStarted = ContinuousClock.now
         let recipient = currentPromptRecipient()
         let includesSourceContext = outputForPasteTarget.outputMode == .paste
             && LiveContextPastePolicy.includesSourceContext(
@@ -1060,6 +1156,8 @@ class TranscriptionPipeline {
             presentation: contextPresentation,
             compactFileURL: usesCompactPrompt ? archivedPromptURL : nil
         )
+        // Recipient classification plus compact/styled text assembly.
+        stageTimings.add("presentationMs", since: presentationStarted)
         if recoversTypedDraft {
             onFailureCopyText?(usesCompactPrompt ? (compactPromptText ?? completePromptText ?? finalText ?? "")
                 : (finalText ?? failureCopyText ?? ""))
@@ -1081,6 +1179,13 @@ class TranscriptionPipeline {
                 type: .error, copyText: completePromptText ?? completedText)
             return
         }
+        if let providerFinishedAt {
+            stageTimings.add("totalMs", since: providerFinishedAt)
+        }
+        // Numeric local-stage receipt (milliseconds plus job lineage only). It lands
+        // immediately before the delivery boundary so a trace can assign the
+        // post-provider remainder to real stages instead of one opaque interval.
+        vippLog.info("pipeline: local stages \(stageTimings.description, privacy: .public) \(jobIdentity.logDescription, privacy: .public)")
         vippLog.info("pipeline: captured context paste included=\(includesSourceContext, privacy: .public) destination=\(String(describing: pasteTargetForDelivery.destination), privacy: .public)")
         vippLog.info("pipeline: about to DELIVER finalChars=\(finalText?.count ?? -1, privacy: .public) finalDigest=\(TranscriptionLineageDigest.make(finalText ?? ""), privacy: .public) outputMode=\(String(describing: outputForPasteTarget.outputMode), privacy: .public) targetAutoSend=\(outputForPasteTarget.autoSendKey.rawValue, privacy: .public) autoSendDisposition=\(String(describing: autoSendDispositionNow), privacy: .public) queuedPrimaryDecision=deferredUntilReturnBoundary leasePolicy=\(String(describing: deliveryLeasePolicy), privacy: .public) destination=\(String(describing: pasteTargetForDelivery.destination), privacy: .public) skip=\(skipPostProcessingNow, privacy: .public) \(jobIdentity.logDescription, privacy: .public)")
         await delivery.deliver(
@@ -1126,5 +1231,29 @@ class TranscriptionPipeline {
         }
 
         return (mode.id, mode.name, mode.icon.value)
+    }
+}
+
+/// Privacy-safe numeric stage timing for one finish. Only stage names and elapsed
+/// milliseconds are rendered, so the receipt can enter the allowlisted delivery
+/// trace without carrying text, paths or identities beyond the job lineage the
+/// caller already logs. Elapsed intervals include scheduling and awaited work;
+/// they are not CPU measurements.
+struct PipelineStageTimings: CustomStringConvertible {
+    private(set) var stages: [(name: String, milliseconds: Double)] = []
+
+    mutating func add(_ name: String, since start: ContinuousClock.Instant) {
+        stages.append((name, Self.milliseconds(from: start, to: ContinuousClock.now)))
+    }
+
+    static func milliseconds(from start: ContinuousClock.Instant,
+                             to end: ContinuousClock.Instant) -> Double {
+        let elapsed = start.duration(to: end).components
+        return Double(elapsed.seconds) * 1_000 + Double(elapsed.attoseconds) / 1e15
+    }
+
+    var description: String {
+        stages.map { "\($0.name)=\(String(format: "%.1f", $0.milliseconds))" }
+            .joined(separator: " ")
     }
 }

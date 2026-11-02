@@ -232,12 +232,7 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
         )
         guard showsAssistant || baseSession != nil || showsStartup else { return nil }
 
-        let showsRealtimeTranscript =
-            (baseSession?.liveRecordingState.isRecordingOrPaused == true
-                || baseSession?.canTypeInHUD == true)
-            && (baseSession?.showsRealtimeTranscriptHUD == true
-                || baseSession?.canTypeInHUD == true
-                || baseSession?.liveSelectionReferences.isEmpty == false)
+        let showsRealtimeTranscript = baseSession?.showsLiveContext == true
 
         let transcriptHeight: CGFloat
         if let baseSession, showsRealtimeTranscript {

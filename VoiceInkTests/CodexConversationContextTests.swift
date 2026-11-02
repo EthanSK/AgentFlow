@@ -3,6 +3,57 @@ import Testing
 @testable import VoiceInkPlusPlus
 
 struct CodexConversationContextTests {
+    @Test @MainActor func codexHostRecognitionAcceptsBothBundledCLILayouts() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        for layout in ["codex", "codex-cli/CodexCLI.app/Contents/MacOS/codex"] {
+            let bundle = root.appendingPathComponent(UUID().uuidString + ".app")
+            let executable = bundle.appendingPathComponent("Contents/Resources/" + layout)
+            try FileManager.default.createDirectory(at: executable.deletingLastPathComponent(),
+                                                    withIntermediateDirectories: true)
+            try Data().write(to: executable)
+            try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: executable.path)
+            #expect(CodexConversationContextReader.isSupportedCodexBundle(
+                identifier: "com.openai.codex", url: bundle))
+            #expect(!CodexConversationContextReader.isSupportedCodexBundle(
+                identifier: "com.openai.chat", url: bundle))
+            try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: executable.path)
+            #expect(!CodexConversationContextReader.isSupportedCodexBundle(
+                identifier: "com.openai.codex", url: bundle))
+        }
+        let directoryOnly = root.appendingPathComponent("Directory.app")
+        try FileManager.default.createDirectory(at: directoryOnly.appendingPathComponent("Contents/Resources/codex"),
+                                                withIntermediateDirectories: true)
+        #expect(!CodexConversationContextReader.isSupportedCodexBundle(
+            identifier: "com.openai.codex", url: directoryOnly))
+        #expect(!CodexConversationContextReader.isSupportedCodexBundle(identifier: "com.openai.codex", url: nil))
+        #expect(!CodexConversationContextReader.isSupportedCodexBundle(identifier: "com.openai.codex", url: root))
+    }
+
+    @Test func unresolvedCodexScopeIsExplicitWithoutInventingASource() throws {
+        let words = "Text mentions an unrelated chat title; it is not metadata."
+        let captured = try #require(LiveSelectionReference(words))
+            .scopedToVisibleCodexThreads([])
+        let xml = LiveSelectionReference.interleaving([captured], with: "")
+        #expect(xml.contains("task_scope=\"unknown\""))
+        #expect(!xml.contains(" task_id="))
+        #expect(!xml.contains("task_title="))
+        #expect(xml.contains(words))
+        #expect(XMLParser(data: Data(xml.utf8)).parse())
+        let original = try #require(LiveSelectionReference(words))
+        let updated = original.updatingSourceLabels(from: captured)
+        #expect(LiveSelectionReference.interleaving([updated], with: "").contains("task_scope=\"unknown\""))
+        let generic = captured.scopedToApplication(name: "Code", bundleID: "com.microsoft.VSCode")
+        #expect(!LiveSelectionReference.interleaving([generic], with: "").contains("task_scope="))
+        let candidateID = "01a01b14-a352-7ad3-9bb2-295990e39fe2"
+        let candidate = captured.scopedToVisibleCodexThreads([candidateID])
+        let candidateXML = LiveSelectionReference.interleaving([candidate], with: "")
+        #expect(candidateXML.contains("task_scope=\"unknown\""))
+        #expect(candidateXML.contains("visible_task_ids=\"\(candidateID)\""))
+        #expect(!candidateXML.contains(" task_id="))
+        #expect(!candidateXML.contains("task_title="))
+    }
+
     @Test func selectionScopeRetainsMainAndSideChatUntilEachCloses() throws {
         let main = "01a01b14-a352-7ad3-9bb2-295990e39fe2"
         let side = "01a059fd-8dde-7510-a57a-9ef42b8c8228"
@@ -33,6 +84,97 @@ struct CodexConversationContextTests {
             selection.scopedToApplication(name: "TextEdit", bundleID: "com.apple.TextEdit")
         ], with: "")
         #expect(!other.contains("visible_task_ids"))
+    }
+
+    @Test func selectionScopeIgnoresActivityNamesEchoedInsideMessageOrToolLogs() {
+        let main = "01a01b14-a352-7ad3-9bb2-295990e39fe2"
+        let other = "01a059fd-8dde-7510-a57a-9ef42b8c8228"
+        let event = "thread_stream_view_activity_changed active=true conversationId=\(main) rendererWindowAppearance=primary rendererWindowVisible=true rendererWindowId=1"
+        let genuine = "2026-10-25T00:01:00.000Z info [electron-message-handler] " + event
+        let echoed = "2026-10-25T00:01:01.000Z info [electron-message-handler] Sending server request params="
+            + event.replacingOccurrences(of: main, with: other)
+        #expect(CodexConversationContextPolicy.visibleSelectionThreadIDs(from: genuine + "\n" + echoed) == [main])
+        #expect(CodexConversationContextPolicy.visibleSelectionThreadIDs(from: echoed).isEmpty)
+    }
+
+    @Test func sparseSelectionLogScanPreservesNativeLineAndAmbiguityPolicy() {
+        let ids = (1...5).map { String(format: "01a01b14-a352-7ad3-9bb2-%012d", $0) }
+        func event(_ second: Int, _ id: String, _ active: Bool = true, window: Int = 1) -> String {
+            "2026-10-27T13:20:\(String(format: "%02d", second))Z info [electron-message-handler] thread_stream_view_activity_changed active=\(active) conversationId=\(id) rendererWindowAppearance=primary rendererWindowVisible=true rendererWindowId=\(window)"
+        }
+        let first = event(1, ids[0])
+        let second = event(2, ids[1])
+        let closed = event(3, ids[1], false)
+        let echo = "2026-10-27T13:20:04Z info [electron-message-handler] Sending tool text=" + event(4, ids[2])
+        let unicode = "unrelated 🌊 回復 e\u{301} text\n"
+        let cases: [(String, [String])] = [
+            ("", []), (unicode, []), (first, [ids[0]]),
+            (first + "\n" + second, Array(ids.prefix(2))),
+            (first + "\n" + second + "\n" + closed, [ids[0]]),
+            // Out-of-order file tails still sort events by native timestamps.
+            (closed + "\n" + second + "\n" + first, [ids[0]]),
+            (first + "\n" + unicode + echo, [ids[0]]),
+            (echo + "\n" + unicode + first + "\n", [ids[0]]),
+            (first + "\n" + event(2, ids[1], window: 2), Array(ids.prefix(2))),
+            (ids.enumerated().map { event($0.offset, $0.element) }.joined(separator: "\n"), []),
+            (first.replacingOccurrences(of: "primary", with: "hotkeyWindowThread"), [ids[0]]),
+            (first.replacingOccurrences(of: "primary", with: "other"), []),
+            (first.replacingOccurrences(of: ids[0], with: "not-a-uuid"), []),
+            ("incomplete-prefix " + first, []),
+            // Preserve the old LF-only Character split, including CRLF/range edges.
+            (first + "\r\n" + second, [ids[0]]),
+            (unicode + first + "\r\n" + second + "\n" + closed, [ids[0]])
+        ]
+        for (log, expected) in cases {
+            #expect(legacySelectionScope(log) == expected)
+            #expect(CodexConversationContextPolicy.visibleSelectionThreadIDs(from: log) == expected)
+        }
+    }
+
+    @Test func sparseSelectionLogScanMatchesPreviousParserOnLargeUnicodeTails() {
+        let main = "01a01b14-a352-7ad3-9bb2-295990e39fe2"
+        let side = "01a059fd-8dde-7510-a57a-9ef42b8c8228"
+        func event(_ second: Int, _ id: String, _ active: Bool) -> String {
+            "2026-10-27T13:20:0\(second)Z info thread_stream_view_activity_changed active=\(active) conversationId=\(id) rendererWindowAppearance=primary rendererWindowVisible=true rendererWindowId=1"
+        }
+        let filler = String(repeating: "unrelated 🌊 回復 e\u{301} text without an activity event\n", count: 40_000)
+        let log = event(0, main, true) + "\n" + filler + event(1, side, true) + "\n"
+            + filler + event(2, side, false) + "\n" + filler
+            + "2026-10-27T13:20:04Z info tool request=" + event(4, side, true) + "\n" + filler
+        #expect(log.utf8.count > 8_000_000)
+        #expect(legacySelectionScope(log) == [main])
+        #expect(CodexConversationContextPolicy.visibleSelectionThreadIDs(from: log) == [main])
+    }
+
+    // Frozen build-469 parser is the equivalence oracle for the faster line scan.
+    // Keep this separate from production so quoted/native prefix and ambiguity
+    // behavior cannot silently change while reducing work on unrelated log lines.
+    private func legacySelectionScope(_ log: String) -> [String] {
+        var active: [String: Set<String>] = [:]
+        let events = log.split(separator: "\n").filter { line in
+            guard let marker = line.range(of: "thread_stream_view_activity_changed ") else { return false }
+            let prefix = line[..<marker.lowerBound].split(whereSeparator: \.isWhitespace).map(String.init)
+            guard let timestamp = prefix.first,
+                  timestamp.range(of: #"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$"#,
+                    options: .regularExpression) != nil else { return false }
+            return prefix.count == 1 || Array(prefix.dropFirst()) == ["info"]
+                || Array(prefix.dropFirst()) == ["info", "[electron-message-handler]"]
+        }.map(String.init).sorted()
+        func token(_ marker: String, _ line: String) -> String? {
+            guard let range = line.range(of: marker) else { return nil }
+            let token = line[range.upperBound...].prefix { !$0.isWhitespace }
+            return token.isEmpty ? nil : String(token)
+        }
+        for line in events {
+            guard line.contains("rendererWindowAppearance=primary") || line.contains("rendererWindowAppearance=hotkeyWindowThread"),
+                  let window = token("rendererWindowId=", line), let id = token("conversationId=", line),
+                  UUID(uuidString: id) != nil else { continue }
+            if line.contains("active=true"), line.contains("rendererWindowVisible=true") {
+                active[window, default: []].insert(id.lowercased())
+            } else { active[window, default: []].remove(id.lowercased()) }
+        }
+        let ids = active.values.reduce(into: Set<String>()) { $0.formUnion($1) }
+        return ids.count <= 4 ? ids.sorted() : []
     }
 
     private var repositoryRoot: URL {

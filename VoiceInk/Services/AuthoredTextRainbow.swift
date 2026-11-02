@@ -113,7 +113,7 @@ enum AuthoredTextRainbow {
         private var fallbackIndexes: [String: Int] = [:]
 
         func reserve(key: String, wordCount: Int, directory: URL) -> Int {
-            // These reservations run in the archive's utility task, never the
+            // These reservations run in the archive's user-initiated worker, never the
             // startup/UI path. Serialize same-process writers; a busy foreign
             // lock or unavailable disk keeps the in-memory stream moving rather
             // than resetting every message or blocking delivery on presentation.
