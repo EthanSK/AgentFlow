@@ -352,11 +352,16 @@ struct MainWindowPresentationTests {
                 windowNumber: window.windowNumber, context: nil, eventNumber: 1,
                 clickCount: 1, pressure: type == .leftMouseDown ? 1 : 0))
         }
-        let up = try event(.leftMouseUp)
-        NSApp.postEvent(up, atStart: false)
-        NSApp.sendEvent(try event(.leftMouseDown))
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        NSApp.sendEvent(up)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        // Dispatch one balanced click through AppKit's queue. Sending mouse-up
+        // again after a control's tracking loop consumed the queued release left
+        // SwiftUI gesture recognizers stuck on macOS 27.2 in the full suite.
+        // Keep real pointer delivery and every copy/content assertion intact.
+        NSApp.postEvent(try event(.leftMouseDown), atStart: false)
+        NSApp.postEvent(try event(.leftMouseUp), atStart: false)
+        let deadline = Date().addingTimeInterval(0.1)
+        while let queued = NSApp.nextEvent(matching: .any, until: deadline,
+                                           inMode: .default, dequeue: true) {
+            NSApp.sendEvent(queued)
+        }
     }
 }
