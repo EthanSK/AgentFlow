@@ -62,7 +62,7 @@
       a generic selection from TextEdit; Codex keeps its own task-aware tag.
       The recorder's typing line shows "Click to type" until the typed name appears; the
       same typed words close the Codex paste. It matches the promo video's example.
-      The Codex pane mirrors AgentFlowPromptPreview.make in v2.0.458: one plain, editable
+      The Codex pane mirrors AgentFlowPromptPreview.make in v2.0.477: one plain, editable
       opening (a leading ↗ full-prompt link, every authored word, and inline-code
       <selection>/<screenshot> markers), never rainbow-coloured. A message this short also
       gets the canonical timeline appended underneath; at 5,000 UTF-16 units or more the
@@ -78,8 +78,8 @@
           <h1 id="hero-title">Speech to text, with your <span class="g-select">highlights</span> and <span class="g-shot">screenshots</span></h1>
           <div class="hero-aside" id="download">
             <p class="lede">Highlight text or take a screenshot while you talk. Agent Flow pastes your words with each reference near what you were saying, so your agent can see what you were looking at.</p>
-            <p class="actions"><a class="button" href="https://github.com/EthanSK/AgentFlow/releases/download/v2.0.458/AgentFlow-v2.0.458-mac-universal.zip">Download for Mac <span aria-hidden="true">↓</span></a></p>
-            <p class="release-note">v2.0.458 · macOS 14.4+ · Apple silicon and Intel<br>Developer ID signed and Apple notarized.</p>
+            <p class="actions"><a class="button" href="https://github.com/EthanSK/AgentFlow/releases/download/v2.0.477/AgentFlow-v2.0.477-mac-universal.zip">Download for Mac <span aria-hidden="true">↓</span></a></p>
+            <p class="release-note">v2.0.477 · macOS 14.4+ · Apple silicon and Intel<br>Developer ID signed and Apple notarized.</p>
             <p class="source-link"><a href="#build">Build from source</a></p>
           </div>
         </div>
@@ -227,7 +227,7 @@
     </section>
 
     <!--
-      Setup mirrors the v2.0.458 onboarding order: required Microphone + Accessibility
+      Setup mirrors the v2.0.477 onboarding order: required Microphone + Accessibility
       (Screen Recording is optional), microphone choice, the required local Parakeet
       download, then an optional provider key that can be skipped. The app bundles no keys
       or private endpoints and never installs skills or extensions by itself; the context
@@ -281,7 +281,7 @@
             <li>History keeps your results. A double-press finish saves the recording's audio and live words first, so you can replay, copy or retranscribe it.</li>
           </ul>
           <!--
-            Next Track in v2.0.458 (RecordingShortcutManager onNextTrackKeyDown): consumed while the
+            Next Track in v2.0.477 (RecordingShortcutManager onNextTrackKeyDown): consumed while the
             recorder is visible, so it never skips music then. Recording-start saved-input capture
             is hard-off (FocusLockService.recordingStartInputCaptureEnabled = false), so Next while
             recording is a consumed no-op. Primary stays base current-input delivery and owns no

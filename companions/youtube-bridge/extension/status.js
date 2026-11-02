@@ -213,7 +213,7 @@ const render = (status) => {
   }
   if (autoPauseDetail) {
     autoPauseDetail.textContent = autoPauseSaveError || (!settingKnown ? 'Failed to load setting' :
-      !autoPause.enabled ? "YouTube won't pause or resume for VoiceInk." :
+      !autoPause.enabled ? "YouTube won't pause or resume for Agent Flow." :
         autoPause.suppressedUntilIdle ? 'Applies from the next recording.' : '');
     autoPauseDetail.classList.toggle('is-error', !!autoPauseSaveError || !settingKnown);
   }
@@ -319,7 +319,7 @@ const render = (status) => {
     } else if (voiceInkResumePending) {
       label = `${label}, resume pending`;
     } else if (youtubePausedForDictation) {
-      label = `${label}, paused for VoiceInk`;
+      label = `${label}, paused for Agent Flow`;
     }
 
     setRow(

@@ -197,7 +197,7 @@ private final class MenuBarMediaKeyController {
   private func setupStatusItem() {
     statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     statusItem?.button?.title = "YS"
-    statusItem?.button?.toolTip = "YouTube Spotify Media Key"
+    statusItem?.button?.toolTip = "Agent Flow Bridge"
     // This status item has no hover behavior. Opting its private status-bar window out of mouse-moved
     // delivery preserves clicks/menu opening while avoiding macOS repeatedly regenerating the
     // Accessibility cursor when the pointer moves across the menu bar.
@@ -807,7 +807,7 @@ private final class MenuBarMediaKeyController {
       isMediaKeyTapInstalled = false
       mediaKeyTapError = accessibilityTrusted
         ? "macOS refused the media-key event tap. Check Input Monitoring for the menu bar app if prompted."
-        : "Turn on YouTube Spotify Media Key.app in Accessibility."
+        : "Turn on Agent Flow Bridge.app in Accessibility."
       sendStatus("media-key-tap-unavailable")
       log("Could not install media-key event tap for menu bar app. accessibilityTrusted=\(accessibilityTrusted)")
       refreshMenu()
@@ -831,7 +831,7 @@ private final class MenuBarMediaKeyController {
   private func disableMediaKeyTap() {
     isAccessibilityTrusted = false
     isMediaKeyTapInstalled = false
-    mediaKeyTapError = "Hardware media-key routing is disabled by design; VoiceInk YouTube auto-pause uses recording notifications instead."
+    mediaKeyTapError = "Hardware media-key routing is disabled by design; Agent Flow YouTube auto-pause uses recording notifications instead."
   }
 
   private func handleYouTubeState(_ message: BridgeMessage) {
@@ -1086,7 +1086,7 @@ private final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 if CommandLine.arguments.contains("--request-accessibility") {
-  print("Hardware media-key routing is disabled; Accessibility is not required for VoiceInk YouTube auto-pause.")
+  print("Hardware media-key routing is disabled; Accessibility is not required for Agent Flow YouTube auto-pause.")
   exit(0)
 }
 

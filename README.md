@@ -14,9 +14,9 @@
 
 ## Download
 
-[Download Agent Flow v2.0.458 for Mac](https://github.com/EthanSK/AgentFlow/releases/download/v2.0.458/AgentFlow-v2.0.458-mac-universal.zip). Requires macOS 14.4 or later; supports Apple silicon and Intel. The public app is Developer ID signed, Apple notarized and stapled. Unzip it and move Agent Flow to Applications, then follow [Setup](SETUP.md).
+[Download Agent Flow v2.0.477 for Mac](https://github.com/EthanSK/AgentFlow/releases/download/v2.0.477/AgentFlow-v2.0.477-mac-universal.zip). Requires macOS 14.4 or later; supports Apple silicon and Intel. The public app is Developer ID signed, Apple notarized and stapled. Unzip it and move Agent Flow to Applications, then follow [Setup](SETUP.md).
 
-[Release notes and checksums](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.458) · [Build from source](#build-from-source)
+[Release notes and checksums](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.477) · [Build from source](#build-from-source)
 
 The app includes an Intel build, but local models are not reliable on Intel Macs; use a cloud transcription provider there. Cloud providers require your own account, key and any usage charges. Apple-silicon Macs can use the downloaded local model without a provider key.
 
@@ -106,7 +106,7 @@ The recorder appears on every connected monitor, anchored to the screen bottom b
 
 ## YouTube and Chrome companion
 
-The optional [Agent Flow YouTube Bridge](companions/youtube-bridge/README.md) pauses a playing YouTube video when dictation starts and resumes only the video it paused. It also supports Agentic Mouse's YouTube controls, Chrome tab history and website shortcuts. Its extension, macOS helper, tests and install scripts are in this repository; install it separately with the [agent setup guide](companions/youtube-bridge/AGENT_SETUP.md).
+The optional [Agent Flow Bridge](companions/youtube-bridge/README.md) pauses a playing YouTube video when dictation starts and resumes only the video it paused. It also supports Agentic Mouse's YouTube controls, Chrome tab history and website shortcuts. Its extension, macOS helper, tests and install scripts are in this repository; install it separately with the [agent setup guide](companions/youtube-bridge/AGENT_SETUP.md).
 
 ## Build from source
 

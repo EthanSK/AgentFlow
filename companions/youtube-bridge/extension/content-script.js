@@ -531,10 +531,34 @@
   // `resume-youtube`: play ONLY if the video is currently paused/ended. We use the player button
   //   first (same reason as toggle) so YouTube's UI state stays consistent.
 
+  // Ethan's "music playlist or videos" are background music, like Spotify: automatic recording
+  // starts must not claim them. A previously owned notification pause still resumes normally.
+  // Read only the current watch title / matching playlist
+  // header; recommendations, comments and stale hidden SPA panels are not playback metadata.
+  const hasMusicTitle = () => {
+    const isMusic = value => /(?:^|[^\p{L}\p{N}])music(?=$|[^\p{L}\p{N}])/iu
+      .test(String(value || '').slice(0, 1024).normalize('NFKC'));
+    const url = new URL(location.href);
+    const metadata = [...(document.querySelectorAll?.('ytd-watch-metadata') || [])];
+    const current = metadata.find(node => node.getAttribute('video-id') === url.searchParams.get('v')
+      && !node.closest('[hidden]'));
+    if (isMusic(current?.querySelector('h1')?.textContent)
+      || ((url.pathname !== '/watch' || metadata.length === 0) && isMusic(document.title))) return true;
+
+    const listId = url.searchParams.get('list');
+    if (!listId) return false;
+    for (const header of document.querySelectorAll?.('ytd-playlist-panel-renderer #header-description h3 a[href]') || []) {
+      if (header.closest('[hidden]')) continue;
+      const headerUrl = new URL(header.getAttribute('href'), location.href);
+      if (headerUrl.searchParams.get('list') === listId && isMusic(header.textContent)) return true;
+    }
+    return false;
+  };
+
   /**
    * @returns {Promise<{ ok: boolean; paused?: boolean; reason?: string }>}
    */
-  const pauseYouTube = async () => {
+  const pauseYouTube = async (respectMusicTitle = false) => {
     // Prefer the PiP video: a video in Picture-in-Picture is the one the user is watching, and calling
     // .pause() on the underlying media element pauses it even while it's in the PiP window (the element
     // stays in the DOM; PiP is just an alternate presentation surface). This is the core PiP actuation fix.
@@ -545,6 +569,10 @@
       clog('pause-youtube received: NO VIDEO ELEMENT');
       return { ok: false, paused: false, reason: 'no-video' };
     }
+
+    // Explicit protocol opt-in keeps an older worker compatible with newly reinjected page code.
+    // A legacy worker still owns its original pause/resume pair and must be able to finish it.
+    if (respectMusicTitle && hasMusicTitle()) return { ok: true, paused: false, reason: 'music-title-exempt' };
 
     clog(`pause-youtube received: isPiP=${isPiP} video.paused=${video.paused} ended=${video.ended} playing=${isVideoPlaying(video)}`);
 
@@ -595,6 +623,7 @@
       clog('resume-youtube received: NO VIDEO ELEMENT');
       return { ok: false, resumed: false, reason: 'no-video' };
     }
+
 
     clog(`resume-youtube received: isPiP=${isPiP} video.paused=${video.paused} ended=${video.ended} playing=${isVideoPlaying(video)}`);
 
@@ -750,7 +779,7 @@
     switch (typedMessage.type) {
       case 'state-request':
         sendState('state-request');
-        sendResponse({ ok: true });
+        sendResponse({ ok: true, musicPolicyVersion: 1 });
         return false;
 
       case 'toggle-youtube':
@@ -764,7 +793,7 @@
       case 'pause-youtube':
         // VoiceInk record-start: pause only if playing. Response carries `paused` so the
         // background/menu-bar layers know whether this tab should be remembered for resume.
-        pauseYouTube()
+        pauseYouTube(message.respectMusicTitle === true)
           .then((response) => sendResponse(response))
           .catch((error) =>
             sendResponse({ ok: false, paused: false, reason: String(error) }),

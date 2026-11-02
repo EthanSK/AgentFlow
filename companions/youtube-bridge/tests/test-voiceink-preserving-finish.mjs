@@ -6,9 +6,9 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const read = (relativePath) => fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
 
-const shared = read('shared/YoutubeSpotifyMediaKeyShared.swift');
+const shared = read('shared/AgentFlowBridgeShared.swift');
 const menu = read('menu-bar/main.swift');
-const host = read('native-host/YoutubeSpotifyMediaKeyNativeHost.swift');
+const host = read('native-host/AgentFlowBridgeNativeHost.swift');
 const background = read('extension/background.js');
 
 const notificationName = 'com.ethansk.voiceink.recordingStoppedPreservingPlayback';

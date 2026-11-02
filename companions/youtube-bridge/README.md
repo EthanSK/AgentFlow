@@ -1,6 +1,6 @@
-# Agent Flow YouTube Bridge
+# Agent Flow Bridge
 
-Optional macOS + Chrome helper for pausing a playing video while Agent Flow is recording and resuming only that same video when recording stops. Extension 0.2.6 retains the dedicated YouTube adapter and adds ordinary website video players.
+Optional macOS + Chrome helper for pausing a playing video while Agent Flow is recording and resuming only that same video when recording stops. Extension 0.2.8 retains the dedicated YouTube adapter and adds ordinary website video players. Videos or playlists whose current title contains “music” keep playing during dictation; notification speech retains its normal pause/resume ownership.
 
 ## Website access
 
@@ -30,7 +30,7 @@ The extension popup's **Pause YouTube for VoiceInk** switch controls automatic r
 - If the extension's four-minute stale-session watchdog fires, it clears only its saved dictation ownership. Timeout, extension startup, helper restart, and content-script reinjection never call `play()`; an explicit matching `recordingStopped` event is required to resume a video paused for dictation.
 - This is complementary to Agent Flow's own media pause (Spotify / Apple Music / MediaRemote): those apps stay on the VoiceInk side; YouTube tabs in Chrome — which MediaRemote can't reliably pause — are covered here.
 
-The notification-name strings are the cross-app contract and live in both `shared/YoutubeSpotifyMediaKeyShared.swift` (`VoiceInkRecordingNotification`) and the Agent Flow repo's `RecordingActivityNotifier.swift`; keep them in sync.
+The notification-name strings are the cross-app contract and live in both `shared/AgentFlowBridgeShared.swift` (`VoiceInkRecordingNotification`) and the Agent Flow repo's `RecordingActivityNotifier.swift`; keep them in sync.
 
 ## Agentic Mouse YouTube scrub
 
@@ -140,7 +140,7 @@ temporary 2× speed, and sticky-speed reset use the same selected video. A speed
 hold ends when its clip changes, including when Shorts reuses the video element;
 Picture-in-Picture retains priority. Returning to a watch page selects its player.
 
-The install script also copies the menu bar app to `~/Applications/YouTube Spotify Media Key.app`, launches it, and registers a LaunchAgent so it starts at login.
+The install script also copies the menu bar app to `~/Applications/Agent Flow Bridge.app`, launches it, and registers a LaunchAgent so it starts at login.
 
 The extension ID should be:
 
@@ -159,7 +159,7 @@ If macOS asks for Accessibility for this helper, that is a bug or an old install
 Check Spotify state:
 
 ```sh
-./dist/native-host/youtube-spotify-media-key-host --spotify-state
+./dist/native-host/AgentFlowBridgeHost --spotify-state
 ```
 
 Check that the installed helper will not request Accessibility:

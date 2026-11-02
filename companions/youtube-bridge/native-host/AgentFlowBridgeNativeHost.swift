@@ -1,6 +1,6 @@
 import Foundation
 
-private final class NativeBridgeController {
+private final class NativeBridgeController { // Previously YoutubeSpotifyMediaKeyNativeHost.swift; this is the Agent Flow Bridge Host.
   private let bridgeId = UUID().uuidString
   private let input = FileHandle.standardInput
   private let output = FileHandle.standardOutput
@@ -56,36 +56,46 @@ private final class NativeBridgeController {
 
   private func readLoop() {
     while true {
-      let header = input.readData(ofLength: 4)
+      // Memory fix — one autorelease pool per Chrome message. This detached thread never returns to
+      // a run loop, so without an explicit pool nothing ever drains what it autoreleases.
+      // FileHandle.readData(ofLength:) returns an autoreleased NSData backed by an 8 KB pipe-read
+      // buffer (even for the 4-byte header), so every message used to strand ~16 KB in MALLOC_SMALL
+      // for the life of the process: an eight-day host reached a 4.3 GB footprint. Popping the pool
+      // here frees both buffers once the message is decoded. The decoded BridgeMessage is a value
+      // type that holds no reference to them, and the serial read → main-queue hand-off order is
+      // unchanged.
+      autoreleasepool {
+        let header = input.readData(ofLength: 4)
 
-      if header.isEmpty {
-        postBridgeMessage(type: "bridge-disconnected")
-        exit(0)
-      }
-
-      guard header.count == 4 else {
-        log("Received truncated native messaging header.")
-        postBridgeMessage(type: "bridge-disconnected")
-        exit(1)
-      }
-
-      let messageLength = Self.nativeMessageLength(from: header)
-      let messageData = input.readData(ofLength: Int(messageLength))
-
-      guard messageData.count == Int(messageLength) else {
-        log("Received truncated native messaging body.")
-        postBridgeMessage(type: "bridge-disconnected")
-        exit(1)
-      }
-
-      do {
-        let message = try JSONDecoder().decode(BridgeMessage.self, from: messageData)
-
-        DispatchQueue.main.async { [weak self] in
-          self?.handleChromeMessage(message)
+        if header.isEmpty {
+          postBridgeMessage(type: "bridge-disconnected")
+          exit(0)
         }
-      } catch {
-        log("Could not decode native message: \(error)")
+
+        guard header.count == 4 else {
+          log("Received truncated native messaging header.")
+          postBridgeMessage(type: "bridge-disconnected")
+          exit(1)
+        }
+
+        let messageLength = Self.nativeMessageLength(from: header)
+        let messageData = input.readData(ofLength: Int(messageLength))
+
+        guard messageData.count == Int(messageLength) else {
+          log("Received truncated native messaging body.")
+          postBridgeMessage(type: "bridge-disconnected")
+          exit(1)
+        }
+
+        do {
+          let message = try JSONDecoder().decode(BridgeMessage.self, from: messageData)
+
+          DispatchQueue.main.async { [weak self] in
+            self?.handleChromeMessage(message)
+          }
+        } catch {
+          log("Could not decode native message: \(error)")
+        }
       }
     }
   }
@@ -258,7 +268,7 @@ private final class NativeBridgeController {
     message.spotifyState = SpotifyState.unknown.rawValue
     message.accessibilityTrusted = false
     message.mediaKeyTapInstalled = false
-    message.mediaKeyTapError = "Menu bar app is not running. Launch YouTube Spotify Media Key.app."
+    message.mediaKeyTapError = "Menu bar app is not running. Launch Agent Flow Bridge.app."
     message.appRunning = false
     message.bridgeConnected = true
     message.message = "menu-app-not-running"

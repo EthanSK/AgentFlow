@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 enum MediaOwner: String {
   case spotify
@@ -204,7 +205,7 @@ enum AgenticMouseChromeWebsite: String, CaseIterable {
   }
 }
 
-enum BridgeNotification {
+enum BridgeNotification { // Previously YoutubeSpotifyMediaKeyShared.swift; keep these protocol names stable for Agent Flow, Agentic Mouse and spoken reminders.
   static let bridgeToApp = Notification.Name("com.ethan.youtubeSpotifyMediaKey.bridgeToApp")
   static let appToBridge = Notification.Name("com.ethan.youtubeSpotifyMediaKey.appToBridge")
   static let payloadKey = "payload"
@@ -291,10 +292,13 @@ func log(_ message: String) {
   if !FileManager.default.fileExists(atPath: logURL.path) {
     FileManager.default.createFile(atPath: logURL.path, contents: nil)
   }
-  if let data = line.data(using: .utf8), let handle = try? FileHandle(forWritingTo: logURL) {
-    handle.seekToEndOfFile()
-    handle.write(data)
-    handle.closeFile()
+  if let data = line.data(using: .utf8) {
+    let descriptor = Darwin.open(logURL.path, O_WRONLY | O_APPEND) // Both helper processes append here; O_APPEND prevents one seek/write pair from overwriting the other.
+    if descriptor >= 0 {
+      let handle = FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
+      handle.write(data)
+      handle.closeFile()
+    }
   }
   FileHandle.standardError.write(Data(line.utf8))
 
@@ -315,7 +319,7 @@ func log(_ message: String) {
 
 // Drop every line older than the 30-day retention window and atomically rewrite the file. Robust by
 // design because this runs unattended and must NEVER corrupt the log or crash a binary:
-//   - Reads the whole file, keeps a line if its leading ISO8601 timestamp parses AND is within the
+//   - Streams one line at a time, keeps a line if its leading ISO8601 timestamp parses AND is within the
 //     window. Lines with NO parseable timestamp (legacy pre-timestamp backlog, or a rare multi-line
 //     entry continuation) are kept ONLY if they fall in the tail safety window — this drops the huge
 //     ancient timestampless backlog on the first run while never dropping recent context.
@@ -323,62 +327,76 @@ func log(_ message: String) {
 //     leaves the original intact.
 //   - Any failure is swallowed (best-effort): a pruning error must never take down logging itself.
 func pruneLog() {
-  let path = logURL.path
-  guard FileManager.default.fileExists(atPath: path),
-        let raw = try? String(contentsOf: logURL, encoding: .utf8)
-  else {
-    return
+  guard let input = fopen(logURL.path, "r") else { return }
+  defer { fclose(input) }
+  var lineBuffer: UnsafeMutablePointer<CChar>?
+  var lineCapacity = 0
+  defer { free(lineBuffer) }
+
+  // Count entries without retaining their text. The final empty entry still counts, matching the
+  // previous split-on-newline behavior and its existing tail safety window.
+  var totalCount = 0
+  var endedWithNewline = false
+  while true {
+    let length = getline(&lineBuffer, &lineCapacity, input)
+    if length < 0 { break }
+    totalCount += 1
+    if let lineBuffer { endedWithNewline = lineBuffer[length - 1] == 10 }
   }
+  guard ferror(input) == 0, fseek(input, 0, SEEK_SET) == 0 else { return }
+  if endedWithNewline { totalCount += 1 }
 
-  // Keep the trailing newline semantics simple: split on newlines, we re-join with \n and add a final
-  // newline at the end. An empty last element (from a trailing \n) is dropped by the filter below.
-  let lines = raw.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-  let cutoff = Date().addingTimeInterval(-logRetentionSeconds)
-
-  // Tail safety window for timestampless lines: keep at most this many of them from the end. On the
-  // first prune of the legacy (all-timestampless) 70k-line backlog this collapses it to a small tail
-  // while precise timestamp pruning takes over for everything written after this change.
+  // Tail safety window for timestampless lines: keep at most this many entries from the end. This
+  // collapses the old timestampless backlog while keeping recent multi-line context.
   let tailKeepWindow = 3000
-  let totalCount = lines.count
-
-  var kept: [String] = []
-  kept.reserveCapacity(min(totalCount, 10000))
-
-  for (index, line) in lines.enumerated() {
-    if line.isEmpty {
-      continue
-    }
-
-    if let timestamp = parseLeadingTimestamp(line) {
-      // Precise path: keep iff within the retention window.
-      if timestamp >= cutoff {
-        kept.append(line)
-      }
-      // else: clearly old → drop.
-    } else {
-      // No parseable timestamp → keep only if near the end of the file (recent-by-position).
-      if index >= totalCount - tailKeepWindow {
-        kept.append(line)
-      }
-    }
-  }
-
-  // Nothing to do if we'd keep everything (avoid a pointless rewrite + its race window).
-  if kept.count == totalCount || (kept.count == totalCount - 1 && raw.hasSuffix("\n")) {
-    return
-  }
-
-  let output = kept.isEmpty ? "" : kept.joined(separator: "\n") + "\n"
+  let cutoff = Date().addingTimeInterval(-logRetentionSeconds)
   let tempURL = logURL.deletingLastPathComponent()
     .appendingPathComponent("youtube-spotify-media-key.log.prune-\(UUID().uuidString)")
-
+  guard let output = fopen(tempURL.path, "w") else { return }
+  defer {
+    fclose(output)
+    try? FileManager.default.removeItem(at: tempURL) // A read, write or replace failure leaves the original intact; discard only this unfinished output.
+  }
+  var index = 0
+  var changed = false
+  var retainedAnyLine = false
+  var lastRetainedLineEndedWithNewline = true
+  while true {
+    let length = getline(&lineBuffer, &lineCapacity, input)
+    if length < 0 { break }
+    guard let lineBuffer else { return }
+    let succeeded = autoreleasepool { // Release Foundation parsing objects per line, rather than retaining a whole log's temporary allocations.
+      let isEmpty = length == 1 && lineBuffer[0] == 10
+      let line = String(decoding: Data(bytes: lineBuffer, count: length), as: UTF8.self) // A torn UTF-8 body must not disable retention; retained bytes are copied unchanged below.
+      let keep: Bool
+      if isEmpty {
+        keep = false
+      } else if let timestamp = parseLeadingTimestamp(line) {
+        keep = timestamp >= cutoff // Precise path: drop only entries older than the existing 30-day window.
+      } else {
+        keep = index >= totalCount - tailKeepWindow // No parseable timestamp: retain only recent-by-position context.
+      }
+      if keep {
+        guard fwrite(lineBuffer, 1, length, output) == length else { return false }
+        retainedAnyLine = true
+        lastRetainedLineEndedWithNewline = lineBuffer[length - 1] == 10
+      } else {
+        changed = true
+      }
+      return true
+    }
+    guard succeeded else { return }
+    index += 1
+  }
+  guard ferror(input) == 0, changed else { return } // Keeping everything must not rewrite the file or create an unnecessary replace window.
+  if retainedAnyLine && !lastRetainedLineEndedWithNewline {
+    guard fputc(10, output) != EOF else { return } // A rewritten file ends with one newline, as the previous join-and-append implementation did.
+  }
+  guard fflush(output) == 0 else { return }
   do {
-    try output.data(using: .utf8)?.write(to: tempURL)
-    // Atomic replace: on POSIX this rename is atomic, so a reader/appender never sees a half-written file.
-    _ = try FileManager.default.replaceItemAt(logURL, withItemAt: tempURL)
+    _ = try FileManager.default.replaceItemAt(logURL, withItemAt: tempURL) // Atomic replace: readers never observe a half-written log.
   } catch {
-    // Best-effort: clean up the temp file if the replace failed, and leave the original untouched.
-    try? FileManager.default.removeItem(at: tempURL)
+    return // Best-effort pruning never takes down logging; the deferred cleanup removes only the failed temporary output.
   }
 }
 
@@ -389,5 +407,6 @@ private func parseLeadingTimestamp(_ line: String) -> Date? {
     return nil
   }
   let token = String(line[line.startIndex..<spaceIndex])
-  return logTimestampFormatter.date(from: token)
+  guard token.contains(".") else { return nil } // Preserve the existing fractional-second timestamp requirement.
+  return try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(token) // This Foundation value parser avoids the per-line Objective-C formatter cost on large logs.
 }

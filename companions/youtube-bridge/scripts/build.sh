@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Build or manage the optional Agent Flow Bridge from this portable public checkout.
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -6,7 +7,7 @@ dist_dir="$repo_root/dist"
 extension_dist="$dist_dir/extension"
 native_dist="$dist_dir/native-host"
 menu_bar_dist="$dist_dir/menu-bar"
-menu_bar_app="$menu_bar_dist/YouTube Spotify Media Key.app"
+menu_bar_app="$menu_bar_dist/Agent Flow Bridge.app"
 menu_bar_macos="$menu_bar_app/Contents/MacOS"
 menu_bar_resources="$menu_bar_app/Contents/Resources"
 codesign_identity="${YOUTUBE_SPOTIFY_MEDIA_KEY_CODESIGN_IDENTITY:--}"
@@ -39,12 +40,12 @@ mkdir -p "$extension_dist" "$native_dist" "$menu_bar_macos" "$menu_bar_resources
 bash "$repo_root/scripts/package-extension.sh" "$extension_dist"
 
 swiftc \
-  "$repo_root/shared/YoutubeSpotifyMediaKeyShared.swift" \
-  "$repo_root/native-host/YoutubeSpotifyMediaKeyNativeHost.swift" \
-  -o "$native_dist/youtube-spotify-media-key-host" \
+  "$repo_root/shared/AgentFlowBridgeShared.swift" \
+  "$repo_root/native-host/AgentFlowBridgeNativeHost.swift" \
+  -o "$native_dist/AgentFlowBridgeHost" \
   -framework AppKit \
   -framework ApplicationServices
-codesign_binary "$native_dist/youtube-spotify-media-key-host"
+codesign_binary "$native_dist/AgentFlowBridgeHost"
 
 cat > "$menu_bar_app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -54,21 +55,21 @@ cat > "$menu_bar_app/Contents/Info.plist" <<PLIST
   <key>CFBundleDevelopmentRegion</key>
   <string>en</string>
   <key>CFBundleExecutable</key>
-  <string>youtube-spotify-media-key-app</string>
+  <string>AgentFlowBridge</string>
   <key>CFBundleIdentifier</key>
   <string>com.ethan.youtubeSpotifyMediaKey</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleName</key>
-  <string>YouTube Spotify Media Key</string>
+  <string>Agent Flow Bridge</string>
   <key>CFBundleIconFile</key>
   <string>AppIcon</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.1</string>
+  <string>0.2.0</string>
   <key>CFBundleVersion</key>
-  <string>2</string>
+  <string>3</string>
   <key>LSMinimumSystemVersion</key>
   <string>13.0</string>
   <key>LSUIElement</key>
@@ -83,9 +84,9 @@ PLIST
 cp "$repo_root/assets/AppIcon.icns" "$menu_bar_resources/AppIcon.icns"
 
 swiftc \
-  "$repo_root/shared/YoutubeSpotifyMediaKeyShared.swift" \
+  "$repo_root/shared/AgentFlowBridgeShared.swift" \
   "$repo_root/menu-bar/main.swift" \
-  -o "$menu_bar_macos/youtube-spotify-media-key-app" \
+  -o "$menu_bar_macos/AgentFlowBridge" \
   -framework AppKit \
   -framework ApplicationServices
 
@@ -95,7 +96,7 @@ echo "Built extension:"
 echo "$extension_dist"
 echo
 echo "Built native host:"
-echo "$native_dist/youtube-spotify-media-key-host"
+echo "$native_dist/AgentFlowBridgeHost"
 echo
 echo "Built menu bar app:"
 echo "$menu_bar_app"

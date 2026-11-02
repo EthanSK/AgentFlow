@@ -1211,15 +1211,15 @@ const sendToggleToTab = async (tabId) => {
 
 /**
  * @param {number} tabId
- * @param {'pause-youtube' | 'resume-youtube'} type
+ * @param {'pause-youtube' | 'resume-youtube' | 'state-request'} type
  * @returns {Promise<{ delivered: boolean; response: Record<string, unknown> | null; reason: string }>}
  */
-const sendDirectionalToTab = async (tabId, type, canSend = () => true) => {
+const sendDirectionalToTab = async (tabId, type, canSend = () => true, respectMusicTitle = false) => {
   const generic = await usesGenericVideo(tabId);
   if (!canSend()) return { delivered: false, response: null, reason: 'playback-command-superseded' };
   if (generic) return genericVideoRouter.send(tabId, { type }, canSend);
   try { return await browserCall(() => new Promise((resolve) => {
-    chrome.tabs.sendMessage(tabId, { type, expiresAt: Date.now() + (genericVideoRouter?.browserTimeoutMs ?? 2000) }, (response) => {
+    chrome.tabs.sendMessage(tabId, { type, respectMusicTitle, expiresAt: Date.now() + (genericVideoRouter?.browserTimeoutMs ?? 2000) }, (response) => {
       if (chrome.runtime.lastError) {
         resolve({
           delivered: false,
@@ -1253,12 +1253,24 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * @param {'pause-youtube' | 'resume-youtube'} type
  * @returns {Promise<{ delivered: boolean; response: Record<string, unknown> | null; reason: string }>}
  */
-const sendDirectionalWithReinject = async (tabId, type) => {
+const sendDirectionalWithReinject = async (tabId, type, respectMusicTitle = false) => {
   if (await usesGenericVideo(tabId)) return genericVideoRouter.send(tabId, { type });
+  if (respectMusicTitle) {
+    // Only inspect the selected candidate, never wait for every open tab's startup injection.
+    // A new worker cannot ask old page code to apply a policy it does not understand.
+    let policy = await sendDirectionalToTab(tabId, 'state-request');
+    if (policy.response?.musicPolicyVersion !== 1) {
+      await injectContentScript(tabId);
+      policy = await sendDirectionalToTab(tabId, 'state-request');
+    }
+    if (policy.response?.musicPolicyVersion !== 1) {
+      return { delivered: false, response: null, reason: 'music-policy-unavailable' };
+    }
+  }
   // A healthy player already has its listener. Reinjecting before every recording
   // start needlessly waits for script evaluation and tears down the old listener.
   // Send first; retain the same bounded recovery when a receiver is actually missing.
-  let result = await sendDirectionalToTab(tabId, type);
+  let result = await sendDirectionalToTab(tabId, type, () => true, respectMusicTitle);
 
   // No receiver ⇒ the content-script context was likely invalidated (extension reload / tab churn).
   // Re-inject a fresh listener and retry the same tab ONCE — don't abandon the correct target on a
@@ -1266,7 +1278,7 @@ const sendDirectionalWithReinject = async (tabId, type) => {
   if (!result.delivered && !result.reason.startsWith('browser-timeout:')) {
     clog('background', `${type} tab=${tabId} not delivered ("${result.reason}") — re-injecting + retrying once`);
     await injectContentScript(tabId);
-    result = await sendDirectionalToTab(tabId, type);
+    result = await sendDirectionalToTab(tabId, type, () => true, respectMusicTitle);
     clog('background', `${type} tab=${tabId} retry delivered=${result.delivered} reason="${result.reason}"`);
   }
 
@@ -1758,9 +1770,9 @@ const resumeTabWithConfirmation = async (tabId, sessionToken, reason) => {
  * stale/missing, which was a "dictation didn't pause" cause. The content script pauses ONLY if the
  * video is genuinely playing, so pinging every tab is safe.
  * @param {Set<number>} alreadyTriedTabIds  Tabs the tracked path already attempted (skip them).
- * @returns {Promise<number | null>}  The tab id we paused, or null.
+ * @returns {Promise<number | 'music-title-exempt' | null>} The paused tab, music exemption, or null.
  */
-const pauseAnyPlayingYouTubeTab = async (alreadyTriedTabIds) => {
+const pauseAnyPlayingYouTubeTab = async (alreadyTriedTabIds, respectMusicTitle = false) => {
   let tabs = [];
   let lastFocusedWindowId = null;
   try {
@@ -1795,7 +1807,8 @@ const pauseAnyPlayingYouTubeTab = async (alreadyTriedTabIds) => {
   for (const tabId of candidateIds) {
     // Inject-before-send + retry-once (FIX 4). Ensures a live listener even for tabs open before the
     // extension loaded, and recovers a tab whose context was invalidated.
-    const result = await sendDirectionalWithReinject(tabId, 'pause-youtube');
+    const result = await sendDirectionalWithReinject(tabId, 'pause-youtube', respectMusicTitle);
+    if (result.response?.reason === 'music-title-exempt') return 'music-title-exempt';
     clog(
       'background',
       `pause FALLBACK try tab=${tabId} delivered=${result.delivered} paused=${result.response?.paused} reason="${result.response?.reason ?? result.reason ?? ''}"`,
@@ -1820,9 +1833,22 @@ const pauseAnyPlayingYouTubeTab = async (alreadyTriedTabIds) => {
  * @param {string} reason  Diagnostic reason from the native host (e.g. 'voiceink-recording-started').
  * @returns {Promise<void>}
  */
+const suppressRecordingPlaybackForMusic = () => {
+  // An exempt music target ends the search. Never pause some other background video or adopt a
+  // manually paused music tab; persist suppression across overlapping recordings and worker sleep.
+  dictationAutoPauseSuppressed = true;
+  dictationPausedTabId = null;
+  persistDictationPausedTabId();
+  persistDictationState();
+  postPauseResult(null, null, false, 'music-title-exempt');
+};
+
 const pauseYouTubeForDictation = async (reason) => {
   await hydrateFromStorage(); // MV3 worker may have slept since the last report — restore the map + session.
   await loadAutoPausePreference();
+  // Notification speech retains its normal pause. Only fresh recording targets get the music
+  // exemption; an existing notification owner must survive the handoff into recording.
+  const respectMusicTitle = reason.startsWith('voiceink-');
 
   // Self-heal: if we still think a session is active but it started implausibly long ago, the previous
   // recordingStopped was almost certainly dropped — reset before starting fresh so its stale target /
@@ -1870,6 +1896,8 @@ const pauseYouTubeForDictation = async (reason) => {
     const targetTabId = dictationPausedTabId;
     const result = await sendDirectionalWithReinject(targetTabId, 'pause-youtube');
     const responseReason = result.response?.reason ?? result.reason ?? '';
+    // A notification may already have paused this music before recording began. Keep that
+    // existing ownership through the handoff; the final balanced stop must resume it.
     const targetStillPaused = result.response?.paused === true || responseReason === 'not-playing';
     clog(
       'background',
@@ -1897,7 +1925,11 @@ const pauseYouTubeForDictation = async (reason) => {
     tried.add(candidate.tabId);
     // FIX 4: inject-before-send + retry-once-on-no-receiver, matching the resume path's resilience, so
     // an invalidated content-script context on the correct tab can't make pause skip it.
-    const result = await sendDirectionalWithReinject(candidate.tabId, 'pause-youtube');
+    const result = await sendDirectionalWithReinject(candidate.tabId, 'pause-youtube', respectMusicTitle);
+    if (result.response?.reason === 'music-title-exempt') {
+      suppressRecordingPlaybackForMusic();
+      return;
+    }
     clog(
       'background',
       `pause try tab=${candidate.tabId} lastPlayedAt=${candidate.lastPlayedAt} why=${candidate.why} delivered=${result.delivered} paused=${result.response?.paused} reason="${result.response?.reason ?? result.reason ?? ''}"`,
@@ -1916,7 +1948,11 @@ const pauseYouTubeForDictation = async (reason) => {
 
   // LIVE FALLBACK: the tracked candidates paused nothing, but tabPlayState may be stale after a worker
   // sleep. Query every YouTube tab live and pause the one that is genuinely playing right now.
-  const fallbackTabId = await pauseAnyPlayingYouTubeTab(tried);
+  const fallbackTabId = await pauseAnyPlayingYouTubeTab(tried, respectMusicTitle);
+  if (fallbackTabId === 'music-title-exempt') {
+    suppressRecordingPlaybackForMusic();
+    return;
+  }
   if (typeof fallbackTabId === 'number') {
     dictationPausedTabId = fallbackTabId;
     persistDictationPausedTabId();

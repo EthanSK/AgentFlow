@@ -14,6 +14,7 @@ function worker(stored = {}, options = {}) {
   const native = [];
   let playing = true;
   let failWrite = false;
+  let oldPolicy = options.oldPolicy === true;
   const runtimeMessages = event();
   const nativeMessages = event();
   const chrome = {
@@ -34,11 +35,11 @@ function worker(stored = {}, options = {}) {
       },
     } },
     alarms: { create() {}, clear: async () => true, onAlarm: event() },
-    scripting: { executeScript: async (request) => { injections.push(request); return []; } },
+    scripting: { executeScript: async (request) => { injections.push(request); if (options.failedInjection) throw new Error('injection unavailable'); oldPolicy = false; return []; } },
     windows: { onRemoved: event(), getLastFocused: async () => ({ id: 1 }) },
     tabs: {
       onRemoved: event(), onActivated: event(), onReplaced: event(), onUpdated: event(),
-      query: async () => [{ id: 7, windowId: 1, active: true, audible: playing, url: 'https://www.youtube.com/watch?v=fixture' }],
+      query: async () => options.tabs || [{ id: 7, windowId: 1, active: true, audible: playing, url: 'https://www.youtube.com/watch?v=fixture' }],
       get: async () => ({ id: 7, windowId: 1, active: true, audible: playing }),
       sendMessage: (id, message, callback) => {
         if (message.type === 'pause-youtube' && options.missingFirstPause && !missedFirstPause) {
@@ -48,13 +49,23 @@ function worker(stored = {}, options = {}) {
           delete chrome.runtime.lastError;
           return Promise.resolve();
         }
-        let result = { playing };
+        let result = message.type === 'state-request' ? { playing, musicPolicyVersion: oldPolicy ? undefined : 1 } : { playing };
         if (message.type === 'pause-youtube') {
           commands.push(message.type);
+          if (options.music && message.respectMusicTitle) {
+            result = { paused: false, reason: 'music-title-exempt' };
+            callback?.(result);
+            return Promise.resolve(result);
+          }
           result = { paused: playing, reason: playing ? 'paused' : 'not-playing' };
           playing = false;
         } else if (message.type === 'resume-youtube') {
           commands.push(message.type);
+          if (options.music && message.respectMusicTitle) {
+            result = { resumed: false, reason: 'music-title-exempt' };
+            callback?.(result);
+            return Promise.resolve(result);
+          }
           result = { resumed: !playing, reason: playing ? 'already-playing' : 'resumed' };
           playing = true;
         } else if (message.type === 'seek-youtube') {
@@ -78,7 +89,7 @@ function worker(stored = {}, options = {}) {
     stored, commands, injections, native, run,
     failWrite: () => { failWrite = true; },
     message: (enabled, sender = popup) => new Promise(resolve => runtimeMessages.listeners[0]({ type: 'set-voiceink-auto-pause', enabled }, sender, resolve)),
-    start: () => run("enqueueDictationOp('test-start', () => pauseYouTubeForDictation('fixture'))"),
+    start: (reason = "voiceink-recording-started") => run("enqueueDictationOp('test-start', () => pauseYouTubeForDictation(" + JSON.stringify(reason) + "))"),
     stop: () => run("enqueueDictationOp('test-stop', () => resumeYouTubeForDictation('fixture'))"),
     finish: () => run("enqueueDictationOp('test-finish', () => finishDictationPreservingPlayback('fixture'))"),
     idle: () => run('dictationDepth === 0 && dictationPausedTabId === null'),
@@ -195,3 +206,84 @@ await recoveredPause.stop();
 assert.deepEqual(recoveredPause.commands, ['pause-youtube', 'resume-youtube']);
 assert.equal(recoveredPause.idle(), true);
 console.log('PASS missing pause listener retains one reinjection and same-tab recovery');
+
+const musicOptions = { music: true, tabs: [
+  { id: 7, windowId: 1, active: true, audible: true, url: 'https://www.youtube.com/watch?v=fixture' },
+  { id: 8, windowId: 1, active: false, audible: true, url: 'https://www.youtube.com/watch?v=other' },
+] };
+const music = worker({}, musicOptions);
+await music.start();
+assert.deepEqual(music.commands, ['pause-youtube'], 'music exemption must end candidate/fallback search');
+assert.equal(music.run('dictationPausedTabId'), null);
+assert.equal(music.run('dictationAutoPauseSuppressed'), true);
+await music.start();
+await music.stop();
+assert.deepEqual(music.commands, ['pause-youtube'], 'overlap must leave music alone');
+const musicRestart = worker(structuredClone(music.stored), musicOptions);
+await musicRestart.stop();
+assert.deepEqual(musicRestart.commands, [], 'worker restart must not resume exempt music');
+assert.equal(musicRestart.idle(), true);
+console.log('PASS music exemption persists through overlap/restart and stops fallback search');
+
+const fallbackMusic = worker({}, musicOptions);
+await fallbackMusic.run('hydrateFromStorage()');
+assert.equal(await fallbackMusic.run('pauseAnyPlayingYouTubeTab(new Set(), true)'), 'music-title-exempt');
+assert.deepEqual(fallbackMusic.commands, ['pause-youtube']);
+console.log('PASS live fallback stops at exempt music instead of changing another player');
+
+const changingOptions = {};
+const changing = worker({}, changingOptions);
+await changing.start();
+changingOptions.music = true;
+await changing.stop();
+assert.deepEqual(changing.commands, ['pause-youtube', 'resume-youtube'], 'an already-owned pause must keep its resume obligation');
+assert.equal(changing.idle(), true);
+console.log('PASS already-owned pause resumes once after navigation to music');
+
+const overlapOptions = {};
+const overlapMusic = worker({}, overlapOptions);
+await overlapMusic.start();
+overlapOptions.music = true;
+await overlapMusic.start();
+await overlapMusic.stop();
+await overlapMusic.stop();
+assert.deepEqual(overlapMusic.commands, ['pause-youtube', 'pause-youtube', 'resume-youtube']);
+assert.equal(overlapMusic.idle(), true);
+console.log('PASS already-owned target preserves its original resume obligation during overlap');
+
+for (const music of [false, true]) {
+  const handoff = worker({}, { music });
+  await handoff.start('codex-spoken-action-reminder');
+  await handoff.start();
+  await handoff.stop(); // Interrupted reminder releases only its share.
+  assert.equal(handoff.run('dictationDepth'), 1);
+  assert.equal(handoff.run('dictationPausedTabId'), 7);
+  assert.deepEqual(handoff.commands, ['pause-youtube', 'pause-youtube']);
+  const restored = worker(structuredClone(handoff.stored), { music });
+  await restored.stop(); // Recording releases the remaining share.
+  assert.deepEqual(restored.commands, ['resume-youtube']);
+  assert.equal(restored.idle(), true);
+}
+console.log('PASS notification-to-recording handoff keeps the exact target through restart, including music');
+
+const manualHandoff = worker();
+await manualHandoff.start('codex-spoken-action-reminder');
+await manualHandoff.start();
+manualHandoff.run("handleManualPlaybackControl(7, 'pause', Date.now())");
+await manualHandoff.run('dictationOpChain');
+await manualHandoff.stop();
+await manualHandoff.stop();
+assert.deepEqual(manualHandoff.commands, ['pause-youtube', 'pause-youtube']);
+console.log('PASS manual playback change during interruption chain prevents automatic resume');
+
+const stalePage = worker({}, { oldPolicy: true });
+await stalePage.start();
+await stalePage.stop();
+assert.deepEqual(stalePage.commands, ['pause-youtube', 'resume-youtube']);
+assert.ok(stalePage.injections.length > 0);
+console.log('PASS new worker refreshes an old page before applying the music policy');
+const blockedPolicy = worker({}, { oldPolicy: true, failedInjection: true });
+await blockedPolicy.start();
+await blockedPolicy.stop();
+assert.deepEqual(blockedPolicy.commands, []);
+console.log('PASS unreadable music policy cannot silently pause through old page code');

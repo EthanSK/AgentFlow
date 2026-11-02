@@ -53,7 +53,7 @@ ui.poll();await oldPoll;await settle();
 assert.equal(ui.node('auto-pause').checked,false);
 ui.poll();await settle();
 assert.equal(ui.node('auto-pause-state').textContent,'Off');
-assert.equal(ui.node('auto-pause-detail').textContent,"YouTube won't pause or resume for VoiceInk.");
+assert.equal(ui.node('auto-pause-detail').textContent,"YouTube won't pause or resume for Agent Flow.");
 console.log('PASS saving is disabled and stale polls cannot undo acknowledged switch');
 
 ui.fail();ui.node('auto-pause').checked=true;
