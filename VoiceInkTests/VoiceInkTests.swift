@@ -7875,7 +7875,7 @@ struct VoiceInkTests {
         #expect(!primaryBody.contains("telegramTargetedHIDReturn"))
         #expect(!primaryBody.contains("pressNearbySubmitButton"))
         #expect(!primaryBody.contains("foregroundOpenAIVerificationContext"))
-        #expect(deliverySource.contains("primaryCurrentInputSettleNanoseconds: UInt64 = 150_000_000"))
+        #expect(deliverySource.contains("primaryCurrentInputSettleNanoseconds: UInt64 = 300_000_000"))
 
         let engineSource = try String(
             contentsOf: repositoryRoot.appendingPathComponent(

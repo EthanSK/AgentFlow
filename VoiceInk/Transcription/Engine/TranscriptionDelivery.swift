@@ -16,12 +16,12 @@ final class TranscriptionDelivery: TranscriptionDelivering {
     init(recoveryPasteOverride: ((Request, Actions) async -> Void)? = nil) {
         self.recoveryPasteOverride = recoveryPasteOverride
     }
-    // Ethan restored 150 ms (2026-11-02) after reporting occasional misses
-    // with the 100 ms trial. Validate receiving-input order:
+    // Ethan requested 300 ms (2026-11-02), superseding the uninstalled
+    // 150 ms restoration after occasional misses with the 100 ms trial.
     // A real zero-wait Chrome check processed Return before the paste event.
-    // Keep only this 150 ms consumer allowance; it is not
+    // Keep only this 300 ms consumer allowance; it is not
     // transcription/local text work or an exact-input/readiness lookup.
-    static let primaryCurrentInputSettleNanoseconds: UInt64 = 150_000_000
+    static let primaryCurrentInputSettleNanoseconds: UInt64 = 300_000_000
 
     enum BackgroundAutoSendVerification: Equatable {
         case verifiedCleared
