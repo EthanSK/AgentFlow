@@ -16,11 +16,12 @@ final class TranscriptionDelivery: TranscriptionDelivering {
     init(recoveryPasteOverride: ((Request, Actions) async -> Void)? = nil) {
         self.recoveryPasteOverride = recoveryPasteOverride
     }
-    // Ethan approved retaining a shorter paste-to-Send wait (2026-11-01).
+    // Ethan requested 100 ms (2026-11-02), superseding the uninstalled 10 ms
+    // trial and earlier 150 ms allowance. Validate receiving-input order:
     // A real zero-wait Chrome check processed Return before the paste event.
-    // Keep only this 150 ms consumer allowance, down from 220 ms; it is not
+    // Keep only this 100 ms consumer allowance; it is not
     // transcription/local text work or an exact-input/readiness lookup.
-    static let primaryCurrentInputSettleNanoseconds: UInt64 = 150_000_000
+    static let primaryCurrentInputSettleNanoseconds: UInt64 = 100_000_000
 
     enum BackgroundAutoSendVerification: Equatable {
         case verifiedCleared
@@ -839,7 +840,7 @@ final class TranscriptionDelivery: TranscriptionDelivering {
         switch sendResult {
         case .commandPosted:
             onQueuedAutoSendIssued()
-            vippLog.info("paste: primary current-input HID auto-send issued=true verification=notRequired settleMs=150 key=\(queuedAutoSend.effectiveKey.rawValue, privacy: .public) currentInput=true")
+            vippLog.info("paste: primary current-input HID auto-send issued=true verification=notRequired settleMs=\(Self.primaryCurrentInputSettleNanoseconds / 1_000_000) key=\(queuedAutoSend.effectiveKey.rawValue, privacy: .public) currentInput=true")
         case .actionGuardRefused:
             showAutoSendFailure(
                 "Transcription pasted, but Return could not be issued",

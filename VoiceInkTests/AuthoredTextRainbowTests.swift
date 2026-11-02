@@ -4,6 +4,28 @@ import Testing
 @testable import VoiceInkPlusPlus
 
 struct AuthoredTextRainbowTests {
+    @Test func viewerColorScopesExpireOnlyAfterAWeekWithoutUse() {
+        let cursors = AuthoredTextRainbow.ViewerCursors()
+        let start = Date(timeIntervalSince1970: 1_000)
+        let day: TimeInterval = 24 * 60 * 60
+        #expect(cursors.reserve(key: "chat-a", wordCount: 5, now: start) == 0)
+        #expect(cursors.reserve(key: "chat-b", wordCount: 3, now: start) == 0)
+        #expect(cursors.reserve(key: "chat-a", wordCount: 2, now: start.addingTimeInterval(6 * day)) == 5)
+        // Refreshing A must not keep B alive or consume B's colour positions.
+        #expect(cursors.reserve(key: "chat-b", wordCount: 1, now: start.addingTimeInterval(7 * day)) == 0)
+        #expect(cursors.reserve(key: "chat-a", wordCount: 1, now: start.addingTimeInterval(12 * day)) == 7)
+        #expect(cursors.reserve(key: "chat-a", wordCount: 1, now: start.addingTimeInterval(19 * day)) == 0)
+    }
+
+    @Test func viewerColorContinuityUsesMemoryWithoutCreatingDiskState() {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let chat = UUID().uuidString
+        #expect(AuthoredTextRainbow.reserveViewerStartIndex(chatID: chat, wordCount: 23, directory: directory) == 0)
+        #expect(AuthoredTextRainbow.reserveViewerStartIndex(chatID: chat, wordCount: 3, directory: directory) == 23)
+        #expect(AuthoredTextRainbow.reserveViewerStartIndex(chatID: chat, wordCount: 1, directory: directory) == 2)
+        #expect(!FileManager.default.fileExists(atPath: directory.path))
+    }
+
     @Test func rainbowUsesTheSharedPalettePerWordAndWrapsTheOffset() throws {
         #expect(AuthoredTextRainbow.palette == [
             "#fa7070", "#fa9370", "#fab570", "#fad870", "#fafa70", "#d8fa70",

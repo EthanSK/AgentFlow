@@ -94,41 +94,44 @@ enum AuthoredTextRainbow {
     /// Viewer cursors are separate from the assistant quote counter: Ethan now
     /// wants the next message to continue AFTER its last authored word, not shift
     /// the starting colour by one. Context and visual wrapping consume nothing.
-    /// Opaque proven chat IDs separate chats; ambiguous/no-chat scope continues an
-    /// app-local fallback stream rather than guessing a chat or resetting to red.
+    /// Last-known chat IDs separate chats when available; unknown scope continues
+    /// an app-local stream. Ethan prefers cheap in-memory continuity over exact
+    /// cosmetic persistence (2026-11-02): restart/eviction may reset the colours.
     static func reserveViewerStartIndex(chatID: String?, wordCount: Int,
                                         directory: URL = viewerStateDirectory) -> Int {
         let scope = chatID.flatMap { UUID(uuidString: $0)?.uuidString.lowercased() } ?? "unscoped"
-        let key = SHA256.hash(data: Data(scope.utf8)).map { String(format: "%02x", $0) }.joined()
         guard wordCount > 0 else { return 0 }
-        // Private, bounded local state only; never touch the shared reply quote
-        // counter or consume positions again when reopening a saved viewer.
-        return viewerCursors.reserve(key: key, wordCount: wordCount, directory: directory)
+        // The directory is only a namespace for independent stores/tests now;
+        // do not inspect/create it or touch the shared assistant reply counter.
+        return viewerCursors.reserve(key: directory.path + "\0" + scope, wordCount: wordCount)
     }
 
     private static let viewerCursors = ViewerCursors()
 
-    private final class ViewerCursors: @unchecked Sendable {
+    final class ViewerCursors: @unchecked Sendable {
+        private struct Entry { let nextIndex: Int; let lastUsed: Date }
         private let lock = NSLock()
-        private var fallbackIndexes: [String: Int] = [:]
+        private var entries: [String: Entry] = [:]
+        private var order: [String] = []
+        private let maximumScopes = 64
+        private let idleLifetime: TimeInterval = 7 * 24 * 60 * 60
 
-        func reserve(key: String, wordCount: Int, directory: URL) -> Int {
-            // These reservations run in the archive's user-initiated worker, never the
-            // startup/UI path. Serialize same-process writers; a busy foreign
-            // lock or unavailable disk keeps the in-memory stream moving rather
-            // than resetting every message or blocking delivery on presentation.
+        func reserve(key: String, wordCount: Int, now: Date = Date()) -> Int {
+            // Cosmetic only: a tiny bounded in-process counter, with no file,
+            // interprocess lock, parser or background persistence task per prompt.
             lock.lock()
             defer { lock.unlock() }
-            let state = directory.appendingPathComponent("viewer-\(key).txt")
-            var persisted: Int?
-            if (try? FileManager.default.createDirectory(at: directory,
-                withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])) != nil,
-               (try? directory.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink != true {
-                persisted = AuthoredTextRainbow.reserve(at: state, advancingBy: wordCount)
-            }
-            let index = persisted ?? fallbackIndexes[state.path] ?? 0
-            fallbackIndexes[state.path] = (index + wordCount % AuthoredTextRainbow.palette.count)
-                % AuthoredTextRainbow.palette.count
+            // Ethan's "haven't chatted in a week" resets colour bookkeeping
+            // only. Never prune actual History, chats, recordings or archives.
+            let expired = entries.compactMap { now.timeIntervalSince($0.value.lastUsed) >= idleLifetime ? $0.key : nil }
+            for key in expired { entries.removeValue(forKey: key) }
+            order.removeAll { entries[$0] == nil }
+            let index = entries[key]?.nextIndex ?? 0
+            entries[key] = Entry(nextIndex: (index + max(0, wordCount) % AuthoredTextRainbow.palette.count)
+                % AuthoredTextRainbow.palette.count, lastUsed: now)
+            order.removeAll { $0 == key }
+            order.append(key)
+            while order.count > maximumScopes { entries.removeValue(forKey: order.removeFirst()) }
             return index
         }
     }

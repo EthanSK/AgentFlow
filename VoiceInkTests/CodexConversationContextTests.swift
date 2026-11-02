@@ -3,6 +3,33 @@ import Testing
 @testable import VoiceInkPlusPlus
 
 struct CodexConversationContextTests {
+    @Test func viewerColorScopeUsesOnlyLastKnownUniqueProcessMetadata() {
+        let cache = CodexViewerColorScopeCache()
+        let first = UUID().uuidString.lowercased()
+        let second = UUID().uuidString.lowercased()
+        #expect(cache.chatID(processIdentifier: 101) == nil)
+        cache.record(processIdentifier: 101, ids: [first])
+        cache.record(processIdentifier: 202, ids: [second])
+        #expect(cache.chatID(processIdentifier: 101) == first)
+        #expect(cache.chatID(processIdentifier: 202) == second)
+        cache.record(processIdentifier: 101, ids: [first, second])
+        #expect(cache.chatID(processIdentifier: 101) == nil)
+        #expect(cache.chatID(processIdentifier: 202) == second)
+        cache.record(processIdentifier: 202, ids: ["not a thread identity"])
+        #expect(cache.chatID(processIdentifier: 202) == nil)
+    }
+
+    @Test func viewerColorScopeCacheBoundsProcessRetention() {
+        let cache = CodexViewerColorScopeCache(maximumProcesses: 2)
+        let id = UUID().uuidString.lowercased()
+        for pid in [pid_t(101), 202, 303] { cache.record(processIdentifier: pid, ids: [id]) }
+        #expect(cache.chatID(processIdentifier: 101) == nil)
+        #expect(cache.chatID(processIdentifier: 202) == id)
+        #expect(cache.chatID(processIdentifier: 303) == id)
+        cache.record(processIdentifier: 202, ids: [])
+        #expect(cache.chatID(processIdentifier: 202) == nil)
+    }
+
     @Test @MainActor func codexHostRecognitionAcceptsBothBundledCLILayouts() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

@@ -25,8 +25,7 @@ struct TranscriptionDetailView: View {
                                 transcription.text == Transcription.canceledTranscriptionText
                             ? "Live draft at exit"
                             : "Original",
-                        text: message.text,
-                        rawText: message.rawText,
+                        message: message,
                         isEnhanced: false
                     )
 
@@ -34,10 +33,10 @@ struct TranscriptionDetailView: View {
                         HistoryRawTextView(text: message.rawText)
                     }
 
-                    if let enhancedText = transcription.enhancedText {
+                    if transcription.enhancedText != nil {
                         MessageBubble(
                             label: "Enhanced",
-                            text: enhancedText,
+                            message: HistoryContextPresentation.message(for: transcription, enhanced: true),
                             isEnhanced: true
                         )
                     }
@@ -83,8 +82,7 @@ struct TranscriptionDetailView: View {
 
 private struct MessageBubble: View {
     let label: LocalizedStringKey
-    let text: String
-    var rawText: String? = nil
+    let message: HistoryContextPresentation.Message
     let isEnhanced: Bool
 
     var body: some View {
@@ -97,13 +95,13 @@ private struct MessageBubble: View {
                         .font(.system(size: 9, weight: .medium))
                         .foregroundColor(AppTheme.Text.muted)
                     Spacer()
-                    HistoryCopyButtons(text: text, rawText: rawText)
+                    HistoryCopyButtons(text: message.text, rawText: message.rawText)
                 }
                 .padding(.horizontal, 12)
 
                 ScrollView {
                     HistoryMessageContentView(
-                        text: text,
+                        message: message,
                         fontSize: 14,
                         foregroundColor: AppTheme.Text.primary,
                         alignment: isEnhanced ? .leading : .trailing

@@ -1,3 +1,4 @@
+// Immutable History projections shared by its rows, expanded view and copy actions.
 import AppKit
 import SwiftUI
 
@@ -13,6 +14,22 @@ enum HistoryContextPresentation {
         let text: String
         let rawText: String
         let hasFlowMarkers: Bool
+        let displayText: String
+        let rendersLiterally: Bool
+        let preview: String
+
+        init(text: String, rawText: String, hasFlowMarkers: Bool) {
+            self.text = text
+            self.rawText = rawText
+            self.hasFlowMarkers = hasFlowMarkers
+            // Refactor of HistoryMessageContentView.body's decode/inspection:
+            // run once on source invalidation, never on an unchanged repaint.
+            // Keep the same literal-vs-Markdown decision as the former renderer.
+            let document = HistoryContextPresentation.document(text)
+            displayText = document.plainText
+            rendersLiterally = document.hasFormatting || HistoryContextPresentation.hasFlowMarkers(displayText)
+            preview = HistoryContextPresentation.listPreview(text)
+        }
     }
 
     /// History repainting must not repeatedly decode unchanged legacy messages
@@ -30,6 +47,7 @@ enum HistoryContextPresentation {
         private struct Entry { let input: Input; let message: Message; let bytes: Int }
         private let lock = NSLock()
         private var entries: [Key: Entry] = [:]
+        private var order: [Key] = []
         private var bytes = 0
         private let maximumEntries: Int
         private let maximumBytes: Int
@@ -43,21 +61,31 @@ enum HistoryContextPresentation {
             let key = Key(id: record.id, enhanced: enhanced)
             let input = Input(text: record.text, enhancedText: record.enhancedText,
                               draft: record.realtimeDraftText, status: record.transcriptionStatus)
-            if let hit = lock.withLock({ entries[key] }), hit.input == input { return hit.message }
+            if let hit = lock.withLock({ () -> Message? in
+                guard let hit = entries[key], hit.input == input else { return nil }
+                order.removeAll { $0 == key }
+                order.append(key)
+                return hit.message
+            }) { return hit }
             let message = build()
             let inputBytes = input.text.utf8.count + (input.enhancedText?.utf8.count ?? 0)
                 + (input.draft?.utf8.count ?? 0) + (input.status?.utf8.count ?? 0)
             let cost = inputBytes + message.text.utf8.count + message.rawText.utf8.count
+                + message.displayText.utf8.count + message.preview.utf8.count
             lock.withLock {
                 if let previous = entries.removeValue(forKey: key) { bytes -= previous.bytes }
+                order.removeAll { $0 == key }
                 // Count source and output bytes conservatively even when Swift
                 // shares their storage. Huge records remain complete, uncached.
                 guard maximumEntries > 0, cost <= maximumBytes else { return }
-                if entries.count >= maximumEntries || bytes + cost > maximumBytes {
-                    entries.removeAll(keepingCapacity: true)
-                    bytes = 0
+                // Evict only the least recently used projections needed to fit.
+                // Clearing all 64 entries made unchanged visible rows reparse.
+                while entries.count >= maximumEntries || bytes + cost > maximumBytes {
+                    guard !order.isEmpty else { break }
+                    if let removed = entries.removeValue(forKey: order.removeFirst()) { bytes -= removed.bytes }
                 }
                 entries[key] = Entry(input: input, message: message, bytes: cost)
+                order.append(key)
                 bytes += cost
             }
             return message
@@ -318,19 +346,20 @@ struct HistoryCopyButtons: View {
 /// Both History layouts use the same native renderer. It never loads a web view,
 /// evaluates pasted markup, fetches links or reads screenshot files automatically.
 struct HistoryMessageContentView: View {
-    let text: String
+    let message: HistoryContextPresentation.Message
     var fontSize: CGFloat = 14
     var foregroundColor: Color = AppTheme.Text.primary
     var alignment: Alignment = .leading
 
     var body: some View {
-        let document = HistoryContextPresentation.document(text)
-        if document.hasFormatting || HistoryContextPresentation.hasFlowMarkers(document.plainText) {
-            Text(HistoryContextPresentation.attributed(document, fontSize: fontSize, foreground: foregroundColor))
+        if message.rendersLiterally {
+            Text(message.displayText)
+                .font(.system(size: fontSize))
+                .foregroundColor(foregroundColor)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: alignment)
         } else {
-            MarkdownContentView(text, fontSize: fontSize, foregroundColor: foregroundColor, alignment: alignment)
+            MarkdownContentView(message.text, fontSize: fontSize, foregroundColor: foregroundColor, alignment: alignment)
         }
     }
 }

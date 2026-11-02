@@ -118,11 +118,11 @@ class TranscriptionPipeline {
             // destination. Multiple visible panes are ambiguous, not a guessed chat.
             // The pipeline already owns MainActor. Keep the app snapshot
             // here instead of hopping to a generic async executor and queueing
-            // MainActor.run again. Log scanning and file writes still use workers.
+            // MainActor.run again. Colour continuity uses only the reader's last
+            // known in-memory value; a miss never starts or awaits a log scan.
             let recipientStarted = Date()
             var frontmostMs = 0.0
             var appMetadataMs = 0.0
-            var hostCheckMs = 0.0
             let processID: pid_t? = {
                 let frontmost = NSWorkspace.shared.frontmostApplication
                 let frontmostFinished = Date()
@@ -134,22 +134,22 @@ class TranscriptionPipeline {
                     ? ActiveWindowService.shared.currentApplication : frontmost
                 let metadataFinished = Date()
                 appMetadataMs = metadataFinished.timeIntervalSince(frontmostFinished) * 1_000
-                defer { hostCheckMs = Date().timeIntervalSince(metadataFinished) * 1_000 }
-                guard let app, !app.isTerminated,
-                      CodexConversationContextReader.isSupportedCodexApplication(app, fileManager: .default)
-                else { return nil }
-                return app.processIdentifier
+                // Only real Codex selection reads populate the colour cache.
+                // Other processes simply miss it: no bundle-file/host scan is
+                // needed to choose this optional cosmetic value at finish.
+                return app?.processIdentifier
             }()
+            let recipientMs = Date().timeIntervalSince(recipientStarted) * 1_000
             let scopeStarted = Date()
-            let scopeRead = if let processID {
-                await CodexConversationContextReader.selectionThreadRead(processIdentifier: processID)
-            } else { CodexConversationContextReader.SelectionThreadRead.empty }
-            let ids = scopeRead.ids
-            let recipientMs = scopeStarted.timeIntervalSince(recipientStarted) * 1_000
-            let scopeMs = Date().timeIntervalSince(scopeStarted) * 1_000
+            // Ethan explicitly prefers a cheap last-known colour scope over a
+            // perfectly current one (2026-11-02). This is cosmetic only: never
+            // reuse this cache for selection provenance, paste or speech context.
+            let chatID = processID.flatMap {
+                CodexConversationContextReader.viewerChatIDIfKnown(processIdentifier: $0)
+            }
+            let scopeCacheMs = Date().timeIntervalSince(scopeStarted) * 1_000
             Logger(subsystem: "com.ethansk.VoiceInkPlusPlus", category: "VIPPDebug").info(
-                "prompt preparation: recipientMs=\(recipientMs, privacy: .public) frontmostMs=\(frontmostMs, privacy: .public) appMetadataMs=\(appMetadataMs, privacy: .public) hostCheckMs=\(hostCheckMs, privacy: .public) scopeMs=\(scopeMs, privacy: .public) scopeWorkMs=\(scopeRead.workMs, privacy: .public) scopeWaitMs=\(max(0, scopeMs - scopeRead.workMs), privacy: .public) candidateCount=\(ids.count, privacy: .public)")
-            let chatID = ids.count == 1 ? ids[0] : nil
+                "prompt preparation: recipientMs=\(recipientMs, privacy: .public) frontmostMs=\(frontmostMs, privacy: .public) appMetadataMs=\(appMetadataMs, privacy: .public) scopeCacheMs=\(scopeCacheMs, privacy: .public) scopeKnown=\(chatID != nil, privacy: .public)")
             return try await AgentFlowPromptArchive.save(text, recordID: id, chatID: chatID)
         },
         currentPromptRecipient: (() -> AgentFlowPromptPreview.Recipient)? = nil,

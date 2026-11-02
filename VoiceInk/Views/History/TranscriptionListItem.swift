@@ -43,7 +43,7 @@ struct TranscriptionListItem: View {
                                    rawText: message.rawText)
             }
             // Match the card layout: only metadata/actions share the top row.
-            Text(HistoryContextPresentation.listPreview(message.text))
+            Text(message.preview)
                 .font(.system(size: 12, weight: .regular))
                 .lineLimit(2)
                 .foregroundColor(.primary)

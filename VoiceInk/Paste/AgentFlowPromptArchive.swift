@@ -20,20 +20,26 @@ enum AgentFlowPromptArchive {
             .appendingPathComponent("AgentFlow/Prompts", isDirectory: true)
     }
 
-    static func save(_ text: String, recordID: UUID, chatID: String? = nil) async throws -> URL {
-        let destination = directory
+    static func save(
+        _ text: String,
+        recordID: UUID,
+        chatID: String? = nil,
+        directory destinationOverride: URL? = nil
+    ) async throws -> URL {
+        let destination = destinationOverride ?? directory
         // The user is waiting for a valid clickable prompt, not idle maintenance.
         return try await Task.detached(priority: .userInitiated) {
             let started = Date()
             let file = try write(text, recordID: recordID, directory: destination)
             let canonicalFinished = Date()
+            let prompt = AgentFlowPromptViewer.ParsedPrompt(text)
             // Reserve once after the canonical prompt is durable. The archived
             // viewer retains this start; reopen/copy never advances the cursor.
             let start = AuthoredTextRainbow.reserveViewerStartIndex(chatID: chatID,
-                wordCount: AgentFlowPromptViewer.authoredWordCount(text))
+                wordCount: prompt.authoredWordCount)
             // A human-readable companion is optional. Its failure must never
             // invalidate the complete durable prompt or stop a normal paste.
-            try? writeViewer(text, for: file, rainbowStartIndex: start)
+            try? writeViewer(prompt, for: file, rainbowStartIndex: start)
             let canonicalMs = canonicalFinished.timeIntervalSince(started) * 1_000
             let viewerMs = Date().timeIntervalSince(canonicalFinished) * 1_000
             Logger(subsystem: "com.ethansk.VoiceInkPlusPlus", category: "VIPPDebug").info(
@@ -51,7 +57,12 @@ enum AgentFlowPromptArchive {
     }
 
     static func writeViewer(_ text: String, for file: URL, rainbowStartIndex: Int = 0) throws {
-        _ = try writeFile(AgentFlowPromptViewer.html(text, sourceURL: file, rainbowStartIndex: rainbowStartIndex),
+        try writeViewer(AgentFlowPromptViewer.ParsedPrompt(text), for: file, rainbowStartIndex: rainbowStartIndex)
+    }
+
+    private static func writeViewer(_ prompt: AgentFlowPromptViewer.ParsedPrompt, for file: URL,
+                                    rainbowStartIndex: Int) throws {
+        _ = try writeFile(AgentFlowPromptViewer.html(prompt, sourceURL: file, rainbowStartIndex: rainbowStartIndex),
             name: file.deletingPathExtension().appendingPathExtension("html").lastPathComponent,
             directory: file.deletingLastPathComponent())
     }
@@ -133,10 +144,24 @@ enum AgentFlowPromptViewer {
         let text: String
     }
 
+    /// Extraction of the existing authoredWordCount/html event parsing: one
+    /// immutable parse now supplies the word reservation and HTML. This does
+    /// not alter the canonical file or cache user documents beyond this write.
+    struct ParsedPrompt {
+        let events: [Event]
+        let authoredWordCount: Int
+
+        init(_ source: String) {
+            events = AgentFlowPromptViewer.events(source)
+            authoredWordCount = events.filter {
+                ["speech", "speech_segment", "typed_text", "potential_tts"].contains($0.tag)
+            }.reduce(0) { $0 + $1.text.split(whereSeparator: \.isWhitespace).count }
+        }
+    }
+
     static let fragmentPattern = #"(?ms)^[\t ]*<(speech|speech_segment|typed_text|potential_tts|app_selection|codex_selection)\b[^>]*>.*?</\1>|^[\t ]*<(?:local_screenshot|app_selection_image)\b[^>]*?/>"#
-    // Compiled once. `events` and `mapTimeline` run several times per finish on
-    // the UI actor (archive word count, compact preview, inline colouring);
-    // recompiling this fixed pattern each time was avoidable finish-path work.
+    // Compiled once for event parsing, compact previews and inline colouring.
+    // The archive worker shares its parsed events for word counting and HTML.
     static let fragmentExpression = try! NSRegularExpression(pattern: fragmentPattern)
 
     /// Parse only known, line-delimited top-level fragments, never tags that
@@ -275,8 +300,7 @@ enum AgentFlowPromptViewer {
     }
 
     static func authoredWordCount(_ source: String) -> Int {
-        events(source).filter { ["speech", "speech_segment", "typed_text", "potential_tts"].contains($0.tag) }
-            .reduce(0) { $0 + $1.text.split(whereSeparator: \.isWhitespace).count }
+        ParsedPrompt(source).authoredWordCount
     }
 
     /// Colour positions belong to words, never screen coordinates. Keep every
@@ -303,6 +327,12 @@ enum AgentFlowPromptViewer {
 
     static func html(_ source: String, sourceURL: URL? = nil, imageBudget: Int = 32 * 1024 * 1024,
                      rainbowStartIndex: Int = 0) -> String {
+        html(ParsedPrompt(source), sourceURL: sourceURL, imageBudget: imageBudget,
+             rainbowStartIndex: rainbowStartIndex)
+    }
+
+    static func html(_ prompt: ParsedPrompt, sourceURL: URL? = nil, imageBudget: Int = 32 * 1024 * 1024,
+                     rainbowStartIndex: Int = 0) -> String {
         var body = ""
         var rainbowIndex = rainbowStartIndex
         var eventIndex = 0
@@ -319,7 +349,7 @@ enum AgentFlowPromptViewer {
         let sourceLink = sourcePath.map {
             "<a class=\"source-link\" href=\"\(escape(URL(fileURLWithPath: $0).absoluteString))\">Source</a>"
         } ?? ""
-        let parsed = events(source)
+        let parsed = prompt.events
         // Older archives can begin with a queue-readable copy of the authored
         // timeline. Suppress it only when it exactly matches the speech/typing
         // below; unmatched opening prose is still part of the user's request.

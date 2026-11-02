@@ -331,6 +331,15 @@ enum CodexConversationContextPolicy {
 /// or participates in VoiceInk++ destination/delivery selection.
 @MainActor
 enum CodexConversationContextReader {
+    nonisolated fileprivate static let viewerColorScopes = CodexViewerColorScopeCache()
+
+    /// Last-known presentation hint only. A miss uses the existing unscoped
+    /// rainbow stream; it must never trigger I/O or substitute for a fresh source
+    /// identity read. Staleness is acceptable for colours, never delivery/context.
+    nonisolated static func viewerChatIDIfKnown(processIdentifier: pid_t) -> String? {
+        viewerColorScopes.chatID(processIdentifier: processIdentifier)
+    }
+
     struct SelectionThreadRead: Sendable {
         let ids: [String]
         let workMs: Double
@@ -564,7 +573,43 @@ private actor CodexSelectionLogWorker {
         guard !Task.isCancelled else { return .empty }
         let start = ContinuousClock.now
         let ids = CodexConversationContextReader.readSelectionThreadIDs(processIdentifier: processIdentifier)
+        // Piggyback on a real highlight's existing fresh read. No watcher,
+        // prefetch, timeout or extra log scan is introduced for viewer colours.
+        CodexConversationContextReader.viewerColorScopes.record(processIdentifier: processIdentifier, ids: ids)
         let d = start.duration(to: ContinuousClock.now).components
         return .init(ids: ids, workMs: Double(d.seconds) * 1_000 + Double(d.attoseconds) / 1e15)
+    }
+}
+
+/// Cosmetic last-known scope, deliberately separate from the fresh before/after
+/// reads that prove a highlight's origin. Bounded by process count; no UI state,
+/// messages, focus wrappers or delivery authority are retained here.
+final class CodexViewerColorScopeCache: @unchecked Sendable {
+    private let lock = NSLock()
+    private let maximumProcesses: Int
+    private var chatIDs: [pid_t: String] = [:]
+    private var order: [pid_t] = []
+
+    init(maximumProcesses: Int = 8) {
+        self.maximumProcesses = max(1, maximumProcesses)
+    }
+
+    func record(processIdentifier: pid_t, ids: [String]) {
+        guard processIdentifier > 0 else { return }
+        let uniqueID = ids.count == 1 ? UUID(uuidString: ids[0])?.uuidString.lowercased() : nil
+        lock.lock()
+        defer { lock.unlock() }
+        order.removeAll { $0 == processIdentifier }
+        chatIDs[processIdentifier] = uniqueID
+        if uniqueID != nil { order.append(processIdentifier) }
+        while order.count > maximumProcesses {
+            chatIDs.removeValue(forKey: order.removeFirst())
+        }
+    }
+
+    func chatID(processIdentifier: pid_t) -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return chatIDs[processIdentifier]
     }
 }

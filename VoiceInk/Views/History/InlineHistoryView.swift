@@ -491,7 +491,7 @@ struct HistoryCardRow: View {
                 // Actions own only the header. A separate full-width preview
                 // must not lose a column to Copy, Retry or the checkbox.
                 Button(action: onToggleExpand) {
-                    Text(HistoryContextPresentation.listPreview(displayText))
+                    Text(message.preview)
                         .font(.system(size: 13))
                         .lineLimit(2)
                         .foregroundColor(.primary)
@@ -547,7 +547,7 @@ struct HistoryCardRow: View {
 
     private var messageContent: some View {
         ScrollView {
-            HistoryMessageContentView(text: displayText, fontSize: 14,
+            HistoryMessageContentView(message: message, fontSize: 14,
                 foregroundColor: AppTheme.Text.primary)
         }
         .frame(maxHeight: 350)

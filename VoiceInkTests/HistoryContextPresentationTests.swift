@@ -5,6 +5,17 @@ import Testing
 @testable import VoiceInkPlusPlus
 
 struct HistoryContextPresentationTests {
+    @Test func cachedHistoryRenderingPreservesLiteralAndMarkdownChoices() {
+        let record = Transcription(text: "<typed_text>complete &amp; unchanged</typed_text>", duration: 0)
+        let message = HistoryContextPresentation.message(for: record)
+        #expect(message.rendersLiterally && message.displayText == record.text)
+        #expect(message.rawText == "complete & unchanged")
+        record.text = "**Markdown remains Markdown**"
+        let changed = HistoryContextPresentation.message(for: record)
+        #expect(!changed.rendersLiterally && changed.displayText == record.text)
+        #expect(changed.preview == record.text)
+    }
+
     @Test func historyProjectionCacheReusesOnlyUnchangedSourceValues() {
         let cache = HistoryContextPresentation.MessageCache()
         let record = Transcription(text: "Original", duration: 0, enhancedText: "Enhanced")
@@ -40,7 +51,8 @@ struct HistoryContextPresentationTests {
         }
         #expect(read(records[0]) == "r0" && read(records[1]) == "r1")
         #expect(read(records[0]) == "r0" && builds == 2)
-        #expect(read(records[2]) == "r2" && read(records[0]) == "r0" && builds == 4)
+        #expect(read(records[2]) == "r2" && read(records[0]) == "r0" && builds == 3)
+        #expect(read(records[1]) == "r1" && builds == 4)
         let huge = Transcription(text: String(repeating: "complete🌊", count: 100), duration: 0)
         #expect(read(huge) == huge.text && read(huge) == huge.text && builds == 6)
     }
@@ -121,7 +133,7 @@ struct HistoryContextPresentationTests {
         #expect(card.contains(".frame(maxWidth: .infinity, alignment: .leading)\n                        .contentShape(Rectangle())"))
         let list = try String(contentsOf: root.appendingPathComponent("VoiceInk/Views/History/TranscriptionListItem.swift"), encoding: .utf8)
         let actions = try #require(list.range(of: "HistoryCopyButtons"))
-        let preview = try #require(list.range(of: "Text(HistoryContextPresentation.listPreview"))
+        let preview = try #require(list.range(of: "Text(message.preview)"))
         #expect(actions.lowerBound < preview.lowerBound)
         #expect(list.contains("VStack(alignment: .leading, spacing: 4)"))
         #expect(list.contains(".frame(maxWidth: .infinity, alignment: .leading)\n                .accessibilityIdentifier(\"history-list-preview-"))
@@ -212,7 +224,7 @@ struct HistoryContextPresentationTests {
         let inline = try String(contentsOf: root.appendingPathComponent("VoiceInk/Views/History/InlineHistoryView.swift"), encoding: .utf8)
         let detail = try String(contentsOf: root.appendingPathComponent("VoiceInk/Views/History/TranscriptionDetailView.swift"), encoding: .utf8)
         #expect(inline.contains("HistoryCopyButtons(text: displayText"))
-        #expect(detail.contains("HistoryCopyButtons(text: text, rawText: rawText)"))
+        #expect(detail.contains("HistoryCopyButtons(text: message.text, rawText: message.rawText)"))
         #expect(inline.contains("HistoryRawTextView(text: message.rawText"))
         #expect(!inline.contains("Text(draft)"))
     }

@@ -6,6 +6,40 @@ import Testing
 
 @MainActor
 struct AgentFlowPromptArchiveTests {
+    @Test func oneParsedPromptPreservesViewerContentAndAuthoredWordCount() {
+        let source = "Unmatched opening\n<typed_text>one &amp; two\nthree</typed_text>\n"
+            + "<app_selection><text>context only</text></app_selection>\n"
+            + "<speech>four</speech>\n<speech>malformed & text</speech>"
+        let prompt = AgentFlowPromptViewer.ParsedPrompt(source)
+        #expect(prompt.authoredWordCount == 5)
+        #expect(prompt.events == AgentFlowPromptViewer.events(source))
+        let html = AgentFlowPromptViewer.html(prompt, rainbowStartIndex: 23)
+        #expect(html == AgentFlowPromptViewer.html(source, rainbowStartIndex: 23))
+        #expect(html.contains("Unmatched opening") && html.contains("context only"))
+        #expect(html.contains("malformed &amp; text"))
+        #expect(html.contains("color:#fa7093\">one</span>"))
+        #expect(html.contains("color:#fad870\">four</span>"))
+    }
+
+    @Test func cachedViewerScopePreservesDurableOutputAndChatPalette() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let chatID = UUID().uuidString
+        let cache = CodexViewerColorScopeCache()
+        cache.record(processIdentifier: 123, ids: [chatID])
+        let text = "<typed_text>complete worker-owned prompt</typed_text>"
+        let file = try await AgentFlowPromptArchive.save(text, recordID: UUID(),
+            chatID: cache.chatID(processIdentifier: 123), directory: root)
+        #expect(try String(contentsOf: file, encoding: .utf8) == AgentFlowPromptArchive.interpretationReminder + text)
+        let viewer = try #require(AgentFlowPromptArchive.viewerURL(for: file))
+        #expect(try String(contentsOf: viewer, encoding: .utf8).contains("complete"))
+        let next = try await AgentFlowPromptArchive.save("<typed_text>next</typed_text>",
+            recordID: UUID(), chatID: cache.chatID(processIdentifier: 123), directory: root)
+        let nextViewer = try #require(AgentFlowPromptArchive.viewerURL(for: next))
+        #expect(try String(contentsOf: nextViewer, encoding: .utf8)
+            .contains("style=\"color:#fad870\">next</span>"))
+    }
+
     private func withoutRainbowSpans(_ html: String) -> String {
         html.replacingOccurrences(of: #"<span class="rainbow-word" style="color:#[0-9a-f]{6}">([^<]*)</span>"#,
             with: "$1", options: .regularExpression)
