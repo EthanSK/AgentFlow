@@ -89,7 +89,7 @@ struct ImmediateKeyboardSequenceTests {
         #expect(!primary.contains("NSWorkspace"))
         #expect(primary.components(separatedBy: "Task.sleep").count == 2)
         #expect(primary.contains("if autoSendKey.isEnabled"))
-        #expect(delivery.contains("primaryCurrentInputSettleNanoseconds: UInt64 = 100_000_000"))
+        #expect(delivery.contains("primaryCurrentInputSettleNanoseconds: UInt64 = 150_000_000"))
         #expect(primary.contains("settleMs=\\(Self.primaryCurrentInputSettleNanoseconds / 1_000_000)"))
         #expect(primary.contains("resolveQueuedAutoSend(autoSendKey)"))
         // Only subsequent clipboard mutation/restoration has its existing deferred
