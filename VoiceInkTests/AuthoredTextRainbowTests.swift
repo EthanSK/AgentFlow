@@ -1,29 +1,14 @@
-import Darwin
 import Foundation
 import Testing
 @testable import VoiceInkPlusPlus
 
 struct AuthoredTextRainbowTests {
-    @Test func viewerColorScopesExpireOnlyAfterAWeekWithoutUse() {
-        let cursors = AuthoredTextRainbow.ViewerCursors()
-        let start = Date(timeIntervalSince1970: 1_000)
-        let day: TimeInterval = 24 * 60 * 60
-        #expect(cursors.reserve(key: "chat-a", wordCount: 5, now: start) == 0)
-        #expect(cursors.reserve(key: "chat-b", wordCount: 3, now: start) == 0)
-        #expect(cursors.reserve(key: "chat-a", wordCount: 2, now: start.addingTimeInterval(6 * day)) == 5)
-        // Refreshing A must not keep B alive or consume B's colour positions.
-        #expect(cursors.reserve(key: "chat-b", wordCount: 1, now: start.addingTimeInterval(7 * day)) == 0)
-        #expect(cursors.reserve(key: "chat-a", wordCount: 1, now: start.addingTimeInterval(12 * day)) == 7)
-        #expect(cursors.reserve(key: "chat-a", wordCount: 1, now: start.addingTimeInterval(19 * day)) == 0)
-    }
-
-    @Test func viewerColorContinuityUsesMemoryWithoutCreatingDiskState() {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        let chat = UUID().uuidString
-        #expect(AuthoredTextRainbow.reserveViewerStartIndex(chatID: chat, wordCount: 23, directory: directory) == 0)
-        #expect(AuthoredTextRainbow.reserveViewerStartIndex(chatID: chat, wordCount: 3, directory: directory) == 23)
-        #expect(AuthoredTextRainbow.reserveViewerStartIndex(chatID: chat, wordCount: 1, directory: directory) == 2)
-        #expect(!FileManager.default.fileExists(atPath: directory.path))
+    @Test func oneAppCursorContinuesAcrossFinalOutputsWithoutDiskState() {
+        let cursor = AuthoredTextRainbow.Cursor()
+        #expect(cursor.reserve(wordCount: 23) == 0)
+        #expect(cursor.reserve(wordCount: 3) == 23)
+        #expect(cursor.reserve(wordCount: 0) == 2)
+        #expect(cursor.reserve(wordCount: 1) == 2)
     }
 
     @Test func rainbowUsesTheSharedPalettePerWordAndWrapsTheOffset() throws {
@@ -43,44 +28,22 @@ struct AuthoredTextRainbowTests {
         #expect(AuthoredTextRainbow.render(String(repeating: "word ", count: 20_000), startIndex: 0, maxUTF16Count: 100) == nil)
     }
 
-    @Test func rainbowCounterMatchesPythonLockAndAtomicStateProtocol() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let state = directory.appendingPathComponent("rainbow-next-index.txt")
-        #expect(AuthoredTextRainbow.reserve(at: state) == 0)
-        #expect(try String(contentsOf: state, encoding: .utf8) == "1\n")
-        try Data("23\n".utf8).write(to: state)
-        #expect(AuthoredTextRainbow.reserve(at: state) == 23)
-        #expect(try String(contentsOf: state, encoding: .utf8) == "0\n")
-
-        let lock = directory.appendingPathComponent("rainbow-next-index.lock")
-        let descriptor = Darwin.open(lock.path, O_RDWR)
-        #expect(descriptor >= 0)
-        defer { Darwin.close(descriptor) }
-        #expect(flock(descriptor, LOCK_EX | LOCK_NB) == 0)
-        let started = Date()
-        #expect(AuthoredTextRainbow.reserve(at: state) == nil)
-        #expect(Date().timeIntervalSince(started) < 0.2)
-        #expect(try String(contentsOf: state, encoding: .utf8) == "0\n")
-        #expect(flock(descriptor, LOCK_UN) == 0)
-        #expect(AuthoredTextRainbow.reserve(at: state) == 0)
-
-        try Data("not an index\n".utf8).write(to: state)
-        #expect(AuthoredTextRainbow.reserve(at: state) == nil)
-        #expect(try String(contentsOf: state, encoding: .utf8) == "not an index\n")
-        try Data(repeating: 49, count: 100).write(to: state)
-        #expect(AuthoredTextRainbow.reserve(at: state) == nil)
+    @Test func renderingACopyDoesNotAdvanceTheFinalOutputCursor() {
+        let cursor = AuthoredTextRainbow.Cursor()
+        let start = cursor.reserve(wordCount: 3)
+        let first = AuthoredTextRainbow.render("one two three", startIndex: start)
+        #expect(first == AuthoredTextRainbow.render("one two three", startIndex: start))
+        #expect(cursor.reserve(wordCount: 1) == 3)
     }
 
-    @Test func finalRainbowReservationLeavesOrdinaryAndRawRoutesUntouched() throws {
+    @Test func finalRainbowReservationReusesArchiveOffsetWithoutRecipientReads() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         let source = try String(contentsOf: root.appendingPathComponent("VoiceInk/Transcription/Engine/TranscriptionPipeline.swift"), encoding: .utf8)
-        #expect(source.components(separatedBy: "AuthoredTextRainbow.reserveStartIndex()").count == 2)
-        // Explicit inline Codex context now owns authored rainbow even if the
-        // Mode formerly requested plain styling; ordinary/raw routes still do not.
-        #expect(source.contains("(presentation == .styledMath || compactFileURL != nil) && includeSourceContext"))
-        #expect(source.contains("&& !skipPostProcessingNow && hasAuthoredWords ? AuthoredTextRainbow.reserveStartIndex() : 0"))
+        let colors = try String(contentsOf: root.appendingPathComponent("VoiceInk/Services/AuthoredTextRainbow.swift"), encoding: .utf8)
+        #expect(!source.contains("AuthoredTextRainbow.reserve"))
+        #expect(source.contains("let rainbowStart = archivedRainbowStartIndex"))
         #expect(source.contains("rainbowStartIndex: rainbowStart"))
+        #expect(!colors.contains("FileManager") && !colors.contains("chatID") && !colors.contains("processIdentifier"))
+        #expect(!colors.contains("response-preferences/"))
     }
 }

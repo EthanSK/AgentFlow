@@ -21,23 +21,24 @@ struct AgentFlowPromptArchiveTests {
         #expect(html.contains("color:#fad870\">four</span>"))
     }
 
-    @Test func cachedViewerScopePreservesDurableOutputAndChatPalette() async throws {
+    @Test func savedPromptCarriesOneAppColorReservationForViewerAndInlineOutput() async throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
-        let chatID = UUID().uuidString
-        let cache = CodexViewerColorScopeCache()
-        cache.record(processIdentifier: 123, ids: [chatID])
+        let cursor = AuthoredTextRainbow.Cursor()
         let text = "<typed_text>complete worker-owned prompt</typed_text>"
-        let file = try await AgentFlowPromptArchive.save(text, recordID: UUID(),
-            chatID: cache.chatID(processIdentifier: 123), directory: root)
-        #expect(try String(contentsOf: file, encoding: .utf8) == AgentFlowPromptArchive.interpretationReminder + text)
-        let viewer = try #require(AgentFlowPromptArchive.viewerURL(for: file))
-        #expect(try String(contentsOf: viewer, encoding: .utf8).contains("complete"))
-        let next = try await AgentFlowPromptArchive.save("<typed_text>next</typed_text>",
-            recordID: UUID(), chatID: cache.chatID(processIdentifier: 123), directory: root)
-        let nextViewer = try #require(AgentFlowPromptArchive.viewerURL(for: next))
-        #expect(try String(contentsOf: nextViewer, encoding: .utf8)
-            .contains("style=\"color:#fad870\">next</span>"))
+        let saved = try await AgentFlowPromptArchive.save(text, recordID: UUID(), directory: root, colorCursor: cursor)
+        #expect(saved.rainbowStartIndex == 0)
+        #expect(try String(contentsOf: saved.url, encoding: .utf8) == AgentFlowPromptArchive.interpretationReminder + text)
+        let viewer = try #require(AgentFlowPromptArchive.viewerURL(for: saved.url))
+        let html = try String(contentsOf: viewer, encoding: .utf8)
+        #expect(html.contains("color:#fa7070\">complete</span>"))
+        let inline = AgentFlowPromptPreview.coloredInlineTimeline(text, rainbowStartIndex: saved.rainbowStartIndex)
+        #expect(inline.contains("#fa7070"))
+        #expect(html == (try String(contentsOf: viewer, encoding: .utf8)))
+        let next = try await AgentFlowPromptArchive.save("<typed_text>next</typed_text>", recordID: UUID(), directory: root, colorCursor: cursor)
+        #expect(next.rainbowStartIndex == 3)
+        let nextViewer = try #require(AgentFlowPromptArchive.viewerURL(for: next.url))
+        #expect(try String(contentsOf: nextViewer, encoding: .utf8).contains("color:#fad870\">next</span>"))
     }
 
     private func withoutRainbowSpans(_ html: String) -> String {
@@ -70,24 +71,16 @@ struct AgentFlowPromptArchiveTests {
         }
     }
 
-    @Test func viewerReservationContinuesMessagesIndependentlyPerChat() throws {
-        let directory = try temporaryDirectory()
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let first = UUID().uuidString
-        let second = UUID().uuidString
-        #expect(AuthoredTextRainbow.reserveViewerStartIndex(chatID: first, wordCount: 23, directory: directory) == 0)
-        #expect(AuthoredTextRainbow.reserveViewerStartIndex(chatID: first, wordCount: 3, directory: directory) == 23)
-        #expect(AuthoredTextRainbow.reserveViewerStartIndex(chatID: second, wordCount: 1, directory: directory) == 0)
-        #expect(AuthoredTextRainbow.reserveViewerStartIndex(chatID: first, wordCount: 2, directory: directory) == 2)
-        #expect(AuthoredTextRainbow.reserveViewerStartIndex(chatID: first, wordCount: 0, directory: directory) == 0)
-        #expect(AuthoredTextRainbow.reserveViewerStartIndex(chatID: first, wordCount: 1, directory: directory) == 4)
-        #expect(AuthoredTextRainbow.reserveViewerStartIndex(chatID: nil, wordCount: 2, directory: directory) == 0)
-        #expect(AuthoredTextRainbow.reserveViewerStartIndex(chatID: "ambiguous", wordCount: 1, directory: directory) == 2)
+    @Test func viewerReservationContinuesAcrossRecipientsWithoutReopeningAdvances() {
+        let cursor = AuthoredTextRainbow.Cursor()
+        _ = cursor.reserve(wordCount: 5)
+        let start = cursor.reserve(wordCount: 2)
         let source = "<typed_text>six seven</typed_text>"
-        let html = AgentFlowPromptViewer.html(source, rainbowStartIndex: 5)
-        #expect(html == AgentFlowPromptViewer.html(source, rainbowStartIndex: 5))
+        let html = AgentFlowPromptViewer.html(source, rainbowStartIndex: start)
+        #expect(html == AgentFlowPromptViewer.html(source, rainbowStartIndex: start))
         #expect(html.contains("color:#d8fa70\">six</span>"))
         #expect(html.contains("color:#b5fa70\">seven</span>"))
+        #expect(cursor.reserve(wordCount: 1) == 7)
     }
     private func withoutTrustedCloseScript(_ html: String) -> String {
         html.replacingOccurrences(of: "<script>\(AgentFlowPromptViewer.closeScript)</script>", with: "")

@@ -1185,7 +1185,7 @@ struct RecorderTypedInputTests {
             let pipeline = TranscriptionPipeline(modelContext: context, serviceRegistry: registry,
                 enhancementService: nil, delivery: output, archivePrompt: { text, _ in
                     archivedPrompts.append(text)
-                    return URL(fileURLWithPath: "/tmp/test-prompt.md")
+                    return .init(url: URL(fileURLWithPath: "/tmp/test-prompt.md"), rainbowStartIndex: 0)
                 }, currentPromptRecipient: {
                     .init(bundleID: "com.openai.codex", bundleURL: URL(fileURLWithPath: "/Applications/Codex.app"))
                 })
@@ -1276,7 +1276,7 @@ struct RecorderTypedInputTests {
                 var archived: [String] = [], triggers = 0, noteDetections = 0
                 let pipeline = TranscriptionPipeline(modelContext: context, serviceRegistry: registry,
                     enhancementService: enhancement, delivery: output, archivePrompt: { text, _ in
-                        archived.append(text); return URL(fileURLWithPath: "/tmp/note-test.md")
+                        archived.append(text); return .init(url: URL(fileURLWithPath: "/tmp/note-test.md"), rainbowStartIndex: 0)
                     }, currentPromptRecipient: {
                         .init(bundleID: "com.openai.codex", bundleURL: URL(fileURLWithPath: "/Applications/Codex.app"))
                     })
@@ -1342,7 +1342,7 @@ struct RecorderTypedInputTests {
         let pipeline = TranscriptionPipeline(modelContext: context, serviceRegistry: registry,
             enhancementService: nil, delivery: output, archivePrompt: { text, _ in
                 archivedPrompts.append(text)
-                return URL(fileURLWithPath: "/tmp/test-prompt.md")
+                return .init(url: URL(fileURLWithPath: "/tmp/test-prompt.md"), rainbowStartIndex: 0)
             }, currentPromptRecipient: {
                 .init(bundleID: "com.openai.codex", bundleURL: URL(fileURLWithPath: "/Applications/Codex.app"))
             })
@@ -1687,7 +1687,7 @@ struct RecorderTypedInputTests {
                 #expect(FileManager.default.fileExists(atPath: viewer.path))
                 link = viewer.path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? ""
                 await onArchive?()
-                return file
+                return .init(url: file, rainbowStartIndex: 0)
             }, currentPromptRecipient: {
                 recipientReads += 1
                 return recipientOverride ?? .init(bundleID: recipient, bundleURL: URL(fileURLWithPath: "/Applications/Codex.app"))

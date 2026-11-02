@@ -330,7 +330,7 @@ struct LocalFinishLatencyTests {
                  shouldCancel: @escaping () -> Bool) async throws -> Transcription {
             let pipeline = TranscriptionPipeline(modelContext: context, serviceRegistry: registry,
                 enhancementService: nil, delivery: delivery,
-                archivePrompt: { _, _ in URL(fileURLWithPath: "/tmp/local-finish-latency-unused.md") },
+                archivePrompt: { _, _ in .init(url: URL(fileURLWithPath: "/tmp/local-finish-latency-unused.md"), rainbowStartIndex: 0) },
                 currentPromptRecipient: { .init(bundleID: "com.google.Chrome", bundleURL: nil) })
             let record = Transcription(text: "", duration: 0)
             context.insert(record)

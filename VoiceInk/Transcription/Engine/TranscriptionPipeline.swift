@@ -99,7 +99,7 @@ class TranscriptionPipeline {
     private let serviceRegistry: TranscriptionServiceRegistry
     private let enhancementService: AIEnhancementService?
     private let delivery: any TranscriptionDelivering
-    private let archivePrompt: @MainActor (String, UUID) async throws -> URL
+    private let archivePrompt: @MainActor (String, UUID) async throws -> AgentFlowPromptArchive.SavedPrompt
     private let currentPromptRecipient: () -> AgentFlowPromptPreview.Recipient
     private let copyCompletedText: (String) -> Bool
     private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "TranscriptionPipeline")
@@ -112,45 +112,10 @@ class TranscriptionPipeline {
         serviceRegistry: TranscriptionServiceRegistry,
         enhancementService: AIEnhancementService?,
         delivery: (any TranscriptionDelivering)? = nil,
-        archivePrompt: @escaping @MainActor (String, UUID) async throws -> URL = { text, id in
-            // Presentation scope only, using existing app-owned selected-view
-            // logs. Never capture/resolve an AX input or turn this into a Primary
-            // destination. Multiple visible panes are ambiguous, not a guessed chat.
-            // The pipeline already owns MainActor. Keep the app snapshot
-            // here instead of hopping to a generic async executor and queueing
-            // MainActor.run again. Colour continuity uses only the reader's last
-            // known in-memory value; a miss never starts or awaits a log scan.
-            let recipientStarted = Date()
-            var frontmostMs = 0.0
-            var appMetadataMs = 0.0
-            let processID: pid_t? = {
-                let frontmost = NSWorkspace.shared.frontmostApplication
-                let frontmostFinished = Date()
-                frontmostMs = frontmostFinished.timeIntervalSince(recipientStarted) * 1_000
-                // The typing HUD may own focus. Reuse its already maintained
-                // external-app indicator, not a recording-start input or new AX
-                // probe. A real external app switch still overrides that indicator.
-                let app = frontmost?.bundleIdentifier == Bundle.main.bundleIdentifier
-                    ? ActiveWindowService.shared.currentApplication : frontmost
-                let metadataFinished = Date()
-                appMetadataMs = metadataFinished.timeIntervalSince(frontmostFinished) * 1_000
-                // Only real Codex selection reads populate the colour cache.
-                // Other processes simply miss it: no bundle-file/host scan is
-                // needed to choose this optional cosmetic value at finish.
-                return app?.processIdentifier
-            }()
-            let recipientMs = Date().timeIntervalSince(recipientStarted) * 1_000
-            let scopeStarted = Date()
-            // Ethan explicitly prefers a cheap last-known colour scope over a
-            // perfectly current one (2026-11-02). This is cosmetic only: never
-            // reuse this cache for selection provenance, paste or speech context.
-            let chatID = processID.flatMap {
-                CodexConversationContextReader.viewerChatIDIfKnown(processIdentifier: $0)
-            }
-            let scopeCacheMs = Date().timeIntervalSince(scopeStarted) * 1_000
-            Logger(subsystem: "com.ethansk.VoiceInkPlusPlus", category: "VIPPDebug").info(
-                "prompt preparation: recipientMs=\(recipientMs, privacy: .public) frontmostMs=\(frontmostMs, privacy: .public) appMetadataMs=\(appMetadataMs, privacy: .public) scopeCacheMs=\(scopeCacheMs, privacy: .public) scopeKnown=\(chatID != nil, privacy: .public)")
-            return try await AgentFlowPromptArchive.save(text, recordID: id, chatID: chatID)
+        archivePrompt: @escaping @MainActor (String, UUID) async throws -> AgentFlowPromptArchive.SavedPrompt = { text, id in
+            // Colour follows the app, not a chat. The archive reserves once and
+            // returns that same offset for any inline view of this final output.
+            try await AgentFlowPromptArchive.save(text, recordID: id)
         },
         currentPromptRecipient: (() -> AgentFlowPromptPreview.Recipient)? = nil,
         copyCompletedText: @escaping (String) -> Bool = ClipboardManager.copyToClipboard
@@ -245,6 +210,7 @@ class TranscriptionPipeline {
         var finalContextAttached = false
         var compactPromptText: String?
         var archivedPromptURL: URL?
+        var archivedRainbowStartIndex = 0
         var archiveFailed = false
         var completePromptText: String?
         var didInsertSessionMetric = false
@@ -323,13 +289,9 @@ class TranscriptionPipeline {
             let references = liveSelectionReferences().filter {
                 (includeSourceContext && !skipPostProcessingNow) || $0.isTypedText
             }
-            let hasAuthoredWords = current.contains(where: { !$0.isWhitespace })
-                || references.contains(where: \.isTypedText)
-            // Reserve once for this final styled AI message or a local Codex
-            // inline timeline, never per section/line. The formatter stays pure;
-            // ordinary/raw recipients neither lock nor consume palette state.
-            let rainbowStart = (presentation == .styledMath || compactFileURL != nil) && includeSourceContext
-                && !skipPostProcessingNow && hasAuthoredWords ? AuthoredTextRainbow.reserveStartIndex() : 0
+            // Reuse the archive's one reservation. Codex inline output, Claude
+            // XML and the saved viewer must not advance a second colour counter.
+            let rainbowStart = archivedRainbowStartIndex
             let annotated = LiveSelectionReference.interleaving(
                 references,
                 with: current,
@@ -371,7 +333,9 @@ class TranscriptionPipeline {
                   !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
             completePromptText = text
             do {
-                archivedPromptURL = try await archivePrompt(text, transcription.id)
+                let saved = try await archivePrompt(text, transcription.id)
+                archivedPromptURL = saved.url
+                archivedRainbowStartIndex = saved.rainbowStartIndex
                 vippLog.info("pipeline: complete prompt archived chars=\(text.count, privacy: .public) record=\(transcription.id.uuidString, privacy: .public)")
             } catch {
                 archiveFailed = true
@@ -927,7 +891,7 @@ class TranscriptionPipeline {
             let complete = responseConfig != nil && responseError == nil ? transcription.text : LiveSelectionReference.interleaving(references, with: current,
                 includeTiming: !skipPostProcessingNow, includeReadablePreview: false)
             await preservePrompt(complete)
-            // Includes the recipient/scope lookup and the worker's durable writes.
+            // Includes the worker's one parse and durable canonical/viewer writes.
             stageTimings.add("archiveMs", since: archiveStarted)
         }
 

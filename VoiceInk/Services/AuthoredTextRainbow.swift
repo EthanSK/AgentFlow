@@ -1,5 +1,3 @@
-import CryptoKit
-import Darwin
 import Foundation
 
 /// Matches response-preferences' fixed per-word palette. Formatting is local,
@@ -38,106 +36,22 @@ enum AuthoredTextRainbow {
         return words.joined() + tail
     }
 
-    static func reserveStartIndex() -> Int {
-        let files = FileManager.default
-        let home = files.homeDirectoryForCurrentUser
-        let codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"].map(URL.init(fileURLWithPath:))
-            ?? home.appendingPathComponent(".codex", isDirectory: true)
-        let shared = codexHome.appendingPathComponent("state/response-preferences", isDirectory: true)
-        // Interoperate only with an existing response-preferences installation.
-        // Public users need neither Codex nor a personal skill to use the app.
-        var isDirectory: ObjCBool = false
-        if files.fileExists(atPath: shared.path, isDirectory: &isDirectory), isDirectory.boolValue,
-           let index = reserve(at: shared.appendingPathComponent("rainbow-next-index.txt")) {
-            return index
-        }
-        let local = home.appendingPathComponent("Library/Application Support/AgentFlow/Presentation", isDirectory: true)
-        guard (try? files.createDirectory(at: local, withIntermediateDirectories: true)) != nil else { return 0 }
-        return reserve(at: local.appendingPathComponent("rainbow-next-index.txt")) ?? 0
-    }
+    // Ethan's "follows me around between chats" cursor (2026-11-02).
+    // App outputs share one in-process offset. No chat/PID reads, disk state,
+    // expiry map or coupling to the assistant response-preferences counter.
+    static let cursor = Cursor()
 
-    /// Same separate .lock file and atomic replace protocol as rainbow-quote.py.
-    /// Never wait for another process or repair a malformed shared counter during
-    /// paste. A local offset (or zero) is harmless; delaying/dropping words is not.
-    static func reserve(at state: URL, advancingBy positions: Int = 1) -> Int? {
-        let lock = state.deletingPathExtension().appendingPathExtension("lock")
-        let descriptor = Darwin.open(lock.path, O_CREAT | O_RDWR | O_NOFOLLOW, S_IRUSR | S_IWUSR)
-        guard descriptor >= 0 else { return nil }
-        defer { Darwin.close(descriptor) }
-        guard flock(descriptor, LOCK_EX | LOCK_NB) == 0 else { return nil }
-        defer { flock(descriptor, LOCK_UN) }
-
-        var index = 0
-        let input = Darwin.open(state.path, O_RDONLY | O_NOFOLLOW)
-        if input >= 0 {
-            defer { Darwin.close(input) }
-            var metadata = stat()
-            guard fstat(input, &metadata) == 0, metadata.st_size > 0, metadata.st_size <= 64,
-                  (metadata.st_mode & S_IFMT) == S_IFREG else { return nil }
-            var bytes = [UInt8](repeating: 0, count: 64)
-            let count = Darwin.read(input, &bytes, bytes.count)
-            guard count > 0,
-                  let value = Int(String(decoding: bytes.prefix(count), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)) else { return nil }
-            index = ((value % palette.count) + palette.count) % palette.count
-        } else if errno != ENOENT {
-            return nil
-        }
-        do {
-            let advance = max(0, positions) % palette.count
-            try Data("\((index + advance) % palette.count)\n".utf8).write(to: state, options: .atomic)
-            return index
-        } catch {
-            return nil
-        }
-    }
-
-    /// Viewer cursors are separate from the assistant quote counter: Ethan now
-    /// wants the next message to continue AFTER its last authored word, not shift
-    /// the starting colour by one. Context and visual wrapping consume nothing.
-    /// Last-known chat IDs separate chats when available; unknown scope continues
-    /// an app-local stream. Ethan prefers cheap in-memory continuity over exact
-    /// cosmetic persistence (2026-11-02): restart/eviction may reset the colours.
-    static func reserveViewerStartIndex(chatID: String?, wordCount: Int,
-                                        directory: URL = viewerStateDirectory) -> Int {
-        let scope = chatID.flatMap { UUID(uuidString: $0)?.uuidString.lowercased() } ?? "unscoped"
-        guard wordCount > 0 else { return 0 }
-        // The directory is only a namespace for independent stores/tests now;
-        // do not inspect/create it or touch the shared assistant reply counter.
-        return viewerCursors.reserve(key: directory.path + "\0" + scope, wordCount: wordCount)
-    }
-
-    private static let viewerCursors = ViewerCursors()
-
-    final class ViewerCursors: @unchecked Sendable {
-        private struct Entry { let nextIndex: Int; let lastUsed: Date }
+    final class Cursor: @unchecked Sendable {
         private let lock = NSLock()
-        private var entries: [String: Entry] = [:]
-        private var order: [String] = []
-        private let maximumScopes = 64
-        private let idleLifetime: TimeInterval = 7 * 24 * 60 * 60
+        private var nextIndex = 0
 
-        func reserve(key: String, wordCount: Int, now: Date = Date()) -> Int {
-            // Cosmetic only: a tiny bounded in-process counter, with no file,
-            // interprocess lock, parser or background persistence task per prompt.
+        func reserve(wordCount: Int) -> Int {
             lock.lock()
             defer { lock.unlock() }
-            // Ethan's "haven't chatted in a week" resets colour bookkeeping
-            // only. Never prune actual History, chats, recordings or archives.
-            let expired = entries.compactMap { now.timeIntervalSince($0.value.lastUsed) >= idleLifetime ? $0.key : nil }
-            for key in expired { entries.removeValue(forKey: key) }
-            order.removeAll { entries[$0] == nil }
-            let index = entries[key]?.nextIndex ?? 0
-            entries[key] = Entry(nextIndex: (index + max(0, wordCount) % AuthoredTextRainbow.palette.count)
-                % AuthoredTextRainbow.palette.count, lastUsed: now)
-            order.removeAll { $0 == key }
-            order.append(key)
-            while order.count > maximumScopes { entries.removeValue(forKey: order.removeFirst()) }
-            return index
+            let start = nextIndex
+            nextIndex = (start + max(0, wordCount) % AuthoredTextRainbow.palette.count)
+                % AuthoredTextRainbow.palette.count
+            return start
         }
-    }
-
-    static var viewerStateDirectory: URL {
-        FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/AgentFlow/Presentation", isDirectory: true)
     }
 }

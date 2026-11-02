@@ -121,13 +121,14 @@ struct RecorderResponsivenessTests {
 
     @Test func typingFinishDoesNotQueueMainActorWorkItAlreadyOwns() throws {
         let pipeline = try source("VoiceInk/Transcription/Engine/TranscriptionPipeline.swift")
-        #expect(pipeline.contains("private let archivePrompt: @MainActor (String, UUID) async throws -> URL"))
+        #expect(pipeline.contains("private let archivePrompt: @MainActor (String, UUID) async throws -> AgentFlowPromptArchive.SavedPrompt"))
         let archiveStart = try #require(pipeline.range(of: "archivePrompt: @escaping @MainActor"))
         let archiveEnd = try #require(pipeline.range(of: "currentPromptRecipient:", range: archiveStart.upperBound..<pipeline.endIndex))
         let archive = pipeline[archiveStart.lowerBound..<archiveEnd.lowerBound]
         #expect(!archive.contains("await MainActor.run"))
         // Heavy scope/file work must still leave the UI actor.
-        #expect(archive.contains("CodexConversationContextReader.viewerChatIDIfKnown"))
+        #expect(!archive.contains("CodexConversationContextReader"))
+        #expect(!archive.contains("NSWorkspace"))
         #expect(!archive.contains("CodexConversationContextReader.selectionThreadRead"))
         #expect(!archive.contains("CodexConversationContextReader.readSelectionThreadIDs"))
         let scope = try source("VoiceInk/Transcription/Engine/CodexConversationContext.swift")
