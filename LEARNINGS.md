@@ -1,5 +1,29 @@
 # Learnings
 
+## 2026-11-02 — Public releases must carry both the app and current optional setup
+
+Public source and a local install do not update the downloadable app. Build 477's
+native sources and tests matched the installed commit `7c782eab`, then public merge
+`af08dfed` passed all 804 named tests in 31 suites on the Mini and produced a separate
+universal Release artifact. One initial reminder-process fixture failed; its focused
+canonical rerun and the second complete run passed without a source change. Keep that
+first failure rather than presenting the release gate as a first-attempt pass.
+
+The approved bridge snapshot had drifted from 0.2.6 to 0.2.8, including renamed Swift
+files. Importing the enumerated roots requires retiring the exact formerly imported
+paths and updating the public portable build/install/uninstall references; preserve
+the stable bundle, native-host and recording-notification identifiers. Commit
+`7fadad57` aligns the snapshot and setup. All 22 bridge test files, 12 setup/export/
+signing fixtures and the separate helper build passed on the Mini. Its default Node
+26 installation could not load a Homebrew library; the already installed Node 22
+ran the checks, without repairing or changing system packages.
+
+Developer ID signing/notarization, downloaded-checksum verification and isolated skill
+installation are separate from a fresh macOS-account permissions/recording test. Never
+call the latter complete from these receipts. The owner's running app, settings and
+permissions were not replaced for this public-artifact publication.
+
+
 ## 2026-11-01 — Separate requested key waits from finish elapsed time
 
 A read-only audit of the build-474 natural finishes at 13:16 refined the earlier
