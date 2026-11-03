@@ -1,3 +1,5 @@
+// Native window fixtures exercise real History actions, zoom and bounded layout
+// with synthetic data only. Run on the Mini through Xcode's canonical test action.
 import AppKit
 import SwiftUI
 import Testing
@@ -280,6 +282,61 @@ struct MainWindowPresentationTests {
         #expect(AppDelegate.shouldBlockTermination(hasInFlightSessions: true, hasHistoryRetries: false))
     }
 
+    @MainActor @Test func historyCardScrollingBuildsOnlyNearbyCompleteMessages() throws {
+        let payload = String(repeating: "Complete selected context and all of its words. ", count: 120)
+        let records = (0..<20).map { index in
+            Transcription(text: "<typed_text>Authored row \(index)</typed_text>"
+                + "<app_selection><text>\(payload)</text></app_selection>", duration: 0)
+        }
+        let visits = HistoryLayoutVisits()
+        var scrollToLast: (() -> Void)?
+        let lastID = try #require(records.last?.id)
+        let content = ScrollViewReader { proxy in
+            HistoryCardScrollView {
+                ForEach(records) { record in
+                    HistoryLayoutProbeRow(record: record, visits: visits)
+                        .id(record.id)
+                }
+            }
+            .onAppear { scrollToLast = { proxy.scrollTo(lastID, anchor: .bottom) } }
+        }
+        let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 760, height: 600),
+            styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let host = NSHostingView(rootView: content)
+        window.contentView = host
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil); window.close() }
+        settle(host)
+        let initialCount = visits.ids.count
+        print("History lazy layout: \(initialCount) of \(records.count) complete cards built initially")
+        #expect(initialCount > 0 && initialCount < records.count / 2)
+        #expect(!visits.ids.contains(lastID))
+        try saveHistoryLayoutSnapshot(host, suffix: "top")
+
+        // Offscreen rows are deferred, not dropped or replaced with a truncated
+        // display/copy payload. Scrolling must build the real last full card.
+        let scroll = try #require(scrollToLast)
+        scroll()
+        settle(host)
+        #expect(visits.ids.contains(lastID))
+        try saveHistoryLayoutSnapshot(host, suffix: "bottom")
+        for record in records {
+            let message = HistoryContextPresentation.message(for: record)
+            #expect(message.displayText == record.text)
+            #expect(message.text.contains(payload))
+        }
+    }
+
+    @MainActor private func saveHistoryLayoutSnapshot(_ host: NSView, suffix: String) throws {
+        guard let directory = ProcessInfo.processInfo.environment["VIPP_TEST_HISTORY_LAZY_SNAPSHOTS"],
+              let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return }
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        let url = URL(fileURLWithPath: directory)
+            .appendingPathComponent("history483-\(suffix).png")
+        try bitmap.representation(using: .png, properties: [:])?.write(to: url)
+    }
+
     @MainActor @Test func exitDraftAndRecoveredCodexCopyStayAtTheTopAndPreserveCompleteXML() throws {
         let xml = "<speech start_at=\"123\" end_at=\"456\">\n"
             + String(repeating: "Every retained word and attribute. ", count: 1000)
@@ -363,5 +420,21 @@ struct MainWindowPresentationTests {
                                            inMode: .default, dequeue: true) {
             NSApp.sendEvent(queued)
         }
+    }
+}
+
+@MainActor private final class HistoryLayoutVisits {
+    var ids = Set<UUID>()
+}
+
+private struct HistoryLayoutProbeRow: View {
+    let record: Transcription
+    let visits: HistoryLayoutVisits
+
+    var body: some View {
+        let _ = visits.ids.insert(record.id)
+        HistoryCardRow(transcription: record, isExpanded: false, isChecked: false,
+            onToggleExpand: {}, onToggleCheck: {}, onShowInfo: {})
+            .historyCardSurface()
     }
 }

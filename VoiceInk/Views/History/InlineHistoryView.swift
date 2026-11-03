@@ -1,3 +1,6 @@
+// The main History page keeps complete Flow messages and their actions available;
+// its scroll container lays out only nearby cards so saving a recording cannot
+// synchronously typeset every long message in the current history page.
 import SwiftUI
 import SwiftData
 
@@ -245,48 +248,44 @@ struct InlineHistoryView: View {
     // MARK: - Card List
 
     private var cardListView: some View {
-        Form {
+        HistoryCardScrollView {
             ForEach(displayedTranscriptions) { transcription in
-                Section {
-                    HistoryCardRow(
-                        transcription: transcription,
-                        isExpanded: expandedId == transcription.id,
-                        isChecked: selectedTranscriptions.contains(transcription),
-                        onToggleExpand: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                expandedId = expandedId == transcription.id ? nil : transcription.id
-                            }
-                        },
-                        onToggleCheck: { toggleSelection(transcription) },
-                        onShowInfo: {
-                            openPanel(mode: .info, transcriptionID: transcription.id)
+                HistoryCardRow(
+                    transcription: transcription,
+                    isExpanded: expandedId == transcription.id,
+                    isChecked: selectedTranscriptions.contains(transcription),
+                    onToggleExpand: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            expandedId = expandedId == transcription.id ? nil : transcription.id
                         }
-                    )
-                }
+                    },
+                    onToggleCheck: { toggleSelection(transcription) },
+                    onShowInfo: {
+                        openPanel(mode: .info, transcriptionID: transcription.id)
+                    }
+                )
+                .historyCardSurface()
             }
 
             if hasMoreContent {
-                Section {
-                    Button(action: {
-                        Task { await loadMoreContent() }
-                    }) {
-                        HStack(spacing: 8) {
-                            if isLoading {
-                                ProgressView().controlSize(.small)
-                            }
-                            Text(isLoading ? "Loading..." : "Load More")
-                                .font(.system(size: 13, weight: .medium))
+                Button(action: {
+                    Task { await loadMoreContent() }
+                }) {
+                    HStack(spacing: 8) {
+                        if isLoading {
+                            ProgressView().controlSize(.small)
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 4)
+                        Text(isLoading ? "Loading..." : "Load More")
+                            .font(.system(size: 13, weight: .medium))
                     }
-                    .buttonStyle(.plain)
-                    .disabled(isLoading)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
                 }
+                .buttonStyle(.plain)
+                .disabled(isLoading)
+                .historyCardSurface()
             }
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
     }
 
     // MARK: - Side Panel
@@ -442,6 +441,36 @@ struct InlineHistoryView: View {
         } catch {
             print("Error selecting all transcriptions: \(error)")
         }
+    }
+}
+
+// The other History layout already uses ScrollView/LazyVStack. Grouped Form
+// eagerly shaped all 20 complete Flow messages during each stop-time refresh,
+// causing measured 365–407 ms main-thread hangs. Keep the full message and copy
+// payload intact, but create/layout each card only near the visible scroll area.
+struct HistoryCardScrollView<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(spacing: 12) {
+                content
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
+        }
+    }
+}
+
+extension View {
+    func historyCardSurface() -> some View {
+        self
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: AppTheme.Radius.card, style: .continuous)
+                    .fill(AppTheme.Surface.card)
+            )
     }
 }
 
