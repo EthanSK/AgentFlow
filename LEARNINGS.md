@@ -6028,3 +6028,15 @@ The final canonical Mini release gate passed **804 tests in 31 suites** for nati
 **Validation:** On Mini macOS 27.2 (26B123), the old History UI test could pass alone but repeatedly fail in the complete test run. Its synthetic event helper queued mouse-up and then sent that release again; macOS logged stuck gesture recognizers and the recovered-row raw-copy click left the previous clipboard value unchanged. Dispatching one down/up pair through AppKit's queue preserved the real click and exact text assertions. The final native source acb688ce153331e95a5cfc42ea1dbe7afc83e04a passed 25 focused tests and all 809 tests in 31 suites through canonical Xcode actions. Build 481 was installed using the unchanged stable signing requirement, after a delivered five-second warning and normal exit of build 480; PID 76648 and CDHash 50601e73b4328c89583725c0f1869908cf035c0f were verified. Official VoiceInk remained byte-identical. Fresh user highlighting, focus and finish traces are still required to diagnose the reported live failures.
 
 Evidence: Documents/Codex/2026-11-02/agentflow-profile481/{test-history.json,review481.json,installed481.json,mini-focused.log,mini-full.log}.
+
+## 2026-11-03 — Build 482: user-approved 400 ms paste-to-Send allowance
+
+**Trigger:** Ethan reported another skipped Send with the 300 ms allowance and requested 400 ms.
+
+**Verified change:** Primary delivery now waits 400 ms only when the current Mode requests automatic Send, after posting the ordinary system-focused paste. Paste-only delivery skips this allowance. No pre-paste padding, key-event hold, recipient classifier, focus rewrite, read-back or retry was added; the existing cancellation and newer-session checks still run after the wait. Both the dedicated keyboard-sequence test and the Primary route contract assert the same configured allowance.
+
+**Validation:** The first focused run exposed a second contract assertion still expecting 300 ms; updating that expectation preserved all route assertions. Native commit b7730ed30bd7a3e60d1106ec2123bd0195b2d65c passed all 9 selected tests and the canonical 809-test, 31-suite release pass on the Mini. The universal build was signed with the existing local identity and installed only after the app's all-session guard deferred one normal quit and the prior process exited. Deep/strict signing, Automation and audio-input entitlements, the running build and official VoiceInk's unchanged executable were verified. Public source 1d8f7f98a988019c8c975e4b833c82de505f29cc has the same tested native files; its release is Developer ID signed and Apple-notarized.
+
+**Limit:** Posting Return after 400 ms is not proof that every receiving app submitted. Fresh user acceptance remains necessary; this timing request does not resolve the separate observed archive-main-resume delay or selection/focus issues.
+
+Evidence: Documents/Codex/2026-11-03/agentflow-send482/{review482.json,mini-focused.log,mini-full.log,release482.json,verified-local482.json,public-publish482.log}.
