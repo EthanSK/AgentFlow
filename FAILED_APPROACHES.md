@@ -2489,3 +2489,15 @@ verified deferred-termination callback; a process-exit wait alone cannot provide
 ## 2026-11-02 — Do not accept an isolated History click pass as full-suite proof
 
 The unmodified History copy fixture passed alone and with either preceding window test, but failed in its complete 11-test suite and twice in the 809-test run on Mini macOS 27.2. Removing only the explicit duplicate mouse-up while retaining the original mixed queued/direct event dispatch produced four other copy failures, so that partial adjustment was rejected. Queue both down and up and pump them through normal AppKit dispatch exactly once; preserve every full-content and interaction assertion. Reconsider a different event sequence only with the full window-suite and release-suite evidence, not a lone passing copy test. No production Copy behavior was changed to accommodate this fixture.
+
+
+## 2026-11-03 — Attribute a particular freeze from an aggregate sample — REJECTED
+
+A timestamp-overlapping `/usr/bin/sample` aggregate does not timestamp each collected
+stack. It cannot prove which frame owned a specific typed finish's 1.2–1.6 second
+main-actor resume gap. A later timestamped Instruments trace caught four different
+natural voice stops and repeated 364–407 ms History layout hangs; this justified the
+bounded lazy History layout fix, not retrospective attribution of the older samples.
+Reconsider an exact root-frame claim only with per-sample timestamps correlated to
+that finish/session and interval. Fixture speed and successful release tests also do
+not establish real-user end-to-end latency after installation.

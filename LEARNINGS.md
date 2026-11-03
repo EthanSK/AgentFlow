@@ -1,5 +1,46 @@
 # Learnings
 
+## 2026-11-03 — Correlate finish freezes with timestamped main-thread stacks
+
+The build-482 typed test at 20:31:44.895 UTC had 1.107 ms of archive worker work,
+0.021 ms logging, 0.008 ms join, and a 688.588 ms main-actor resume gap. It arrived
+after the earlier requested three-minute profiler expired; do not claim that
+capture overlapped the test or that the aggregate sample identifies its root frame.
+The previous 1.218/1.609 s typed resume gaps likewise remain frame-unattributed.
+
+A separate five-minute Time Profiler capture at 20:32–20:37 UTC caught four natural
+voice stops. Each began a 364–407 ms Instruments main-thread microhang within 3–4 ms
+of Stop; the correlated stacks contained History fetch/reload, SwiftUI layout and
+CoreText shaping. Archive resume was only 52–59 ms in these voice samples. This
+is evidence of repeated stop-time History UI work, not proof that it owns every
+older typed gap or that network latency caused those local intervals.
+
+Build 483 changes only InlineHistoryView's eager grouped Form/Section layout to a
+ScrollView/LazyVStack using the same complete HistoryCardRow and projections.
+The real native fixture initially builds 2 of 20 long cards and constructs the last
+when scrolled there; full source/copy, header actions and scrollable content survive.
+No timing, provider, microphone, paste, focus, Primary/Next or recovery code changed;
+the approved 400 ms AFTER-paste-to-Send allowance remains. Source d5804af8 and public
+096af15a are byte-equivalent across native/test/project inputs. Canonical Mini
+Xcode gates passed 29 focused cases and 810 named tests in 31 suites on the exact
+public source. Visual fixture checks covered top/bottom full-width cards. Build
+483 installed after the real five-second notice and one normal quit; stable outer/
+whisper signing, Automation/audio-input, rollback and official VoiceInk hash verified.
+Real-user typing improvement after this installation is still unverified.
+
+Preserve failed attempts: Swift compiler asserted on immediate invocation of
+`try #require(optionalClosure)()`; unwrap to a local and invoke separately.
+One full transfer omitted the existing trace-reader fixture and failed 1 of 810;
+adding the existing fixture made the exact full gate pass. A Release build's
+relative CODE_SIGN_ENTITLEMENTS was evaluated in a Swift-package source root;
+resolve it to the actual remote job's absolute entitlement path before xcodebuild.
+The successful universal ordinary Release and matching dSYM were retained separately
+from unit-test hosts, then signed without a MacBook rebuild.
+
+
+---
+
+
 ## 2026-11-02 — Public releases must carry both the app and current optional setup
 
 Public source and a local install do not update the downloadable app. Build 477's
