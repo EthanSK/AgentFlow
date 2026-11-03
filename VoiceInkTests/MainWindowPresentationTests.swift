@@ -300,6 +300,7 @@ struct MainWindowPresentationTests {
             }
             .onAppear { scrollToLast = { proxy.scrollTo(lastID, anchor: .bottom) } }
         }
+        .background(AppTheme.Surface.window)
         let window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 760, height: 600),
             styleMask: [.titled, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
