@@ -15,8 +15,12 @@ Set only that M1 config key to true and verified every other config byte unchang
 The file is saved, but automated control of com.openai.codex was refused. A fresh
 22:43:47 test still arrived escaped: changing the file did not update the running
 editor. The user was asked to apply Plain text mode through Settings → General,
-then send another test; that live switch remains pending. Do not claim live repair
-from file readback or rewrite old messages. The earlier malformed assistant delimiter was a
+then send another test. Ethan then enabled the switch and sent a correctly formatted
+message with an intact Markdown link and single LaTeX delimiters. He explicitly
+confirmed “ahhh i had to turn it on remebre that that was ti”. The live fix is now
+user-confirmed: enable Plain text mode in the running Codex app, rather than relying
+on a config-file write to refresh an existing editor. Keep old failed messages as
+historical evidence; do not rewrite them. The earlier malformed assistant delimiter was a
 separate confirmed error, not a sufficient explanation of the user's later screenshot.
 
 New-user setup now has a reusable immediate-save helper, called by the source first-use
