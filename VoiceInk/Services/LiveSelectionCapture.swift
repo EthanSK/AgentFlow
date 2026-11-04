@@ -2,6 +2,7 @@ import AppKit
 import CoreServices
 import Darwin
 import Foundation
+import ImageIO
 import SQLite3
 
 /// A per-recording reference to text selected in the frontmost app. The HUD
@@ -1375,17 +1376,31 @@ final class LiveSelectionCapture {
         let size = url.path.withCString { path in
             attribute.withCString { name in getxattr(path, name, nil, 0, 0, 0) }
         }
-        guard size > 0, size < 1024 else { return false }
-        var bytes = [UInt8](repeating: 0, count: size)
-        let read = bytes.withUnsafeMutableBytes { buffer in
-            url.path.withCString { path in
-                attribute.withCString { name in
-                    getxattr(path, name, buffer.baseAddress, size, 0, 0)
+        if size > 0, size < 1024 {
+            var bytes = [UInt8](repeating: 0, count: size)
+            let read = bytes.withUnsafeMutableBytes { buffer in
+                url.path.withCString { path in
+                    attribute.withCString { name in
+                        getxattr(path, name, buffer.baseAddress, size, 0, 0)
+                    }
                 }
             }
+            if read == size, isScreenshotMarker(Data(bytes)) { return true }
         }
-        guard read == size else { return false }
-        return isScreenshotMarker(Data(bytes))
+
+        // Ethan's "screenshots don't add" on a fresh Mac: native Screenshot
+        // also writes an EXIF UserComment, while Spotlight and its xattr may be
+        // absent. Read metadata only, without decoding pixels or trusting names.
+        // The same configured-folder and five-second/session gates still apply.
+        let options = [kCGImageSourceShouldCache: false] as CFDictionary
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, options),
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, options)
+                as? [CFString: Any],
+              let exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any],
+              let comment = exif[kCGImagePropertyExifUserComment] as? String else {
+            return false
+        }
+        return comment == "Screenshot"
     }
 
     nonisolated static func isScreenshotMarker(_ data: Data) -> Bool {

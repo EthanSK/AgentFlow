@@ -13,6 +13,7 @@ import CoreGraphics
 import IOKit.hidsystem
 import Darwin
 import Foundation
+import ImageIO
 import ApplicationServices
 import SQLite3
 @testable import VoiceInkPlusPlus
@@ -923,6 +924,42 @@ struct VoiceInkTests {
         #expect(!LiveSelectionCapture.findNativeScreenshots(
             in: directory, activatedAt: Date()
         ).map(\.0.lastPathComponent).contains(ordinaryImage.lastPathComponent))
+    }
+
+    @Test @MainActor func nativeScreenshotEXIFWorksWithoutSpotlightOrExtendedAttributes() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voiceink-screenshot-exif-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let context = try #require(CGContext(data: nil, width: 1, height: 1,
+            bitsPerComponent: 8, bytesPerRow: 4, space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        let image = try #require(context.makeImage())
+
+        // Real Screenshot files on the bedside Mac carry this embedded marker
+        // without kMDItemIsScreenCapture. Fixtures contain no private screen pixels.
+        for (type, ext) in [("public.png", "png"), ("public.jpeg", "jpg")] {
+            for (name, comment, accepted) in [
+                ("native", "Screenshot", true),
+                ("Screenshot ordinary", "A screenshot of a holiday", false),
+                ("Screenshot unmarked", "", false)
+            ] {
+                let file = directory.appendingPathComponent("\(name).\(ext)")
+                let destination = try #require(CGImageDestinationCreateWithURL(
+                    file as CFURL, type as CFString, 1, nil))
+                let properties = [kCGImagePropertyExifDictionary:
+                    [kCGImagePropertyExifUserComment: comment]] as CFDictionary
+                CGImageDestinationAddImage(destination, image, properties)
+                #expect(CGImageDestinationFinalize(destination))
+                let created = try #require(file.resourceValues(forKeys: [.creationDateKey]).creationDate)
+                #expect(LiveSelectionCapture.isNativeScreenshot(file, since: created) == accepted)
+                #expect(!LiveSelectionCapture.isNativeScreenshot(file, since: created.addingTimeInterval(10)))
+                let captured = LiveSelectionCapture.findNativeScreenshots(
+                    in: directory, activatedAt: created.addingTimeInterval(4.9))
+                #expect(captured.contains(where: { $0.0 == file }) == accepted)
+            }
+        }
     }
 
     @Test func recorderContextGrowsBeforeItsScreenBound() throws {

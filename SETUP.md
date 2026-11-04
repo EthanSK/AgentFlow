@@ -137,6 +137,9 @@ when no recording or transcription is active. The companion has its own
   add page and DOM cues when browser scripting is available. Other apps work on a best-effort basis
   when they expose selected text through read-only macOS APIs. The receiving
   agent needs local access to the screenshot file to view its pixels.
+  Screenshot detection is built into Agent Flow; no separate watcher is needed. It follows
+  the save folder in macOS Screenshot Options and accepts native screenshot metadata even
+  before Spotlight indexes the file. Clipboard-only images are not saved screenshot files.
 - If you installed the YouTube Bridge, play a disposable YouTube video, start dictation, and
   confirm that specific video pauses and resumes. An initially paused video must stay paused.
 - If you installed Agentic Mouse, test its physical buttons separately. Installing Agent Flow
