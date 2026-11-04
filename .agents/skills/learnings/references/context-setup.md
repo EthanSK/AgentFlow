@@ -14,7 +14,8 @@ Use [SETUP.md](../../../../SETUP.md) as the canonical public instructions.
 - For escaped LaTeX or broken links, compare Codex's **Plain text mode**
   (`[desktop].composerPlainTextMode`) separately from Agent Flow's Mode/model settings.
   The working M5 had it on; the M1 default was off despite identical receiving-app code.
-  Preserve other Codex settings. A changed file or correct clipboard is not a live pass:
+  Apply the switch in Codex Settings → General; file edits may not refresh a running
+  editor. Preserve other Codex settings. A changed file or correct clipboard is not a live pass:
   verify a fresh paste and its received message; do not rewrite old message history.
 - Treat microphone choice, provider/Mode settings, screenshot saving, paste formatting,
   optional browser helpers and physical mouse mappings as separate checks. A setting

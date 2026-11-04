@@ -12,16 +12,19 @@ the plain-text path preserves text. This explains how a valid producer clipboard
 be escaped by the receiving editor, independently of transcription or app version.
 
 Set only that M1 config key to true and verified every other config byte unchanged.
-The file is saved, but automated control of com.openai.codex was refused; an actual
-new paste in the running app remains pending. Do not claim live repair from the file
-readback or rewrite old messages. The earlier malformed assistant delimiter was a
+The file is saved, but automated control of com.openai.codex was refused. A fresh
+22:43:47 test still arrived escaped: changing the file did not update the running
+editor. The user was asked to apply Plain text mode through Settings → General,
+then send another test; that live switch remains pending. Do not claim live repair
+from file readback or rewrite old messages. The earlier malformed assistant delimiter was a
 separate confirmed error, not a sufficient explanation of the user's later screenshot.
 
 New-user setup now has a reusable immediate-save helper, called by the source first-use
 installer; downloaded-app users have a separate documented command. The project skill
 routes to context-setup.md. No daemon, extra capture wait or microphone change was added.
 Isolated helper tests cover read-only checks, idempotence, preserved preferences, failed
-writes, bad arguments, non-macOS refusal and the first-use check integration.
+writes, bad arguments, non-macOS refusal and the first-use check integration. All
+seven tests passed on the Mini; bash syntax and skill validation passed separately.
 
 Recent-history audit: main Agent Flow and Local finish-delay investigation confirm
 build 483 addressed measured History layout stalls, but typing-speed acceptance remained
