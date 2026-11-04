@@ -1,5 +1,29 @@
 # Learnings
 
+## 2026-11-04 — Native screenshots may lack Spotlight and xattr markers
+
+Ethan reported screenshot context missing on his M1 Max after installing build 483,
+while selected text worked. No separate screenshot watcher is required: the native
+per-session watcher already follows the configured macOS screenshot folder.
+Three recent native PNGs in Documents/Screenshots lacked the
+com.apple.metadata:kMDItemIsScreenCapture xattr, and mdls returned no metadata.
+ImageIO nevertheless returned Exif UserComment exactly `Screenshot` for the same
+files. The old detector returned false without consulting that embedded marker.
+No screenshot pixels were decoded or shared during this metadata investigation.
+
+Commit `7650022e98a0e6b591fe62535315fcd1968daeb0` adds a metadata-only ImageIO
+fallback for that exact marker and documents built-in detection in SETUP.md.
+Configured-folder, fresh-file, five-second lookback and final path-only delivery
+boundaries remain unchanged; a filename alone is still insufficient. Regression
+fixtures cover PNG/JPEG markers, ordinary images and stale timestamps.
+
+Status: Swift syntax parsing and diff whitespace checks passed. Full native tests,
+signed build 484, installed HUD capture and public release are PENDING. The Fleet
+refused Mini admission because another exclusive job owns it; no native test or
+build was moved to a different Mac. Build 483 remains installed on the M1. Do not
+claim this source patch proves first-use or end-to-end screenshot capture yet.
+
+
 ## 2026-11-03 — Correlate finish freezes with timestamped main-thread stacks
 
 The build-482 typed test at 20:31:44.895 UTC had 1.107 ms of archive worker work,
