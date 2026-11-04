@@ -128,6 +128,11 @@ silently skipped all newer headings; mixed-layout and literal-keyword fixtures n
 
 For upstream work, read `UPDATING.md` and treat upstream as a feature source, never a branch to merge wholesale. Audit in a disposable clone/worktree, obtain Ethan's approval for one user-visible feature, and manually port only that feature while preserving VoiceInk++'s destination, delivery, vocabulary, identity, and release guards.
 
+For new-user setup, missing screenshots or escaped LaTeX pastes, read
+[context setup](references/context-setup.md) and the canonical setup guide. New users
+should get these checks during setup without having to discover missing settings.
+User-requested — 2026-11-04.
+
 For public setup changes, keep `SETUP.md`, README, website and native Help destinations consistent. Verify that a linked repository feature is actually enabled before advertising it as a help or reporting path; VoiceInk++ GitHub Issues was disabled despite a readable `/issues` page. Treat app launch, provider/permissions, Codex skill discovery, Chrome extension loading, the YouTube helper/native host/login LaunchAgent, and optional mouse mappings as separate receipts. The public `scripts/install-first-use.sh` is only for a Mac without VoiceInk++ installed; it must refuse replacement and never impersonate the guarded Mini-to-MacBook native update. Only the optional YouTube helper installs a login LaunchAgent; the old fork auto-update LaunchAgent stays disabled. A successful build or `open` exit is not a persistent-PID or working-Chrome receipt. Self-improved — 2026-09-24: the shareable setup and disabled Issues setting exposed these distinct publication and installation boundaries.
 
 Follow every public installation link and require its advertised build to agree

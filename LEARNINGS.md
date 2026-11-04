@@ -1,5 +1,36 @@
 # Learnings
 
+## 2026-11-04 — Match the receiving Codex composer, not only Agent Flow
+
+The M1 delivered backslash-escaped links and LaTeX although its Agent Flow clipboard
+contained the original Markdown. Both Macs ran ChatGPT/Codex 26.1029.61003 (24614), with
+identical app.asar SHA-256 0c951258b7ab381ec601045ffb02159e53f424548dda18e6a4dcfd126557383b.
+The M5 config had [desktop].composerPlainTextMode=true; the M1 lacked the key (default
+false), and its retained composer document recorded plainTextMode=false. The bundled
+composer's rich-text path uses pasteLiteralText followed by Markdown serialization;
+the plain-text path preserves text. This explains how a valid producer clipboard can
+be escaped by the receiving editor, independently of transcription or app version.
+
+Set only that M1 config key to true and verified every other config byte unchanged.
+The file is saved, but automated control of com.openai.codex was refused; an actual
+new paste in the running app remains pending. Do not claim live repair from the file
+readback or rewrite old messages. The earlier malformed assistant delimiter was a
+separate confirmed error, not a sufficient explanation of the user's later screenshot.
+
+New-user setup now has a reusable immediate-save helper, called by the source first-use
+installer; downloaded-app users have a separate documented command. The project skill
+routes to context-setup.md. No daemon, extra capture wait or microphone change was added.
+Isolated helper tests cover read-only checks, idempotence, preserved preferences, failed
+writes, bad arguments, non-macOS refusal and the first-use check integration.
+
+Recent-history audit: main Agent Flow and Local finish-delay investigation confirm
+build 483 addressed measured History layout stalls, but typing-speed acceptance remained
+pending. H Chat's completed Dvorak fix and the user's successful ChatGPT-mode retry are
+documented in that project's 38f478b; their exact recovery cause remains unproven.
+Public Agent Flow 484 notarization and H Chat production updates remain blocked on the
+M5 signing keychain. Preserve those gaps instead of calling every setup issue resolved.
+
+
 ## 2026-11-04 — Floating screenshot thumbnails can outlive context capture
 
 Build 484 fixed missing native metadata, but Ethan's next real capture still did
@@ -20,7 +51,8 @@ boundary for new users.
 Do not call a synthetic metadata test an end-to-end screenshot pass. Qualify a
 real native screenshot during recording, include floating-thumbnail/default
 save timing, and verify both the HUD and final message. Immediate-save setting
-readback passed; fresh live capture acceptance is still pending. Never broaden
+readback passed. Ethan confirmed fresh live screenshot capture in the 22:33:21 and
+22:34:54 messages; both contained a local_screenshot path. Never broaden
 the watcher to old files or amend an already-delivered message to hide this gap.
 
 

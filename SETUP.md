@@ -32,6 +32,31 @@ For an update, finish any recording/transcription, quit the app, and keep a ZIP 
 
 To check a download, put the ZIP and `SHA256SUMS` from that release in the same folder, then run `shasum -a 256 -c SHA256SUMS` there. A matching checksum verifies the download; macOS separately checks the signature and notarization.
 
+### Set up screenshot saving
+
+Turn off macOS **Show Floating Thumbnail** so a screenshot is saved before you finish
+recording. Agent Flow can then include its path immediately; no extra watcher is needed.
+The source first-use installer configures this automatically. For a downloaded app, after
+cloning this repository, run:
+
+```sh
+./scripts/configure-screenshot-capture.sh
+./scripts/configure-screenshot-capture.sh --check
+```
+
+This changes only the floating-thumbnail setting, preserving your save folder and image
+format. To restore the thumbnail, run
+`defaults write com.apple.screencapture show-thumbnail -bool true`. With the thumbnail on,
+keep recording until the screenshot has actually saved.
+
+### Codex message formatting
+
+In Codex **Settings → General**, turn on **Plain text mode** for the message composer.
+This keeps Agent Flow's Markdown links and LaTeX intact when you paste them; the sent
+message can still render the formatting. With rich-text editing enabled, Codex can escape
+the pasted Markdown instead. This is a Codex setting, separate from Agent Flow's Modes
+and transcription model.
+
 ### Add optional extras after installing the download
 
 The ZIP contains the app only. Do not run `install-first-use.sh --all` after installing it:
@@ -81,7 +106,8 @@ It also requires a persistent app process before reporting a successful launch.
 For the bundled YouTube companion and Codex context skill too, use
 `./scripts/install-first-use.sh --all` **on a first installation only**. You can choose just
 `--with-youtube-bridge` or `--with-codex-skill` instead. The read-only `--check` option reports
-which local files exist; it does not prove that recording, Chrome or mouse controls work.
+which local files exist and whether the floating thumbnail is disabled; it does not prove
+that recording, screenshot capture, Chrome or mouse controls work.
 
 If Agent Flow is already installed, do **not** use the first-use script. Read
 [BUILDING.md](BUILDING.md) for the build/update boundary, preserve a rollback, and update only

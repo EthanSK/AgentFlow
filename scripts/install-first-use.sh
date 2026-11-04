@@ -61,11 +61,12 @@ if "$check_only"; then
       echo "Missing: $path"
     fi
   done
+  "$repo_root/scripts/configure-screenshot-capture.sh" --check || true
   echo "Chrome extension, macOS permissions, provider access and physical mouse buttons need separate verification."
   exit 0
 fi
 
-for command in make xcodebuild codesign ditto plutil open; do
+for command in make xcodebuild codesign ditto plutil open defaults; do
   if ! command -v "$command" >/dev/null 2>&1; then
     echo "Missing required command: $command" >&2
     exit 1
@@ -128,6 +129,8 @@ fi
 mv "$candidate" "$app_target"
 rmdir "$stage_dir"
 echo "Installed Agent Flow at $app_target"
+
+"$repo_root/scripts/configure-screenshot-capture.sh"
 
 if "$with_skill"; then
   python3 "$repo_root/scripts/install-context-skill.py"
