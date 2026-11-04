@@ -140,6 +140,10 @@ when no recording or transcription is active. The companion has its own
   Screenshot detection is built into Agent Flow; no separate watcher is needed. It follows
   the save folder in macOS Screenshot Options and accepts native screenshot metadata even
   before Spotlight indexes the file. Clipboard-only images are not saved screenshot files.
+  macOS can keep a capture in its floating thumbnail for several seconds before saving
+  the file. Keep the Agent Flow recording open until the file is saved, or turn off
+  **Show Floating Thumbnail** in macOS Screenshot → Options for immediate saving. A
+  screenshot that is saved only after Agent Flow finishes is outside that recording.
 - If you installed the YouTube Bridge, play a disposable YouTube video, start dictation, and
   confirm that specific video pauses and resumes. An initially paused video must stay paused.
 - If you installed Agentic Mouse, test its physical buttons separately. Installing Agent Flow

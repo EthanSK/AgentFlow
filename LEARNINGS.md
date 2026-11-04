@@ -1,5 +1,29 @@
 # Learnings
 
+## 2026-11-04 — Floating screenshot thumbnails can outlive context capture
+
+Build 484 fixed missing native metadata, but Ethan's next real capture still did
+not enter its message. The screenshot named 22.13.02 was created as a file at
+22:13:08.503706; the corresponding Transcription was created at 22:13:08.321719.
+VoiceInkEngine stops LiveSelectionCapture before creating that record. The file
+therefore did not exist until after the watcher stopped. TCC logged Documents
+folder access as allowed for the same installed PID; changing folder permissions
+would not repair this timing case.
+
+The M5 has com.apple.screencapture show-thumbnail=false; the M1 had no override,
+so its floating thumbnail deferred the save. Matched the M1 setting to false
+under Ethan's existing request to match the working M5 setup. This removes the
+save delay rather than adding a transcription wait or changing the session
+boundary. SETUP.md now explains this native macOS setting and the saved-file
+boundary for new users.
+
+Do not call a synthetic metadata test an end-to-end screenshot pass. Qualify a
+real native screenshot during recording, include floating-thumbnail/default
+save timing, and verify both the HUD and final message. Immediate-save setting
+readback passed; fresh live capture acceptance is still pending. Never broaden
+the watcher to old files or amend an already-delivered message to hide this gap.
+
+
 ## 2026-11-04 — Native screenshots may lack Spotlight and xattr markers
 
 Ethan reported screenshot context missing on his M1 Max after installing build 483,
