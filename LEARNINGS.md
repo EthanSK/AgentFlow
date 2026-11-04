@@ -17,11 +17,23 @@ Configured-folder, fresh-file, five-second lookback and final path-only delivery
 boundaries remain unchanged; a filename alone is still insufficient. Regression
 fixtures cover PNG/JPEG markers, ordinary images and stale timestamps.
 
-Status: Swift syntax parsing and diff whitespace checks passed. Full native tests,
-signed build 484, installed HUD capture and public release are PENDING. The Fleet
-refused Mini admission because another exclusive job owns it; no native test or
-build was moved to a different Mac. Build 483 remains installed on the M1. Do not
-claim this source patch proves first-use or end-to-end screenshot capture yet.
+Verification: all 811 Swift tests in 31 suites passed on the Mini, including
+nativeScreenshotEXIFWorksWithoutSpotlightOrExtendedAttributes and the existing
+freshness/path/route guards. A separate universal Release build was signed there
+with VoiceInk Local Signing and installed on the M1 with the all-session normal
+quit guard and verified 483 rollback. Build 484 CDHash is
+363e871a7b5f6a17461ad3713814a2559cfecf06. About confirms 2.0 (484), the new PID
+persists, and all 62 imported portable M5 settings survive relaunch. M5 settings
+use GPT Live Transcribe and English in all seven Modes; the M1 had retained
+legacy Deepgram settings. Local microphone/window state was deliberately retained.
+
+Live screenshot HUD/final-message acceptance remains unverified. This is separate
+from escaped Codex paste formatting: the actual Agent Flow clipboard held a valid
+opening link and single math delimiters while the received message had extra
+escaping. Do not infer that changing recognition models fixes receiver formatting.
+Public binary release is pending because the M5 notary keychain is locked; the
+required website Opus session also returned not logged in. Source/setup updates
+can be published without mislabelling the local signed ZIP as notarized.
 
 
 ## 2026-11-03 — Correlate finish freezes with timestamped main-thread stacks
