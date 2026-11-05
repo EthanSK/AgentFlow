@@ -25,7 +25,7 @@ manifest = {'schemaVersion': 1, 'id': 'agentflow-public-release',
             ['python3', '-c', 'from pathlib import Path; p=Path(".git/info/exclude"); p.write_text(p.read_text()+"\\nrelease.noindex/\\n")']],
         'env': {'AGENTFLOW_BUILD_HOST': host},
         'argv': ['bash', 'scripts/package-public-release.sh', '@SRC_DIR@/release.noindex', '--build-only'],
-        'artifacts': ['release.noindex/AgentFlow-prebuilt.zip', 'release.noindex/build-receipt.json', 'release.noindex/test-summary.txt'],
+        'artifacts': ['release.noindex/AgentFlow-prebuilt.zip', 'release.noindex/build-receipt.json', 'release.noindex/test-summary.txt', 'release.noindex/xcode-full-tests.log'],
         'maxArtifactMiB': 128,
         'success': {'requireOutput': ['Mini build and full tests finished.']}}}}
 request = {'source': str(root), 'manifest': manifest, 'profile': 'release'}
