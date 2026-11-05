@@ -66,6 +66,8 @@ fi
 app="$output/AgentFlow.app"
 if test "$mode" != --sign-prebuilt; then
 mkdir -p "$output"
+mkdir -p "$output/SigningFixtures.noindex"
+TMPDIR="$output/SigningFixtures.noindex" python3 "$root/scripts/test-release-signing.py"
 "$root/scripts/test-public-release.sh" "$output" | tee "$output/test-summary.txt"
 # Keep the named test logs, then reclaim only this release's generated test host before building
 # a separate universal Release app. The Mini can run out of space when both DerivedData trees coexist.
@@ -78,12 +80,10 @@ xcodebuild -project "$root/VoiceInk.xcodeproj" -scheme VoiceInk \
   -configuration Release -destination 'generic/platform=macOS' \
   -derivedDataPath "$derived" -xcconfig "$root/LocalBuild.xcconfig" \
   -clonedSourcePackagesDirPath "${AGENTFLOW_PACKAGES_DIR:-$output/Packages.noindex}" \
-  -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates -jobs 4 \
+  -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates -jobs 2 \
   CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES \
   DEVELOPMENT_TEAM= "CODE_SIGN_ENTITLEMENTS=$root/VoiceInk/VoiceInk.local.entitlements" \
   'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) LOCAL_BUILD' \
-  -clonedSourcePackagesDirPath "${AGENTFLOW_PACKAGES_DIR:-$output/Packages.noindex}" \
-  -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates -jobs 2 \
   ONLY_ACTIVE_ARCH=NO 'ARCHS=arm64 x86_64' build >"$build_log" 2>&1 || {
     tail -50 "$build_log" >&2
     exit 1

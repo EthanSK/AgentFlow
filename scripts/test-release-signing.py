@@ -22,10 +22,13 @@ class SparkleSigningTests(unittest.TestCase):
                 tempfile.TemporaryDirectory(prefix="user download ") as download:
             archive = Path(build) / "AgentFlow-v2.0.458-mac-universal.zip"
             archive.write_bytes(b"fixture archive")
+            appcast = Path(build) / "appcast.xml"
+            appcast.write_bytes(b"fixture signed feed")
             subprocess.run(["bash", "-ec", line], check=True,
                            env={**os.environ, "output": build, "archive": str(archive)})
             import shutil
             shutil.copy2(archive, download)
+            shutil.copy2(appcast, download)
             shutil.copy2(Path(build) / "SHA256SUMS", download)
             result = subprocess.run(["shasum", "-a", "256", "-c", "SHA256SUMS"],
                                     cwd=download, capture_output=True, text=True)
