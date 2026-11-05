@@ -36,6 +36,10 @@ jobs:
       - name: Sign, notarize and publish immutable updates
         run: |
           bash scripts/package-public-release.sh "$RUNNER_TEMP/AgentFlow.noindex" --sign-prebuilt
+          # Publish with the existing Keychain login, which can retain the exact
+          # source even if main's workflow files changed during the Mini build.
+          unset GH_TOKEN GITHUB_TOKEN
+          test "$(gh api --hostname github.com user --jq .login)" = EthanSK
           bash scripts/publish-public-release.sh "$RUNNER_TEMP/AgentFlow.noindex"
       - name: Verify the published download
         run: |

@@ -34,6 +34,12 @@ and manual jobs, not fork pull requests. Private keys stay in Keychain. Keep bot
 the signing Mac and Mini awake and connected while a release runs; configured files
 alone are not evidence of a completed release.
 
+Only publication removes the job-token environment overrides and uses the signing
+Mac's existing EthanSK GitHub CLI login from Keychain, with `repo` and `workflow`
+scopes. It checks that account without printing or exporting its credential. This
+retains the exact verified source when another workflow edit moves main during a
+build; GitHub's limited job token cannot publish that older workflow tree.
+
 [v2.0.365](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.365) separates
 different context section types with one blank line, keeps matching types compact,
 and leaves apostrophes/quotation marks readable in XML text while preserving safe
