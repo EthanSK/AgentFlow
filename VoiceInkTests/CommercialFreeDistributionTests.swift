@@ -11,10 +11,12 @@ struct CommercialFreeDistributionTests {
         let plist = try #require(PropertyListSerialization.propertyList(
             from: data, format: nil
         ) as? [String: Any])
-        for key in ["SUFeedURL", "SUPublicEDKey", "SUEnableInstallerLauncherService",
-                    "SUEnableAutomaticChecks", "SUScheduledCheckInterval"] {
-            #expect(plist[key] == nil)
-        }
+        // Ethan's automatic updates install this fork's signed releases. The
+        // commercial-free boundary forbids upstream binaries, not our own updater.
+        #expect(plist["SUFeedURL"] as? String ==
+            "https://github.com/EthanSK/AgentFlow/releases/latest/download/appcast.xml")
+        let publicKey = try #require(plist["SUPublicEDKey"] as? String)
+        #expect(Data(base64Encoded: publicKey)?.count == 32)
     }
 
     @Test
