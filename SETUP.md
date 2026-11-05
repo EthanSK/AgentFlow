@@ -178,8 +178,12 @@ when no recording or transcription is active. The companion has its own
   Confirm each selection appears in the recorder and final `<app_selection>` message.
   Better Git's optional bridge reads a fresh selection in the focused editor, including drag,
   Shift-click and Command-A;
-  automatic Git hunk navigation and stale selections are ignored. Terminals/chat webviews
-  still depend on their own Accessibility exposure, not the code-editor bridge.
+  automatic Git hunk navigation and stale selections are ignored. With Agent Flow build 487
+  and Better Git 1.2.160, also try a highlight in the integrated terminal. A recent Code
+  version must expose its local terminal-selection tool. Agent Flow requests Code’s
+  Accessibility tree to prove the pane, without changing saved settings or using Copy.
+  Code can take about two seconds to expose its tree the first time; recording stays
+  responsive while it prepares. Chat webviews still depend on their own Accessibility exposure.
 
 ### App support is best effort
 

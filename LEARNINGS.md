@@ -1,5 +1,15 @@
 # Learnings
 
+## 2026-11-05 — VS Code terminal highlights need their own source
+
+Better Git's editor selection events do not describe integrated-terminal selections. On VS Code 1.144.0 the stable local tool registry exposed `terminal_selection`; invoking it returned the selected terminal text with the fixed English prefix `The active terminal's selection:\n`. This is a local tool invocation, not a model request. Accept only that one text payload, preserve whitespace, cap at the existing 8,192 UTF-16 transport limit, and fail closed when the tool/payload is unavailable. Older companions cannot answer an explicit terminal request with editor text.
+
+Ethan approved the scoped VS Code Accessibility request on 2026-11-05. Request `AXManualAccessibility=true` at capture start or Code activation, once per same-user process birth identity; never toggle it off, change saved Code settings or apply the exception to other apps. Electron delays activation by two seconds and repeated requests reset that delay. Wait only for actual focused-element availability under a bounded, cancellable cold-read budget; warm captures do not wait. A successful AX setter alone is not proof the renderer tree is ready. CLI-launched Code can have a nil NSRunningApplication.launchDate; use the kernel process birth time to avoid PID reuse.
+
+The focused xterm text field can be only 7 by 14 points. Pointer evidence needs the enclosing `terminal` + `xterm` ancestor's frame, not that hidden caret or the whole app window. Recheck the original focused element and frontmost process after the local tool responds. Preserve generic AX fallback for Markdown previews and other non-editor views, but never use an unknown/terminal pane to request the old editor selection.
+
+Validation: the isolated Mini host exercised real pointer selections in ordinary editor, diff editor and integrated terminal, matching the terminal tool payload and native Swift result while rejecting stale editor text. Native pane bounds contained the terminal gesture. This establishes the tested host contract; it is not a live acceptance claim for every future Code version or localized tool payload. Evidence logs retained under the task's terminal-capture test folder.
+
 ## 2026-11-05 — Standard Sparkle updates reuse the all-session quit guard
 
 The production verification key must be a top-level Info.plist property; a valid key nested under a document type does not configure Sparkle. Validate it by parsing bundle metadata, not by searching for its text. Preserve the existing daily-check preference when handing discovery and dialogs to Sparkle. Use the existing all-session termination publisher for postponed installation; cancel the update-specific observer on abort and never leave an ordinary deferred Quit armed after an updater race. The read-only update-readiness protocol reports that same boundary to Agentic Mouse without consuming speech-admission grants or operating the recorder. Public build receipts and downloaded checksum manifests must identify the exact source and final notarised bytes.

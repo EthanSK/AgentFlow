@@ -1,5 +1,13 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-05 — Treat an accepted Electron AX request as an immediately ready tree
+
+**Observed failure:** `AXManualAccessibility=true` returned success on the isolated Mini VS Code 1.144.0 host, but immediate and 500 ms reads still returned no focused renderer element. A forced-renderer-accessibility launch passed, which proved only the ready-tree case. Electron's implementation deliberately waits two seconds after the last request; a later native request plus actual readiness check passed. Do not ship a force-flag-only test or repeatedly reissue the request while polling. The focused terminal input's tiny caret frame also cannot validate a drag across the terminal pane.
+
+**Use instead:** The approved Code-only request is once per process identity, prepared off the recorder's critical path. Read readiness under a cancellable budget and use the bounded terminal ancestor frame. Retain the exact terminal/editor protocol distinction and generic preview fallback.
+
+**Reconsider only if:** the target Electron version changes this documented implementation or provides a directly testable ready-tree signal. Never generalize the approval to another app or change user settings to make a test pass.
+
 ## 2026-11-01 — Sync only app and test folders for the full native suite
 
 **Observed failure:** A disposable Fleet Runner manifest transferred `VoiceInk`,

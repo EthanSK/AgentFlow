@@ -1,8 +1,41 @@
 import Foundation
+import ApplicationServices
 import Testing
 @testable import VoiceInkPlusPlus
 
 struct VSCodeSelectionBridgeTests {
+    @Test func vscodeBridgeOnlyWritesTheApprovedTreeRequest() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent("VoiceInk/Services/VSCodeSelectionBridge.swift"), encoding: .utf8)
+        #expect(source.components(separatedBy: "AXUIElementSetAttributeValue(").count == 2)
+        #expect(source.contains("AXUIElementSetAttributeValue(app, \"AXManualAccessibility\" as CFString, kCFBooleanTrue)"))
+        for forbidden in ["NSPasteboard", "AXUIElementPerformAction", "kAXFocusedAttribute", "kCFBooleanFalse", "CGEvent"] {
+            #expect(!source.contains(forbidden))
+        }
+    }
+    @Test func terminalReadRejectsEditorRepliesAndRequiresFreshSnapshot() {
+        let terminal = VSCodeSelectionBridge.Request(nonce: request.nonce, sourcePID: 42,
+            gestureStartedAt: 9000, requestedAt: 10_000, surface: "terminal")
+        let editor = VSCodeSelectionBridge.Response(version: 1, nonce: request.nonce,
+            sourcePID: 42, changedAt: 9500, text: "old editor")
+        #expect(VSCodeSelectionBridge.validatedText(editor, for: terminal, now: 10_050) == nil)
+        var snapshot = VSCodeSelectionBridge.Response(version: 1, nonce: request.nonce,
+            sourcePID: 42, changedAt: nil, text: "terminal", surface: "terminal", observedAt: 10_020)
+        #expect(VSCodeSelectionBridge.validatedText(snapshot, for: terminal, now: 10_050) == "terminal")
+        #expect(VSCodeSelectionBridge.validatedText(snapshot, for: request, now: 10_050) == nil)
+        snapshot.observedAt = 9999
+        #expect(VSCodeSelectionBridge.validatedText(snapshot, for: terminal, now: 10_050) == nil)
+        snapshot.observedAt = 10_051
+        #expect(VSCodeSelectionBridge.validatedText(snapshot, for: terminal, now: 10_050) == nil)
+    }
+
+    @Test func terminalFocusIsDistinctFromMonacoAndOtherTextFields() {
+        #expect(VSCodeSelectionBridge.surface(role: kAXTextFieldRole, label: "Terminal 21, frontend") == "terminal")
+        #expect(VSCodeSelectionBridge.surface(role: kAXTextFieldRole, label: "Terminal input") == "terminal")
+        #expect(VSCodeSelectionBridge.surface(role: kAXTextAreaRole, label: "The editor is not accessible") == "editor")
+        #expect(VSCodeSelectionBridge.surface(role: kAXTextFieldRole, label: "Search") == nil)
+        #expect(VSCodeSelectionBridge.surface(role: kAXGroupRole, label: "Terminal 21, frontend") == nil)
+    }
     @Test func keyboardBridgeRequiresMatchingInputKindAndPreservesOldMouseReplies() {
         let keyboard = VSCodeSelectionBridge.Request(nonce: "12345678-1234-1234-1234-123456789012",
             sourcePID: 42, gestureStartedAt: 9000, requestedAt: 10_000, inputKind: "keyboard")

@@ -866,3 +866,14 @@ Keep each field concise but specific enough to prevent rediscovery. Name the sym
 
    `quick_validate.py` belongs to the system `skill-creator`; it is not duplicated inside this repository skill.
 6. If no durable verified lesson emerged, do not add noise.
+
+## VS Code terminal selection
+
+For integrated-terminal highlight capture, use a separate explicit terminal snapshot,
+not the editor's selection event. Consult the 2026-11-05 entries in LEARNINGS.md and
+FAILED_APPROACHES.md before changing this path. Ethan approved the VS Code-only
+on-demand Accessibility tree request; never expand it to another app, alter saved
+editor settings, copy text or move focus. Prepare once per process in the background,
+account for Electron's delayed readiness, and validate the actual terminal pane bounds
+rather than the tiny hidden input. Test the real native request without a forced-accessibility
+launch flag, along with unchanged editor/diff capture and stale-editor rejection.

@@ -1211,6 +1211,7 @@ final class LiveSelectionCapture {
     private var mouseDownCallbackLag: Int?
     private var mouseDownExtendsSelection = false
     private var captureTask: Task<Void, Never>?
+    private var vscodeActivationObserver: NSObjectProtocol?
     private var screenshotSource: DispatchSourceFileSystemObject?
     private var screenshotDirectory: URL?
     private var screenshotBaseline: Set<String> = []
@@ -1245,6 +1246,15 @@ final class LiveSelectionCapture {
             mouseDownExtendsSelection = down.extendsSelection
         }
         watcher.listener = self
+        // Warm Code's Accessibility tree while the recorder appears. Electron
+        // enables it once per process; no polling or recorder startup wait.
+        prepareVSCodeAccessibility(NSWorkspace.shared.frontmostApplication)
+        vscodeActivationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] notification in
+            let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            Task { @MainActor [weak self] in self?.prepareVSCodeAccessibility(app) }
+        }
         startScreenshotWatch(activationTime: activationTime)
         // A drag in progress normally replaces the earlier highlight, and its own
         // mouse-up will be read live. Reading the earlier gesture now could catch
@@ -1255,6 +1265,10 @@ final class LiveSelectionCapture {
     }
 
     func stop() {
+        if let observer = vscodeActivationObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            vscodeActivationObserver = nil
+        }
         if SelectionGestureWatcher.shared.listener === self {
             SelectionGestureWatcher.shared.listener = nil
             SelectionGestureWatcher.shared.resetKeyboardGesture()
@@ -1274,6 +1288,12 @@ final class LiveSelectionCapture {
         screenshotDirectory = nil
         screenshotBaseline.removeAll()
         screenshotStart = .distantFuture
+    }
+
+    private func prepareVSCodeAccessibility(_ app: NSRunningApplication?) {
+        guard isAttached, let app, VSCodeSelectionBridge.supports(app.bundleIdentifier) else { return }
+        let pid = app.processIdentifier
+        Task { _ = await VSCodeSelectionBridge.prepareAccessibility(sourcePID: pid) }
     }
 
     private func startScreenshotWatch(activationTime: Date) {
@@ -1702,19 +1722,38 @@ final class LiveSelectionCapture {
         // selection in the focused editor. A stationary Shift-click's range
         // starts at the prior caret, so it uses focused-only reading. Real
         // Shift-drags keep the existing window and range-geometry safeguards;
-        // ask only during capture, never enable screen-reader mode or copy.
+        // ask only during capture. The approved Code-only Accessibility request
+        // reveals pane identity without changing saved settings or issuing Copy.
         if isFrontmost(sourcePID), VSCodeSelectionBridge.supports(bundleID),
            (gesture == nil ? bridgeInputKind != nil :
-               gesture?.touchesWindow(ownedBy: sourcePID, in: LiveSelectionWindow.onScreen()) == true),
-           let text = await VSCodeSelectionBridge.read(sourcePID: sourcePID,
-               gestureStartedAt: gestureStartedAt, inputKind: bridgeInputKind,
-               inputDirection: bridgeInputDirection) {
-            LiveSelectionDiagnostics.captured(
-                tier: .vscodeBridge, source: nil, evidence: .atGesture, attempt: 1,
-                bundleID: bundleID, startedAt: startedAt
-            )
-            return (text, nil)
+               gesture?.touchesWindow(ownedBy: sourcePID, in: LiveSelectionWindow.onScreen()) == true) {
+            for (attempt, delay) in LiveSelectionReadPolicy.accessibilityRetryDelays.enumerated() {
+                if delay > 0 { try? await Task.sleep(nanoseconds: delay) }
+                guard !Task.isCancelled, canRead(identity), isFrontmost(sourcePID) else { return (nil, nil) }
+                // Previews and extension webviews retain the generic read-only
+                // AX path; they must never borrow an editor or terminal snapshot.
+                guard let context = await VSCodeSelectionBridge.focusedContext(sourcePID: sourcePID) else { break }
+                guard !Task.isCancelled, canRead(identity), isFrontmost(sourcePID) else { return (nil, nil) }
+                // Terminal focus must never reuse the editor's recent selection.
+                // Require its own pane bounds, never the hidden caret rectangle.
+                if context.surface == "terminal", let gesture,
+                   !gesture.coversBothEndpoints(context.bounds) { return (nil, nil) }
+                if let text = await VSCodeSelectionBridge.read(sourcePID: sourcePID,
+                    gestureStartedAt: gestureStartedAt, inputKind: bridgeInputKind,
+                    inputDirection: bridgeInputDirection, context: context) {
+                    LiveSelectionDiagnostics.captured(
+                        tier: .vscodeBridge, source: nil, evidence: .atGesture, attempt: attempt + 1,
+                        bundleID: bundleID, startedAt: startedAt
+                    )
+                    return (text, nil)
+                }
+                // Use the existing bounded settle re-read for terminal-tool
+                // registration. Editors retain the established AX fallback.
+                if context.surface != "terminal" { break }
+                if attempt == LiveSelectionReadPolicy.accessibilityRetryDelays.count - 1 { return (nil, nil) }
+            }
         }
+
         var last = LiveSelectionResolution()
         var attempts = 0
         for delay in LiveSelectionReadPolicy.accessibilityRetryDelays(for: bundleID) {

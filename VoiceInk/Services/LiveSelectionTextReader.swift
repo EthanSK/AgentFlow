@@ -36,6 +36,9 @@ import os
 // - Never write an Accessibility attribute, perform an action, focus, raise or
 //   activate anything, and never flip an app's accessibility switches to make
 //   a hidden Electron/Chromium tree appear. Such apps fail closed instead.
+//   The separately approved VS Code bridge requests its tree once
+//   per VS Code process so terminal and editor selections cannot be confused;
+//   that narrow exception does not enable switches for any other app.
 // - Never read password fields.
 // - Every query is scoped to the stable frontmost source process, limited by a
 //   per-message timeout plus a whole-attempt budget, and yields nothing rather

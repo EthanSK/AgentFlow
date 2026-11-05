@@ -1,13 +1,41 @@
 import Darwin
 import Foundation
+import ApplicationServices
+import AppKit
 
 /// Monaco's default AX editor explicitly exposes no text unless screen-reader
-/// mode is enabled. Better Git uses VS Code's public selection event instead.
+/// mode is enabled. Better Git uses VS Code's public selection event instead;
+/// terminal snapshots use its local terminal tool.
 /// This is a pull made only for an active recording's explicit selection gesture, not
-/// an always-on editor feed. No clipboard, AX writes, focus changes or TCP port.
+/// an always-on editor feed. No clipboard, focus changes or TCP port. The sole
+/// AX write is the approved VS Code-only request to expose its Accessibility tree.
 /// Both ends require the current gesture, source PID and a private same-user
 /// socket. A missing/ambiguous/stale bridge falls through to read-only AX.
 enum VSCodeSelectionBridge {
+    private final class AccessibilityRequests: @unchecked Sendable {
+        private let lock = NSLock()
+        private var enabledProcesses: [String: TimeInterval] = [:]
+
+        func enableIfNeeded(_ app: AXUIElement, identity: String) -> TimeInterval? {
+            lock.lock()
+            defer { lock.unlock() }
+            if let readyAt = enabledProcesses[identity] { return readyAt }
+            // Ethan approved this VS Code-only exception on 2026-11-05. This
+            // documented Electron request exposes its AX tree without Copy,
+            // focus writes, or changing the editor's saved accessibility setting.
+            // Do not toggle it off: other assistive clients may now rely on it.
+            if AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue) == .success {
+                // Electron itself debounces this request for two seconds. Start
+                // it at capture/app activation; repeating it resets that timer.
+                let readyAt = ProcessInfo.processInfo.systemUptime + 3
+                enabledProcesses[identity] = readyAt
+                return readyAt
+            }
+            return nil
+        }
+    }
+    private static let accessibilityRequests = AccessibilityRequests()
+
     struct Request: Encodable, Sendable {
         let version = 1
         let nonce: String
@@ -16,15 +44,18 @@ enum VSCodeSelectionBridge {
         let requestedAt: Double
         var inputKind: String? = nil
         var inputDirection: String? = nil
+        var surface: String? = nil
     }
 
     struct Response: Codable, Sendable {
         let version: Int
         let nonce: String
         let sourcePID: Int32
-        let changedAt: Double
+        let changedAt: Double?
         let text: String
         var inputKind: String? = nil
+        var surface: String? = nil
+        var observedAt: Double? = nil
     }
 
     static func supports(_ bundleID: String?) -> Bool {
@@ -34,23 +65,36 @@ enum VSCodeSelectionBridge {
     static func validatedText(_ response: Response, for request: Request, now: Double) -> String? {
         guard response.version == 1, response.nonce == request.nonce,
               response.sourcePID == request.sourcePID,
+              request.surface == nil || request.surface == "editor" || request.surface == "terminal",
               ["mouse", "keyboard", "selectAll"].contains(request.inputKind ?? "mouse"),
               (response.inputKind ?? "mouse") == (request.inputKind ?? "mouse"),
-              response.changedAt.isFinite, now.isFinite,
-              response.changedAt >= request.gestureStartedAt - 30,
-              response.changedAt <= now, now - request.requestedAt <= 1000,
+              now.isFinite, now - request.requestedAt <= 1000,
               request.requestedAt <= now + 100,
               !response.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               response.text.utf16.count <= 8192 else { return nil }
+        if request.surface == "terminal" {
+            // A terminal read is a fresh snapshot, not an editor change event.
+            // Older companions ignore surface and may answer with editor text:
+            // that must never satisfy a terminal request.
+            guard response.surface == "terminal", let observedAt = response.observedAt,
+                  observedAt.isFinite, observedAt >= request.requestedAt,
+                  observedAt <= now else { return nil }
+        } else {
+            guard response.surface == nil || response.surface == "editor",
+                  let changedAt = response.changedAt, changedAt.isFinite,
+                  changedAt >= request.gestureStartedAt - 30,
+                  changedAt <= now else { return nil }
+        }
         return response.text
     }
 
     static func read(sourcePID: pid_t, gestureStartedAt: Date, inputKind: String? = nil,
-                     inputDirection: String? = nil) async -> String? {
+                     inputDirection: String? = nil, context: FocusedContext? = nil) async -> String? {
         let request = Request(nonce: UUID().uuidString, sourcePID: sourcePID,
                               gestureStartedAt: gestureStartedAt.timeIntervalSince1970 * 1000,
                               requestedAt: Date().timeIntervalSince1970 * 1000,
-                              inputKind: inputKind, inputDirection: inputDirection)
+                              inputKind: inputKind, inputDirection: inputDirection,
+                              surface: context?.surface)
         let directory = "/tmp/agentflow-selection-\(getuid())"
         // lstat refuses symlinks, and both directory and sockets must belong to
         // this user without group/world access. Never repair permissions here.
@@ -60,7 +104,7 @@ enum VSCodeSelectionBridge {
             $0.hasPrefix("vscode-\(sourcePID)-") && $0.hasSuffix(".sock") && !$0.contains("/")
         }
         guard !namesForProcess.isEmpty, namesForProcess.count <= 16 else { return nil }
-        return await withTaskGroup(of: String?.self) { group in
+        let result = await withTaskGroup(of: String?.self) { group in
             for name in namesForProcess {
                 group.addTask {
                     guard !Task.isCancelled else { return nil }
@@ -76,6 +120,118 @@ enum VSCodeSelectionBridge {
             // Two focused extension hosts are ambiguous even if their text agrees.
             return !Task.isCancelled && matches.count == 1 ? matches[0] : nil
         }
+        guard let result else { return nil }
+        // The user can switch panes while the companion answers. Never emit a
+        // terminal snapshot or an editor range after its original field lost focus.
+        if let context, !(await context.isCurrent(sourcePID: sourcePID)) { return nil }
+        return result
+    }
+
+    /// A retained, read-only AX identity. All access stays in detached work;
+    /// the reference is never used to write focus, activate, or read document text.
+    struct FocusedContext: @unchecked Sendable {
+        let element: AXUIElement
+        let surface: String
+        let bounds: CGRect?
+
+        func isCurrent(sourcePID: pid_t) async -> Bool {
+            await Task.detached(priority: .userInitiated) {
+                guard NSWorkspace.shared.frontmostApplication?.processIdentifier == sourcePID else { return false }
+                let app = AXUIElementCreateApplication(sourcePID)
+                _ = AXUIElementSetMessagingTimeout(app, 0.2)
+                var value: CFTypeRef?
+                guard AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &value) == .success,
+                      let value else { return false }
+                return CFEqual(element, value) && NSWorkspace.shared.frontmostApplication?.processIdentifier == sourcePID
+            }.value
+        }
+    }
+
+    static func surface(role: String?, label: String?) -> String? {
+        if role == kAXTextFieldRole,
+           let label, label == "Terminal input" || label.range(of: #"^Terminal [0-9]+,"#, options: .regularExpression) != nil {
+            return "terminal"
+        }
+        return role == kAXTextAreaRole ? "editor" : nil
+    }
+
+    static func prepareAccessibility(sourcePID: pid_t) async -> TimeInterval? {
+        await Task.detached(priority: .userInitiated) { () -> TimeInterval? in
+            guard AXIsProcessTrusted(), let running = NSRunningApplication(processIdentifier: sourcePID),
+                  supports(running.bundleIdentifier) else { return nil }
+            // LaunchServices omits launchDate for a CLI-launched Code process.
+            // Kernel birth time still distinguishes a restarted/reused PID.
+            var process = proc_bsdinfo()
+            let processInfoSize = MemoryLayout<proc_bsdinfo>.size
+            let count = withUnsafeMutablePointer(to: &process) {
+                proc_pidinfo(sourcePID, PROC_PIDTBSDINFO, 0, $0, Int32(processInfoSize))
+            }
+            guard count == processInfoSize, process.pbi_uid == geteuid(), process.pbi_status != SZOMB else { return nil }
+            let identity = "\(sourcePID):\(process.pbi_start_tvsec):\(process.pbi_start_tvusec)"
+            let app = AXUIElementCreateApplication(sourcePID)
+            _ = AXUIElementSetMessagingTimeout(app, 0.2)
+            return accessibilityRequests.enableIfNeeded(app, identity: identity)
+        }.value
+    }
+
+    static func focusedContext(sourcePID: pid_t) async -> FocusedContext? {
+        guard let deadline = await prepareAccessibility(sourcePID: sourcePID) else { return nil }
+        // Wait for actual Electron readiness, not fixed per-highlight padding.
+        // The bounded check stops as soon as the requested tree is available;
+        // new gestures and capture.stop cancel it. Warm reads do not sleep.
+        while true {
+            let state = await readFocusedContext(sourcePID: sourcePID)
+            if state.available { return state.context }
+            guard !Task.isCancelled, ProcessInfo.processInfo.systemUptime < deadline else { return nil }
+            do { try await Task.sleep(nanoseconds: 50_000_000) } catch { return nil }
+        }
+    }
+
+    private static func readFocusedContext(sourcePID: pid_t) async -> (available: Bool, context: FocusedContext?) {
+        await Task.detached(priority: .userInitiated) { () -> (Bool, FocusedContext?) in
+            let app = AXUIElementCreateApplication(sourcePID)
+            _ = AXUIElementSetMessagingTimeout(app, 0.2)
+            let deadline = ProcessInfo.processInfo.systemUptime + 0.35
+            func copy(_ key: String, from element: AXUIElement) -> CFTypeRef? {
+                guard ProcessInfo.processInfo.systemUptime < deadline else { return nil }
+                var value: CFTypeRef?
+                return AXUIElementCopyAttributeValue(element, key as CFString, &value) == .success ? value : nil
+            }
+            guard let value = copy(kAXFocusedUIElementAttribute, from: app),
+                  CFGetTypeID(value) == AXUIElementGetTypeID() else { return (false, nil) }
+            let focused = value as! AXUIElement
+            _ = AXUIElementSetMessagingTimeout(focused, 0.2)
+            let role = copy(kAXRoleAttribute, from: focused) as? String
+            let labels = [copy(kAXDescriptionAttribute, from: focused) as? String,
+                          copy(kAXTitleAttribute, from: focused) as? String]
+            guard let surface = labels.compactMap({ surface(role: role, label: $0) }).first else { return (true, nil) }
+            func frame(_ element: AXUIElement) -> CGRect? {
+                var point = CGPoint.zero, size = CGSize.zero
+                guard let position = copy(kAXPositionAttribute, from: element), CFGetTypeID(position) == AXValueGetTypeID(),
+                      let dimensions = copy(kAXSizeAttribute, from: element), CFGetTypeID(dimensions) == AXValueGetTypeID(),
+                      AXValueGetValue(position as! AXValue, .cgPoint, &point),
+                      AXValueGetValue(dimensions as! AXValue, .cgSize, &size) else { return nil }
+                return CGRect(origin: point, size: size)
+            }
+            var bounds = frame(focused)
+            if surface == "terminal" {
+                // xterm's focused input is a tiny hidden textarea. Pointer
+                // evidence must use its own terminal, never the whole window.
+                bounds = nil
+                var ancestor = focused
+                for _ in 0..<10 {
+                    let classes = copy("AXDOMClassList", from: ancestor) as? [String] ?? []
+                    if classes.contains("terminal") && classes.contains("xterm") {
+                        bounds = frame(ancestor)
+                        break
+                    }
+                    guard let parent = copy(kAXParentAttribute, from: ancestor),
+                          CFGetTypeID(parent) == AXUIElementGetTypeID() else { break }
+                    ancestor = parent as! AXUIElement
+                }
+            }
+            return (true, FocusedContext(element: focused, surface: surface, bounds: bounds))
+        }.value
     }
 
     private static func isPrivateOwnedPath(_ path: String, type: mode_t) -> Bool {
