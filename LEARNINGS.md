@@ -6199,3 +6199,7 @@ Evidence: Documents/Codex/2026-11-02/agentflow-profile481/{test-history.json,rev
 **Limit:** Posting Return after 400 ms is not proof that every receiving app submitted. Fresh user acceptance remains necessary; this timing request does not resolve the separate observed archive-main-resume delay or selection/focus issues.
 
 Evidence: Documents/Codex/2026-11-03/agentflow-send482/{review482.json,mini-focused.log,mini-full.log,release482.json,verified-local482.json,public-publish482.log}.
+
+## 2026-11-05 — Reuse checksum-verified release signing tools
+
+Release workflows invoke the signing host's versioned Sparkle copy at `~/.local/share/sparkle-tools/2.10.1/bin`, after comparing it with the freshly downloaded, checksum-verified SDK. Provision this directory during signing-host setup; a missing or mismatched copy blocks signing instead of invoking an unverified or disposable helper. Keep per-app Keychain accounts and public-key checks. Reusing identical tool bytes does not promise approval survives a tool upgrade or a changed key.

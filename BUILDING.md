@@ -208,3 +208,7 @@ cd companions/youtube-bridge
 See its [agent setup guide](companions/youtube-bridge/AGENT_SETUP.md) for prerequisites,
 installation, loading the Chrome extension and actual playback checks. The main app's build
 never installs this companion implicitly.
+
+## Shared release signing tools
+
+The signing host also needs the shared Sparkle 2.10.1 tools at `~/.local/share/sparkle-tools/2.10.1/bin`. During host setup, copy `bin` from the checksum-verified archive pinned in `.github/workflows/release.yml` to that location, preserving its executable permissions and signatures. Every release still verifies a fresh archive and compares all tool bytes before using this persistent copy. Apps keep separate Keychain accounts and public-key checks; this reuses a tool location, not private keys or permissions. Provision a new version separately when upgrading Sparkle; changed tool identities may require fresh macOS consent.
