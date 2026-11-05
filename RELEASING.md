@@ -9,6 +9,31 @@ reviewed Swift package cache if needed. Never substitute a local self-signed ZIP
 the notarized public artifact. `SHA256SUMS` contains only downloadable filenames, so
 the documented `shasum -a 256 -c SHA256SUMS` works from a clean download directory.
 
+## Automatic signed updates
+
+Trusted native/release changes pushed to `main`, or a manual dispatch, start
+`.github/workflows/release.yml`. The repository-scoped signing runner invokes
+`scripts/build-public-on-fleet.py` to reserve the Mini through The Fleet. It fetches
+the exact commit, runs the complete named test gate and builds a separate universal
+Release app. The signing Mac accepts only its matching source/build/hash receipt.
+
+The final app and nested code use the existing Developer ID identity. Notarisation,
+stapling and the extracted-download checks precede publication. Sparkle's final ZIP
+signature and `appcast.xml` use Keychain account `com.ethansk.AgentFlow`; only its
+public key belongs in the app's top-level `SUPublicEDKey`. Set `SPARKLE_TOOLS` to
+the verified Sparkle tools when packaging manually. Never export the signing key.
+
+The job publishes all four immutable assets as a draft before making the release
+latest, then downloads them again and checks their hashes. The app reads the latest
+`appcast.xml` and shows Sparkle's standard update dialog. Its relaunch waits for the
+existing all-session quit guard; `UPDATING.md` owns the attended bootstrap install.
+
+The runners use a space-free work-path alias to verified scratch storage and the
+logged-in user's Keychain session (`SessionCreate=false`). They accept trusted main
+and manual jobs, not fork pull requests. Private keys stay in Keychain. Keep both
+the signing Mac and Mini awake and connected while a release runs; configured files
+alone are not evidence of a completed release.
+
 [v2.0.365](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.365) separates
 different context section types with one blank line, keeps matching types compact,
 and leaves apostrophes/quotation marks readable in XML text while preserving safe
@@ -65,7 +90,7 @@ is only a local build, even when `codesign --verify --deep --strict` succeeds.
    both stages on the Mini only when its own signing identity and isolated profile are usable.
    Then run `scripts/publish-public-release.sh <transferred-output>`.
    It verifies the notarized extracted app again, checks the exact source commit exists on
-   GitHub, creates a draft, checks its three assets, then publishes the release. It refuses
+   GitHub, creates a draft, checks its four assets, then publishes the release. It refuses
    to overwrite an existing tag's release.
 5. Only after the public ZIP works, update README, setup/build guidance and the Pages site to
    point to the verified download. A source change to the native app also needs the separate
@@ -103,9 +128,6 @@ certificate alone does not complete notarization. See Apple's
 [app-specific-password instructions](https://support.apple.com/en-gb/102654) and
 [`notarytool` Keychain guidance](https://developer.apple.com/documentation/technotes/tn3147-migrating-to-the-latest-notarization-tool).
 
-An automatic release runner is not yet registered. The manually verified public release does not
-establish safe CI access to the signing identity or Keychain. Do not attach those credentials to
-a public-repository self-hosted runner; verify a separate security boundary before automation.
-
 The public release process must never silently fall back to self-signing or skip Apple
-notarization. Publishing a ZIP is separate from implementing an in-app automatic updater.
+notarization. Require the actual release job, final published download and installed
+updater checks to pass before reporting the complete system operational.
