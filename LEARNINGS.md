@@ -1,5 +1,10 @@
 # Learnings
 
+## 2026-11-05 — Standard Sparkle updates reuse the all-session quit guard
+
+The production verification key must be a top-level Info.plist property; a valid key nested under a document type does not configure Sparkle. Validate it by parsing bundle metadata, not by searching for its text. Preserve the existing daily-check preference when handing discovery and dialogs to Sparkle. Use the existing all-session termination publisher for postponed installation; cancel the update-specific observer on abort and never leave an ordinary deferred Quit armed after an updater race. The read-only update-readiness protocol reports that same boundary to Agentic Mouse without consuming speech-admission grants or operating the recorder. Public build receipts and downloaded checksum manifests must identify the exact source and final notarised bytes.
+
+
 ## 2026-11-04 — Match the receiving Codex composer, not only Agent Flow
 
 The M1 delivered backslash-escaped links and LaTeX although its Agent Flow clipboard

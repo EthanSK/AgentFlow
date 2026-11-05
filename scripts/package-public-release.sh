@@ -10,14 +10,15 @@ mode=${2:---complete}
 case "$mode" in --complete|--build-only|--sign-prebuilt) ;; *) echo 'Unknown release mode.' >&2; exit 1 ;; esac
 # This release uses a dedicated local Keychain profile, never another project's credential.
 # The profile name is public configuration; notarytool securely stores the secret itself.
-notary_profile=AgentFlowRelease
+notary_profile=${AGENTFLOW_NOTARY_PROFILE:-AgentFlowRelease}
+expected_build_host=${AGENTFLOW_BUILD_HOST:?Set AGENTFLOW_BUILD_HOST to the dedicated Mac Mini hostname}
 identity=${VOICEINK_DEVELOPER_ID:-Developer ID Application: Ethan Sarif-Kattan (T34G959ZG8)}
 whisper_commit=0ec0845110dc934911dc48e8c5beb5ad3189b3f3
 whisper_repo="$HOME/VoiceInk-Dependencies/whisper.cpp"
 whisper_framework="$whisper_repo/build-apple/whisper.xcframework"
 
 if test "$mode" != --sign-prebuilt; then
-  [[ "$(hostname)" =~ ^Ethans-Mac-mini-[0-9]+\.local$ ]] || {
+  test "$(hostname)" = "$expected_build_host" || {
     echo 'Public Agent Flow builds must run on the dedicated Mac Mini.' >&2
     exit 1
   }
@@ -81,6 +82,8 @@ xcodebuild -project "$root/VoiceInk.xcodeproj" -scheme VoiceInk \
   CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES \
   DEVELOPMENT_TEAM= "CODE_SIGN_ENTITLEMENTS=$root/VoiceInk/VoiceInk.local.entitlements" \
   'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) LOCAL_BUILD' \
+  -clonedSourcePackagesDirPath "${AGENTFLOW_PACKAGES_DIR:-$output/Packages.noindex}" \
+  -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates -jobs 2 \
   ONLY_ACTIVE_ARCH=NO 'ARCHS=arm64 x86_64' build >"$build_log" 2>&1 || {
     tail -50 "$build_log" >&2
     exit 1
@@ -116,7 +119,7 @@ else
   test "$receipt_source" = "$source_sha"
   test "$receipt_version" = "$source_version"
   test "$receipt_build" = "$source_build"
-  [[ "$builder" =~ ^Ethans-Mac-mini-[0-9]+\.local$ ]]
+  test "$builder" = "$expected_build_host"
   test "$(shasum -a 256 "$output/AgentFlow-prebuilt.zip" | awk '{print $1}')" = "$expected_sha"
   test "$(shasum -a 256 "$output/test-summary.txt" | awk '{print $1}')" = "$expected_summary_sha"
   grep -Eq "^Full release suite passed: [1-9][0-9]* named tests, [1-9][0-9]* suites; source $source_sha, build $source_build\\.$" "$output/test-summary.txt"
@@ -170,6 +173,16 @@ out.write_text(json.dumps({"version": os.environ["VERSION"], "build": os.environ
   "sha256": os.environ["ARCHIVE_SHA"], "cdhash": os.environ["CDHASH"],
   "architectures": ["arm64", "x86_64"], "developerIdTeam": "T34G959ZG8",
   "notarized": True}, indent=2) + "\n")'
+# Generate the update feed from final stapled bytes, with its key kept in Keychain.
+: "${SPARKLE_TOOLS:?Set SPARKLE_TOOLS to the verified Sparkle bin directory}"
+expected_key=$(/usr/libexec/PlistBuddy -c 'Print SUPublicEDKey' "$app/Contents/Info.plist")
+actual_key=$("$SPARKLE_TOOLS/generate_keys" --account com.ethansk.AgentFlow -p)
+[[ "$expected_key" == "$actual_key" ]]
+mkdir -p "$output/feed"
+ditto "$archive" "$output/feed/$(basename "$archive")"
+"$SPARKLE_TOOLS/generate_appcast" --account com.ethansk.AgentFlow --maximum-deltas 0 \
+  --download-url-prefix "https://github.com/EthanSK/AgentFlow/releases/download/v${version}.${build}/" \
+  -o "$output/appcast.xml" "$output/feed"
 # Public checksums must work after download, not refer to a private builder path.
-(cd "$output" && shasum -a 256 "$(basename "$archive")" >SHA256SUMS)
+(cd "$output" && shasum -a 256 "$(basename "$archive")" appcast.xml >SHA256SUMS)
 printf 'Notarized release ready: %s\nSource: %s\nSHA-256: %s\n' "$archive" "$source_sha" "$archive_sha"

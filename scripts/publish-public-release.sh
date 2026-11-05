@@ -7,6 +7,7 @@ release_dir=${1:?Pass the directory containing release.json and the notarized ZI
 manifest="$release_dir/release.json"
 test -f "$manifest"
 test -f "$release_dir/SHA256SUMS"
+test -f "$release_dir/appcast.xml"
 command -v gh >/dev/null
 
 IFS=$'\t' read -r version build source_sha archive_name expected_sha < <(/usr/bin/python3 -c '
@@ -44,16 +45,16 @@ notes="Developer ID-signed and Apple-notarized Agent Flow for Apple silicon and 
 
 Download the ZIP, extract AgentFlow.app, and move it to Applications. Grant Microphone and Accessibility, choose your microphone, then use the local model or your own supported provider/key. The context skill has a standalone installer for Codex and Claude Code. The YouTube Bridge, Chrome extension and Agentic Mouse remain separate optional setup steps.
 
-This is a public download, not an automatic in-app update. Before replacing an existing Agent Flow or VoiceInk++ install, finish any recording/transcription and keep a ZIP backup of the old app. The official VoiceInk app is a separate product.
+Updater-enabled installations can use Check for Updates. Automatic replacement waits for recording, transcription and delivery to finish. Older notification-only installations need an initial signed installation. The official VoiceInk app remains a separate product.
 
 Setup: https://github.com/$repo/blob/main/SETUP.md
 Corresponding GPLv3 source: https://github.com/$repo/tree/$source_sha
 SHA-256: $expected_sha"
 gh release create "$tag" --repo "$repo" --target "$source_sha" --draft \
   --title "Agent Flow $tag" --notes "$notes" \
-  "$archive" "$release_dir/SHA256SUMS" "$manifest"
+  "$archive" "$release_dir/SHA256SUMS" "$manifest" "$release_dir/appcast.xml"
 assets=$(gh release view "$tag" --repo "$repo" --json assets --jq '.assets[].name')
-for name in "$archive_name" SHA256SUMS release.json; do
+for name in "$archive_name" SHA256SUMS release.json appcast.xml; do
   grep -Fxq "$name" <<<"$assets"
 done
 gh release edit "$tag" --repo "$repo" --draft=false --latest

@@ -32,7 +32,7 @@ canonical_result=0
   -only-testing:VoiceInkTests \
   -derivedDataPath "$derived" -resultBundlePath "$output/FullTests.xcresult" \
   -clonedSourcePackagesDirPath "${AGENTFLOW_PACKAGES_DIR:-$output/Packages.noindex}" \
-  -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates -parallel-testing-enabled NO -jobs 4 \
+  -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates -parallel-testing-enabled NO -jobs 2 \
   -xcconfig "$root/LocalBuild.xcconfig" \
   CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES \
   DEVELOPMENT_TEAM= ENABLE_HARDENED_RUNTIME=NO "CODE_SIGN_ENTITLEMENTS=$root/VoiceInk/VoiceInk.local.entitlements" \

@@ -1,0 +1,45 @@
+# Trusted main releases build on the Mini and sign on the existing Keychain Mac.
+name: Release signed Agent Flow
+on:
+  push:
+    branches: [main]
+    paths: ['VoiceInk/**', 'VoiceInkTests/**', 'VoiceInk.xcodeproj/**', 'scripts/*release*', '.github/workflows/release.yml', 'LocalBuild.xcconfig']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: agentflow-public-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: [self-hosted, macOS, ARM64, agentflow-release]
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      AGENTFLOW_BUILD_HOST: ${{ vars.AGENTFLOW_BUILD_HOST }}
+      AGENTFLOW_FLEET_WORKER: ${{ vars.AGENTFLOW_FLEET_WORKER }}
+      AGENTFLOW_NOTARY_PROFILE: ${{ vars.AGENTFLOW_NOTARY_PROFILE || 'AgentFlowRelease' }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - name: Build and test on the reserved Mini
+        run: python3 scripts/build-public-on-fleet.py "$RUNNER_TEMP/AgentFlow.noindex"
+      - name: Fetch verified Sparkle tools
+        run: |
+          curl --fail --location https://github.com/sparkle-project/Sparkle/releases/download/2.10.1/Sparkle-2.10.1.tar.xz -o "$RUNNER_TEMP/Sparkle.tar.xz"
+          echo '1a856d2a9edb8e628de88121d7be04cf0e2167f8641650b78fca00b14244cf27  '"$RUNNER_TEMP/Sparkle.tar.xz" | shasum -a 256 -c -
+          mkdir -p "$RUNNER_TEMP/Sparkle.noindex"
+          tar -xf "$RUNNER_TEMP/Sparkle.tar.xz" -C "$RUNNER_TEMP/Sparkle.noindex"
+          echo "SPARKLE_TOOLS=$RUNNER_TEMP/Sparkle.noindex/bin" >> "$GITHUB_ENV"
+      - name: Sign, notarize and publish immutable updates
+        run: |
+          bash scripts/package-public-release.sh "$RUNNER_TEMP/AgentFlow.noindex" --sign-prebuilt
+          bash scripts/publish-public-release.sh "$RUNNER_TEMP/AgentFlow.noindex"
+      - name: Verify the published download
+        run: |
+          tag=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("v"+d["version"]+"."+d["build"])' "$RUNNER_TEMP/AgentFlow.noindex/release.json")
+          gh release download "$tag" --dir "$RUNNER_TEMP/downloaded.noindex"
+          cd "$RUNNER_TEMP/downloaded.noindex"
+          shasum -a 256 -c SHA256SUMS

@@ -234,9 +234,14 @@ struct SettingsView: View {
                 )) {
                     HStack(spacing: 4) {
                         Text("Daily Agent Flow Update Checks")
-                        InfoTip("Checks our Agent Flow releases once a day and notifies you about newer versions. Updates are not installed automatically.")
+                        InfoTip("Checks for Agent Flow updates once a day. Updates wait until recording and transcription finish.")
                     }
                 }
+
+                Toggle("Download Updates Automatically", isOn: Binding(
+                    get: { updaterViewModel.automaticallyDownloadsUpdates },
+                    set: { updaterViewModel.setAutomaticallyDownloadsUpdates($0) }
+                ))
 
                 HStack {
                     Button("Check for Updates") {

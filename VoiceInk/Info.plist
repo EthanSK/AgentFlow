@@ -5,9 +5,12 @@
 	<!-- Public display name only: keep the executable, bundle ID and storage identity stable. -->
 	<key>CFBundleName</key>
 	<string>Agent Flow</string>
-	<!-- UpdaterViewModel checks only our published Agent Flow releases and notifies
-	     about newer versions. It never installs upstream VoiceInk binaries or
-	     replaces the running app automatically. -->
+	<!-- Only this app's signed production feed may install Agent Flow updates. -->
+	<key>SUFeedURL</key>
+	<string>https://github.com/EthanSK/AgentFlow/releases/latest/download/appcast.xml</string>
+	<key>SUAllowsAutomaticUpdates</key><true/>
+	<key>SUAutomaticallyUpdate</key><false/>
+	<key>SUSendProfileInfo</key><false/>
 	<key>LSUIElement</key>
 	<false/>
 	<key>NSMicrophoneUsageDescription</key>
@@ -44,5 +47,6 @@
 			</array>
 		</dict>
 	</array>
+	<key>SUPublicEDKey</key><string>lqKVePYcdyS3Hn8tsqEqbITYHrwvyMFqK/YCw8Qpl10=</string>
 </dict>
 </plist>

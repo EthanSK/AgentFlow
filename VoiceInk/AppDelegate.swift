@@ -56,6 +56,44 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         retry: { NSApp.terminate(nil) }
     )
 
+    private var updateReadinessObserver: NSObjectProtocol?
+    private var updateReadinessChanges: AnyCancellable?
+    private static let readinessRequest = Notification.Name("com.ethansk.AgentFlow.updateReadiness.request.v1")
+    private static let readinessReply = Notification.Name("com.ethansk.AgentFlow.updateReadiness.reply.v1")
+    private static let readinessChanged = Notification.Name("com.ethansk.AgentFlow.updateReadiness.changed.v1")
+
+    private var pendingUpdateInstallation: (() -> Void)?
+    private var updateRelaunchRequested = false
+    @MainActor private lazy var deferredUpdate = DeferredTerminationCoordinator(
+        isBlocked: { [weak self] in self?.terminationIsBlocked ?? true },
+        retry: { [weak self] in
+            guard let self, let install = self.pendingUpdateInstallation else { return }
+            self.pendingUpdateInstallation = nil
+            self.updateRelaunchRequested = true
+            install()
+        }
+    )
+
+    @MainActor func installUpdateWhenIdle(_ install: @escaping () -> Void) {
+        pendingUpdateInstallation = install
+        deferredUpdate.waitForIdle(changes: terminationActivityChanges)
+    }
+
+    @MainActor func cancelPendingUpdateInstallation() {
+        pendingUpdateInstallation = nil
+        updateRelaunchRequested = false
+        deferredUpdate.cancel()
+    }
+
+    @MainActor private var terminationActivityChanges: AnyPublisher<Void, Never> {
+        var changes = [HistoryAudioRetryState.shared.$activeIDs.map { _ in () }.eraseToAnyPublisher()]
+        if let voiceInkEngine { changes.append(voiceInkEngine.terminationActivityChanges) }
+        if let newChatRecordingService {
+            changes.append(newChatRecordingService.$isCreatingChat.map { _ in () }.eraseToAnyPublisher())
+        }
+        return Publishers.MergeMany(changes).eraseToAnyPublisher()
+    }
+
     func applicationWillFinishLaunching(_ notification: Notification) {
         // Inactive launches can receive sessionDidResignActive before did-finish.
         // Subscribe early; a socket command is never evidence of an unlocked Mac.
@@ -68,6 +106,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // highlight made just before or during recorder start-up is not missed.
         // It records only pointer edges; text is read only during a recording.
         SelectionGestureWatcher.shared.start()
+        // Read-only update readiness is separate from speech-admission grants:
+        // checking for an update must never consume permission to speak or stop audio.
+        let center = DistributedNotificationCenter.default()
+        updateReadinessObserver = center.addObserver(forName: Self.readinessRequest,
+            object: nil, queue: .main) { [weak self] notification in
+                guard let request = notification.object as? String,
+                      UUID(uuidString: request) != nil else { return }
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    let payload: [String: Any] = ["schema": 1, "requestID": request,
+                        "appPID": ProcessInfo.processInfo.processIdentifier,
+                        "ready": !self.terminationIsBlocked]
+                    guard let data = try? JSONSerialization.data(withJSONObject: payload),
+                          let text = String(data: data, encoding: .utf8) else { return }
+                    center.postNotificationName(Self.readinessReply, object: text,
+                        userInfo: nil, deliverImmediately: true)
+                }
+            }
+        updateReadinessChanges = terminationActivityChanges.sink { _ in
+            // @Published reports before assignment. The notification merely asks
+            // clients to take a fresh request/response snapshot after this transition.
+            DispatchQueue.main.async {
+                center.postNotificationName(Self.readinessChanged, object: nil,
+                    userInfo: nil, deliverImmediately: true)
+            }
+        }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
@@ -120,14 +184,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return .terminateNow
         }
 
-        var changes = [HistoryAudioRetryState.shared.$activeIDs.map { _ in () }.eraseToAnyPublisher()]
-        if let voiceInkEngine { changes.append(voiceInkEngine.terminationActivityChanges) }
-        if let newChatRecordingService {
-            changes.append(newChatRecordingService.$isCreatingChat.map { _ in () }.eraseToAnyPublisher())
-        }
+        // A new recording can start after Sparkle's idle callback. Veto that
+        // race without leaving an ordinary deferred Quit armed after update abort.
+        if updateRelaunchRequested { return .terminateCancel }
+
         // Ethan's "I've finished" is an optional immediate check. Finishing the
         // final session/retry/start now triggers that same guarded quit itself.
-        deferredTermination.waitForIdle(changes: Publishers.MergeMany(changes).eraseToAnyPublisher())
+        deferredTermination.waitForIdle(changes: terminationActivityChanges)
 
         // A normal quit/release swap must never discard live microphone audio or an
         // in-flight transcription, including file-only History retries which do not

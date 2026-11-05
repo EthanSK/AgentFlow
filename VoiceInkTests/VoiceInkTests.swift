@@ -8583,48 +8583,23 @@ struct VoiceInkTests {
         ))
     }
 
-    @Test func dailyUpdatePolicyIsDefaultOnBoundedAndNotificationOnly() throws {
-        let defaultsSource = try repositorySource("VoiceInk/AppDefaults.swift")
-        let appSource = try repositorySource("VoiceInk/VoiceInk.swift")
-        let settingsSource = try repositorySource(
-            "VoiceInk/Views/Settings/SettingsView.swift"
-        )
-
-        #expect(defaultsSource.contains(
-            "\"VIPPDailyUpdateChecksEnabled\": true"
-        ))
-        #expect(
-            AgentFlowUpdatePolicy.automaticCheckInterval == 24 * 60 * 60
-        )
-        #expect(AgentFlowUpdatePolicy.isAutomaticCheckDue(
-            lastCheck: nil,
-            now: Date(timeIntervalSince1970: 100_000)
-        ))
-        #expect(!AgentFlowUpdatePolicy.isAutomaticCheckDue(
-            lastCheck: Date(timeIntervalSince1970: 100_000),
-            now: Date(timeIntervalSince1970: 100_000 + 86_399)
-        ))
-        #expect(AgentFlowUpdatePolicy.isAutomaticCheckDue(
-            lastCheck: Date(timeIntervalSince1970: 100_000),
-            now: Date(timeIntervalSince1970: 100_000 + 86_400)
-        ))
-
-        #expect(appSource.contains(
-            "https://api.github.com/repos/EthanSK/AgentFlow/releases/latest"
-        ))
-        #expect(!appSource.contains("Beingpax/VoiceInk/releases/latest"))
-        #expect(appSource.contains("There’s an Agent Flow update"))
-        #expect(appSource.contains("Agent Flow is up to date"))
-        #expect(appSource.contains("Couldn’t check for Agent Flow updates"))
-        #expect(!appSource.contains("integratedUpstreamReleaseTag"))
-        #expect(appSource.contains("AgentFlowLastDailyUpdateCheck"))
-        #expect(appSource.contains("AgentFlowLastNotifiedRelease"))
-        #expect(!appSource.contains("SPUStandardUpdaterController"))
-        #expect(!appSource.contains("updaterController.checkForUpdates"))
-        #expect(settingsSource.contains("Daily Agent Flow Update Checks"))
-        #expect(settingsSource.contains(
-            "Updates are not installed automatically."
-        ))
+    @Test func dailyUpdateChecksUseSignedSparkleAndTheAllSessionQuitBoundary() throws {
+        let defaults = try repositorySource("VoiceInk/AppDefaults.swift")
+        let source = try repositorySource("VoiceInk/VoiceInk.swift")
+        let delegate = try repositorySource("VoiceInk/AppDelegate.swift")
+        let plist = try repositorySource("VoiceInk/Info.plist")
+        #expect(defaults.contains("\"VIPPDailyUpdateChecksEnabled\": true"))
+        #expect(AgentFlowUpdatePolicy.automaticCheckInterval == 86_400)
+        #expect(source.contains("SPUStandardUpdaterController"))
+        #expect(source.contains("appDelegate?.installUpdateWhenIdle(installHandler)"))
+        #expect(delegate.contains("deferredUpdate.waitForIdle(changes: terminationActivityChanges)"))
+        #expect(delegate.contains("if updateRelaunchRequested { return .terminateCancel }"))
+        #expect(plist.contains("https://github.com/EthanSK/AgentFlow/releases/latest/download/appcast.xml"))
+        #expect(!plist.contains("Beingpax/VoiceInk"))
+        let metadata = try #require(PropertyListSerialization.propertyList(
+            from: Data(plist.utf8), options: [], format: nil) as? [String: Any])
+        let publicKey = try #require(metadata["SUPublicEDKey"] as? String)
+        #expect(Data(base64Encoded: publicKey)?.count == 32)
     }
 
     @Test func menuBarLaunchAtLoginStatusIsLazyAndNotQueriedDuringViewConstruction() throws {

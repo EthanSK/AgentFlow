@@ -5,6 +5,8 @@ import OSLog
 import AppIntents
 import FluidAudio
 import UserNotifications
+import Sparkle
+import Combine
 
 @main
 struct VoiceInkApp: App {
@@ -191,6 +193,7 @@ struct VoiceInkApp: App {
         // release restart from cutting off microphone audio or queued transcription.
         appDelegate.voiceInkEngine = engine
         appDelegate.newChatRecordingService = newChatRecordingService
+        updaterViewModel.attach(to: appDelegate)
 
         // Ensure no lingering recording state from previous runs
         Task {
@@ -578,237 +581,61 @@ final class AgentFlowUpdateNotificationDelegate: NSObject, UNUserNotificationCen
     }
 }
 
+// Sparkle supplies the standard update dialog, signature validation and installer.
+// Ethan's daily-check preference survives the notification-only updater migration.
 @MainActor
-final class UpdaterViewModel: ObservableObject {
+final class UpdaterViewModel: NSObject, ObservableObject, SPUUpdaterDelegate {
     static let automaticChecksKey = "VIPPDailyUpdateChecksEnabled"
-    static let lastAutomaticCheckKey = "AgentFlowLastDailyUpdateCheck"
-    static let lastNotifiedReleaseKey = "AgentFlowLastNotifiedRelease"
+    @Published private(set) var canCheckForUpdates = false
+    @Published private(set) var automaticallyChecksForUpdates = false
+    @Published private(set) var automaticallyDownloadsUpdates = false
+    private var controller: SPUStandardUpdaterController?
+    private weak var appDelegate: AppDelegate?
+    private var observations = Set<AnyCancellable>()
 
-    // Only our published Agent Flow releases are update candidates. Keep the existing
-    // enabled/disabled preference, but don't reuse upstream cadence/deduplication state.
-    // This remains notification-only: no unattended replacement of an active recording,
-    // upstream VoiceInk binary installation, or automatic source merge.
-    static let latestReleaseURL = AgentFlowUpdatePolicy.latestReleaseURL
-
-    @Published private(set) var canCheckForUpdates = true
-    @Published private(set) var automaticallyChecksForUpdates: Bool
-
-    private let defaults: UserDefaults
-    private let notificationCenter: UNUserNotificationCenter
-    private let notificationDelegate = AgentFlowUpdateNotificationDelegate()
-    private let installedReleaseTag: String?
-    private let logger = Logger(
-        subsystem: "com.ethansk.VoiceInkPlusPlus",
-        category: "UpdateCheck"
-    )
-    private var automaticCheckTimer: Timer?
-    private var checkTask: Task<Void, Never>?
-
-    init(
-        defaults: UserDefaults = .standard,
-        notificationCenter: UNUserNotificationCenter = .current(),
-        bundle: Bundle = .main
-    ) {
-        self.defaults = defaults
-        self.notificationCenter = notificationCenter
-        installedReleaseTag = AgentFlowUpdatePolicy.installedReleaseTag(
-            version: bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
-            build: bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String
-        )
-        automaticallyChecksForUpdates = defaults.bool(forKey: Self.automaticChecksKey)
-        notificationCenter.delegate = notificationDelegate
-
-        if automaticallyChecksForUpdates {
-            requestNotificationAuthorization()
+    override init() {
+        super.init()
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: "SUEnableAutomaticChecks") == nil {
+            defaults.set(defaults.bool(forKey: Self.automaticChecksKey), forKey: "SUEnableAutomaticChecks")
         }
-        scheduleNextAutomaticCheck()
+        // Source-only builds without a production verification key cannot offer
+        // unverified downloads. The release packager requires this key to match.
+        guard let key = Bundle.main.object(forInfoDictionaryKey: "SUPublicEDKey") as? String,
+              Data(base64Encoded: key)?.count == 32 else { return }
+        let controller = SPUStandardUpdaterController(startingUpdater: false,
+            updaterDelegate: self, userDriverDelegate: nil)
+        self.controller = controller
+        controller.updater.updateCheckInterval = AgentFlowUpdatePolicy.automaticCheckInterval
+        controller.updater.publisher(for: \.canCheckForUpdates)
+            .sink { [weak self] in self?.canCheckForUpdates = $0 }.store(in: &observations)
+        controller.updater.publisher(for: \.automaticallyChecksForUpdates)
+            .sink { [weak self] in self?.automaticallyChecksForUpdates = $0 }.store(in: &observations)
+        controller.updater.publisher(for: \.automaticallyDownloadsUpdates)
+            .sink { [weak self] in self?.automaticallyDownloadsUpdates = $0 }.store(in: &observations)
+        controller.startUpdater()
     }
 
+    func attach(to appDelegate: AppDelegate) { self.appDelegate = appDelegate }
+    func checkForUpdates() { if canCheckForUpdates { controller?.checkForUpdates(nil) } }
     func setAutomaticallyChecksForUpdates(_ value: Bool) {
-        automaticallyChecksForUpdates = value
-        defaults.set(value, forKey: Self.automaticChecksKey)
-
-        if value {
-            requestNotificationAuthorization()
-            scheduleNextAutomaticCheck()
-        } else {
-            automaticCheckTimer?.invalidate()
-            automaticCheckTimer = nil
-            checkTask?.cancel()
-            checkTask = nil
-            canCheckForUpdates = true
-        }
+        UserDefaults.standard.set(value, forKey: Self.automaticChecksKey)
+        controller?.updater.automaticallyChecksForUpdates = value
+    }
+    func setAutomaticallyDownloadsUpdates(_ value: Bool) {
+        controller?.updater.automaticallyDownloadsUpdates = value
     }
 
-    func checkForUpdates() {
-        performCheck(reason: .manual)
+    func updater(_ updater: SPUUpdater, shouldPostponeRelaunchForUpdate item: SUAppcastItem,
+                 untilInvokingBlock installHandler: @escaping () -> Void) -> Bool {
+        // The same all-session boundary used by an attended installation owns
+        // microphone starts, transcriptions, History retries and pending delivery.
+        appDelegate?.installUpdateWhenIdle(installHandler)
+        return true
     }
 
-    private enum CheckReason {
-        case automatic
-        case manual
-    }
-
-    private func scheduleNextAutomaticCheck() {
-        automaticCheckTimer?.invalidate()
-        automaticCheckTimer = nil
-        guard automaticallyChecksForUpdates else { return }
-
-        let now = Date()
-        let lastCheck = defaults.object(forKey: Self.lastAutomaticCheckKey) as? Date
-        guard !AgentFlowUpdatePolicy.isAutomaticCheckDue(lastCheck: lastCheck, now: now) else {
-            performCheck(reason: .automatic)
-            return
-        }
-
-        let nextCheck = lastCheck!.addingTimeInterval(
-            AgentFlowUpdatePolicy.automaticCheckInterval
-        )
-        let timer = Timer(fire: nextCheck, interval: 0, repeats: false) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.performCheck(reason: .automatic)
-            }
-        }
-        automaticCheckTimer = timer
-        RunLoop.main.add(timer, forMode: .common)
-    }
-
-    private func performCheck(reason: CheckReason) {
-        guard canCheckForUpdates else { return }
-        if reason == .automatic {
-            guard automaticallyChecksForUpdates else { return }
-        }
-        if automaticallyChecksForUpdates {
-            // A successful manual check is still a real check; count it toward the daily
-            // cadence so opening Settings cannot cause a duplicate request moments later.
-            defaults.set(Date(), forKey: Self.lastAutomaticCheckKey)
-        }
-
-        canCheckForUpdates = false
-        checkTask = Task { [weak self] in
-            guard let self else { return }
-            defer {
-                canCheckForUpdates = true
-                checkTask = nil
-                scheduleNextAutomaticCheck()
-            }
-
-            do {
-                let release = try await Self.fetchLatestRelease()
-                try Task.checkCancellation()
-                guard let installedReleaseTag else { throw URLError(.cannotParseResponse) }
-                let isNewer = AgentFlowUpdatePolicy.isNewerRelease(
-                    release.tagName,
-                    than: installedReleaseTag
-                )
-
-                switch reason {
-                case .automatic:
-                    guard AgentFlowUpdatePolicy.shouldNotify(
-                        releaseTag: release.tagName,
-                        installedTag: installedReleaseTag,
-                        lastNotifiedTag: defaults.string(
-                            forKey: Self.lastNotifiedReleaseKey
-                        ),
-                        checksEnabled: automaticallyChecksForUpdates
-                    ) else {
-                        logger.info(
-                            "Daily Agent Flow update check completed updateAvailable=\(isNewer, privacy: .public)"
-                        )
-                        return
-                    }
-                    await notifyAboutUpdate(release)
-                    defaults.set(release.tagName, forKey: Self.lastNotifiedReleaseKey)
-
-                case .manual:
-                    if isNewer {
-                        showInAppUpdateNotification(release)
-                    } else {
-                        NotificationManager.shared.showNotification(
-                            title: String(localized: "Agent Flow is up to date"),
-                            type: .success
-                        )
-                    }
-                }
-            } catch is CancellationError {
-                logger.info("Agent Flow update check cancelled")
-            } catch {
-                logger.error("Agent Flow update check failed")
-                if reason == .manual {
-                    NotificationManager.shared.showNotification(
-                        title: String(localized: "Couldn’t check for Agent Flow updates"),
-                        type: .warning
-                    )
-                }
-            }
-        }
-    }
-
-    static func fetchLatestRelease(session: URLSession = .shared) async throws -> AgentFlowRelease {
-        var request = URLRequest(
-            url: latestReleaseURL,
-            cachePolicy: .reloadIgnoringLocalCacheData,
-            timeoutInterval: 15
-        )
-        request.setValue(
-            "application/vnd.github+json",
-            forHTTPHeaderField: "Accept"
-        )
-        request.setValue("AgentFlow", forHTTPHeaderField: "User-Agent")
-
-        let (data, response) = try await session.data(for: request)
-        guard
-            let response = response as? HTTPURLResponse,
-            (200..<300).contains(response.statusCode)
-        else {
-            throw URLError(.badServerResponse)
-        }
-        let release = try JSONDecoder().decode(AgentFlowRelease.self, from: data)
-        guard AgentFlowUpdatePolicy.isPublishedOwnRelease(release) else {
-            throw URLError(.cannotParseResponse)
-        }
-        return release
-    }
-
-    private func requestNotificationAuthorization() {
-        notificationCenter.requestAuthorization(options: [.alert, .sound]) { [logger] _, error in
-            if error != nil {
-                logger.error("Update notification authorization request failed")
-            }
-        }
-    }
-
-    private func notifyAboutUpdate(_ release: AgentFlowRelease) async {
-        let settings = await notificationCenter.notificationSettings()
-        switch settings.authorizationStatus {
-        case .authorized, .provisional:
-            let request = UNNotificationRequest(
-                identifier: "agentflow-update-\(release.tagName)",
-                content: AgentFlowUpdateNotificationDelegate.content(for: release),
-                trigger: nil
-            )
-            do {
-                try await notificationCenter.add(request)
-            } catch {
-                logger.error("Native update notification delivery failed")
-                showInAppUpdateNotification(release)
-            }
-        case .notDetermined, .denied:
-            showInAppUpdateNotification(release)
-        @unknown default:
-            showInAppUpdateNotification(release)
-        }
-    }
-
-    private func showInAppUpdateNotification(_ release: AgentFlowRelease) {
-        NotificationManager.shared.showNotification(
-            title: String(localized: "There’s an Agent Flow update"),
-            type: .info,
-            duration: 12,
-            actionButton: (String(localized: "View Release"), {
-                NSWorkspace.shared.open(release.htmlURL)
-            })
-        )
+    func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
+        appDelegate?.cancelPendingUpdateInstallation()
     }
 }
 
