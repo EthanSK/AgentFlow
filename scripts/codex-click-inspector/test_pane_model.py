@@ -1,7 +1,8 @@
 """Synthetic-only checks. Run on the Mini; never interrogate a live Codex tree."""
 import unittest
 from dataclasses import replace
-from pane_model import Node, PaneModel, Rect, Sample, Observation, Diagnostics, describe
+from pane_model import (Node, PaneModel, Rect, Sample, Observation, Diagnostics, describe,
+                        ClickGesture, input_focus_plan, is_highlight_gesture)
 import json
 from pathlib import Path
 
@@ -105,7 +106,7 @@ class PaneModelTests(unittest.TestCase):
             self.assertEqual(self.model.classify_focus(self.focus(error=error))[0], "Unknown")
 
     def measured(self, side=False, editable=True, **kwargs):
-        leaf = Node("AXTextArea" if editable else "AXGroup", "", "", Rect(50, 600, 400, 60),
+        leaf = Node("AXTextArea" if editable else "AXGroup", "", "", Rect(50, 600, 400, 60) if editable else Rect(0, 0, 600, 700),
                     True, editable, "" if editable else "AXLandmarkRegion", not editable)
         region = Node("AXGroup", "", "", Rect(0, 0, 600, 700), subrole="AXLandmarkRegion", conversation=True)
         marker = (Node("AXGroup", "", "app-shell-tab-panel-app-shell-tab:68", None, subrole="AXTabPanel")
@@ -120,9 +121,28 @@ class PaneModelTests(unittest.TestCase):
         self.assertEqual(self.classify_measured(self.measured())[0], "Main chat")
         self.assertEqual(self.classify_measured(self.measured(side=True))[0], "Side chat")
 
-    def test_measured_markers_require_exact_host_and_version(self):
-        for host, version in [("Codex.app", "26.1013.31256 / 20586"), ("ChatGPT.app", "new"), ("", "")]:
+    def test_measured_structure_survives_app_updates_for_both_desktop_hosts(self):
+        for host in ("ChatGPT.app", "Codex.app"):
+            for version in ("26.1013.31256 / 20586", "26.1013.40934 / 20770", "future", ""):
+                for side, pane in ((False, "Main chat"), (True, "Side chat")):
+                    with self.subTest(host=host, version=version, side=side):
+                        sample = self.measured(side=side, editable=False)
+                        self.assertEqual(self.model.classify(sample, host, version)[0], pane)
+                        self.assertEqual(self.plan(sample, sample, host=host, version=version)[0], pane)
+                        self.assertEqual(self.plan(sample, sample, ClickGesture(drag_points=12),
+                                                   host=host, version=version)[0], pane)
+
+    def test_measured_markers_still_reject_other_hosts(self):
+        for host, version in [("Claude.app", "26.1013.31256 / 20586"), ("Other.app", "future"), ("", "")]:
             self.assertEqual(self.model.classify(self.measured(), host, version)[0], "Unknown")
+
+    def test_future_version_still_requires_conversation_and_recognised_panel(self):
+        body = self.measured(editable=False)
+        no_conversation = replace(body, nodes=tuple(replace(n, conversation=False) for n in body.nodes))
+        no_panel = replace(body, nodes=tuple(replace(n, identifier="", dom_identifier="") for n in body.nodes))
+        for sample in (no_conversation, no_panel):
+            for host in ("ChatGPT.app", "Codex.app"):
+                self.assertIsNone(self.plan(sample, sample, host=host, version="future")[0])
 
     def test_panel_without_conversation_is_not_a_side_chat(self):
         sample = self.measured(side=True)
@@ -170,6 +190,81 @@ class PaneModelTests(unittest.TestCase):
                                                   host="ChatGPT.app", version="26.1013.31256 / 20586"))
         self.assertEqual(result[0], "Unknown")
 
+    def plan(self, clicked, focused, gesture=ClickGesture(), host="ChatGPT.app", version="26.1013.31256 / 20586"):
+        return input_focus_plan(self.model, Observation(clicked, focused, 1, host=host, version=version,
+                                                        gesture=gesture))
+
+    def test_plain_body_click_plans_focus_for_the_clicked_pane(self):
+        # Measured live 2026-10-17: a body click leaves the pane's Conversation
+        # region focused while the coarse hit-test sees only a window wrapper.
+        coarse = replace(self.sample, x=100, y=620, nodes=(Node("AXGroup", "", "", self.sample.window),))
+        for side, pane in ((False, "Main chat"), (True, "Side chat")):
+            focused = self.measured(side=side, editable=False)
+            self.assertEqual(self.plan(coarse, focused), (pane, focused.nodes[0].frame))
+
+    def test_all_text_click_gestures_plan_focus(self):
+        # Ethan 2026-11-06: selecting text must not veto that pane's input focus.
+        focused = self.measured(side=True, editable=False)
+        for gesture in (ClickGesture(drag_points=12), ClickGesture(click_count=2), ClickGesture(click_count=3),
+                        ClickGesture(drag_points=3), ClickGesture(modifier_held=True),
+                        ClickGesture(drag_points=40, modifier_held=True)):
+            self.assertEqual(self.plan(focused, focused, gesture)[0], "Side chat")
+        self.assertTrue(is_highlight_gesture(ClickGesture(drag_points=40)))
+        self.assertTrue(is_highlight_gesture(ClickGesture(click_count=2)))
+        self.assertFalse(is_highlight_gesture(ClickGesture(drag_points=3)))
+
+    def test_input_or_unproven_focus_never_plans(self):
+        body = self.measured(editable=False)
+        cases = [(body, replace(body, focus_stable=False)),     # Focus changed during the read.
+                 (replace(self.sample, x=900, y=620, nodes=(Node("AXGroup", "", "", self.sample.window),)),
+                  body)]                                        # Coarse click outside the focused region.
+        for clicked, focused in cases:
+            self.assertIsNone(self.plan(clicked, focused)[0])
+        self.assertIsNone(self.plan(body, body, host="Other.app", version="new")[0])
+        self.model.learn("Main chat", self.sample, 1)
+        learned = replace(self.sample, nodes=(replace(self.sample.nodes[0], role="AXGroup", focused=True,
+                                                      editable=False, conversation=True),)
+                          + self.sample.nodes[1:], focus_stable=True)
+        self.assertIsNone(self.plan(learned, learned, host="", version="")[0])  # Learned regions never steer focus.
+
+    def test_body_click_refreshes_a_stale_focused_input_in_that_same_pane(self):
+        for side, pane in ((False, "Main chat"), (True, "Side chat")):
+            body, focused = self.measured(side=side, editable=False), self.measured(side=side)
+            self.assertEqual(self.plan(body, focused), (pane, focused.nodes[1].frame))
+
+    def test_input_click_control_click_other_window_and_unknown_host_never_reset_caret(self):
+        body, focused = self.measured(editable=False), self.measured()
+        for clicked, focus, host in ((replace(body, x=100, y=620), focused, "ChatGPT.app"),
+                                     (focused, focused, "ChatGPT.app"),
+                                     (body, replace(focused, window_key=99), "ChatGPT.app"),
+                                     (body, focused, "Other.app")):
+            self.assertIsNone(self.plan(clicked, focus, host=host)[0])
+        for role in ("AXButton", "AXLink", "AXTextArea", "AXTextField", "AXSlider"):
+            clicked = replace(body, nodes=(Node(role, "", "", None),) + body.nodes)
+            self.assertIsNone(self.plan(clicked, focused)[0])
+
+    def test_measured_body_click_owns_the_pane_when_old_focus_is_elsewhere(self):
+        for side, pane in ((False, "Main chat"), (True, "Side chat")):
+            body = self.measured(side=side, editable=False)
+            for focused in (self.measured(side=not side), self.measured(side=not side, editable=False),
+                            replace(self.measured(), nodes=(Node("AXButton", "", "", None, True, False),))):
+                self.assertEqual(self.plan(body, focused), (pane, body.nodes[0].frame))
+
+    def test_coarse_click_with_stale_composer_stays_unknown(self):
+        focused = self.measured()
+        coarse = replace(self.sample, nodes=(Node("AXGroup", "", "", self.sample.window),))
+        self.assertIsNone(self.plan(coarse, focused)[0])  # Do not guess a pane or turn an unidentified control into a body click.
+
+    def test_export_reports_focus_action_and_gesture_flags_only(self):
+        diagnostics = Diagnostics()
+        sample = self.measured(editable=False)
+        diagnostics.append(Observation(sample, sample, 1, host="ChatGPT.app", version="26.1013.31256 / 20586",
+                                       gesture=ClickGesture(1, 2.5, False),
+                                       focus_action="Focused Main chat input · verified"), self.model)
+        row = json.loads(diagnostics.report(self.model))["samples"][0]
+        self.assertEqual(row["focus_action"], "Focused Main chat input · verified")
+        self.assertEqual(row["gesture"], {"click_count": 1, "dragged": False, "modifier_held": False})
+
     def test_partial_path_without_window_or_stable_focus_is_not_proof(self):
         sample = self.measured(error="Ancestor limit reached")
         self.assertEqual(self.classify_measured(replace(sample, window=None))[0], "Unknown")
@@ -190,7 +285,7 @@ class PaneModelTests(unittest.TestCase):
         diagnostics.append(Observation(sample, sample, 1, host="ChatGPT.app", version="26.1013.31256 / 20586"), self.model)
         report = diagnostics.report(self.model)
         parsed = json.loads(report)
-        self.assertEqual(parsed["schema"], 3)
+        self.assertEqual(parsed["schema"], 4)
         row = parsed["samples"][0]
         self.assertTrue(row["focus"]["partial"])
         self.assertTrue(row["focus"]["focus_stable"])
@@ -229,11 +324,22 @@ class PaneModelTests(unittest.TestCase):
                           'self.copy(element, "AXValue")', 'self.copy(element, "AXSelectedText")',
                           "CGEventPost", "AXPress"):
             self.assertNotIn(forbidden, source)
-        self.assertIn("NSEventMaskLeftMouseUp", source)
+        self.assertIn("kCGEventLeftMouseUp", source)
         self.assertIn("captured + 0.09", source)
         self.assertIn("None if OPTIONS.demo else AXReader()", source)
         self.assertNotIn('self.copy(self.system, "AXFocusedUIElement")', source)
         self.assertIn("self.create_app(expected_pid)", source)
+
+    def test_focuser_only_writes_focus_and_never_reads_values_or_synthesizes_input(self):
+        source = Path(__file__).with_name("pane_focuser.py").read_text()
+        self.assertEqual(source.count("AXUIElementSetAttributeValue"), 1)
+        self.assertEqual(source.count("self.set_attribute("), 2)  # AXFocused and the caret range only.
+        self.assertIn('self.reader.keys["AXFocused"], self.true_value', source)
+        self.assertNotIn('kCFBooleanFalse', source)  # Chromium ignores that flag; a fake off/on reset must not return.
+        self.assertIn('r.keys["AXSelectedTextRange"], range_value', source)
+        for forbidden in ("AXUIElementPerformAction", "CGEventPost", "AXPress", '"AXValue"',
+                          '"AXSelectedText"', "AXConfirm", "AXRaise"):
+            self.assertNotIn(forbidden, source)
 
 
 if __name__ == "__main__":

@@ -8,9 +8,10 @@ import re
 
 MAX_ANCESTORS = 48
 PARTIAL_READ_ERRORS = {"Read timed out", "Ancestor limit reached", "Ancestor path incomplete"}
-# These are observations from Ethan's supplied live report, not a public Codex
-# contract. Unknown/new hosts may still use explicit markers or manual labels.
-MEASURED_HOSTS = {("ChatGPT.app", "26.1013.31256 / 20586")}
+# Ethan's "different pane input focus": recognise the actual Conversation/panel
+# structure, not a release number. Updates can preserve this structure unchanged.
+# The event reader already restricts owners to these two local desktop hosts.
+MEASURED_HOSTS = {"ChatGPT.app", "Codex.app"}
 
 
 @dataclass(frozen=True)
@@ -73,7 +74,7 @@ class Sample:
 
 
 def measured_marker(nodes, host, version):
-    if (host, version) not in MEASURED_HOSTS:
+    if host not in MEASURED_HOSTS:
         return None
     conversation_seen = False
     for node in nodes:
@@ -185,6 +186,16 @@ class PaneModel:
         return "Input focus unverified"
 
 
+PLAIN_CLICK_MAX_DRAG_POINTS = 4.0  # A longer press-drag is a text selection; focusing would clear it.
+
+
+@dataclass(frozen=True)
+class ClickGesture:
+    click_count: int = 1
+    drag_points: float = 0.0
+    modifier_held: bool = False
+
+
 @dataclass(frozen=True)
 class Observation:
     click: Sample
@@ -193,6 +204,47 @@ class Observation:
     delay_ms: int = 90
     host: str = ""
     version: str = ""
+    gesture: ClickGesture = ClickGesture()
+    focus_action: str = ""
+
+
+def is_highlight_gesture(gesture):
+    """A drag or double/triple click selects text; the caller delays focus for it."""
+    return gesture.click_count > 1 or gesture.drag_points > PLAIN_CLICK_MAX_DRAG_POINTS
+
+
+def input_focus_plan(model, observation):
+    """Returns (pane, Conversation frame) whose input may be focused, else (None, skip reason)."""
+    # Ethan (2026-10-17): clicks AND highlights must move focus to that pane's
+    # input, including modifier-assisted text selections (2026-11-06). Highlights
+    # keep the caller's existing settling interval; capture acknowledgement is
+    # no longer required. Buttons, links and other controls still own their clicks.
+    clicked, click_reason, focused, focus_reason, _, _ = describe(model, observation)
+    focus = observation.focus
+    leaf = focus.nodes[0] if focus.nodes else None
+    if (leaf and clicked in ("Main chat", "Side chat")
+            and click_reason.startswith("Measured Codex structure")
+            and observation.click.layout == focus.layout and focus.window_key != 0
+            and focus.window is not None and focus.focus_stable is True and focus.usable_path):
+        # Ethan's "unfocus then refocus": a proven body click owns the destination even when returning to Codex leaves focus in the other pane (task 01a0d315-7d5e-7be0-bc08-80626ca0729b).
+        click_region = next((node for node in observation.click.nodes if node.conversation and node.frame), None)
+        controls = {"AXButton", "AXLink", "AXTextArea", "AXTextField", "AXComboBox", "AXMenuItem", "AXCheckBox", "AXSlider", "AXPopUpButton"}
+        body_path = observation.click.nodes[:observation.click.nodes.index(click_region)] if click_region else ()
+        input_hit = (clicked == focused and leaf.editable is True and leaf.frame
+                     and leaf.frame.contains(observation.click.x, observation.click.y))
+        if (click_region and click_region.frame.inside(focus.window)
+                and click_region.frame.contains(observation.click.x, observation.click.y) and not input_hit
+                and not any(node.role in controls for node in body_path)):
+            return clicked, click_region.frame
+    if model.input_state(focus, observation.host, observation.version) != "No editable input focused":
+        return None, "No action · an input already has focus or focus is unverified"
+    # Only the measured Codex structure names a pane here: a learned region or a
+    # remembered input could point the caret at the wrong pane.
+    if (not leaf or not leaf.conversation or leaf.frame is None or focus.focus_stable is not True
+            or focused not in ("Main chat", "Side chat")
+            or not focus_reason.startswith("Measured Codex structure") or clicked != focused):
+        return None, "No action · the clicked chat area was not proven"
+    return focused, leaf.frame
 
 
 def describe(model, observation):
@@ -272,8 +324,13 @@ class Diagnostics:
                          "click_reason": cr, "focused_pane": f, "focus_reason": fr,
                          "comparison": relation, "same_window": o.click.layout == o.focus.layout,
                          "input_state": input_state,
+                         # Fixed status vocabulary plus pane names and AX error numbers only.
+                         "focus_action": o.focus_action,
+                         "gesture": {"click_count": o.gesture.click_count,
+                                     "dragged": o.gesture.drag_points > PLAIN_CLICK_MAX_DRAG_POINTS,
+                                     "modifier_held": o.gesture.modifier_held},
                          "click": metadata(o.click), "focus": metadata(o.focus)})
-        return json.dumps({"tool": "Codex Focus Inspector", "schema": 3,
+        return json.dumps({"tool": "Codex Focus Inspector", "schema": 4,
                            "scope": "user-click snapshots, not live focus tracking or paste routing",
                            "privacy": "No message text, titles, IDs, coordinates, or file paths",
                            "samples": rows}, indent=2)

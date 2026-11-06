@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""User-operated Codex click inspector. No focus writes, clicks, keys or text reads.
+"""Click-triggered Codex helper with an optional inspector. No clicks, keys or text reads; the only writes
+are the optional, on-by-default pane-input focus Ethan requested (see pane_focuser.py) and the
+on-by-default Claude Prompt focus when Agent Flow stops recording (see claude_prompt_focuser.py).
 
 This tool is for Ethan to inspect locally, NOT an automation workaround for a
 Computer Use refusal. Agents must not read its live Codex results or use it to
@@ -8,17 +10,33 @@ resolve/activate a target. Validate it against fixtures, not Ethan's live chats.
 import ctypes as C
 import argparse
 import queue
+import math
+import json
+import os
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import AppKit as K
 import Quartz as Q
 import objc
-from Foundation import NSObject, NSTimer, NSBundle
-from pane_model import Node, PaneModel, Rect, Sample, Observation, Diagnostics, describe, MAX_ANCESTORS
+from Foundation import NSObject, NSTimer, NSRunLoop, NSRunLoopCommonModes, NSBundle, NSDictionary, NSProcessInfo, NSDistributedNotificationCenter, NSNotificationSuspensionBehaviorDeliverImmediately
+from pane_model import (Node, PaneModel, Rect, Sample, Observation, Diagnostics, describe, MAX_ANCESTORS,
+                        ClickGesture, input_focus_plan, is_highlight_gesture)
+from pane_focuser import PaneInputFocuser
+from claude_prompt_focuser import ClaudePromptFocuser, CLAUDE_BUNDLE_ID, RECORDING_STOPPED, ENABLED as CLAUDE_FOCUS_ENABLED
+from helper_runtime import (LatestResult, SingleInstance, HelperHealth, HealthLog, HelperPreferences)
+from mouse_monitor import MouseMonitor
 
 OPTIONS = None
+HIGHLIGHT_FOCUS_DELAY_SECONDS = 0.3  # Preserve the existing opportunity for Agent Flow to read a highlight before focus moves.
+INSTANCE = None
+CONTROL_NAME = "com.ethansk.agentflow.codex-focus-helper.control"
+
+
+def control_object(demo=False):
+    return f"{os.getuid()}:{'demo' if demo else 'live'}"
 
 
 def is_close_shortcut(key_code, modifiers, inspector_is_key):
@@ -248,6 +266,22 @@ class AXReader:
         app = K.NSWorkspace.sharedWorkspace().frontmostApplication()
         return app.processIdentifier() if app else None
 
+    def request_accessibility(self):
+        # Only the explicit control command may prompt. Call from the actual
+        # service so macOS attributes consent to it, not the command sender.
+        prompt_key = C.c_void_p.in_dll(self.ax, "kAXTrustedCheckOptionPrompt")
+        key = objc.objc_object(c_void_p=prompt_key.value)
+        options = NSDictionary.dictionaryWithObject_forKey_(True, key)
+        request = self.ax.AXIsProcessTrustedWithOptions
+        request.argtypes, request.restype = [C.c_void_p], C.c_bool
+        return bool(request(C.c_void_p(objc.pyobjc_id(options))))
+
+
+class FlippedView(K.NSView):
+    """Top-anchored scroll document for the inspector's own content."""
+    def isFlipped(self):
+        return True
+
 
 class Inspector(NSObject):
     def applicationDidFinishLaunching_(self, notification):
@@ -255,41 +289,248 @@ class Inspector(NSObject):
         # Demo construction never creates an AX reader or event monitor. It is
         # the only agent-operated UI validation path; live Codex stays user-only.
         self.reader = None if OPTIONS.demo else AXReader()
-        self.pending, self.completed = queue.Queue(maxsize=1), queue.Queue()
+        self.focuser = PaneInputFocuser(self.reader) if self.reader else None
+        self.focus_inputs, self.mouse_down_point, self.down_monitor = True, None, None  # Ethan: on by default.
+        # Own reader: the click worker changes its reader's deadline at the same time.
+        self.claude_focuser = ClaudePromptFocuser(AXReader()) if self.reader and CLAUDE_FOCUS_ENABLED else None  # Off: no observer, checkbox greyed out.
+        self.focus_claude, self.claude_running = True, threading.Lock()  # Ethan approved on by default, 2026-10-19.
+        self.pending = queue.Queue(maxsize=1)
+        self.completed = LatestResult(lambda: self.performSelectorOnMainThread_withObject_waitUntilDone_(
+            "refresh:", None, False))
         self.sequence, self.last, self.monitor, self.paused = 0, None, None, False
+        self.preferences = HelperPreferences(INSTANCE.directory / "preferences.json")
+        self.paused, self.focus_inputs = self.preferences.paused, self.preferences.focus_inputs
+        self.window = None
+        self.close_monitor = None
         self.events_seen, self.codex_clicks = 0, 0
+        self.event_source_revision = 0
+        self.last_reconnect_reason = "startup"
+        self.callback_errors = self.callback_error_streak = 0
+        self.health = HelperHealth()
+        self.health_log = HealthLog(INSTANCE.directory / "health-events.json")
+        self.health_stop = threading.Event()
+        self.watchdog = self.health_timer = self.activity = None
+        self.monitor_retry_at, self.monitor_retry_delay = 0, 5
         if self.reader:
-            self.thread = threading.Thread(target=self.worker, daemon=True)
+            self.thread = threading.Thread(target=self.worker, daemon=True, name="pane-focus-worker")
             self.thread.start()
-        if not self.make_window():
-            return
         # Non-activating panels cannot rely on another app's menu-bar Close
         # command. Handle only key events already delivered to this process,
         # and only while this panel owns the keyboard. Never steal Codex's W.
         self.close_monitor = K.NSEvent.addLocalMonitorForEventsMatchingMask_handler_(
             K.NSEventMaskKeyDown, self.close_key_event)
+        self.reconnect_event_sources("startup")
         if self.reader:
-            # Mouse-down observes the PREVIOUS keyboard focus in many hosts.
-            # Sample after release plus one short settling interval, off the UI.
-            self.monitor = K.NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(K.NSEventMaskLeftMouseUp, self.clicked)
-            trusted = "ready" if self.reader.trusted() else "Accessibility access needed"
-            self.event_status.setStringValue_(f"LIVE · monitor {'active' if self.monitor else 'unavailable'} · {trusted} · clicks received: 0")
-        self.timer = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-            0.1, self, "refresh:", None, True)
+            workspace_center = K.NSWorkspace.sharedWorkspace().notificationCenter()
+            for name in (K.NSWorkspaceDidWakeNotification, K.NSWorkspaceSessionDidBecomeActiveNotification,
+                         K.NSWorkspaceDidLaunchApplicationNotification):
+                workspace_center.addObserver_selector_name_object_(self, "workspaceChanged:", name, None)
+            # Keep this tiny interactive observer responsive without preventing
+            # system sleep. No destination or message is read by its health timer.
+            from Foundation import NSActivityUserInitiatedAllowingIdleSystemSleep
+            self.activity = NSProcessInfo.processInfo().beginActivityWithOptions_reason_(
+                NSActivityUserInitiatedAllowingIdleSystemSleep, "Codex pane focus event handling")
+            self.health_timer = NSTimer.timerWithTimeInterval_target_selector_userInfo_repeats_(
+                5.0, self, "healthTick:", None, True)
+            NSRunLoop.mainRunLoop().addTimer_forMode_(self.health_timer, NSRunLoopCommonModes)
+            self.watchdog = threading.Thread(target=self.watch_health, daemon=True, name="pane-helper-health")
+            self.watchdog.start()
+        if (OPTIONS.demo and not OPTIONS.background) or OPTIONS.show_inspector:
+            self.showInspector_(None)
+        self.publish_state()
+        print("Focus helper ready", flush=True)
+
+    @objc.python_method
+    def reconnect_event_sources(self, reason):
+        """Rearm subscriptions after desktop lifecycle changes, never poll or focus.
+
+        Ethan's pane focusing went silent with an eight-day-old process: its
+        worker was idle and even a fresh control notification got no reply.
+        Restarting restored replies. Recreate the existing sources on wake,
+        session return and Codex relaunch instead of relying on their lifetime.
+        This is not evidence that every focus-loss report has the same cause.
+        """
+        self.sequence += 1  # Work captured before a session transition is stale.
+        self.callback_error_streak = 0
+        self.mouse_down_point = None
+        if self.monitor is not None:
+            self.monitor.close()
+        self.monitor = self.down_monitor = None
+        self.event_source_revision += 1
+        revision = self.event_source_revision
+        center = NSDistributedNotificationCenter.defaultCenter()
+        center.removeObserver_(self)
+        center.addObserver_selector_name_object_suspensionBehavior_(
+            self, "control:", CONTROL_NAME, control_object(OPTIONS.demo),
+            NSNotificationSuspensionBehaviorDeliverImmediately)
+        if self.claude_focuser:
+            center.addObserver_selector_name_object_suspensionBehavior_(
+                self, "recordingStopped:", RECORDING_STOPPED, None, NSNotificationSuspensionBehaviorDeliverImmediately)
+        if self.reader:
+            self.monitor = MouseMonitor(lambda kind, event: self.mouse_event(revision, kind, event))
+            if not self.monitor.start():
+                print("Helper mouse listener unavailable · no permission prompt requested", flush=True)
+                self.monitor_retry_at = time.monotonic() + self.monitor_retry_delay
+                self.monitor_retry_delay = min(60, self.monitor_retry_delay * 2)
+            else:
+                self.monitor_retry_at, self.monitor_retry_delay = 0, 5
+        self.last_reconnect_reason = reason
+        if hasattr(self, "health_log"):
+            self.health_log.record(reason, self.health.snapshot())
+        print(f"Helper event sources reconnected · {reason} · revision {self.event_source_revision}", flush=True)
+
+    @objc.python_method
+    def mouse_event(self, revision, kind, event):
+        if revision != self.event_source_revision:
+            return  # A queued callback from a removed listener owns no new click.
+        if kind in (Q.kCGEventTapDisabledByTimeout, Q.kCGEventTapDisabledByUserInput,
+                    Q.kCGEventRightMouseDown, Q.kCGEventOtherMouseDown):
+            self.sequence += 1
+            self.mouse_down_point = None
+            return
+        try:
+            native = K.NSEvent.eventWithCGEvent_(event)
+            if native is None:
+                return
+            if kind == Q.kCGEventLeftMouseDown:
+                self.mouse_down(native)
+            elif kind == Q.kCGEventLeftMouseUp:
+                self.clicked(native)
+            self.callback_error_streak = 0
+        except Exception as exc:
+            self.callback_errors += 1
+            self.callback_error_streak += 1
+            if self.callback_error_streak == 1:
+                print(f"Helper mouse callback failed · {type(exc).__name__}", flush=True)
+
+    def healthTick_(self, timer):
+        action, token = self.health.main_tick()
+        if action == "restart":
+            self.fail_helper("control connection did not recover")
+            return
+        if action == "reconnect":
+            self.reconnect_event_sources("control reply timed out")
+        if self.callback_error_streak >= 3:
+            self.reconnect_event_sources("mouse callback repeatedly threw")
+        if (self.monitor is not None and self.monitor.tap is None
+                and time.monotonic() >= self.monitor_retry_at):
+            self.reconnect_event_sources("mouse listener unavailable")
+        if self.monitor is not None and self.monitor.tap is not None and not self.monitor.enabled():
+            self.sequence += 1
+            self.mouse_down_point = None
+            self.monitor.enable()
+            if not self.monitor.enabled():
+                self.reconnect_event_sources("mouse listener disabled")
+        NSDistributedNotificationCenter.defaultCenter().postNotificationName_object_userInfo_deliverImmediately_(
+            CONTROL_NAME, control_object(OPTIONS.demo), {"command": "health", "request": token}, True)
+
+    @objc.python_method
+    def watch_health(self):
+        while not self.health_stop.wait(2):
+            reason = self.health.watchdog_failure(self.thread.is_alive())
+            if reason:
+                self.fail_helper(reason)
+                return
+
+    @objc.python_method
+    def fail_helper(self, reason):
+        # Never replace a stuck AX thread in place: an old request might later
+        # return and steal focus. Exiting this one helper lets its existing
+        # launchd KeepAlive restart one clean process; Agent Flow stays running.
+        self.sequence += 1
+        self.health_stop.set()
+        if hasattr(self, "health_log"):
+            self.health_log.record(reason, self.health.snapshot())
+        print(f"Helper recovery restart · {time.strftime('%Y-%m-%dT%H:%M:%S%z')} · {reason}", flush=True)
+        os._exit(70)
+
+    def workspaceChanged_(self, notification):
+        name = notification.name()
+        if name == K.NSWorkspaceDidLaunchApplicationNotification:
+            app = (notification.userInfo() or {}).get(K.NSWorkspaceApplicationKey)
+            url = app.bundleURL() if app else None
+            if not url or Path(str(url.path())).name not in ("Codex.app", "ChatGPT.app"):
+                return
+            reason = "Codex launched"
+        else:
+            reason = "wake" if name == K.NSWorkspaceDidWakeNotification else "session active"
+        self.reconnect_event_sources(reason)
+        self.publish_state()
+
+    @objc.python_method
+    def publish_state(self, request=None):
+        # Permission belongs to THIS service, not the short-lived CLI sender.
+        # Refresh only for startup or an explicit command, never on an idle timer.
+        runtime = None
+        if hasattr(self, "event_source_revision"):
+            runtime = {"event_source_revision": self.event_source_revision,
+                       "last_reconnect_reason": self.last_reconnect_reason,
+                       "monitor_active": bool(self.monitor is not None and self.monitor.enabled()),
+                       "worker_alive": bool(self.reader and self.thread.is_alive()),
+                       "paused": self.paused, "focus_inputs": self.focus_inputs,
+                       "events_seen": self.events_seen, "codex_clicks": self.codex_clicks}
+            if hasattr(self, "health"):
+                runtime.update(self.health.snapshot())
+                runtime["watchdog_alive"] = bool(self.watchdog and self.watchdog.is_alive())
+                runtime["mouse_disable_events"] = self.monitor.disabled_count if self.monitor else 0
+                runtime["callback_errors"] = self.callback_errors
+                runtime["focus_worker_threads"] = sum(t.is_alive() and t.name == "pane-focus-worker"
+                                                       for t in threading.enumerate())
+                runtime["health_threads"] = sum(t.is_alive() and t.name == "pane-helper-health"
+                                                 for t in threading.enumerate())
+        INSTANCE.publish(True, bool(self.window and self.window.isVisible()),
+                         self.reader.trusted() if self.reader else None, request, runtime=runtime)
+
+    def control_(self, notification):
+        command = (notification.userInfo() or {}).get("command")
+        if command == "health":
+            self.health.acknowledge((notification.userInfo() or {}).get("request"))
+            return  # Internal self-ping never rewrites the status file.
+        if hasattr(self, "health"):
+            self.health.control_received()  # A real command also proves receipt.
+        if command == "show":
+            self.showInspector_(None)
+        elif command == "hide":
+            self.hideInspector_(None)
+        elif command == "quit":
+            self.quit_(None)
+            return
+        elif command == "request-accessibility" and self.reader:
+            self.reader.request_accessibility()
+        elif command == "reconnect":
+            self.reconnect_event_sources("explicit reconnect")
+        self.publish_state((notification.userInfo() or {}).get("request"))
+
+    def showInspector_(self, sender):
+        # The background service creates no window. Only an explicit show
+        # command (or the synthetic Demo) constructs and presents the inspector.
+        created = self.window is None
+        if created and not self.make_window():
+            return
+        self.update_snapshot_ui()
         self.window.orderFrontRegardless()  # A non-activating panel; never activate another app.
         # AppKit may apply a launch cascade before the first order-front. Position
         # this task-owned panel LAST, after layout, to keep it on the built-in screen.
-        self.window.contentView().layoutSubtreeIfNeeded()
-        self.window.setFrame_display_(self.window.frameRectForContentRect_(self.initial_rect), True)
-        NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-            0.2, self, "place:", None, False)
+        if created:
+            self.window.contentView().layoutSubtreeIfNeeded()
+            self.window.setFrame_display_(self.window.frameRectForContentRect_(self.initial_rect), True)
+            NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+                0.2, self, "place:", None, False)
         print(f"Inspector ready · window {self.window.windowNumber()} · built-in display", flush=True)
-        if OPTIONS.demo:
+        self.publish_state()
+        if OPTIONS.demo and created:
             self.demoMismatch_(None)
+
+    def hideInspector_(self, sender):
+        if self.window:
+            self.window.orderOut_(None)
+        self.publish_state()
 
     def place_(self, timer):
         # AppKit can finish its initial cascade on the next run-loop turn.
         # One placement only: never chase the user's later moves or app focus.
+        if not self.window or not self.window.isVisible():
+            return
         self.window.setFrame_display_(self.window.frameRectForContentRect_(self.initial_rect), True)
         print(f"Inspector placement verified · {K.NSStringFromRect(self.window.frame())}", flush=True)
 
@@ -298,10 +539,9 @@ class Inspector(NSObject):
         screen = next((s for s in K.NSScreen.screens() if s.localizedName() == "Built-in Retina Display"), None)
         if screen is None:
             print("Inspector not opened: Built-in Retina Display is unavailable", flush=True)
-            K.NSApp.terminate_(None)
             return False
         visible = screen.visibleFrame()
-        width, height = min(720, visible.size.width * 0.8), min(960, visible.size.height * 0.8)
+        width, height = min(720, visible.size.width * 0.8), min(560, visible.size.height * 0.6)
         rect = K.NSMakeRect(visible.origin.x + (visible.size.width - width) / 2,
                             visible.origin.y + (visible.size.height - height) / 2, width, height)
         self.initial_rect = rect
@@ -311,6 +551,7 @@ class Inspector(NSObject):
         self.window.setTitle_("Codex Focus Inspector" + (" — Demo" if OPTIONS.demo else " — Live"))
         self.window.setLevel_(K.NSFloatingWindowLevel)
         self.window.setHidesOnDeactivate_(False)
+        self.window.setReleasedWhenClosed_(False)
         self.window.setDelegate_(self)
         self.window.setAppearance_(K.NSAppearance.appearanceNamed_(K.NSAppearanceNameDarkAqua))
         stack = K.NSStackView.alloc().initWithFrame_(K.NSMakeRect(0, 0, width, height))
@@ -319,12 +560,32 @@ class Inspector(NSObject):
         stack.setSpacing_(12)
         stack.setEdgeInsets_((20, 20, 20, 20))
         stack.setTranslatesAutoresizingMaskIntoConstraints_(False)
-        self.window.contentView().addSubview_(stack)
+        # Ethan wants a short window: the whole content scrolls instead of the
+        # window forcing its full height. A flipped document keeps it top-anchored.
+        outer = K.NSScrollView.alloc().initWithFrame_(K.NSMakeRect(0, 0, width, height))
+        outer.setHasVerticalScroller_(True)
+        outer.setDrawsBackground_(False)
+        outer.setTranslatesAutoresizingMaskIntoConstraints_(False)
+        document = FlippedView.alloc().initWithFrame_(K.NSMakeRect(0, 0, width, height))
+        document.setTranslatesAutoresizingMaskIntoConstraints_(False)
+        document.addSubview_(stack)
+        outer.setDocumentView_(document)
+        content = self.window.contentView()
+        content.addSubview_(outer)
+        clip = outer.contentView()
         K.NSLayoutConstraint.activateConstraints_([
-            stack.leadingAnchor().constraintEqualToAnchor_(self.window.contentView().leadingAnchor()),
-            stack.trailingAnchor().constraintEqualToAnchor_(self.window.contentView().trailingAnchor()),
-            stack.topAnchor().constraintEqualToAnchor_(self.window.contentView().topAnchor()),
-            stack.bottomAnchor().constraintEqualToAnchor_(self.window.contentView().bottomAnchor())])
+            outer.leadingAnchor().constraintEqualToAnchor_(content.leadingAnchor()),
+            outer.trailingAnchor().constraintEqualToAnchor_(content.trailingAnchor()),
+            outer.topAnchor().constraintEqualToAnchor_(content.topAnchor()),
+            outer.bottomAnchor().constraintEqualToAnchor_(content.bottomAnchor()),
+            document.leadingAnchor().constraintEqualToAnchor_(clip.leadingAnchor()),
+            document.trailingAnchor().constraintEqualToAnchor_(clip.trailingAnchor()),
+            document.topAnchor().constraintEqualToAnchor_(clip.topAnchor()),
+            stack.leadingAnchor().constraintEqualToAnchor_(document.leadingAnchor()),
+            stack.trailingAnchor().constraintEqualToAnchor_(document.trailingAnchor()),
+            stack.topAnchor().constraintEqualToAnchor_(document.topAnchor()),
+            stack.bottomAnchor().constraintEqualToAnchor_(document.bottomAnchor())])
+        self.window.setContentMinSize_(K.NSMakeSize(360, 160))
         def label(text, size=14, color=None):
             v = K.NSTextField.wrappingLabelWithString_(text)
             v.setFont_(K.NSFont.systemFontOfSize_(size))
@@ -333,7 +594,18 @@ class Inspector(NSObject):
             stack.addArrangedSubview_(v)
             return v
         label("Codex Focus Inspector", 22)
-        label("Read-only. No cursor movement, typing or focus changes.", color=K.NSColor.secondaryLabelColor())
+        self.focus_toggle = K.NSButton.checkboxWithTitle_target_action_(
+            "Focus that pane's input when I click or highlight in its chat area", self, "toggleFocus:")
+        self.focus_toggle.setState_(K.NSControlStateValueOn if self.focuser and self.focus_inputs else K.NSControlStateValueOff)
+        self.focus_toggle.setEnabled_(self.focuser is not None)  # Demo has no reader, so nothing to focus.
+        stack.addArrangedSubview_(self.focus_toggle)
+        self.claude_toggle = K.NSButton.checkboxWithTitle_target_action_(
+            "Focus Claude's Prompt box when Agent Flow stops recording", self, "toggleClaudeFocus:")
+        self.claude_toggle.setState_(K.NSControlStateValueOn if self.claude_focuser else K.NSControlStateValueOff)
+        self.claude_toggle.setEnabled_(self.claude_focuser is not None)  # Demo has no reader either.
+        stack.addArrangedSubview_(self.claude_toggle)
+        label("No cursor movement, typing, pasting or sending. Highlights focus after 0.3 s; modifier clicks are left alone.",
+              color=K.NSColor.secondaryLabelColor())
         self.event_status = label("DEMO · buttons only; Codex clicks are ignored" if OPTIONS.demo else "Starting click monitor…", 14,
                                   K.NSColor.systemOrangeColor() if OPTIONS.demo else K.NSColor.secondaryLabelColor())
         self.result = label("Clicked pane: waiting", 23)
@@ -351,6 +623,7 @@ class Inspector(NSObject):
             toolbar.addArrangedSubview_(button)
             if title == "Pause":
                 self.pause_button = button
+                button.setTitle_("Resume" if self.paused else "Pause")
         stack.addArrangedSubview_(toolbar)
         if OPTIONS.demo:
             demos = K.NSStackView.stackViewWithViews_([])
@@ -392,12 +665,20 @@ class Inspector(NSObject):
         if self.paused:
             return
         self.events_seen += 1
+        down, self.mouse_down_point = self.mouse_down_point, None
+        if down is None:
+            # A release spanning startup/wake/reconnect has no measured drag.
+            # Never turn it into a guessed plain click that can clear selection.
+            self.sequence += 1
+            return
         app = K.NSWorkspace.sharedWorkspace().frontmostApplication()
         url = app.bundleURL() if app else None
         if not url or Path(str(url.path())).name not in ("Codex.app", "ChatGPT.app"):
-            self.event_status.setStringValue_(f"LIVE · clicks received: {self.events_seen} · Codex: {self.codex_clicks}")
             self.sequence += 1
             self.last = None
+            if not self.window or not self.window.isVisible():
+                return
+            self.event_status.setStringValue_(f"LIVE · clicks received: {self.events_seen} · Codex: {self.codex_clicks}")
             self.result.setStringValue_("Clicked pane: outside Codex")
             self.focus_result.setStringValue_("Focused pane: not sampled")
             self.input_status.setStringValue_("Input focus: not sampled")
@@ -408,12 +689,19 @@ class Inspector(NSObject):
             self.details.setString_("")
             return
         self.codex_clicks += 1
-        self.event_status.setStringValue_(f"LIVE · clicks received: {self.events_seen} · Codex: {self.codex_clicks} · reading…")
+        if self.window and self.window.isVisible():
+            self.event_status.setStringValue_(f"LIVE · clicks received: {self.events_seen} · Codex: {self.codex_clicks} · reading…")
         point = Q.CGEventGetLocation(event.CGEvent())
+        modifiers = (K.NSEventModifierFlagCommand | K.NSEventModifierFlagShift
+                     | K.NSEventModifierFlagControl | K.NSEventModifierFlagOption)
+        gesture = ClickGesture(event.clickCount(),
+                               math.hypot(point.x - down.x, point.y - down.y) if down else 0.0,
+                               bool(event.modifierFlags() & modifiers))
         self.sequence += 1
         info = NSBundle.bundleWithPath_(str(url.path())).infoDictionary() or {}
         version = f"{info.get('CFBundleShortVersionString', '')} / {info.get('CFBundleVersion', '')}"
-        request = self.sequence, point.x, point.y, app.processIdentifier(), time.monotonic(), Path(str(url.path())).name, version
+        request = (self.sequence, point.x, point.y, app.processIdentifier(), time.monotonic(),
+                   Path(str(url.path())).name, version, gesture, self.key_count())
         try:
             self.pending.put_nowait(request)
         except queue.Full:
@@ -426,38 +714,90 @@ class Inspector(NSObject):
     @objc.python_method
     def worker(self):
         while True:
-            sequence, x, y, pid, captured, host, version = self.pending.get()
-            # A delayed queue must not attribute a newer screen to an old click.
-            remaining = captured + 0.09 - time.monotonic()
-            if remaining > 0:
-                threading.Event().wait(remaining)
-            if sequence != self.sequence or self.paused:
-                continue
+            request = self.pending.get()
+            self.health.begin_job()
+            error = None
             try:
-                sample = self.reader.sample(x, y, pid)
-                focused = self.reader.sample(x, y, pid, focus=True)
+                self.process_request(request)
             except Exception as exc:
-                sample = Sample(pid, 0, None, x, y, (), f"Read unavailable ({type(exc).__name__})")
-                focused = sample
-            self.completed.put((sequence, Observation(sample, focused, sequence, host=host, version=version)))
+                error = type(exc).__name__
+                print(f"Helper worker request failed · {error}", flush=True)
+            finally:
+                self.health.end_job(error)
+
+    @objc.python_method
+    def key_count(self):
+        return Q.CGEventSourceCounterForEventType(Q.kCGEventSourceStateCombinedSessionState, Q.kCGEventKeyDown)  # A count only, no key listener or text: typing after a click must cancel delayed caret recovery.
+
+    @objc.python_method
+    def process_request(self, request):
+        sequence, x, y, pid, captured, host, version, gesture, keys_at_click = request
+        current = lambda: sequence == self.sequence and not self.paused and self.focus_inputs and self.key_count() == keys_at_click
+        # A delayed queue must not attribute a newer screen to an old click.
+        remaining = captured + 0.09 - time.monotonic()
+        if remaining > 0:
+            threading.Event().wait(remaining)
+        if sequence != self.sequence or self.paused or self.key_count() != keys_at_click:
+            return
+        try:
+            sample = self.reader.sample(x, y, pid)
+            focused = self.reader.sample(x, y, pid, focus=True)
+        except Exception as exc:
+            sample = Sample(pid, 0, None, x, y, (), f"Read unavailable ({type(exc).__name__})")
+            focused = sample
+        observation = Observation(sample, focused, sequence, host=host, version=version, gesture=gesture)
+        highlight = is_highlight_gesture(gesture)
+        if highlight:
+            threading.Event().wait(HIGHLIGHT_FOCUS_DELAY_SECONDS)
+        # Ethan (2026-11-06): every chat-text click must focus its input, including
+        # double/triple clicks without Agent Flow capture. The old receipt veto
+        # deliberately preserved pre-start selections; do not restore that veto
+        # over this preference (task 01a0d315-7d5e-7be0-bc08-80626ca0729b).
+        if self.focus_inputs and sequence == self.sequence and not self.paused:
+            pane = None
+            try:
+                pane, frame = input_focus_plan(self.model, observation)
+                if pane and (sequence != self.sequence or self.paused):
+                    action = "Skipped · a newer click arrived"
+                else:
+                    action = self.focuser.focus(pid, frame, pane,
+                        is_current=current,
+                        window_key=focused.window_key,
+                        click_point=(x, y)) if pane else frame
+                if highlight:
+                    action = "After highlight · " + action
+            except Exception as exc:
+                action = f"Failed · focus step error ({type(exc).__name__})"
+            observation = replace(observation, focus_action=action)
+            if pane:
+                # Status vocabulary only (pane names, AX roles, error numbers),
+                # so focus attempts can be reviewed without the clipboard.
+                print(f"focus attempt · snapshot {sequence} · {action}", flush=True)
+        self.completed.put((sequence, observation))
 
     def refresh_(self, timer):
-        while True:
-            try:
-                sequence, observation = self.completed.get_nowait()
-            except queue.Empty:
-                return
-            if sequence == self.sequence and not self.paused:
-                self.last = observation
-                self.diagnostics.append(observation, self.model)
-                self.containers.removeAllItems()
-                for i, node in enumerate(observation.click.nodes):
-                    bounds = node.frame.short() if node.frame else "no bounds"
-                    self.containers.addItemWithTitle_(f"{i} · {node.role} · {bounds}")
-                if not observation.click.nodes:
-                    self.containers.addItemWithTitle_("No containers available")
-                self.render()
-                self.event_status.setStringValue_(f"LIVE · clicks received: {self.events_seen} · Codex: {self.codex_clicks} · snapshot ready")
+        result = self.completed.take()
+        if result is None:
+            return
+        sequence, observation = result
+        if sequence == self.sequence and not self.paused:
+            self.last = observation
+            self.diagnostics.append(observation, self.model)
+            if self.window and self.window.isVisible():
+                self.update_snapshot_ui()
+
+    @objc.python_method
+    def update_snapshot_ui(self):
+        if not self.last:
+            return
+        self.containers.removeAllItems()
+        for i, node in enumerate(self.last.click.nodes):
+            bounds = node.frame.short() if node.frame else "no bounds"
+            self.containers.addItemWithTitle_(f"{i} · {node.role} · {bounds}")
+        if not self.last.click.nodes:
+            self.containers.addItemWithTitle_("No containers available")
+        self.render()
+        self.event_status.setStringValue_(f"LIVE · clicks received: {self.events_seen} · Codex: {self.codex_clicks} · snapshot ready")
 
     @objc.python_method
     def render(self):
@@ -466,8 +806,10 @@ class Inspector(NSObject):
         pane, reason, focus, focus_reason, relation, next_check = describe(self.model, self.last)
         self.result.setStringValue_(f"Clicked pane: {pane}")
         self.focus_result.setStringValue_(f"Focused pane: {focus}")
-        self.input_status.setStringValue_(self.model.input_state(
-            self.last.focus, self.last.host, self.last.version))
+        input_state = self.model.input_state(self.last.focus, self.last.host, self.last.version)
+        # The snapshot is taken before the optional focus write, so show both.
+        self.input_status.setStringValue_(
+            f"{input_state} → {self.last.focus_action}" if self.last.focus_action else input_state)
         self.comparison.setStringValue_(relation)
         color = {"Main chat": K.NSColor.systemTealColor(), "Side chat": K.NSColor.systemPurpleColor()}.get(pane, K.NSColor.systemOrangeColor())
         self.result.setTextColor_(color)
@@ -573,6 +915,7 @@ class Inspector(NSObject):
     def pause_(self, sender):
         self.paused = not self.paused
         self.sequence += 1  # In-flight reads cannot overwrite a paused or resumed screen.
+        self.preferences.save(self.paused, self.focus_inputs)
         sender.setTitle_("Resume" if self.paused else "Pause")
         self.evidence.setStringValue_("Paused" if self.paused else "Click a Codex area to continue")
 
@@ -585,20 +928,66 @@ class Inspector(NSObject):
     def quit_(self, sender):
         K.NSApp.terminate_(None)
 
+    def toggleFocus_(self, sender):
+        self.focus_inputs = sender.state() == K.NSControlStateValueOn
+        self.sequence += 1
+        self.mouse_down_point = None
+        self.preferences.save(self.paused, self.focus_inputs)
+
+    def toggleClaudeFocus_(self, sender):
+        self.focus_claude = sender.state() == K.NSControlStateValueOn
+
+    def recordingStopped_(self, notification):
+        # Every Agent Flow finish posts this, including cancel and the clipboard-only
+        # "Won't paste" finish; Ethan accepted that those also move focus to the Prompt.
+        app = K.NSWorkspace.sharedWorkspace().frontmostApplication()
+        if self.paused or not self.focus_claude or not app or app.bundleIdentifier() != CLAUDE_BUNDLE_ID:
+            return
+        if not self.claude_running.acquire(blocking=False):  # Stops are seconds apart; never queue a stale run.
+            print("claude prompt focus · skipped · previous run still active", flush=True)
+            return
+        threading.Thread(target=self.focus_claude_prompt, args=(app.processIdentifier(),), daemon=True).start()
+
+    @objc.python_method
+    def focus_claude_prompt(self, pid):
+        try:
+            status = self.claude_focuser.focus_prompt(pid)
+        except Exception as exc:
+            status = f"Failed · focus step error ({type(exc).__name__})"
+        finally:
+            self.claude_running.release()
+        # Status vocabulary only, like the Codex focus lines; never message text.
+        print(f"claude prompt focus · recording stopped · {status}", flush=True)
+
+    @objc.python_method
+    def mouse_down(self, event):
+        self.sequence += 1  # Cancel old work at press time, before a new selection.
+        self.mouse_down_point = Q.CGEventGetLocation(event.CGEvent())
+
     @objc.python_method
     def close_key_event(self, event):
-        if is_close_shortcut(event.keyCode(), event.modifierFlags(), K.NSApp.keyWindow() == self.window):
+        if self.window and is_close_shortcut(event.keyCode(), event.modifierFlags(), K.NSApp.keyWindow() == self.window):
             self.window.performClose_(None)
             return None
         return event
 
-    def windowWillClose_(self, notification):
-        K.NSApp.terminate_(None)
+    def windowShouldClose_(self, window):
+        self.hideInspector_(None)
+        return False
 
     def applicationWillTerminate_(self, notification):
-        print("Inspector closed", flush=True)
+        print("Focus helper stopped", flush=True)
+        NSDistributedNotificationCenter.defaultCenter().removeObserver_(self)
+        self.health_stop.set()
+        if self.health_timer is not None:
+            self.health_timer.invalidate()
+        if self.activity is not None:
+            NSProcessInfo.processInfo().endActivity_(self.activity)
+        if self.reader:
+            K.NSWorkspace.sharedWorkspace().notificationCenter().removeObserver_(self)
+        INSTANCE.close()
         if self.monitor:
-            K.NSEvent.removeMonitor_(self.monitor)
+            self.monitor.close()
         if getattr(self, "close_monitor", None):
             K.NSEvent.removeMonitor_(self.close_monitor)
 
@@ -606,7 +995,45 @@ class Inspector(NSObject):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--demo", action="store_true", help="Synthetic data only; no AX reader or global event monitor")
+    parser.add_argument("--background", action="store_true")
+    commands = parser.add_mutually_exclusive_group()
+    commands.add_argument("--show-inspector", action="store_true")
+    commands.add_argument("--hide-inspector", action="store_true")
+    commands.add_argument("--quit", action="store_true")
+    commands.add_argument("--status", action="store_true")
+    commands.add_argument("--request-accessibility", action="store_true")
+    commands.add_argument("--reconnect", action="store_true", help="Rearm this helper's existing event subscriptions")
     OPTIONS = parser.parse_args()
+    directory = Path.home() / "Library/Application Support/AgentFlow/CodexFocusHelper"
+    INSTANCE = SingleInstance(directory / ("demo" if OPTIONS.demo else "live"))
+    acquired = INSTANCE.acquire()
+    command = ("show" if OPTIONS.show_inspector else "hide" if OPTIONS.hide_inspector
+               else "quit" if OPTIONS.quit else "status" if OPTIONS.status
+               else "request-accessibility" if OPTIONS.request_accessibility else None)
+    if OPTIONS.reconnect:
+        command = "reconnect"
+    if OPTIONS.status or not acquired or command in ("hide", "quit", "request-accessibility", "reconnect"):
+        state = {} if acquired else INSTANCE.wait_ready()
+        if command and not acquired and state:
+            request = f"{os.getpid()}:{time.monotonic_ns()}"
+            NSDistributedNotificationCenter.defaultCenter().postNotificationName_object_userInfo_deliverImmediately_(
+                CONTROL_NAME, control_object(OPTIONS.demo), {"command": command, "request": request}, True)
+            if command != "quit":
+                state = INSTANCE.wait_reply(request)
+                if not state:
+                    print("Helper control request not confirmed")
+                    raise SystemExit(1)
+        elif not acquired and not state:
+            print("Helper is starting; control request not delivered")
+            raise SystemExit(1)
+        if OPTIONS.reconnect and acquired:
+            print("Helper control request not confirmed")
+            INSTANCE.close()
+            raise SystemExit(1)
+        if OPTIONS.status or OPTIONS.reconnect:
+            print(json.dumps({"running": not acquired, **state}))
+        INSTANCE.close()
+        raise SystemExit(0)
     app = K.NSApplication.sharedApplication()
     app.setActivationPolicy_(K.NSApplicationActivationPolicyAccessory)
     delegate = Inspector.alloc().init()
