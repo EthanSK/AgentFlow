@@ -1,5 +1,17 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-06 — Require capture confirmation for Codex text-click focus — SUPERSEDED
+
+The separate focus helper previously kept an uncaptured highlight selected for a
+later Agent Flow Start. Ethan explicitly replaced that preference with input
+focus after every chat-text click, including double/triple and modifier-assisted
+selections. Keep the existing highlight settling interval and exact pane/window,
+draft-selection and newer-input guards; do not reinstate capture confirmation as
+a focus veto without a fresh change to this preference. An uncaptured selection
+may clear when focus moves. This does not change Primary/Next delivery or claim
+physical pre-start selection preservation. See implementation afaf4070 and the
+matching LEARNINGS.md entry for the Mini checks and live-acceptance boundary.
+
 ## 2026-11-05 — Treat an accepted Electron AX request as an immediately ready tree
 
 **Observed failure:** `AXManualAccessibility=true` returned success on the isolated Mini VS Code 1.144.0 host, but immediate and 500 ms reads still returned no focused renderer element. A forced-renderer-accessibility launch passed, which proved only the ready-tree case. Electron's implementation deliberately waits two seconds after the last request; a later native request plus actual readiness check passed. Do not ship a force-flag-only test or repeatedly reissue the request while polling. The focused terminal input's tiny caret frame also cannot validate a drag across the terminal pane.

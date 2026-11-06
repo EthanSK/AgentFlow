@@ -1,5 +1,16 @@
 # Learnings
 
+---
+**Date:** 2026-11-06T13:56:37Z
+**Trigger:** Ethan (2026-11-06): always focus the input on any click regardless of click type, including triple-clicks on chat text.
+**Symptom:** Double/triple-clicking Codex chat text could leave its input unfocused.
+**Root cause:** The separate helper required an Agent Flow selection-capture receipt before focusing highlights, and skipped modifier-assisted text clicks. With Agent Flow idle there was no receipt. This was the previous pre-start selection-preservation contract, now explicitly replaced.
+**Fix:** The existing measured-pane focus path now accepts text-click counts, completed drags and modifier-assisted text selections independently of capture confirmation. Removed the unused receipt observer/store and timestamp matching. Existing sampling/settling intervals, pane/window/draft-selection/new-input guards and lifecycle recovery remain. Native Agent Flow, Model Bar and bridge code were not changed.
+**Commit:** afaf4070
+**Guard:** 139 named Python helper checks passed on the Mac Mini, including real-worker main/side single/double/triple/fourth-click cases without a receipt and cancellation/paused preference cases. The earlier empty-receipt skip was reproduced by the original baseline checks. The installed LaunchAgent was cooperatively reloaded and reports ready, Accessibility granted, one active tap/worker/watchdog and zero worker/callback errors. Demo launched and quit on the built-in screen, but Computer Use attachment timed out; real Codex caret acceptance remains user-operated.
+---
+
+
 ## 2026-11-05 — VS Code terminal highlights need their own source
 
 Better Git's editor selection events do not describe integrated-terminal selections. On VS Code 1.144.0 the stable local tool registry exposed `terminal_selection`; invoking it returned the selected terminal text with the fixed English prefix `The active terminal's selection:\n`. This is a local tool invocation, not a model request. Accept only that one text payload, preserve whitespace, cap at the existing 8,192 UTF-16 transport limit, and fail closed when the tool/payload is unavailable. Older companions cannot answer an explicit terminal request with editor text.
