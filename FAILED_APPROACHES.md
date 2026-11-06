@@ -1,5 +1,13 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-06 — Apply live-event freshness or HUD-first focus to startup capture
+
+**Observed failures:** A preselected Code range had no new watched gesture, so the bridge was skipped; an old selection-change timestamp also failed the live freshness check. A disposable Mini non-activating HUD with an automatically focused text view made Code's focused-pane query return no pane even though Code remained frontmost. The same selected range passed without that focus step.
+
+**Use instead:** An explicit fresh startup snapshot, tied to the original proven Code pane and source window, followed by automatic HUD typing focus only after that initial capture task finishes. Preserve cancellation and explicit user focus. Startup is not permission to replay cached selection events or infer terminal focus from the last active editor.
+
+**Reconsider only if:** the target host exposes an independently proven current pane/selection after HUD focus, with a live test demonstrating the ordering no longer matters. A non-activating window or a successful frontmost-app check alone is insufficient proof.
+
 ## 2026-11-06 — Require capture confirmation for Codex text-click focus — SUPERSEDED
 
 The separate focus helper previously kept an uncaptured highlight selected for a

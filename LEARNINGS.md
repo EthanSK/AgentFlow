@@ -1,5 +1,15 @@
 # Learnings
 
+## 2026-11-06 — Capture a fresh VS Code selection before automatic typing focus
+
+Pre-start editor and integrated-terminal highlights were missed because the native reader required a new gesture to enter the Code bridge; the editor response also had a live-event freshness limit. Startup is a distinct observation: request an explicit `captureKind=startup` snapshot of the currently selected, proven editor or terminal. Require the matching nonce, source PID, surface and fresh observation time, and preserve the 8,192 UTF-16 limit. Older companions cannot silently answer this request as a live/editor event. Live gestures retain their existing freshness and source-window checks.
+
+Better Git 1.2.162 reads the active editor range directly for startup. The terminal path still uses the stable local `terminal_selection` tool, not a model call, Copy or clipboard. Isolated Mini editor, diff and terminal preselection checks passed through both the source and packaged companion. A separate non-activating HUD probe exposed an additional ordering bug: focusing its text view before Code's pane proof removed that proof. Build489 now waits for the real initial Code capture task before automatic typing focus, without delaying the visible HUD or adding a fixed timer. Explicit typing clicks and cancellation retain ownership; ordinary voice startup does not acquire the caret.
+
+The exact native source51d6f7b7/build489 passed80 named focused tests and819 full tests in31 suites through canonical Mini Xcode actions. The companion passed251 non-GUI checks, compilation, lint and packaged integration. Native489 was Developer ID signed, notarized, published, independently downloaded and checksum/signature verified. One real five-second warning and one ordinary quit were followed by the installed app's all-session veto; the bounded process-exit waiter then swapped and launched489 normally. The real PID, stable signing requirement, Automation/audio-input entitlements and unchanged official VoiceInk executable were verified; the retired487 bundle moved to recoverable Trash after its ZIP rollback was verified. User physical preselection acceptance remains separate from those checks.
+
+A later report concerns text selected inside one Codex table cell. The unchanged production AX resolver captured exact subsets of plain, underlined and code-formatted cells in a disposable Mini Chromium fixture when its renderer Accessibility tree was available. The initial default-tree fixture exposed no renderer selection and was not counted as a passing test. Live Codex Computer Use was explicitly refused, so no custom live AX probes were used to bypass it. Existing canceled-read logs do not identify a table or prove a root cause; do not claim this table report fixed by489.
+
 ---
 **Date:** 2026-11-06T13:56:37Z
 **Trigger:** Ethan (2026-11-06): always focus the input on any click regardless of click type, including triple-clicks on chat text.
