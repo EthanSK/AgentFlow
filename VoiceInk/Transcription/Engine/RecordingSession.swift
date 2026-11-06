@@ -860,7 +860,9 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
             }
         )
         liveSelectionCapture = capture
-        capture.start(activationTime: activationTime)
+        if let initialSelection = capture.start(activationTime: activationTime) {
+            typingFocus.finishInitialSelectionBeforeFocusing(initialSelection)
+        }
     }
 
     /// `precedesSpeech` marks a highlight made before this recording's capture

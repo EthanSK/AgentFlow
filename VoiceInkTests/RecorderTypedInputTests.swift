@@ -2817,6 +2817,41 @@ struct RecorderTypedInputTests {
         focus.disable(releaseKeyboard: false)
     }
 
+    @Test @MainActor func initialCodeSelectionFinishesBeforeAutomaticTypingFocus() async throws {
+        let (events, completion) = AsyncStream<Void>.makeStream()
+        let read = Task { for await _ in events { return } }
+        let focus = RecorderTypingFocus(retryDelay: 5_000_000)
+        let window = TypingFocusProbeWindow()
+        let editor = RecorderTypingTextView()
+        window.contentView = editor
+        focus.finishInitialSelectionBeforeFocusing(read)
+        focus.requestInitialFocus()
+        focus.register(editor)
+        focus.returnAfterContext() // Coalescing must retain the same read boundary.
+        try await Task.sleep(nanoseconds: 20_000_000)
+        #expect(window.focusRequests == 0 && focus.initialFocusPending)
+        completion.finish()
+        try await Task.sleep(nanoseconds: 40_000_000)
+        #expect(window.focusRequests == 1 && window.firstResponder === editor)
+        focus.disable(releaseKeyboard: false)
+    }
+
+    @Test @MainActor func canceledInitialSelectionWaitCannotRefocusAFinishedSession() async throws {
+        let (events, completion) = AsyncStream<Void>.makeStream()
+        let read = Task { for await _ in events { return } }
+        let focus = RecorderTypingFocus(retryDelay: 5_000_000)
+        let window = TypingFocusProbeWindow()
+        let editor = RecorderTypingTextView()
+        window.contentView = editor
+        focus.finishInitialSelectionBeforeFocusing(read)
+        focus.requestInitialFocus()
+        focus.register(editor)
+        focus.disable(releaseKeyboard: false)
+        completion.finish()
+        try await Task.sleep(nanoseconds: 40_000_000)
+        #expect(window.focusRequests == 0 && !focus.isEnabled)
+    }
+
     @Test @MainActor func initialSelectionCannotDropFocusWhileEditorIsMounting() async throws {
         let focus = RecorderTypingFocus(retryDelay: 5_000_000)
         focus.requestInitialFocus()

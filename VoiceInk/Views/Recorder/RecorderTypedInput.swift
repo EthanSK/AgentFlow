@@ -361,6 +361,7 @@ final class RecorderTypingFocus: ObservableObject {
     private let retryDelay: UInt64
     private let maximumAttempts: Int
     private var returnTask: Task<Void, Never>?
+    private var initialSelectionTask: Task<Void, Never>?
     private static let log = Logger(subsystem: "com.ethansk.VoiceInkPlusPlus", category: "TypingFocus")
 
     nonisolated static func automaticReturnEnabled(in defaults: UserDefaults) -> Bool {
@@ -400,7 +401,15 @@ final class RecorderTypingFocus: ObservableObject {
         returnTask = nil
         preferredEditor = editor
         initialFocusPending = false
+        initialSelectionTask = nil // An explicit editor click owns focus now.
         isEnabled = true
+    }
+
+    func finishInitialSelectionBeforeFocusing(_ task: Task<Void, Never>) {
+        // Ethan's Code "preselect" must be read while Code still owns its pane.
+        // This is the existing bounded read, not extra keyboard padding: await
+        // it off the startup path before automatic typing focus takes the caret.
+        initialSelectionTask = task
     }
 
     func requestInitialFocus(preferredEditor: RecorderTypingTextView? = nil) {
@@ -429,6 +438,7 @@ final class RecorderTypingFocus: ObservableObject {
         returnTask = nil
         isEnabled = false
         initialFocusPending = false
+        initialSelectionTask = nil
         if releaseKeyboard, let editor = preferredEditor,
            editor.window?.isKeyWindow == true {
             RecorderTypingTextView.releaseKeyboardBeforeFinish()
@@ -442,6 +452,7 @@ final class RecorderTypingFocus: ObservableObject {
         let attempts = maximumAttempts
         let delay = retryDelay
         let requestedAt = DispatchTime.now().uptimeNanoseconds
+        let initialSelection = initial ? initialSelectionTask : nil
         returnTask = Task { @MainActor [weak self] in
             var outcome = "canceled-or-session-changed"
             var attempted = 0
@@ -453,6 +464,10 @@ final class RecorderTypingFocus: ObservableObject {
                 let elapsed = AgentFlowPromptArchive.HandoffTiming.milliseconds(
                     from: requestedAt, to: DispatchTime.now().uptimeNanoseconds)
                 Self.log.notice("typing focus: request finished generation=\(expectedGeneration) initial=\(initial) outcome=\(outcome, privacy: .public) attempts=\(attempted) durationMs=\(elapsed)")
+            }
+            if let initialSelection {
+                await initialSelection.value
+                if self?.generation == expectedGeneration { self?.initialSelectionTask = nil }
             }
             // Event-driven, coalesced and bounded to two seconds, not an idle
             // focus watcher. Mouse-up, screenshot UI teardown and editor mounting

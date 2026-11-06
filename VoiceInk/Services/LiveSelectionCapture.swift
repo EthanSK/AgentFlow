@@ -1226,8 +1226,10 @@ final class LiveSelectionCapture {
         self.onLabels = onLabels
     }
 
-    func start(activationTime: Date = Date()) {
-        guard !isAttached else { return }
+    @discardableResult
+    func start(activationTime: Date = Date()) -> Task<Void, Never>? {
+        guard !isAttached else { return nil }
+        let startsInCode = VSCodeSelectionBridge.supports(NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
         isAttached = true
         attachedAt = Date()
         let watcher = SelectionGestureWatcher.shared
@@ -1262,6 +1264,10 @@ final class LiveSelectionCapture {
         if dragInProgress == nil {
             capturePriorSelection(watcher.lastSelectionGesture)
         }
+        // Code's pane proof disappears when our typing HUD takes the caret.
+        // Return only this initial read so explicit typing focus can await its
+        // real completion. The visible HUD and recorder startup never wait here.
+        return startsInCode ? captureTask : nil
     }
 
     func stop() {
