@@ -1500,8 +1500,8 @@ final class LiveSelectionCapture {
     /// attached: made while reading before pressing start, or during microphone
     /// start-up. It becomes the first reference because the live transcript is
     /// still empty. Only the same frontmost app may be read, through the same
-    /// gesture-bounded reader as a live highlight, so a stale or elsewhere
-    /// selection fails closed rather than borrowing unrelated text.
+    /// source-identity reader as a live highlight; Code requests a fresh startup
+    /// snapshot because this range can predate the watcher and its gesture cache.
     private func capturePriorSelection(_ gesture: SelectionGestureWatcher.CompletedGesture?) {
         guard let app = NSWorkspace.shared.frontmostApplication,
               app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
@@ -1519,7 +1519,7 @@ final class LiveSelectionCapture {
             )
         } else {
             // A keyboard highlight or one predating the watcher has no mouse
-            // history. Read the current app's focused AX selection once, without
+            // history. Read the current app's focused selection once, without
             // inventing gesture geometry from the pointer's unrelated location.
             // This records observation time, not a fabricated mouse-up time.
             let point = NSEvent.mouseLocation
@@ -1620,6 +1620,7 @@ final class LiveSelectionCapture {
                     gestureStartedAt: gestureStartedAt,
                     bridgeInputKind: bridgeInputKind,
                     bridgeInputDirection: bridgeInputDirection,
+                    isInitialSelection: precedesSpeech,
                     startedAt: startedAt
                 )
                 selectedText = result.text
@@ -1715,6 +1716,7 @@ final class LiveSelectionCapture {
         gestureStartedAt: Date,
         bridgeInputKind: String?,
         bridgeInputDirection: String?,
+        isInitialSelection: Bool,
         startedAt: UInt64
     ) async -> (text: String?, resolution: LiveSelectionResolution?) {
         // VS Code's default Monaco editor intentionally exposes no AX text.
@@ -1724,9 +1726,12 @@ final class LiveSelectionCapture {
         // Shift-drags keep the existing window and range-geometry safeguards;
         // ask only during capture. The approved Code-only Accessibility request
         // reveals pane identity without changing saved settings or issuing Copy.
+        // Ethan's "preselect" means the range already highlighted when Agent
+        // Flow starts. It needs a current focused-pane snapshot, not a new mouse
+        // or keyboard event after startup. Live reads retain their gesture proof.
         if isFrontmost(sourcePID), VSCodeSelectionBridge.supports(bundleID),
-           (gesture == nil ? bridgeInputKind != nil :
-               gesture?.touchesWindow(ownedBy: sourcePID, in: LiveSelectionWindow.onScreen()) == true) {
+           (isInitialSelection || (gesture == nil ? bridgeInputKind != nil :
+               gesture?.touchesWindow(ownedBy: sourcePID, in: LiveSelectionWindow.onScreen()) == true)) {
             for (attempt, delay) in LiveSelectionReadPolicy.accessibilityRetryDelays.enumerated() {
                 if delay > 0 { try? await Task.sleep(nanoseconds: delay) }
                 guard !Task.isCancelled, canRead(identity), isFrontmost(sourcePID) else { return (nil, nil) }
@@ -1736,11 +1741,12 @@ final class LiveSelectionCapture {
                 guard !Task.isCancelled, canRead(identity), isFrontmost(sourcePID) else { return (nil, nil) }
                 // Terminal focus must never reuse the editor's recent selection.
                 // Require its own pane bounds, never the hidden caret rectangle.
-                if context.surface == "terminal", let gesture,
+                if !isInitialSelection, context.surface == "terminal", let gesture,
                    !gesture.coversBothEndpoints(context.bounds) { return (nil, nil) }
                 if let text = await VSCodeSelectionBridge.read(sourcePID: sourcePID,
                     gestureStartedAt: gestureStartedAt, inputKind: bridgeInputKind,
-                    inputDirection: bridgeInputDirection, context: context) {
+                    inputDirection: bridgeInputDirection, context: context,
+                    isInitialSelection: isInitialSelection) {
                     LiveSelectionDiagnostics.captured(
                         tier: .vscodeBridge, source: nil, evidence: .atGesture, attempt: attempt + 1,
                         bundleID: bundleID, startedAt: startedAt

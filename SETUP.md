@@ -180,7 +180,9 @@ when no recording or transcription is active. The companion has its own
   Shift-click and Command-A;
   automatic Git hunk navigation and stale selections are ignored. With Agent Flow build 487
   and Better Git 1.2.160, also try a highlight in the integrated terminal. A recent Code
-  version must expose its local terminal-selection tool. Agent Flow requests Code’s
+  version must expose its local terminal-selection tool. With build 488 and Better Git
+  1.2.162, also select text before starting Agent Flow: the existing editor or terminal
+  highlight should appear before your first words without highlighting again. Agent Flow requests Code’s
   Accessibility tree to prove the pane, without changing saved settings or using Copy.
   Code can take about two seconds to expose its tree the first time; recording stays
   responsive while it prepares. Chat webviews still depend on their own Accessibility exposure.

@@ -5,12 +5,13 @@ import AppKit
 
 @main struct SelectionBridgeProbe {
     static func main() async {
-        guard [3, 4].contains(CommandLine.arguments.count),
+        guard [3, 4, 5].contains(CommandLine.arguments.count),
               let pid = Int32(CommandLine.arguments[1]),
               let started = Double(CommandLine.arguments[2]) else { exit(2) }
-        let context = CommandLine.arguments.count == 4 ? await VSCodeSelectionBridge.focusedContext(sourcePID: pid) : nil
+        let context = CommandLine.arguments.count >= 4 ? await VSCodeSelectionBridge.focusedContext(sourcePID: pid) : nil
         let text = await VSCodeSelectionBridge.read(
-            sourcePID: pid, gestureStartedAt: Date(timeIntervalSince1970: started / 1000), context: context
+            sourcePID: pid, gestureStartedAt: Date(timeIntervalSince1970: started / 1000), context: context,
+            isInitialSelection: CommandLine.arguments.last == "startup"
         )
         let bounds: [String: Double]? = context?.bounds.map {
             ["x": $0.minX, "y": $0.minY, "width": $0.width, "height": $0.height]

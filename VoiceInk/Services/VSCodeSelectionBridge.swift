@@ -6,11 +6,12 @@ import AppKit
 /// Monaco's default AX editor explicitly exposes no text unless screen-reader
 /// mode is enabled. Better Git uses VS Code's public selection event instead;
 /// terminal snapshots use its local terminal tool.
-/// This is a pull made only for an active recording's explicit selection gesture, not
+/// This is a pull made only at recording start or for its explicit selection gesture, not
 /// an always-on editor feed. No clipboard, focus changes or TCP port. The sole
 /// AX write is the approved VS Code-only request to expose its Accessibility tree.
-/// Both ends require the current gesture, source PID and a private same-user
-/// socket. A missing/ambiguous/stale bridge falls through to read-only AX.
+/// Both ends require explicit startup intent or a current gesture, the source PID
+/// and a private same-user socket. A missing/ambiguous/stale bridge falls through
+/// to read-only AX.
 enum VSCodeSelectionBridge {
     private final class AccessibilityRequests: @unchecked Sendable {
         private let lock = NSLock()
@@ -45,6 +46,7 @@ enum VSCodeSelectionBridge {
         var inputKind: String? = nil
         var inputDirection: String? = nil
         var surface: String? = nil
+        var captureKind: String? = nil
     }
 
     struct Response: Codable, Sendable {
@@ -56,6 +58,7 @@ enum VSCodeSelectionBridge {
         var inputKind: String? = nil
         var surface: String? = nil
         var observedAt: Double? = nil
+        var captureKind: String? = nil
     }
 
     static func supports(_ bundleID: String?) -> Bool {
@@ -66,13 +69,23 @@ enum VSCodeSelectionBridge {
         guard response.version == 1, response.nonce == request.nonce,
               response.sourcePID == request.sourcePID,
               request.surface == nil || request.surface == "editor" || request.surface == "terminal",
+              request.captureKind == nil || request.captureKind == "startup",
+              response.captureKind == request.captureKind,
               ["mouse", "keyboard", "selectAll"].contains(request.inputKind ?? "mouse"),
               (response.inputKind ?? "mouse") == (request.inputKind ?? "mouse"),
               now.isFinite, now - request.requestedAt <= 1000,
               request.requestedAt <= now + 100,
               !response.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
               response.text.utf16.count <= 8192 else { return nil }
-        if request.surface == "terminal" {
+        if request.captureKind == "startup" {
+            // A preselected range need not have changed after recording began.
+            // Require an explicit fresh snapshot from the proven focused pane;
+            // an older companion's cached gesture response cannot satisfy it.
+            guard let surface = request.surface, response.surface == surface,
+                  response.captureKind == "startup", let observedAt = response.observedAt,
+                  observedAt.isFinite, observedAt >= request.requestedAt,
+                  observedAt <= now else { return nil }
+        } else if request.surface == "terminal" {
             // A terminal read is a fresh snapshot, not an editor change event.
             // Older companions ignore surface and may answer with editor text:
             // that must never satisfy a terminal request.
@@ -89,12 +102,14 @@ enum VSCodeSelectionBridge {
     }
 
     static func read(sourcePID: pid_t, gestureStartedAt: Date, inputKind: String? = nil,
-                     inputDirection: String? = nil, context: FocusedContext? = nil) async -> String? {
+                     inputDirection: String? = nil, context: FocusedContext? = nil,
+                     isInitialSelection: Bool = false) async -> String? {
         let request = Request(nonce: UUID().uuidString, sourcePID: sourcePID,
                               gestureStartedAt: gestureStartedAt.timeIntervalSince1970 * 1000,
                               requestedAt: Date().timeIntervalSince1970 * 1000,
                               inputKind: inputKind, inputDirection: inputDirection,
-                              surface: context?.surface)
+                              surface: context?.surface,
+                              captureKind: isInitialSelection ? "startup" : nil)
         let directory = "/tmp/agentflow-selection-\(getuid())"
         // lstat refuses symlinks, and both directory and sockets must belong to
         // this user without group/world access. Never repair permissions here.

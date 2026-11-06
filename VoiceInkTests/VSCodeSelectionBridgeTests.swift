@@ -4,6 +4,49 @@ import Testing
 @testable import VoiceInkPlusPlus
 
 struct VSCodeSelectionBridgeTests {
+    @Test func startupSelectionUsesAFreshSnapshotWithoutANewGesture() {
+        let startup = VSCodeSelectionBridge.Request(nonce: request.nonce, sourcePID: 42,
+            gestureStartedAt: 10_000, requestedAt: 10_000, surface: "editor", captureKind: "startup")
+        var snapshot = VSCodeSelectionBridge.Response(version: 1, nonce: request.nonce,
+            sourcePID: 42, changedAt: nil, text: "already selected", surface: "editor",
+            observedAt: 10_020, captureKind: "startup")
+        #expect(VSCodeSelectionBridge.validatedText(snapshot, for: startup, now: 10_050) == "already selected")
+        snapshot.captureKind = nil
+        #expect(VSCodeSelectionBridge.validatedText(snapshot, for: startup, now: 10_050) == nil)
+        snapshot.captureKind = "startup"
+        snapshot.surface = "terminal"
+        #expect(VSCodeSelectionBridge.validatedText(snapshot, for: startup, now: 10_050) == nil)
+        snapshot.surface = "editor"
+        for observed in [9999.0, 10_051, Double.nan] {
+            snapshot.observedAt = observed
+            #expect(VSCodeSelectionBridge.validatedText(snapshot, for: startup, now: 10_050) == nil)
+        }
+    }
+
+    @Test func startupSnapshotCannotSatisfyALiveGestureOrAnUnprovenPane() {
+        let snapshot = VSCodeSelectionBridge.Response(version: 1, nonce: request.nonce,
+            sourcePID: 42, changedAt: 9500, text: "selected", surface: "editor",
+            observedAt: 10_020, captureKind: "startup")
+        #expect(VSCodeSelectionBridge.validatedText(snapshot, for: request, now: 10_050) == nil)
+        var startup = request
+        startup.captureKind = "startup"
+        #expect(VSCodeSelectionBridge.validatedText(snapshot, for: startup, now: 10_050) == nil)
+    }
+
+    @Test func startupTerminalSnapshotRequiresTheSamePaneAndFreshObservation() {
+        let startup = VSCodeSelectionBridge.Request(nonce: request.nonce, sourcePID: 42,
+            gestureStartedAt: 10_000, requestedAt: 10_000, surface: "terminal", captureKind: "startup")
+        var snapshot = VSCodeSelectionBridge.Response(version: 1, nonce: request.nonce,
+            sourcePID: 42, changedAt: 5000, text: "old terminal highlight", surface: "terminal",
+            observedAt: 10_020, captureKind: "startup")
+        #expect(VSCodeSelectionBridge.validatedText(snapshot, for: startup, now: 10_050) == "old terminal highlight")
+        snapshot.surface = "editor"
+        #expect(VSCodeSelectionBridge.validatedText(snapshot, for: startup, now: 10_050) == nil)
+        snapshot.surface = "terminal"
+        snapshot.observedAt = nil
+        #expect(VSCodeSelectionBridge.validatedText(snapshot, for: startup, now: 10_050) == nil)
+    }
+
     @Test func vscodeBridgeOnlyWritesTheApprovedTreeRequest() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         let source = try String(contentsOf: root.appendingPathComponent("VoiceInk/Services/VSCodeSelectionBridge.swift"), encoding: .utf8)
