@@ -192,7 +192,13 @@ when no recording or transcription is active. The companion has its own
 Codex, Chrome and VS Code code-editor highlights have user-confirmed examples. The VS Code
 diff bridge has isolated Mac test coverage, not everyday-use acceptance. Telegram's native selected
 text is not reliably exposed: the optional highlight-area image fallback asks for consent and is
-not exact selected text. Other apps depend on their read-only Accessibility selection exposure;
+not exact selected text. Codex can omit rendered math or underlined words from selected text.
+Build 490’s optional **Codex highlight images** setting saves a local picture beside a fresh
+Codex drag’s unchanged text during an active session. It needs separate consent and existing
+Screen Recording access. Multiline highlights include the window’s full width across those
+rows, so nearby unselected messages may be visible. It does not recover exact text, perform
+OCR or issue Copy, and does not cover double/triple clicks, keyboard/Shift extensions or
+highlights selected before recording starts. Other apps depend on their read-only Accessibility selection exposure;
 not every rendered control or app supports it. Mouse and supported keyboard-selection gestures
 are captured, but source-app limitations still apply.
 

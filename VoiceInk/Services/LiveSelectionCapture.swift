@@ -69,6 +69,13 @@ struct LiveSelectionReference: Equatable, Sendable {
     private let selectedText: String
     private let screenshotPath: String?
     private var selectionImagePath: String?
+    /// Which approved gesture-area image produced `selectionImagePath`. The
+    /// XML names that app directly; neither image is exact selected text.
+    private enum SelectionImageOrigin: Equatable, Sendable {
+        case telegram
+        case codex
+    }
+    private var selectionImageOrigin: SelectionImageOrigin?
     private var imagePath: String? { selectionImagePath ?? screenshotPath }
     private var typedText: String?
     private var capturedAt: Date?
@@ -156,18 +163,38 @@ struct LiveSelectionReference: Equatable, Sendable {
     /// Approved Telegram fallback, distinct from a native macOS screenshot and
     /// from exact selected words. Do not attach made-up text/character counts.
     init?(telegramSelectionImageURL: URL) {
-        guard telegramSelectionImageURL.isFileURL,
-              telegramSelectionImageURL.path.hasPrefix("/"),
-              !telegramSelectionImageURL.path.contains(where: { $0.isNewline || $0 == "\0" }) else { return nil }
+        self.init(selectionImageURL: telegramSelectionImageURL, origin: .telegram)
+    }
+
+    /// Approved Codex drag image (2026-11-07). It is a separate reference that
+    /// follows the same gesture's unchanged text, or stands alone when Codex
+    /// returned no text. Like Telegram's, it carries no text or character count.
+    init?(codexSelectionImageURL: URL) {
+        self.init(selectionImageURL: codexSelectionImageURL, origin: .codex)
+    }
+
+    private init?(selectionImageURL: URL, origin: SelectionImageOrigin) {
+        guard selectionImageURL.isFileURL,
+              selectionImageURL.path.hasPrefix("/"),
+              !selectionImageURL.path.contains(where: { $0.isNewline || $0 == "\0" }) else { return nil }
         screenshotPath = nil
-        selectionImagePath = telegramSelectionImageURL.standardizedFileURL.path
+        selectionImagePath = selectionImageURL.standardizedFileURL.path
+        selectionImageOrigin = origin
         preview = "Selection image"
         characterCount = 0
         omittedMiddle = false
         truncated = false
         selectedText = ""
-        source = .application(name: "Telegram", bundleID: TelegramSelectionImageCapture.bundleID)
+        switch origin {
+        case .telegram:
+            source = .application(name: "Telegram", bundleID: TelegramSelectionImageCapture.bundleID)
+        case .codex:
+            // Codex text selections show no app prefix in the HUD; match them.
+            source = .codex
+        }
     }
+
+    var isSelectionImage: Bool { selectionImagePath != nil }
 
     func anchored(after spokenText: String) -> Self {
         var copy = self
@@ -624,7 +651,13 @@ struct LiveSelectionReference: Equatable, Sendable {
         let displayCopy = hasDisplayCopy ? " display_copy=\"above\"" : ""
         let timing = capturedAt.map { " captured_at=\"\(Self.timestamp($0))\"" } ?? ""
         if let selectionImagePath {
-            return "<app_selection_image index=\"\(index)\" source=\"Telegram\" bundle_id=\"ru.keepcoder.Telegram\" path=\"\(Self.xmlEscaped(selectionImagePath))\" scope=\"gesture_area\" exact_selection=\"false\"\(timing)/>"
+            // Name the app whose window was pictured. Telegram's established
+            // tag stays byte-identical; a Codex image says Codex, never Telegram.
+            // Both remain a gesture area, never the exact selection.
+            let origin = selectionImageOrigin == .codex
+                ? "source=\"Codex\" bundle_id=\"\(CodexConversationContextPolicy.bundleIdentifier)\""
+                : "source=\"Telegram\" bundle_id=\"ru.keepcoder.Telegram\""
+            return "<app_selection_image index=\"\(index)\" \(origin) path=\"\(Self.xmlEscaped(selectionImagePath))\" scope=\"gesture_area\" exact_selection=\"false\"\(timing)/>"
         }
         if let screenshotPath {
             return "<local_screenshot path=\"\(Self.xmlEscaped(screenshotPath))\"\(timing)\(displayCopy)/>"
@@ -1201,6 +1234,10 @@ final class LiveSelectionCapture {
     /// attached; the session anchors it before all dictated words.
     private let onCapture: (_ reference: LiveSelectionReference, _ precedesSpeech: Bool, _ spokenAnchor: String) -> Void
     private let onLabels: (_ captureID: UUID, _ reference: LiveSelectionReference) -> Void
+    /// Places a Codex drag image directly after its gesture's already
+    /// committed text. Returns false when that text or capture is gone; the
+    /// caller then deletes the file.
+    private let onImage: (_ textCaptureID: UUID, _ image: LiveSelectionReference, _ spokenAnchor: String) -> Bool
     private let speechSnapshot: () -> String
     /// True between start() and stop(). Replaces this object's former private
     /// NSEvent monitor: edges now arrive from the shared watcher only while attached.
@@ -1220,10 +1257,13 @@ final class LiveSelectionCapture {
 
     init(speechSnapshot: @escaping () -> String,
          onCapture: @escaping (_ reference: LiveSelectionReference, _ precedesSpeech: Bool, _ spokenAnchor: String) -> Void,
-         onLabels: @escaping (_ captureID: UUID, _ reference: LiveSelectionReference) -> Void) {
+         onLabels: @escaping (_ captureID: UUID, _ reference: LiveSelectionReference) -> Void,
+         onImage: @escaping (_ textCaptureID: UUID, _ image: LiveSelectionReference,
+                             _ spokenAnchor: String) -> Bool = { _, _, _ in false }) {
         self.speechSnapshot = speechSnapshot
         self.onCapture = onCapture
         self.onLabels = onLabels
+        self.onImage = onImage
     }
 
     @discardableResult
@@ -1495,7 +1535,8 @@ final class LiveSelectionCapture {
                 callbackLagMilliseconds: callbackLag,
                 hasGesture: Self.usesPointerGeometry(from: startPoint, to: endPoint,
                     clickCount: edge.clickCount, extendsSelection: extendsSelection),
-                bridgeInputKind: extendsSelection ? "mouse" : nil
+                bridgeInputKind: extendsSelection ? "mouse" : nil,
+                extendsSelection: extendsSelection
             )
         default:
             break
@@ -1549,7 +1590,8 @@ final class LiveSelectionCapture {
         callbackLagMilliseconds: Int? = nil,
         hasGesture: Bool = true,
         bridgeInputKind: String? = nil,
-        bridgeInputDirection: String? = nil
+        bridgeInputDirection: String? = nil,
+        extendsSelection: Bool = false
     ) {
         // A drag can activate an app that was backgrounded at mouse-down.
         // Bind to the frontmost app sampled synchronously at mouse-up and its
@@ -1595,6 +1637,27 @@ final class LiveSelectionCapture {
                 outcome = "source-changed-before-read"
                 return
             }
+            // Codex drag image (approved 2026-11-07; see CodexSelectionImageCapture).
+            // Start it now, beside the text read: a formula-only Codex read can
+            // retry for over a second and the pane-focus helper can clear the
+            // highlight, so the pixels must not wait for either. The text read,
+            // its commit and the receipt below never wait for this image.
+            var codexImage: CodexSelectionImageLease?
+            if isCodex, let gesture, CodexSelectionImageCapture.mayCapture(
+                enabled: UserDefaults.standard.bool(forKey: CodexSelectionImageCapture.preferenceKey),
+                isVerifiedCodex: isCodex, isAttached: self?.isAttached == true,
+                sourceIsFrontmost: Self.isFrontmost(sourcePID),
+                precedesSpeech: precedesSpeech, extendsSelection: extendsSelection,
+                gesture: gesture, sourceWindow: identity.window,
+                secureInputActive: CodexSelectionImageCapture.isSecureInputActive()
+            ) {
+                codexImage = CodexSelectionImageLease {
+                    await CodexSelectionImageCapture.capture(identity: identity, gesture: gesture)
+                }
+            }
+            // A newer gesture, stop/detach or any early return deletes an
+            // unclaimed image, including one that finishes after this point.
+            defer { codexImage?.abandon() }
             // Chrome's DOM override has no selection geometry of its own.
             // If the gesture was visibly outside Chrome's windows, do not
             // borrow an older selection from its active tab.
@@ -1654,6 +1717,25 @@ final class LiveSelectionCapture {
                 reference = imageReference
                 LiveSelectionDiagnostics.captured(tier: .telegramRegionImage, source: nil,
                     evidence: .atGesture, attempt: 1, bundleID: bundleID, startedAt: startedAt)
+            } else if let lease = codexImage, let imageURL = await lease.claim(stillEligible: {
+                Self.mayKeepCodexImage(identity: identity, resolution: accessibility,
+                                       isAttached: self?.isAttached == true)
+            }) {
+                // Codex returned no text, e.g. a formula-only drag, so the image is
+                // this gesture's only reference. It returns before the pane-focus
+                // receipt and source labels below: the focus helper still sees no
+                // committed text, exactly as before this image existed.
+                guard let self, self.isAttached,
+                      let image = LiveSelectionReference(codexSelectionImageURL: imageURL) else {
+                    CodexSelectionImageCapture.discard(imageURL)
+                    return
+                }
+                commitStartedAt = DispatchTime.now().uptimeNanoseconds
+                self.onCapture(image.timed(at: selectedAt), precedesSpeech, spokenAnchor)
+                outcome = "emitted-to-session"
+                LiveSelectionDiagnostics.captured(tier: .codexRegionImage, source: nil,
+                    evidence: .atGesture, attempt: 1, bundleID: bundleID, startedAt: startedAt)
+                return
             } else {
                 outcome = "selection-unavailable"
                 return
@@ -1677,6 +1759,22 @@ final class LiveSelectionCapture {
                 DistributedNotificationCenter.default().postNotificationName(
                     Self.selectionCapturedNotification, object: nil, userInfo: receipt,
                     deliverImmediately: true)
+            }
+            // The same drag's image follows its committed text: same capture
+            // time and speech anchor, placed directly after that text. The
+            // receipt above stays first so the focus helper's timing is
+            // unchanged; only this image waits for its own in-flight capture.
+            if let lease = codexImage, let imageURL = await lease.claim(stillEligible: {
+                Self.mayKeepCodexImage(identity: identity, resolution: accessibility,
+                                       isAttached: self.isAttached)
+            }) {
+                if let image = LiveSelectionReference(codexSelectionImageURL: imageURL),
+                   self.onImage(captureID, image.timed(at: selectedAt), spokenAnchor) {
+                    LiveSelectionDiagnostics.captured(tier: .codexRegionImage, source: nil,
+                        evidence: .atGesture, attempt: 1, bundleID: bundleID, startedAt: startedAt)
+                } else {
+                    CodexSelectionImageCapture.discard(imageURL)
+                }
             }
             guard isCodex else { return }
             let labeled: LiveSelectionReference
@@ -1829,6 +1927,18 @@ final class LiveSelectionCapture {
     private static func canRead(_ identity: LiveSelectionReadIdentity) -> Bool {
         identity.isValid(frontmostPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
                          windows: LiveSelectionWindow.onScreen())
+    }
+
+    /// Final check when a Codex drag image is handed to the session: still
+    /// attached, consent still on, the gesture's source window unchanged, and
+    /// the same gesture's read was trusted and refused no secure field. Codex
+    /// already had to be frontmost when the drag finished, before any pixels.
+    private static func mayKeepCodexImage(identity: LiveSelectionReadIdentity,
+                                          resolution: LiveSelectionResolution?,
+                                          isAttached: Bool) -> Bool {
+        isAttached && CodexSelectionImageCapture.mayAttach(resolution: resolution)
+            && UserDefaults.standard.bool(forKey: CodexSelectionImageCapture.preferenceKey)
+            && canRead(identity)
     }
 
     /// Counts-only rejection before any Accessibility read. Preserve the drag

@@ -54,6 +54,8 @@ enum LiveSelectionTier: String, Equatable, Sendable {
     case pointerElement
     case browserScript
     case telegramRegionImage
+    /// The consented Codex drag image, logged separately from its text.
+    case codexRegionImage
 }
 
 enum LiveSelectionTextSource: String, Equatable, Sendable {
@@ -149,6 +151,13 @@ struct LiveSelectionGesture: Equatable, Sendable {
     /// Missing or delayed samples cannot justify clipping/rejecting a range.
     var callbackLagMilliseconds: Int? = nil
 
+    /// Shared by the existing text-span guard and consented Codex image crops:
+    /// callback-sampled coordinates cannot prove fresh geometry when delayed.
+    var hasFreshPointerSample: Bool {
+        guard let lag = callbackLagMilliseconds else { return false }
+        return (0...50).contains(lag)
+    }
+
     /// NSEvent/NSScreen report Cocoa global coordinates (origin at the primary
     /// display's bottom-left, y up). `screenFrames.first` must be the primary
     /// menu-bar display, which `NSScreen.screens` guarantees.
@@ -219,7 +228,7 @@ struct LiveSelectionGesture: Equatable, Sendable {
         // one. Only explicit double/triple-click counts select word/paragraph
         // units; treating zero as unknown disabled this guard on the live host.
         guard (0...1).contains(clickCount), dx * dx + dy * dy >= 16,
-              let lag = callbackLagMilliseconds, lag >= 0, lag <= 50,
+              hasFreshPointerSample,
               let bounds, evidence(for: bounds) != .unverifiable else { return .unverifiable }
         let rect = bounds.standardized
         guard rect.width > 2, rect.height > 2 else { return .unverifiable }

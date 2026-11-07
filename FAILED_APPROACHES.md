@@ -1,5 +1,13 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-07 — Retry or widen inaccessible rendered-math selections
+
+**Observed failure:** In a Mini KaTeX fixture, plain, attributed, integer-range and marker reads all omitted an aria-hidden HTML-only formula. With the default MathML copy present, a substring selected in visible math could map to the whole phrase or unselected trailing prose. A richer accessor or longer text is not proof of the highlighted glyphs. Real failed Codex reads near the report contained no prevented-widening or elsewhere rejection; weakening those guards would not repair an empty range.
+
+**Use instead:** Preserve explicit range semantics and the existing privacy/precision guards. An independently consented, source-bound image of a fresh drag can preserve visible content as pixels; label it as a gesture area that may include nearby text, never as exact selected words. Keep synthetic API fixtures, real drags and physical Codex acceptance distinct.
+
+**Reconsider only if:** the receiving host exposes a fresh readable range containing the actual selected rendered glyphs, or another explicitly authorized mechanism proves both content and boundaries. A full formula/paragraph, matching bounds, an extra retry, or a forced-renderer-accessibility fixture alone does not establish that proof.
+
 ## 2026-11-06 — Apply live-event freshness or HUD-first focus to startup capture
 
 **Observed failures:** A preselected Code range had no new watched gesture, so the bridge was skipped; an old selection-change timestamp also failed the live freshness check. A disposable Mini non-activating HUD with an automatically focused text view made Code's focused-pane query return no pane even though Code remained frontmost. The same selected range passed without that focus step.

@@ -1,5 +1,21 @@
 # Learnings
 
+## 2026-11-07 — Rendered LaTeX highlights may be absent before selection policy
+
+Build489 retains the core range/resolver behavior from419; comparison against419 changes only commentary, the Telegram image tier and diagnostics. Earlier410/414/415/419 entries explicitly left live rendered-underline precision unverified. Do not describe this as a previously accepted precise-LaTeX fix removed by489.
+
+Counts-only runtime evidence immediately preceding the underlined-text report showed empty/unreadable marker text, no timeout, and zero geometry rejection or prevented-widening counters. A nearby mixed-highlight capture likewise had no prevented-widening count. These observations do not prove a specific DOM layout, but they rule out attributing those observed failures to the anti-widening branch without contrary evidence.
+
+A disposable Mini Chromium fixture with ordinary text, HTML underline and symbols captured exact subsets. KaTeX's HTML/MathML output mapped a selected `lph` to the whole accessible phrase and could include unselected trailing words when a drag ended inside the formula. A deliberately HTML-only variant kept its visible formula aria-hidden: formula-only selection returned no text, while a crossed formula disappeared from the before/after normal-text range. Plain and attributed range/marker readers returned the same omissions. The latter variant is a sufficient reproduction, not proof that live Codex uses HTML-only output. Default output plus a different Accessibility mode remains a distinct possibility.
+
+The known-working CDP drag fixture and explicitly labelled scripted-DOM-range fixtures are separate evidence. The first new paragraph harness failed even its ordinary DOM-selection control and cannot diagnose Agent Flow. Screen captures and production-reader results were retained. None of these synthetic fixtures proves physical acceptance in Codex.
+
+Ethan approved cropped images alongside every Codex drag highlight on2026-11-07, with nearby-text and image-context costs explained. This approval is separate from Telegram's narrower fallback. It does not authorize OCR, Copy/restore, guessing formula glyphs, a global Accessibility-mode change, or images from double/triple clicks and pre-start selections. Implementation and release verification are recorded separately once complete.
+
+Build490 keeps the text commit and existing focus receipt ahead of waiting for a companion image. A single-owner lease discards cancelled, revoked, detached or stale-source files, including captures that finish after abandonment. Codex uses the existing 0–50ms fresh-pointer evidence; missing/delayed callbacks cannot justify a new crop. Endpoint x positions cannot bound wrapped text: a Codex drag with vertical separation over the text reader’s existing 8-point same-line tolerance keeps the full source-window width across those rows. Telegram retains its existing endpoint crop and independent no-AX fallback policy. Images are gesture-area context, never exact selected glyphs.
+
+The canonical focused Mini Xcode action executed79 named tests in6 suites, including all7 Codex image cases,4 Telegram image cases, selection watcher/fallback coverage and the four mandatory Primary/Next/HUD-only guards. All passed. The canonical prompt-reader unit suite passed15 cases. Standalone ScreenCaptureKit preflight on the Mini had no permission, so fixture pixels and these tests do not prove a successful live Codex screen capture or physical acceptance.
+
 ## 2026-11-06 — Capture a fresh VS Code selection before automatic typing focus
 
 Pre-start editor and integrated-terminal highlights were missed because the native reader required a new gesture to enter the Code bridge; the editor response also had a live-event freshness limit. Startup is a distinct observation: request an explicit `captureKind=startup` snapshot of the currently selected, proven editor or terminal. Require the matching nonce, source PID, surface and fresh observation time, and preserve the 8,192 UTF-16 limit. Older companions cannot silently answer this request as a live/editor event. Live gestures retain their existing freshness and source-window checks.

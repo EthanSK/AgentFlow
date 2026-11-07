@@ -17,6 +17,8 @@ struct SettingsView: View {
     @AppStorage("restoreClipboardAfterPaste") private var restoreClipboardAfterPaste = true
     @AppStorage("clipboardRestoreDelay") private var clipboardRestoreDelay = 2.0
     @AppStorage(TelegramSelectionImageCapture.preferenceKey) private var telegramHighlightImages = false
+    // Separate consent, off by default for every user (approved for Ethan 2026-11-07).
+    @AppStorage(CodexSelectionImageCapture.preferenceKey) private var codexHighlightImages = false
     @AppStorage(PasteMethod.userDefaultsKey) private var pasteMethodRawValue = PasteMethod.standard.rawValue
     @AppStorage(NewChatRecordingHarness.preferenceKey) private var newChatApp = NewChatRecordingHarness.codex.rawValue
     @State private var showResetOnboardingAlert = false
@@ -194,6 +196,10 @@ struct SettingsView: View {
             Section("Selection Context") {
                 Toggle("Telegram highlight images", isOn: $telegramHighlightImages)
                 Text("Save an image of the area I highlight when Telegram cannot provide selected text. Nearby messages may be included. Images are saved locally.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Toggle("Codex highlight images", isOn: $codexHighlightImages)
+                Text("Save an image alongside text I drag to highlight in Codex, keeping formatted words visible when Codex leaves them out. Multiline highlights include the window’s full width across those rows, so nearby messages may be included. Requires Screen Recording access. Images are saved locally.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }

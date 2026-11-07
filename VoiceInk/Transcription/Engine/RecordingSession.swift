@@ -857,6 +857,9 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
             },
             onLabels: { [weak self] captureID, reference in
                 self?.updateLiveSelectionLabels(captureID: captureID, reference: reference)
+            },
+            onImage: { [weak self] textCaptureID, image, spokenAnchor in
+                self?.attachLiveSelectionImage(image, after: textCaptureID, spokenAnchor: spokenAnchor) ?? false
             }
         )
         liveSelectionCapture = capture
@@ -895,6 +898,26 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         }
         noteRealtimeSessionActivity()
         typingFocus.returnAfterContext()
+    }
+
+    /// Codex drag image (approved 2026-11-07): the picture of a gesture whose
+    /// text `recordLiveSelection` already committed. It shares that text's
+    /// capture time and frozen speech anchor and goes directly after it, so one
+    /// drag reads as text then image even if another context event arrived
+    /// while the capture finished. The text commit already sealed typing and
+    /// scheduled HUD focus; repeating either here would change existing timing.
+    /// Returns false when that text is gone or recording ended, so the caller
+    /// deletes the file instead of leaving an unreferenced image.
+    func attachLiveSelectionImage(_ image: LiveSelectionReference, after textCaptureID: UUID,
+                                  spokenAnchor: String) -> Bool {
+        guard phase == .recording, !shouldCancel,
+              liveRecordingState == .starting || liveRecordingState.isRecordingOrPaused,
+              image.isSelectionImage,
+              let index = liveSelectionReferences.firstIndex(where: { $0.captureID == textCaptureID }) else {
+            return false
+        }
+        liveSelectionReferences.insert(image.anchored(after: spokenAnchor), at: index + 1)
+        return true
     }
 
     func updateLiveSelectionLabels(captureID: UUID, reference: LiveSelectionReference) {

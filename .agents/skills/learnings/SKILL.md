@@ -287,6 +287,17 @@ window's bounded gesture area, not the screen; recheck cancellation, source iden
 consent before committing. Retain private local pixels without Copy/OCR or selected-word
 claims. Keep this separate from metadata-only native screenshot watching and Telegram's
 non-retaining delivery-identity digest. User-approved privacy alternative — 2026-10-18.
+Codex drag images have separate explicit consent and accompany every eligible fresh
+drag, including readable mixed text, because Accessibility has no reliable signal
+for missing formula words. Keep Telegram's narrower fallback policy unchanged.
+Codex images remain off without their own consent and a verified source window;
+never infer exact glyphs from pixels or broaden this to multi-click/startup capture.
+Bind capture and private-file cleanup to cancellation, consent and source identity.
+Require fresh pointer samples. A Codex multiline crop keeps complete source-window
+rows because endpoint x positions cannot bound wrapped text; nearby unselected
+content remains context, not selected words. Preserve Telegram’s original crop.
+User-approved Codex visual alternative — 2026-11-07. See LEARNINGS.md,
+“Rendered LaTeX highlights may be absent before selection policy”.
 
 Keep every separately highlighted block in capture order, including equal speech anchors
 and a run with no recognized speech. Those cues form a best-effort reading trail, not a
