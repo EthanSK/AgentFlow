@@ -78,8 +78,8 @@
           <h1 id="hero-title">Speech to text, with your <span class="g-select">highlights</span> and <span class="g-shot">screenshots</span></h1>
           <div class="hero-aside" id="download">
             <p class="lede">Highlight text or take a screenshot while you talk. Agent Flow pastes your words with each reference near what you were saying, so your agent can see what you were looking at.</p>
-            <p class="actions"><a class="button" href="https://github.com/EthanSK/AgentFlow/releases/download/v2.0.489/AgentFlow-v2.0.489-mac-universal.zip">Download for Mac <span aria-hidden="true">↓</span></a></p>
-            <p class="release-note">v2.0.489 · macOS 14.4+ · Apple silicon and Intel<br>Developer ID signed and Apple notarized.</p>
+            <p class="actions"><a class="button" href="https://github.com/EthanSK/AgentFlow/releases/download/v2.0.490/AgentFlow-v2.0.490-mac-universal.zip">Download for Mac <span aria-hidden="true">↓</span></a></p>
+            <p class="release-note">v2.0.490 · macOS 14.4+ · Apple silicon and Intel<br>Developer ID signed and Apple notarized.</p>
             <p class="source-link"><a href="#build">Build from source</a></p>
           </div>
         </div>
@@ -242,7 +242,7 @@
         <div class="band-body">
           <ol class="setup-steps">
             <li>Download, unzip, and move Agent Flow to Applications.</li>
-            <li>Allow Microphone and Accessibility when asked, then pick your microphone. Screen Recording is only needed by the features that ask for it.</li>
+            <li>Allow Microphone and Accessibility when asked, then pick your microphone. Screen Recording is only needed for some optional features.</li>
             <li>Setup downloads NVIDIA's Parakeet model, so transcription works on your Mac without a key.</li>
             <li>For live words, add your own <a href="https://platform.openai.com/api-keys">OpenAI API key</a> with API billing; a ChatGPT subscription doesn't include API credit. You can use another provider's key for optional AI actions, or skip this step.</li>
           </ol>
@@ -256,6 +256,7 @@
               <div><dt>Context skill</dt><dd>Clone the source, then run <code>python3 scripts/install-context-skill.py</code>. It installs one shared copy for Codex and Claude Code and won't replace a skill you already have. The app never installs it for you.</dd></div>
               <div><dt>YouTube Bridge</dt><dd>Pauses the playing video in Chrome when recording starts, then resumes only that video. YouTube keeps its own handling, and extension 0.2.6 adds standard video players on other sites. Some players can't be controlled. It asks to access all HTTP and HTTPS sites. Its helper and login LaunchAgent need a source checkout; you load the Chrome extension and approve its permissions yourself.</dd></div>
               <div><dt>Chrome details</dt><dd>For page titles and addresses with highlights, enable Chrome's View → Developer → Allow JavaScript from Apple Events, then grant Agent Flow Automation access if asked.</dd></div>
+              <div><dt>Codex highlight images</dt><dd>Turn this on in Settings to save a picture of highlights you drag in Codex while recording, beside their text. Codex sometimes leaves rendered math or underlined words out of selected text, so the picture can show them. It can also show nearby messages, and a drag over several lines includes the full width of the window. No picture is saved for double- or triple-clicks, keyboard or Shift selections, or highlights made before you start recording. The picture doesn't fix the selected text, and no text is read from it. Allow Screen Recording for Agent Flow in System Settings first; it won't ask. Images stay on your Mac, and your agent gets the file path.</dd></div>
               <div><dt>Mouse controls</dt><dd>Map a mouse button to your recording shortcut if you want. <a href="https://ethansk.github.io/agentic-mouse/">Agentic Mouse</a> is separate and isn't required.</dd></div>
               <div><dt>VS Code</dt><dd>The <a href="https://marketplace.visualstudio.com/items?itemName=EthanSK.better-git-vscode">Better Git</a> bridge reads highlights in local code and diff editors, and in the integrated terminal on recent VS Code versions. A highlight that's already selected when you start recording is included. Chat panels, remote windows and multi-cursor selections aren't covered.</dd></div>
             </dl>
