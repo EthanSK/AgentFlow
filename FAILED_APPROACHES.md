@@ -1,5 +1,13 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-08 — Treat OBS outputDuration as a recording position, or a silent track as a failed match
+
+**Observed failure:** Twelve automatic replies stopped at waveform alignment because the system-output track was exact digital zero after a ScreenCaptureKit failure OBS never recovered. The live frame-count clock also measured1.14s behind recorded audio, leaving a ±1.5s search little margin and mistiming any window mapped from it directly.
+
+**Use instead:** Treat `outputDuration` only as a search centre. Report digital silence distinctly, and use the live-mic-meter correlation only for proven silence. A non-silent mismatch, weak or ambiguous correlation, or offset at the search edge stops delivery.
+
+**Reconsider only if:** a measured OBS API exposes the actual audio timestamp, or evidence shows the bias is constant across OBS configurations. Lowering the match threshold, skipping alignment or widening capture to catch an early reply remain rejected. Sound at a window edge is reported through `replyEdges`.
+
 ## 2026-11-08 — Reject completed audio solely from the outer TTS status
 
 **Observed failure:** A live spoken question completed its actual audio child with exit0, but the surrounding helper returned6. Rejecting every nonzero outer result discarded the reply window, even though bounded recovery from the active OBS MKV transcribed the user's response.

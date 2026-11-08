@@ -58,6 +58,21 @@ class MKVTests(unittest.TestCase):
             extract_pcm(self.source, start=20, duration=15, audio_index=0,
                 ffmpeg=self.ffmpeg, expected_identity=(stat.st_dev, stat.st_ino))
 
+    def test_fractional_duration_returns_whole_samples(self):
+        stat = self.source.stat()
+        audio, _ = extract_pcm(self.source, start=4.25, duration=5.00002, audio_index=0,
+            ffmpeg=self.ffmpeg, expected_identity=(stat.st_dev, stat.st_ino))
+        self.assertEqual(len(audio) % 2, 0)
+
+    def test_longer_reads_require_an_explicit_alignment_limit(self):
+        stat = self.source.stat()
+        with self.assertRaisesRegex(ValueError, "Invalid bounded"):
+            extract_pcm(self.source, start=1, duration=16.5, audio_index=0,
+                ffmpeg=self.ffmpeg, expected_identity=(stat.st_dev, stat.st_ino))
+        audio, _ = extract_pcm(self.source, start=1, duration=16.5, audio_index=0, max_duration=16.5,
+            ffmpeg=self.ffmpeg, expected_identity=(stat.st_dev, stat.st_ino))
+        self.assertEqual(len(audio), 16.5 * 48000)
+
     def test_crc_clusters_are_recognized(self):
         data = self.source.read_bytes()
         header, scale = recording_header(data[:1024 * 1024])

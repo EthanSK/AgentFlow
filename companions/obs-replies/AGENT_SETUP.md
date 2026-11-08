@@ -62,7 +62,8 @@ Agent Flow dictation or setting up the ordinary app.
    An agent may read the offered raw transcript and judge an obvious reply; this
    helper never answers a question card, grants approval, sends a chat message or
    changes the question's status. Ambiguous or unrelated audio is not adopted.
-9. Verify a real reminder end timestamp, waveform alignment, full15-second mic
+9. Verify a real reminder end timestamp, the receipt's `anchorKind` (a
+   `live-mic-meter` result means OBS's system capture delivered no audio), full15-second mic
    extraction, current-model result and exact question/chat identity. Test silence,
    echo, interruption, new input and duplicate-dispatch rejection. Keep fake tests,
    real provider probes, installation and user acceptance distinct.

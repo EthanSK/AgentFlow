@@ -1,5 +1,15 @@
 # Learnings
 
+## 2026-11-08 — A dead OBS system capture, not a weak match, blocked every automatic reply
+
+OBS logged ScreenCaptureKit error -3805 for `macOS Audio Capture` at 23:58:58 on 2026-11-07 and never restarted it. The source still reported active. Every one of 17 reminder windows and 16 sweep points across the following recording, about 7.7 hours long, read exact digital zero on the system-output track, and the first companion event came after the failure, so waveform alignment has never had a live reference on this machine. A zero signal scored correlation0 and was reported as “could not be confidently located”, while `doctor` still said ready. Separate digital silence from a mismatch, and do not read `doctor` ready as proof that the capture is alive: a healthy source is also silent when nothing plays.
+
+`GetRecordStatus.outputDuration` counts frames already sent to the muxer and is not a recording position. Correlating OBS's live mic meter against the same recorded mic placed sound +1.14s after that clock (r=0.948, 40ms peak width; +1.14s again in three worker-shaped real runs), near OBS's logged 960ms maximum audio buffering. The cause of the remainder is unmeasured. Mapped from that clock alone, a reply window starts about1.1s early and loses its final second. The earlier manual recovery used this uncorrected mapping.
+
+Recording-clock correction belongs only to media positions. Keep the live meter guard and 15-second deadline on the observed playback-end uptime; adding a +1.14s file offset would leave the first 1.14s outside the guard. The repaired companion passed 63 named focused tests on the Mini, including that offset regression; live conversational acceptance is still pending.
+
+The live-mic-meter anchor applies only to proven digital silence after a completed audio child. In four real-recording dry runs with provider and dispatch stubbed, three aligned (r=0.85–0.93) and one stopped at the confidence gate, so a quiet window can miss. It has not yet been accepted against a real spoken reply, and the repaired system-output path cannot be tested until OBS captures audio again.
+
 ## 2026-11-08 — Optional OBS replies use actual playback completion
 
 The source-only `companions/obs-replies/` extension composes with the existing speech queue and recovery/question skills. Enable it only for an explicit after-reminder listening request. It creates one finite worker per eligible actual announcement, not a resident poller or another recording-notification consumer. It never starts/stops OBS or changes Agent Flow's microphone, Mode, native app or delivery routes. See its `AGENT_SETUP.md` for the reproducible integration, private settings, exact-origin routing and disable procedure.

@@ -39,6 +39,14 @@ device identifiers, OBS passwords, recordings and transcript receipts out of Git
 2. A local waveform match finds the played TTS tail in OBS's system-output
    track. This checks the recording clock rather than assuming the MKV filename
    or an encoder's counter is an exact audio timestamp. Ambiguous matches stop.
+   OBS's `outputDuration` counts frames already sent to the muxer and measured
+   1.14s behind the recorded audio, so it is only a search centre.
+   If that track is exact digital silence while the announcement completed, the
+   capture itself is dead. Only then, the worker correlates OBS's live mic meter
+   with the recorded mic after the window closes and starts from that measured
+   position (`anchorKind: live-mic-meter`). It stops if that match is weak or
+   ambiguous. This proves timeline alignment only, not that TTS was audible. A
+   non-silent track that fails to match never uses this route.
 3. Only the next15 seconds of the verified mic track are sent to the configured
    transcription provider. OBS system-output audio stays local. There is no
    guessed question/selection context supplied to speech recognition.
@@ -55,6 +63,10 @@ device identifiers, OBS passwords, recordings and transcript receipts out of Git
 audio. Matroska timestamps have their own resolution (typically1ms). Physical
 speaker/Bluetooth latency is not measured, and no acoustic timing guarantee is
 claimed. A reference mismatch or incomplete window produces no inferred answer.
+
+The window is never widened to catch an early answer. `replyEdges` tells the
+reader when sound touches its start or end, so a clipped first or last word is
+treated as missing rather than guessed.
 
 Extraction reads a small header and an adaptive, capped64MiB tail. It never
 scans, copies, stops or remuxes the whole live recording. Waiting for actual
@@ -91,6 +103,12 @@ probe passed. A real user reply was recovered from the growing OBS recording.
 That recovery was manual: fully automatic waveform-aligned capture and visible
 conversational return still need live acceptance. Keep this advanced companion
 opt-in; do not describe automated fixtures or installation as physical acceptance.
+
+`doctor` cannot prove the system-output capture is alive: a healthy source is also
+silent when nothing plays, so `systemOutputSample` is only a hint. If receipts show
+`live-mic-meter`, OBS's system capture is not delivering audio. OBS logs such as
+ScreenCaptureKit error -3805 identify a stopped source; re-enabling it is a user
+action in OBS. This companion stays read-only.
 
 ## Local files and disabling
 

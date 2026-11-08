@@ -116,8 +116,11 @@ def complete_clusters(tail: bytes) -> list[Cluster]:
 
 def extract_pcm(source: Path, *, start: float, duration: float, audio_index: int,
                 ffmpeg: str, expected_identity: tuple[int, int],
-                max_tail_bytes: int = 64 * 1024 * 1024) -> tuple[bytes, dict]:
-    if start < 0 or not 0 < duration <= 15 or audio_index < 0:
+                max_tail_bytes: int = 64 * 1024 * 1024,
+                max_duration: float = 15) -> tuple[bytes, dict]:
+    # The default holds the transcription limit. Only local alignment, whose PCM
+    # is never uploaded, may ask for slightly more to search around the window.
+    if start < 0 or not 0 < duration <= max_duration or audio_index < 0:
         raise ValueError("Invalid bounded microphone interval")
     with source.open("rb") as recording:
         before = os.fstat(recording.fileno())
@@ -159,7 +162,8 @@ def extract_pcm(source: Path, *, start: float, duration: float, audio_index: int
     result = subprocess.run(command, input=selected, capture_output=True, timeout=12, check=False)
     if result.returncode:
         raise WindowUnavailable("Bounded recording audio decode failed")
-    expected = round(duration * 48000)
+    # Whole samples: a fractional duration must never yield half of one.
+    expected = round(duration * 24000) * 2
     if abs(len(result.stdout) - expected) > 480:
         raise WindowUnavailable("Decoded audio does not cover the complete requested interval")
     return result.stdout[:expected], {"bytesRead": len(tail) + len(header),
