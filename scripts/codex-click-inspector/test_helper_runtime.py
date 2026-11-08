@@ -167,11 +167,32 @@ class LifecycleTests(unittest.TestCase):
         owner.pending.put_nowait.assert_not_called()
         self.assertEqual((owner.events_seen, owner.sequence), (4, 10))
 
+    def test_claude_click_is_queued_for_the_worker_without_counting_as_codex(self):
+        owner = inspector.Inspector.alloc().init()
+        owner.paused, owner.events_seen, owner.sequence, owner.window, owner.codex_clicks = False, 0, 1, None, 0
+        owner.focus_inputs, owner.claude_click_focuser, owner.pending = True, Mock(), Mock()
+        owner.mouse_down_point = SimpleNamespace(x=100.0, y=200.0)
+        app = Mock()
+        app.bundleIdentifier.return_value, app.processIdentifier.return_value = inspector.CLAUDE_BUNDLE_ID, 7
+        app.bundleURL.return_value.path.return_value = "/Applications/Claude.app"
+        event = Mock()
+        event.clickCount.return_value, event.modifierFlags.return_value = 1, 0
+        with patch.object(inspector.K, "NSWorkspace") as workspace, \
+                patch.object(inspector.Q, "CGEventGetLocation", return_value=SimpleNamespace(x=101.0, y=200.0)), \
+                patch.object(inspector.Q, "CGEventSourceCounterForEventType", return_value=5):
+            workspace.sharedWorkspace.return_value.frontmostApplication.return_value = app
+            owner.clicked(event)
+        request = owner.pending.put_nowait.call_args.args[0]
+        self.assertEqual((request[0], request[3], request[5], request[8]), (2, 7, inspector.CLAUDE_BUNDLE_ID, 5))
+        self.assertEqual((request[7].click_count, request[7].drag_points, request[7].modifier_held), (1, 1.0, False))
+        self.assertEqual(owner.codex_clicks, 0)
+
     def test_startup_registers_event_driven_recovery_without_starting_claude(self):
         owner = inspector.Inspector.alloc().init()
         workspace_center = Mock()
         with patch.object(inspector, "OPTIONS", SimpleNamespace(demo=False, background=True, show_inspector=False)), \
                 patch.object(inspector, "AXReader"), patch.object(inspector, "PaneInputFocuser"), \
+                patch.object(inspector, "ClaudePromptFocuser"), \
                 patch.object(inspector, "CLAUDE_FOCUS_ENABLED", False), \
                 patch.object(inspector, "LatestResult"), patch.object(inspector.threading, "Thread"), \
                 patch.object(inspector, "HealthLog"), \
@@ -187,6 +208,7 @@ class LifecycleTests(unittest.TestCase):
             owner.applicationDidFinishLaunching_(None)
         reconnect.assert_called_once_with("startup")
         self.assertIsNone(owner.claude_focuser)
+        self.assertIsNotNone(owner.claude_click_focuser)
         self.assertEqual([c.args[2] for c in workspace_center.addObserver_selector_name_object_.call_args_list],
                          [inspector.K.NSWorkspaceDidWakeNotification,
                           inspector.K.NSWorkspaceSessionDidBecomeActiveNotification,

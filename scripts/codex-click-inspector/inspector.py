@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Click-triggered Codex helper with an optional inspector. No clicks, keys or text reads; the only writes
 are the optional, on-by-default pane-input focus Ethan requested (see pane_focuser.py) and the
-on-by-default Claude Prompt focus when Agent Flow stops recording (see claude_prompt_focuser.py).
+Claude Prompt focus after a plain click in a Claude chat pane, plus the dormant one for when Agent Flow stops recording (see claude_prompt_focuser.py).
 
 This tool is for Ethan to inspect locally, NOT an automation workaround for a
 Computer Use refusal. Agents must not read its live Codex results or use it to
@@ -23,7 +23,7 @@ import Quartz as Q
 import objc
 from Foundation import NSObject, NSTimer, NSRunLoop, NSRunLoopCommonModes, NSBundle, NSDictionary, NSProcessInfo, NSDistributedNotificationCenter, NSNotificationSuspensionBehaviorDeliverImmediately
 from pane_model import (Node, PaneModel, Rect, Sample, Observation, Diagnostics, describe, MAX_ANCESTORS, MAIN_CONTENT_CLASS,
-                        ClickGesture, input_focus_plan, is_highlight_gesture)
+                        ClickGesture, input_focus_plan, is_highlight_gesture, needs_hit_retest, HIT_RETEST_ATTEMPTS, HIT_RETEST_INTERVAL_SECONDS)
 from pane_focuser import PaneInputFocuser
 from claude_prompt_focuser import ClaudePromptFocuser, CLAUDE_BUNDLE_ID, RECORDING_STOPPED, ENABLED as CLAUDE_FOCUS_ENABLED
 from helper_runtime import (LatestResult, SingleInstance, HelperHealth, HealthLog, HelperPreferences)
@@ -318,6 +318,7 @@ class Inspector(NSObject):
         self.focus_inputs, self.mouse_down_point, self.down_monitor = True, None, None  # Ethan: on by default.
         # Own reader: the click worker changes its reader's deadline at the same time.
         self.claude_focuser = ClaudePromptFocuser(AXReader()) if self.reader and CLAUDE_FOCUS_ENABLED else None  # Off: no observer, checkbox greyed out.
+        self.claude_click_focuser = ClaudePromptFocuser(self.reader) if self.reader else None  # Separate from the dormant stop trigger above (Ethan, 2026-11-08). Shares the Codex reader because both run only on the one click worker.
         self.focus_claude, self.claude_running = True, threading.Lock()  # Ethan approved on by default, 2026-10-19.
         self.pending = queue.Queue(maxsize=1)
         self.completed = LatestResult(lambda: self.performSelectorOnMainThread_withObject_waitUntilDone_(
@@ -701,6 +702,10 @@ class Inspector(NSObject):
         if not url or Path(str(url.path())).name not in ("Codex.app", "ChatGPT.app"):
             self.sequence += 1
             self.last = None
+            if self.claude_click_focuser and self.focus_inputs and app and app.bundleIdentifier() == CLAUDE_BUNDLE_ID:  # Ethan (2026-11-08): the Codex click-to-input behaviour in Claude too. The shared worker means a newer click or key cancels this one.
+                point = Q.CGEventGetLocation(event.CGEvent())
+                self.enqueue_click((self.sequence, point.x, point.y, app.processIdentifier(), time.monotonic(),
+                                    CLAUDE_BUNDLE_ID, "", self.click_gesture(event, point, down), self.key_count()))
             if not self.window or not self.window.isVisible():
                 return
             self.event_status.setStringValue_(f"LIVE · clicks received: {self.events_seen} · Codex: {self.codex_clicks}")
@@ -717,16 +722,24 @@ class Inspector(NSObject):
         if self.window and self.window.isVisible():
             self.event_status.setStringValue_(f"LIVE · clicks received: {self.events_seen} · Codex: {self.codex_clicks} · reading…")
         point = Q.CGEventGetLocation(event.CGEvent())
-        modifiers = (K.NSEventModifierFlagCommand | K.NSEventModifierFlagShift
-                     | K.NSEventModifierFlagControl | K.NSEventModifierFlagOption)
-        gesture = ClickGesture(event.clickCount(),
-                               math.hypot(point.x - down.x, point.y - down.y) if down else 0.0,
-                               bool(event.modifierFlags() & modifiers))
+        gesture = self.click_gesture(event, point, down)
         self.sequence += 1
         info = NSBundle.bundleWithPath_(str(url.path())).infoDictionary() or {}
         version = f"{info.get('CFBundleShortVersionString', '')} / {info.get('CFBundleVersion', '')}"
         request = (self.sequence, point.x, point.y, app.processIdentifier(), time.monotonic(),
                    Path(str(url.path())).name, version, gesture, self.key_count())
+        self.enqueue_click(request)
+
+    @objc.python_method
+    def click_gesture(self, event, point, down):
+        modifiers = (K.NSEventModifierFlagCommand | K.NSEventModifierFlagShift
+                     | K.NSEventModifierFlagControl | K.NSEventModifierFlagOption)
+        return ClickGesture(event.clickCount(),
+                            math.hypot(point.x - down.x, point.y - down.y) if down else 0.0,
+                            bool(event.modifierFlags() & modifiers))
+
+    @objc.python_method
+    def enqueue_click(self, request):
         try:
             self.pending.put_nowait(request)
         except queue.Full:
@@ -764,8 +777,18 @@ class Inspector(NSObject):
             threading.Event().wait(remaining)
         if sequence != self.sequence or self.paused or self.key_count() != keys_at_click:
             return
+        if host == CLAUDE_BUNDLE_ID:  # Claude has no Codex pane model or inspector snapshot; its focuser proves the clicked pane itself.
+            self.focus_claude_click(pid, (x, y), gesture, current)
+            return
         try:
             sample = self.reader.sample(x, y, pid)
+            for _ in range(HIT_RETEST_ATTEMPTS):  # Without this re-read most chat clicks saw only the window and never planned a focus.
+                if not needs_hit_retest(sample):
+                    break
+                threading.Event().wait(HIT_RETEST_INTERVAL_SECONDS)
+                if sequence != self.sequence or self.paused or self.key_count() != keys_at_click:
+                    return  # A newer click or key owns focus now; the old click must not act on it.
+                sample = self.reader.sample(x, y, pid)
             focused = self.reader.sample(x, y, pid, focus=True)
         except Exception as exc:
             sample = Sample(pid, 0, None, x, y, (), f"Read unavailable ({type(exc).__name__})")
@@ -983,6 +1006,17 @@ class Inspector(NSObject):
             self.claude_running.release()
         # Status vocabulary only, like the Codex focus lines; never message text.
         print(f"claude prompt focus · recording stopped · {status}", flush=True)
+
+    @objc.python_method
+    def focus_claude_click(self, pid, point, gesture, current):
+        # Plain clicks only, unlike Codex, where Ethan also asked for highlights: focusing the Prompt would clear the text he just selected to copy.
+        if is_highlight_gesture(gesture) or gesture.modifier_held:
+            return
+        try:
+            status = self.claude_click_focuser.focus_clicked_pane(pid, point, current)
+        except Exception as exc:
+            status = f"Failed · focus step error ({type(exc).__name__})"
+        print(f"claude prompt focus · click · {status}", flush=True)  # Status vocabulary only, like the Codex focus lines; never message text.
 
     @objc.python_method
     def mouse_down(self, event):

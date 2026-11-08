@@ -2,7 +2,7 @@
 import unittest
 from dataclasses import replace
 from pane_model import (Node, PaneModel, Rect, Sample, Observation, Diagnostics, describe,
-                        ClickGesture, input_focus_plan, is_highlight_gesture)
+                        ClickGesture, input_focus_plan, is_highlight_gesture, needs_hit_retest)
 import json
 from pathlib import Path
 
@@ -133,6 +133,37 @@ class PaneModelTests(unittest.TestCase):
                 self.assertIsNone(self.plan(sample, sample, host=host)[0])
             no_conversation = replace(sample, nodes=tuple(replace(n, conversation=False) for n in sample.nodes))
             self.assertEqual(self.classify_measured(no_conversation)[0], "Unknown")
+
+    def landmark_sample(self, side=False):
+        sample = self.measured(side=side, editable=False)
+        nodes = tuple(replace(n, dom_identifier="") if n.dom_identifier.endswith("-chat-panel") else n for n in sample.nodes)
+        return replace(sample, nodes=nodes[:-1] + (Node("AXGroup", "", "", None, subrole="AXLandmarkMain"), nodes[-1]))
+
+    def test_main_landmark_names_main_chat_without_any_id_or_class_marker(self):
+        sample = self.landmark_sample()
+        self.assertEqual(self.classify_measured(sample)[0], "Main chat")
+        self.assertEqual(self.plan(sample, self.measured(side=True))[0], "Main chat")  # Returning from another app can leave the side composer focused.
+        for host in ("Other.app", ""):
+            self.assertIsNone(self.plan(sample, sample, host=host)[0])
+
+    def test_side_panel_inside_the_main_landmark_stays_side_chat(self):
+        self.assertEqual(self.classify_measured(self.landmark_sample(side=True))[0], "Side chat")
+
+    def test_main_landmark_without_a_conversation_is_not_chat(self):
+        sample = self.landmark_sample()
+        sample = replace(sample, nodes=tuple(replace(n, conversation=False) for n in sample.nodes))
+        self.assertEqual(self.classify_measured(sample)[0], "Unknown")
+
+    def test_hit_retest_only_for_window_sized_or_unavailable_answers(self):
+        window = self.sample.window
+        wrapper = Node("AXGroup", "", "", window)
+        conversation = Node("AXGroup", "", "", window, subrole="AXLandmarkRegion", conversation=True)
+        self.assertTrue(needs_hit_retest(replace(self.sample, nodes=(wrapper,))))
+        self.assertTrue(needs_hit_retest(replace(self.sample, nodes=(), error="Hit-test unavailable (-25200)")))
+        self.assertFalse(needs_hit_retest(self.sample))  # A precise leaf outside any chat is a real answer.
+        self.assertFalse(needs_hit_retest(replace(self.sample, nodes=(conversation,))))
+        self.assertFalse(needs_hit_retest(replace(self.sample, nodes=(), error="Click owner changed")))
+        self.assertFalse(needs_hit_retest(replace(self.sample, nodes=(), error="Accessibility access needed")))
 
     def test_side_scope_wins_over_a_current_main_content_ancestor(self):
         sample = self.measured(side=True, editable=False)

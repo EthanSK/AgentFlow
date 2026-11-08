@@ -1,6 +1,12 @@
-"""Focus Claude desktop's Prompt box when Agent Flow stops recording.
+"""Focus Claude desktop's Prompt box after a plain click, and (dormant) when Agent Flow stops recording.
 
-Ethan approved this on 2026-10-19 (option 2 of the Claude paste investigation).
+Click trigger: Ethan asked on 2026-11-08 for Codex's click-to-input behaviour in
+Claude too. A plain click on a Claude chat pane puts the caret in that pane's
+Prompt (`focus_clicked_pane`). It is on with the helper's existing "focus that
+pane's input" checkbox and does not depend on ENABLED below. The click watcher
+rejected below was rejected as a fix for the lost paste, not for this.
+
+Stop trigger: Ethan approved this on 2026-10-19 (option 2 of the Claude paste investigation).
 Agent Flow's Primary finish pastes into whatever has keyboard focus, and Claude
 drops that paste once a click on its conversation or one of its buttons has
 moved focus off the Prompt box. Live trace 2026-10-19 15:05: a next-step button
@@ -18,9 +24,11 @@ are unchanged; this only prepares Claude's focus before they arrive.
 The only writes are AXFocused and the end-of-draft caret, both inherited from
 PaneInputFocuser. It never clicks, types, pastes, sends or reads message text.
 """
+import ctypes as C
 import time
 
 from pane_focuser import PaneInputFocuser, VERIFY_SECONDS, VERIFY_INTERVAL_SECONDS
+from pane_model import CONTROL_ROLES, HIT_RETEST_ATTEMPTS, HIT_RETEST_INTERVAL_SECONDS
 
 ENABLED = False  # Ethan disabled it 2026-10-19 after it never fired live: typing-only Agent Flow sessions post no recordingStopped (Recorder.swift sets recordingActivityStarted only once the mic starts). Needs a trigger that covers typing before re-enabling.
 CLAUDE_BUNDLE_ID = "com.anthropic.claudefordesktop"
@@ -85,18 +93,7 @@ class ClaudePromptFocuser(PaneInputFocuser):
                 return "Skipped · focus moved during the lookup"
             if not focused and check and r.editable(check, r.text(check, "AXRole")):
                 return "Skipped · a text input took focus during the lookup"
-            error = self.set_focused(target)
-            if error:
-                return f"Failed · Claude refused the focus write ({error})"
-            # Chromium applies the write asynchronously; re-read only, never re-write.
-            give_up = time.monotonic() + VERIFY_SECONDS
-            while True:
-                r.deadline = time.monotonic() + 0.05
-                if r.boolean(target, "AXFocused"):
-                    return f"Focused Claude Prompt · verified · {self.place_caret(target)}"
-                if time.monotonic() >= give_up:
-                    return "Focus sent to Claude Prompt · not confirmed"
-                time.sleep(VERIFY_INTERVAL_SECONDS)
+            return self.write_focus(target)
         finally:
             for value in (check, target, window, pane, focused, app):
                 if value:
@@ -104,6 +101,75 @@ class ClaudePromptFocuser(PaneInputFocuser):
             for array in self.arrays:
                 r.release(array)
             self.arrays = []
+
+    def focus_clicked_pane(self, pid, point, is_current):
+        """Focuses the Prompt of the Claude pane under a plain click; returns a status line with no message text."""
+        r = self.reader
+        r.deadline, r.errors = time.monotonic() + BUDGET_SECONDS, []
+        app = focused = pane = target = None
+        try:
+            if r.frontmost_pid() != pid:
+                return "Skipped · Claude is not frontmost"
+            for attempt in range(HIT_RETEST_ATTEMPTS + 1):  # Chromium's first answer at a new point is often just the window, as measured in Codex.
+                pane = self.pane_at_point(pid, point)
+                if pane or attempt == HIT_RETEST_ATTEMPTS:
+                    break
+                time.sleep(HIT_RETEST_INTERVAL_SECONDS)
+                if not is_current():
+                    return "Skipped · a newer click or key arrived"
+            if pane is None:
+                return "Skipped · no chat pane under the click, or a control owns it"
+            target = self.find_prompt(pane)
+            if target is None:
+                return "Skipped · no Prompt box found within the search limit"
+            if r.boolean(target, "AXFocused"):
+                return "Skipped · Prompt already focused"
+            app = r.create_app(pid)
+            focused = r.copy(app, "AXFocusedUIElement") if app else None
+            if focused and not self.is_prompt(focused) and r.editable(focused, r.text(focused, "AXRole")):
+                return "Skipped · another text input has focus"  # Such as a rename field. Another pane's Prompt may lose focus: the click chose this pane.
+            r.deadline = time.monotonic() + 0.1
+            if not is_current() or r.frontmost_pid() != pid:
+                return "Skipped · a newer click, key or app switch arrived"
+            return self.write_focus(target, is_current)
+        finally:
+            for value in (target, pane, focused, app):
+                if value:
+                    r.release(value)
+            for array in self.arrays:
+                r.release(array)
+            self.arrays = []
+
+    def write_focus(self, target, is_current=None):
+        """Sends the one focus write, then confirms it and places the caret at the end of any draft."""
+        r = self.reader
+        error = self.set_focused(target)
+        if error:
+            return f"Failed · Claude refused the focus write ({error})"
+        # Chromium applies the write asynchronously; re-read only, never re-write.
+        give_up = time.monotonic() + VERIFY_SECONDS
+        while True:
+            r.deadline = time.monotonic() + 0.05
+            if r.boolean(target, "AXFocused"):
+                return f"Focused Claude Prompt · verified · {self.place_caret(target, is_current)}"
+            if time.monotonic() >= give_up:
+                return "Focus sent to Claude Prompt · not confirmed"
+            time.sleep(VERIFY_INTERVAL_SECONDS)
+
+    def pane_at_point(self, pid, point):
+        """Returns a retained pane when the point is on plain content of a Claude pane, else None."""
+        r = self.reader
+        hit = C.c_void_p()
+        error = r.hit(r.system, point[0], point[1], C.byref(hit))
+        if not hit.value:
+            return None
+        try:
+            owner = C.c_int()
+            if error or r.get_pid(hit.value, C.byref(owner)) or owner.value != pid:
+                return None
+            return self.pane_holding(hit.value, CONTROL_ROLES)
+        finally:
+            r.release(hit.value)
 
     def is_prompt(self, element):
         r = self.reader
@@ -113,15 +179,15 @@ class ClaudePromptFocuser(PaneInputFocuser):
         r = self.reader
         return r.text(element, "AXRole") == "AXGroup" and r.text(element, "AXDescription").endswith(PANE_SUFFIX)
 
-    def pane_holding(self, focused):
-        """Returns a retained pane group above the focused element, or None (e.g. focus is in the sidebar)."""
+    def pane_holding(self, focused, stop_roles=frozenset()):
+        """Returns a retained pane group above the element, or None (e.g. it is in the sidebar or under a stop role)."""
         r = self.reader
         current = focused
         r.retain(current)
         for _ in range(MAX_ANCESTORS):
             if self.is_pane(current):
                 return current
-            parent = r.copy(current, "AXParent")
+            parent = None if r.text(current, "AXRole") in stop_roles else r.copy(current, "AXParent")
             r.release(current)
             if not parent:
                 return None

@@ -25,6 +25,19 @@ class FakeReader:
                       "rename": {"AXRole": "AXTextField", "editable": True},
                       "stop-button": {"AXRole": "AXButton"}, "web": {"AXRole": "AXWebArea"}}
         self.focused, self.flags, self.on_children = "msg3", {}, None
+        self.system, self.owner, self.hits, self.handles = 900, CLAUDE_PID, ["msg3"], {}
+
+    def hit(self, system, x, y, output):
+        name = self.hits.pop(0) if len(self.hits) > 1 else self.hits[0]  # The last answer repeats, like a settled hit-test.
+        handle = 7000 + len(self.handles)  # A c_void_p can only hold a number.
+        self.handles[handle] = name
+        self.refs.update([name])  # AXUIElementCopyElementAtPosition returns an owned element.
+        output._obj.value = handle
+        return 0
+
+    def get_pid(self, element, output):
+        output._obj.value = self.owner
+        return 0
 
     def add_second_pane(self):
         # Split view: a second pane with its own conversation and Prompt.
@@ -45,6 +58,7 @@ class FakeReader:
         return "app"
 
     def copy(self, element, name):
+        element = self.handles.get(element, element)
         value = {"AXFocusedUIElement": lambda: self.focused, "AXMainWindow": lambda: "window",
                  "AXParent": lambda: self.parent(element)}[name]()
         if value:
@@ -52,7 +66,7 @@ class FakeReader:
         return value
 
     def text(self, element, name):
-        return self.attrs.get(element, {}).get(name, "")
+        return self.attrs.get(self.handles.get(element, element), {}).get(name, "")
 
     def boolean(self, element, name):
         assert name == "AXFocused", name
@@ -65,10 +79,10 @@ class FakeReader:
         return a == b
 
     def retain(self, value):
-        self.refs.update([value])
+        self.refs.update([self.handles.get(value, value)])
 
     def release(self, value):
-        self.refs.subtract([value])
+        self.refs.subtract([self.handles.get(value, value)])
 
 
 class FakeFocuser(ClaudePromptFocuser):
@@ -114,6 +128,70 @@ class ClaudePromptFocuserTests(unittest.TestCase):
         status = self.focuser.focus_prompt(CLAUDE_PID)
         self.assertTrue(all(n == 0 for n in self.reader.refs.values()), self.reader.refs)
         return status
+
+    def run_click(self, *hits, is_current=lambda: True):
+        self.reader.hits = list(hits)
+        status = self.focuser.focus_clicked_pane(CLAUDE_PID, (10.0, 20.0), is_current)
+        self.assertTrue(all(n == 0 for n in self.reader.refs.values()), self.reader.refs)
+        return status
+
+    def test_plain_click_on_a_message_focuses_that_panes_prompt_with_caret_at_end(self):
+        self.assertEqual(self.run_click("msg3"), "Focused Claude Prompt · verified · caret placed at end")
+        self.assertEqual(self.focuser.writes, ["prompt"])
+        self.assertEqual(self.focuser.caret_writes, [("prompt", "AXSelectedTextRange", ("range", 12))])
+
+    def test_click_on_a_control_or_the_prompt_itself_is_left_alone(self):
+        for hit in ("stop-button", "prompt"):
+            with self.subTest(hit=hit):
+                self.assertTrue(self.run_click(hit).startswith("Skipped · no chat pane"))
+                self.assertEqual(self.focuser.writes, [])
+
+    def test_click_on_text_inside_a_button_is_left_alone(self):
+        self.reader.tree["stop-button"] = ["stop-label"]
+        self.assertTrue(self.run_click("stop-label").startswith("Skipped · no chat pane"))
+        self.assertEqual(self.focuser.writes, [])
+
+    def test_sidebar_click_is_left_alone(self):
+        self.assertTrue(self.run_click("session-link").startswith("Skipped · no chat pane"))
+        self.assertEqual(self.focuser.writes, [])
+
+    def test_click_owned_by_another_app_is_left_alone(self):
+        self.reader.owner = 999
+        self.assertTrue(self.run_click("msg3").startswith("Skipped · no chat pane"))
+        self.assertEqual(self.focuser.writes, [])
+
+    def test_split_view_click_chooses_the_clicked_pane_not_the_focused_one(self):
+        self.reader.add_second_pane()
+        self.assertTrue(self.run_click("other-msg").startswith("Focused Claude Prompt · verified"))
+        self.assertEqual(self.focuser.writes, ["prompt2"])
+
+    def test_other_panes_prompt_gives_way_to_the_clicked_pane(self):
+        self.reader.add_second_pane()
+        self.reader.focused = "prompt"
+        self.assertTrue(self.run_click("other-msg").startswith("Focused Claude Prompt · verified"))
+        self.assertEqual(self.focuser.writes, ["prompt2"])
+
+    def test_coarse_window_answer_is_retried(self):
+        self.assertTrue(self.run_click("window", "window", "msg3").startswith("Focused Claude Prompt · verified"))
+        self.assertEqual(self.focuser.writes, ["prompt"])
+
+    def test_newer_input_cancels_the_retry(self):
+        self.assertEqual(self.run_click("window", "msg3", is_current=lambda: False), "Skipped · a newer click or key arrived")
+        self.assertEqual(self.focuser.writes, [])
+
+    def test_newer_input_during_the_lookup_blocks_the_write(self):
+        self.assertEqual(self.run_click("msg3", is_current=lambda: False), "Skipped · a newer click, key or app switch arrived")
+        self.assertEqual(self.focuser.writes, [])
+
+    def test_click_keeps_a_rename_fields_caret(self):
+        self.reader.focused = "rename"
+        self.assertEqual(self.run_click("msg3"), "Skipped · another text input has focus")
+        self.assertEqual(self.focuser.writes, [])
+
+    def test_click_does_not_rewrite_an_already_focused_prompt(self):
+        self.reader.flags["prompt"] = True
+        self.assertEqual(self.run_click("msg3"), "Skipped · Prompt already focused")
+        self.assertEqual(self.focuser.writes, [])
 
     def test_conversation_click_focuses_that_panes_prompt_with_caret_at_end(self):
         self.assertEqual(self.run_focus(), "Focused Claude Prompt · verified · caret placed at end")

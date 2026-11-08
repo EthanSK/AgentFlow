@@ -21,8 +21,12 @@ A fresh, clearly measured body click now chooses its pane even when an activatio
 click leaves focus on the other pane's composer or a non-editor control. The helper
 re-hit-tests that same point, checks its owner/window/Conversation, then focuses
 the clicked pane's input. It preserves other editors and selected/unreadable drafts.
-A coarse hit with only a window wrapper still stays unknown when an old composer
-has focus; no guessed region or unqualified hit-test retry is used. Superseding
+Chromium answers a hit-test at a new point from a coarse cache, so the first read
+is often only a window-sized wrapper. Only that answer (or an unavailable one) is
+re-read, at most 3 times 40 ms apart, and a newer click or key cancels it. A hit
+that stays coarse still stays unknown when an old composer has focus; no region
+is guessed. Main chat is recognised by the `AXLandmarkMain` ancestor with no nearer
+side tab panel, because its id and class markers have drifted (2026-11-08). Superseding
 input cancels the existing hold check in 25 ms slices instead of making the next
 click wait through the whole 0.6 seconds. These changes address Ethan's follow-up
 of 2026-10-31; they do not prove that every missing visible caret is repaired.
@@ -38,6 +42,25 @@ reports `verified`, `not confirmed` or the skip reason. The input search is a
 bounded last-child-first walk (10 levels, 400 nodes, 0.5 s) inside the clicked
 region only. The window can be resized short; its whole content scrolls.
 It uses the existing Python/PyObjC runtime; no native app build is required.
+
+## Claude Prompt focus on click
+
+Ethan asked for this on 2026-11-08, after Codex's click-to-input worked. A plain
+click on a Claude desktop chat pane puts the caret at the end of that pane's
+`Prompt` box. It uses this helper's mouse listener and click worker, the same
+**Focus that pane's input** checkbox, and `focus_clicked_pane` in
+`claude_prompt_focuser.py`.
+
+- Only plain single clicks count. A drag, a double or triple click, or a click
+  with a modifier key does nothing, because moving focus would clear text just
+  selected to copy. Codex differs here because Ethan asked for highlights there.
+- A click on a button, link, menu item or text field, or outside a chat pane such
+  as the sidebar, does nothing. Another text input that holds the caret keeps it.
+- A newer click or key press cancels the attempt. The only writes are AXFocused
+  and the end-of-draft caret. The log gets one `claude prompt focus · click`
+  status line per plain click, never message text.
+- Agents cannot check this live because Computer Use refuses Claude's own window.
+  Fixture tests cover the logic; Ethan's real clicks are the live check.
 
 ## Claude Prompt focus on Agent Flow stop (disabled)
 

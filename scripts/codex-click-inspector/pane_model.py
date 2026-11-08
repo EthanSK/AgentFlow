@@ -12,7 +12,7 @@ PARTIAL_READ_ERRORS = {"Read timed out", "Ancestor limit reached", "Ancestor pat
 # structure, not a release number. Updates can preserve this structure unchanged.
 # The event reader already restricts owners to these two local desktop hosts.
 MEASURED_HOSTS = {"ChatGPT.app", "Codex.app"}
-MAIN_CONTENT_CLASS = "@container/app-shell-main-content"  # Codex 26.1103.41825 uses this main-content portal class instead of the removed -chat-panel id.
+MAIN_CONTENT_CLASS = "@container/app-shell-main-content"  # Codex 26.1103.41825 ships this class in its bundle, but no accessibility group exposed it on 2026-11-08; the AXLandmarkMain check in measured_marker is what recognises main chat.
 
 
 @dataclass(frozen=True)
@@ -93,6 +93,8 @@ def measured_marker(nodes, host, version):
                 return "Side chat"
             if node.role == "AXGroup" and identifier.endswith("-chat-panel"):
                 return "Main chat"
+        if node.subrole == "AXLandmarkMain":  # Reaching the app's main landmark with no nearer side tab panel means main chat; an ARIA landmark outlives the id and class names that drifted twice (Claude session local_719981e1-c450-4add-99ab-718aa99a0089).
+            return "Main chat"
     return None
 
 
@@ -191,6 +193,8 @@ class PaneModel:
 
 
 PLAIN_CLICK_MAX_DRAG_POINTS = 4.0  # A longer press-drag is a text selection; focusing would clear it.
+HIT_RETEST_ATTEMPTS, HIT_RETEST_INTERVAL_SECONDS = 3, 0.04  # At most 120 ms extra, and only after a window-sized answer: long enough for Chromium to refine its coarse first hit-test.
+CONTROL_ROLES = frozenset({"AXButton", "AXLink", "AXTextArea", "AXTextField", "AXComboBox", "AXMenuItem", "AXCheckBox", "AXSlider", "AXPopUpButton"})  # These own their clicks, so a click on one never moves the caret to an input.
 
 
 @dataclass(frozen=True)
@@ -217,6 +221,15 @@ def is_highlight_gesture(gesture):
     return gesture.click_count > 1 or gesture.drag_points > PLAIN_CLICK_MAX_DRAG_POINTS
 
 
+def needs_hit_retest(sample):
+    """True when a hit-test gave no usable element or only a window-sized wrapper, so a re-read can do better."""
+    if sample.error.startswith("Hit-test unavailable"):
+        return True  # Chromium can briefly refuse the first lookup at a new point.
+    leaf = sample.nodes[0] if sample.nodes else None
+    return bool(leaf and sample.window and leaf.frame == sample.window  # Chromium answers a new point from a coarse cache and refines it asynchronously, so the first read is often just the window (measured 2026-11-08: 6 of 8 first reads, exact by the next read about 30 ms later).
+                and not any(node.conversation for node in sample.nodes))
+
+
 def input_focus_plan(model, observation):
     """Returns (pane, Conversation frame) whose input may be focused, else (None, skip reason)."""
     # Ethan (2026-10-17): clicks AND highlights must move focus to that pane's
@@ -232,13 +245,12 @@ def input_focus_plan(model, observation):
             and focus.window is not None and focus.focus_stable is True and focus.usable_path):
         # Ethan's "unfocus then refocus": a proven body click owns the destination even when returning to Codex leaves focus in the other pane (task 01a0d315-7d5e-7be0-bc08-80626ca0729b).
         click_region = next((node for node in observation.click.nodes if node.conversation and node.frame), None)
-        controls = {"AXButton", "AXLink", "AXTextArea", "AXTextField", "AXComboBox", "AXMenuItem", "AXCheckBox", "AXSlider", "AXPopUpButton"}
         body_path = observation.click.nodes[:observation.click.nodes.index(click_region)] if click_region else ()
         input_hit = (clicked == focused and leaf.editable is True and leaf.frame
                      and leaf.frame.contains(observation.click.x, observation.click.y))
         if (click_region and click_region.frame.inside(focus.window)
                 and click_region.frame.contains(observation.click.x, observation.click.y) and not input_hit
-                and not any(node.role in controls for node in body_path)):
+                and not any(node.role in CONTROL_ROLES for node in body_path)):
             return clicked, click_region.frame
     if model.input_state(focus, observation.host, observation.version) != "No editable input focused":
         return None, "No action · an input already has focus or focus is unverified"

@@ -11,6 +11,12 @@ A bounded Mini Chrome fixture compiled the current production reader and used sc
 Evidence: task-local agentflow-underline-comparison/{complete-live-counts.json,sample-live-counts.json,october-session-evidence.json,mini-focus-summary.json,mini-evidence/run-nU4dGG/results.json}. Synthetic native-focus behavior, host-side rendered-math omission and real physical capture acceptance are distinct claims.
 
 ---
+**Date:** 2026-11-08 — Main-chat clicks still never planned focus after the marker repair
+**Trigger:** Ethan reported the helper still did not focus the input after the `@container/app-shell-main-content` repair below.
+**Verified:** Two causes sat before the focus write. That class is not exposed on any accessibility group in the live tree, so main chat stayed `Unknown`. Separately, Chromium answers the first hit-test at a new point from a coarse cache, usually just a window-sized wrapper (6 of 8 first reads), and is exact about 30 ms later. Since the previous reload, 1 of 9 Codex clicks attempted focus.
+**Fix:** Recognise main chat from the `AXLandmarkMain` ancestor with no nearer side tab panel, and re-read only window-sized or unavailable hit-tests, at most 3 times 40 ms apart. No synthetic click: the composer exposes only `AXShowMenu` and `AXScrollToVisible`, so there is no press action, and a real mouse event would move the pointer.
+**Guard:** Fixture regressions cover landmark recognition, side precedence, retest bounds and cancellation. The diagnosis used read-only live probes run after the Computer Use prompt for com.openai.codex timed out, which this helper's header forbids; do not repeat them. Ethan reported on 2026-11-08 that the installed fix seems to work in real use (Claude session local_719981e1-c450-4add-99ab-718aa99a0089).
+---
 **Date:** 2026-11-08 — Main-chat marker drift
 **Trigger:** Main-chat body clicks repeatedly left the side composer focused, including after returning from another app.
 **Verified:** The separate helper was enabled, responsive and Accessibility-authorised. The installed ChatGPT.app 26.1103.41825 / 25679 frontend contains no old `-chat-panel` marker. Codex and an independent Opus 5.5 investigation found that the classifier could therefore reject main clicks before input lookup. The old model failed a current-main-marker regression on the Mini. This is source/fixture evidence, not proof of the exact live failure.
