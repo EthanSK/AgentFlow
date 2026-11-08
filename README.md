@@ -14,9 +14,9 @@
 
 ## Download
 
-[Download Agent Flow v2.0.492 for Mac](https://github.com/EthanSK/AgentFlow/releases/download/v2.0.492/AgentFlow-v2.0.492-mac-universal.zip). Requires macOS 14.4 or later; supports Apple silicon and Intel. The public app is Developer ID signed, Apple notarized and stapled. Unzip it and move Agent Flow to Applications, then follow [Setup](SETUP.md).
+[Download Agent Flow v2.0.493 for Mac](https://github.com/EthanSK/AgentFlow/releases/download/v2.0.493/AgentFlow-v2.0.493-mac-universal.zip). Requires macOS 14.4 or later; supports Apple silicon and Intel. The public app is Developer ID signed, Apple notarized and stapled. Unzip it and move Agent Flow to Applications, then follow [Setup](SETUP.md).
 
-[Release notes and checksums](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.492) · [Build from source](#build-from-source)
+[Release notes and checksums](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.493) · [Build from source](#build-from-source)
 
 The app includes an Intel build, but local models are not reliable on Intel Macs; use a cloud transcription provider there. Cloud providers require your own account, key and any usage charges. Apple-silicon Macs can use the downloaded local model without a provider key.
 
@@ -86,6 +86,8 @@ The **Primary button** means your normal recording shortcut. The **Next button**
 | Next | While transcribing, after a Primary stop | **Second chance:** the input focused when you press Next |
 
 Only an eligible Next route saves an exact input together with its app's Mode and auto-send. If Agent Flow can't verify that input, it shows an error instead of pasting somewhere else. The [destination guide](RECORDING_DESTINATIONS.md) has the full contract.
+
+Build 493 captures a whole underlined phrase when you double-click one of its words in Codex.
 
 Build 492 adds an early automatic Enter attempt for a readable Codex composer, with one later retry only while the same pasted draft is unchanged and no typing or clicks intervene. Other inputs retain the single 400 ms Send allowance. See [Send timing](RECORDING_DESTINATIONS.md#current-timing-exception--fast-send-and-conditional-delayed-retry) for the limits; paste-only Modes remain immediate.
 
