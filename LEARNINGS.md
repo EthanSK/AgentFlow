@@ -10,6 +10,16 @@ Validation: seven new resolver regressions plus the existing selection suite and
 
 Release: source `8266b926`/build 493 passed all 886 named tests in 41 suites through the release workflow. The public v2.0.493 ZIP passed its checksums, deep/strict Developer ID signing, stapled notarization and Gatekeeper checks, and its updater feed/key and designated requirement match 492. Agent Flow first answered not-ready, so a waiter driven by its own readiness-changed notification held the install until it answered ready; a delivered five-second warning and one normal quit followed. Build 493 launched as PID 70905, CDHash `cd4022f41cdfd16056179ee27bd0128166fa56e2`, with Automation/audio-input entitlements, microphone preferences, keybindings and the official VoiceInk executable unchanged. A Claude desktop session requested that quit with `NSRunningApplication.terminate()` rather than `osascript`, to avoid raising an Automation prompt for Claude.
 
+## 2026-11-08 — Find the formula near a Codex double-click (build 494)
+
+Build 493 failed in Ethan's real Codex. Both real double-clicks logged `formula=no-formula:AXGroup`: the hit was an `AXGroup` with no directly attached math child whose box held the pointer, and no math ancestor. So the lookup was too narrow, and the formula read never ran. One capture still returned the stray `.` beside the formula. LaTeX source is not the blocker: no read reached the point of having formula text to convert.
+
+Fix: when the ancestor walk finds nothing, search a bounded area (120 nodes, depth 6, up to 3 parents, never past `AXWebArea`). Prefer a formula whose box holds the pointer. Otherwise take the nearest formula on the pointer's row that started before it, unless visible text sits between them. Row matching exists because KaTeX's hidden MathML copy can be narrower than the drawn word.
+
+Evidence limit: a Mini Chrome fixture with a narrower hidden copy reproduced `no-formula:AXGroup` on build-493-style logic and resolved it with this search, including wrapper nesting. That proves the mechanism can happen, not that it is what real Codex does. The log now reads `formula=found:<role>[match=.. visited=.. math=.. framed=.. inside=.. row=.. climbed=.. deepest=.. seen=role:count,...]`, counts and roles only. After a real double-click: `math=0` means the search never saw a formula, so read `seen=` for a different subrole; `math>0` with `framed=0` means no frames; `framed>0` with `match=none` means the row rule is still wrong.
+
+Untried next idea: use the selected marker range's boundary (`AXPreviousTextMarkerForTextMarker`/`AXUIElementForTextMarker`) to find the math element beside the stray `.` selection.
+
 ## 2026-11-08 — Separate gesture delivery, readable text and caret clearing
 
 Existing counts-only LiveSelection logs proved that Codex drag and double-click events arrived and started reads. One ordinary 39-character question prefix emitted into the session; eleven nearby reads were canceled by a newer gesture or stop. Other complete four-attempt failures returned unavailable marker text with zero elsewhere, overextension or prevented-widening counts. Do not diagnose every failed highlight as a missing mouse event, size filter or cancellation. Correlate gesture, captured/unavailable and final finished-outcome lines; a successful accessor alone does not prove an emitted context block.

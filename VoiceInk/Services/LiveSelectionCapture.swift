@@ -1892,7 +1892,7 @@ final class LiveSelectionCapture {
                     acceptedMarkerExpansion: last.acceptedMarkerExpansion,
                     clickCount: gesture?.clickCount,
                     callbackLagMilliseconds: gesture?.callbackLagMilliseconds,
-                    formulaLookup: last.formulaLookup
+                    formulaLookup: last.formulaLog
                 )
                 return (candidate.text, last)
             }

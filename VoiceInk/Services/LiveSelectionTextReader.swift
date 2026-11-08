@@ -135,6 +135,11 @@ enum LiveSelectionReadPolicy {
     static let formulaSubrole = "AXDocumentMath"
     /// A formula's text sits only a few levels under its math root.
     static let maximumFormulaDepth = 8
+    /// Live Codex can nest a formula below the block that macOS hit-tests, so
+    /// search around that block. These limits keep one double-click cheap.
+    static let maximumFormulaSearchNodes = 120
+    static let maximumFormulaSearchDepth = 6
+    static let maximumFormulaSearchClimbs = 3
     /// Selection bounds within this many points of either gesture endpoint
     /// count as the gesture's own selection (drag overshoot, margins).
     static let boundsTolerance: CGFloat = 32
@@ -379,6 +384,11 @@ struct LiveSelectionResolution: Equatable, Sendable {
     /// Text-free reason the Codex double-click formula read did or did not
     /// apply, with the hit-test role: `found:AXGroup`, `no-formula:AXStaticText`.
     var formulaLookup = "skipped"
+    /// Counts and role names from the formula search. Never text or coordinates.
+    var formulaSearch = ""
+    var formulaLog: String {
+        formulaSearch.isEmpty ? formulaLookup : "\(formulaLookup)[\(formulaSearch)]"
+    }
 }
 
 /// Read-only Accessibility surface for one source process. The live
@@ -644,15 +654,7 @@ struct LiveSelectionAccessibilityResolver<Probe: LiveSelectionAccessibilityProbe
         let hitRole = probe.role(of: hit)
         let hitRoleLabel = hitRole ?? "none"
         var formula: Probe.Element?
-        // Hidden glyphs hit-test to their text block. Visible text has its own
-        // leaf, and must win because a math box can extend over the next word.
-        if hitRole != kAXStaticTextRole {
-            formula = probe.children(of: hit).first {
-                probe.subrole(of: $0) == LiveSelectionReadPolicy.formulaSubrole
-                    && probe.frame(of: $0)?.contains(point) == true
-            }
-        }
-        // The hit can instead land on a text leaf inside the MathML copy.
+        // The hit can land on a text leaf inside the MathML copy.
         var ancestor: Probe.Element? = hit
         for _ in 0..<LiveSelectionReadPolicy.maximumFormulaDepth where formula == nil {
             guard let current = ancestor, !probe.isExpired,
@@ -661,6 +663,15 @@ struct LiveSelectionAccessibilityResolver<Probe: LiveSelectionAccessibilityProbe
                 formula = current
             }
             ancestor = probe.parent(of: current)
+        }
+        // Hidden glyphs hit-test to a surrounding block, and in live Codex the
+        // formula is not always that block's direct child (build 493 missed it).
+        // Visible text has its own leaf, and must win because a math box can
+        // extend over the next word.
+        if formula == nil, hitRole != kAXStaticTextRole {
+            var search = FormulaSearch()
+            formula = searchForFormula(near: point, around: hit, search: &search)
+            resolution.formulaSearch = search.summary
         }
         guard let formula else {
             resolution.formulaLookup = "no-formula:\(hitRoleLabel)"
@@ -674,6 +685,125 @@ struct LiveSelectionAccessibilityResolver<Probe: LiveSelectionAccessibilityProbe
         return LiveSelectionCandidate(
             text: text, tier: .pointerFormula, source: .textMarkers, evidence: .atGesture
         )
+    }
+
+    /// What one formula search saw, for the counts-only log.
+    private struct FormulaSearch {
+        var visited = 0
+        var formulas = 0
+        var framed = 0
+        var inside = 0
+        var sameRow = 0
+        var climbed = 0
+        var deepest = 0
+        var match = "none"
+        var roles: [String: Int] = [:]
+
+        var summary: String {
+            let seen = roles.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: ",")
+            return "match=\(match) visited=\(visited) math=\(formulas) framed=\(framed) inside=\(inside)"
+                + " row=\(sameRow) climbed=\(climbed) deepest=\(deepest) seen=\(seen)"
+        }
+    }
+
+    /// Searches the hit block, then up to a few blocks around it, for the
+    /// formula drawn under `point`. Each climb skips the part already searched.
+    private func searchForFormula(
+        near point: CGPoint, around hit: Probe.Element, search: inout FormulaSearch
+    ) -> Probe.Element? {
+        var scope: Probe.Element? = hit
+        var searched: Probe.Element?
+        for climbed in 0...LiveSelectionReadPolicy.maximumFormulaSearchClimbs {
+            guard let current = scope, !probe.isExpired,
+                  probe.role(of: current) != "AXWebArea" else { break }
+            search.climbed = climbed
+            var boxes: [(element: Probe.Element, frame: CGRect)] = []
+            var visibleText: [Probe.Element] = []
+            collectFormulas(
+                under: current, skipping: searched, depth: 1,
+                into: &boxes, visibleText: &visibleText, search: &search
+            )
+            if let match = bestFormula(near: point, among: boxes, visibleText: visibleText, search: &search) {
+                return match
+            }
+            searched = current
+            scope = probe.parent(of: current)
+        }
+        return nil
+    }
+
+    private func collectFormulas(
+        under element: Probe.Element,
+        skipping searched: Probe.Element?,
+        depth: Int,
+        into boxes: inout [(element: Probe.Element, frame: CGRect)],
+        visibleText: inout [Probe.Element],
+        search: inout FormulaSearch
+    ) {
+        guard depth <= LiveSelectionReadPolicy.maximumFormulaSearchDepth else { return }
+        for child in probe.children(of: element) {
+            guard search.visited < LiveSelectionReadPolicy.maximumFormulaSearchNodes,
+                  !probe.isExpired else { return }
+            if let searched, probe.isSame(child, searched) { continue }
+            search.visited += 1
+            let label = probe.subrole(of: child) ?? probe.role(of: child) ?? "none"
+            search.roles[label, default: 0] += 1
+            guard label == LiveSelectionReadPolicy.formulaSubrole else {
+                if label == kAXStaticTextRole { visibleText.append(child) }
+                collectFormulas(
+                    under: child, skipping: nil, depth: depth + 1,
+                    into: &boxes, visibleText: &visibleText, search: &search
+                )
+                continue
+            }
+            search.formulas += 1
+            search.deepest = max(search.deepest, depth)
+            if let frame = probe.frame(of: child) {
+                search.framed += 1
+                boxes.append((child, frame))
+            }
+        }
+    }
+
+    /// Prefers the formula whose box contains the pointer. The hidden copy is
+    /// laid out in a different font, so its box can be far narrower than the
+    /// drawn phrase (on the Mini, a 12px hidden copy stopped short of the word
+    /// and missed exactly as live Codex did). Only then, take the formula that
+    /// starts nearest before the pointer on its row. Its top edge matches the
+    /// drawn phrase, so rows are measured from there. Visible text between the
+    /// formula's start and the pointer means the pointer is past that formula.
+    private func bestFormula(
+        near point: CGPoint,
+        among boxes: [(element: Probe.Element, frame: CGRect)],
+        visibleText: [Probe.Element],
+        search: inout FormulaSearch
+    ) -> Probe.Element? {
+        let containing = boxes.filter { $0.frame.contains(point) }
+        search.inside += containing.count
+        if let match = containing.min(by: {
+            $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height
+        }) {
+            search.match = "inside"
+            return match.element
+        }
+        let tolerance: CGFloat = 6
+        let rowLimit: (CGRect) -> CGFloat = { $0.minY + max($0.height, 28) + tolerance }
+        let startedBeforePointer = boxes.filter {
+            point.y >= $0.frame.minY - tolerance && point.y <= rowLimit($0.frame)
+                && point.x >= $0.frame.minX - tolerance
+        }
+        guard let nearestRowTop = startedBeforePointer.map(\.frame.minY).max() else { return nil }
+        let sameRow = startedBeforePointer.filter { nearestRowTop - $0.frame.minY <= tolerance }
+        search.sameRow += sameRow.count
+        guard let match = sameRow.max(by: { $0.frame.minX < $1.frame.minX }) else { return nil }
+        let textAfterFormula = visibleText.contains { element in
+            guard let frame = probe.frame(of: element) else { return false }
+            return frame.minY <= point.y && frame.maxY >= point.y
+                && frame.minX > match.frame.minX && frame.minX <= point.x
+        }
+        guard !textAfterFormula else { return nil }
+        search.match = "row"
+        return match.element
     }
 
     private func prefersPointerSelection(
@@ -1091,7 +1221,7 @@ enum LiveSelectionDiagnostics {
         startedAt: UInt64
     ) {
         logger.notice(
-            "Live selection unavailable trusted=\(resolution.accessibilityTrusted, privacy: .public) attempts=\(attempts, privacy: .public) examined=\(resolution.examinedElements, privacy: .public) elsewhere=\(resolution.rejectedElsewhere, privacy: .public) overextended=\(resolution.observedOverextended, privacy: .public) preventedWidening=\(resolution.preventedWidening, privacy: .public) outsideSourceWindow=\(resolution.rejectedOutsideSourceWindow, privacy: .public) secure=\(resolution.refusedSecure, privacy: .public) hasGesture=\(resolution.hasGesture, privacy: .public) emptyHitTests=\(resolution.emptyHitTests, privacy: .public) unverifiable=\(resolution.rejectedUnverifiable, privacy: .public) cannotComplete=\(resolution.incompleteMessages, privacy: .public) missingMarkers=\(resolution.missingMarkerRanges, privacy: .public) unavailableMarkerText=\(resolution.unavailableMarkerText, privacy: .public) degenerateBounds=\(resolution.degenerateBounds, privacy: .public) budgetExhausted=\(resolution.budgetExhausted, privacy: .public) formula=\(resolution.formulaLookup, privacy: .public) bundle=\(bundleID ?? "unknown", privacy: .public) durationMs=\(elapsedMilliseconds(since: startedAt), privacy: .public)"
+            "Live selection unavailable trusted=\(resolution.accessibilityTrusted, privacy: .public) attempts=\(attempts, privacy: .public) examined=\(resolution.examinedElements, privacy: .public) elsewhere=\(resolution.rejectedElsewhere, privacy: .public) overextended=\(resolution.observedOverextended, privacy: .public) preventedWidening=\(resolution.preventedWidening, privacy: .public) outsideSourceWindow=\(resolution.rejectedOutsideSourceWindow, privacy: .public) secure=\(resolution.refusedSecure, privacy: .public) hasGesture=\(resolution.hasGesture, privacy: .public) emptyHitTests=\(resolution.emptyHitTests, privacy: .public) unverifiable=\(resolution.rejectedUnverifiable, privacy: .public) cannotComplete=\(resolution.incompleteMessages, privacy: .public) missingMarkers=\(resolution.missingMarkerRanges, privacy: .public) unavailableMarkerText=\(resolution.unavailableMarkerText, privacy: .public) degenerateBounds=\(resolution.degenerateBounds, privacy: .public) budgetExhausted=\(resolution.budgetExhausted, privacy: .public) formula=\(resolution.formulaLog, privacy: .public) bundle=\(bundleID ?? "unknown", privacy: .public) durationMs=\(elapsedMilliseconds(since: startedAt), privacy: .public)"
         )
     }
 

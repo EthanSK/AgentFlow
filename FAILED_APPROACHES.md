@@ -56,6 +56,8 @@ physical acceptance.
 
 **Reconsidered 2026-11-08, for a Codex double-click only:** Ethan accepted the whole underlined phrase, as Claude captures it, when he double-clicks one of its words; surrounding prose stays unacceptable. That narrow exception reads the one `AXDocumentMath` group under the pointer, labelled as the whole formula. It adds no retry and weakens no guard. Drags, partial selections and every other app keep the rules above. Do not return a paragraph for this gesture: the unmodified reader did that in the Mini fixture.
 
+**Build 493's formula lookup also failed in live Codex:** it required the formula to be a direct child of the hit block with a box containing the pointer, and logged `no-formula:AXGroup` on Ethan's real double-clicks. The hidden copy is laid out in a different font, so its box can stop short of the drawn word. A Mini fixture with a narrower hidden copy reproduced the same log line. Do not rely on the hidden copy's box alone, and do not treat a passing Chrome page as proof for Codex.
+
 ## 2026-11-06 — Apply live-event freshness or HUD-first focus to startup capture
 
 **Observed failures:** A preselected Code range had no new watched gesture, so the bridge was skipped; an old selection-change timestamp also failed the live freshness check. A disposable Mini non-activating HUD with an automatically focused text view made Code's focused-pane query return no pane even though Code remained frontmost. The same selected range passed without that focus step.

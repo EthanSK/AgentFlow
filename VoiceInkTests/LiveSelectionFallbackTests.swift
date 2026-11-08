@@ -903,6 +903,119 @@ struct LiveSelectionFallbackTests {
         #expect(result.formulaLookup == "no-formula:AXGroup")
     }
 
+    @Test func codexDoubleClickFindsAFormulaNestedBelowTheHitBlock() {
+        let probe = FakeSelectionProbe()
+        addFormulaParagraph(to: probe)
+        probe.nodes[4]?.parent = 10
+        probe.nodes[10] = .init(role: "AXGroup", parent: 11)
+        probe.nodes[11] = .init(role: "AXGroup", parent: 2)
+        let g = doubleClick(at: CGPoint(x: 150, y: 150))
+        probe.hitTargets = [(g.mouseUp, 2)]
+        let result = precisionResolve(probe, g)
+        #expect(result.candidate?.text == "second phrase")
+        #expect(result.formulaSearch.contains("match=inside"))
+        #expect(result.formulaSearch.contains("deepest=3"))
+        #expect(probe.selectionReads.isEmpty)
+    }
+
+    @Test func codexDoubleClickClimbsToAFormulaBesideTheHitBlock() {
+        let probe = FakeSelectionProbe()
+        addFormulaParagraph(to: probe)
+        probe.nodes[12] = .init(role: "AXGroup", parent: 2)
+        let g = doubleClick(at: CGPoint(x: 150, y: 150))
+        probe.hitTargets = [(g.mouseUp, 12)]
+        let result = precisionResolve(probe, g)
+        #expect(result.candidate?.text == "second phrase")
+        #expect(result.formulaSearch.contains("climbed=1"))
+    }
+
+    @Test func codexDoubleClickJustPastAShortFormulaBoxStillPicksItsRow() {
+        let probe = FakeSelectionProbe()
+        addFormulaParagraph(to: probe)
+        let g = doubleClick(at: CGPoint(x: 340, y: 150))
+        probe.hitTargets = [(g.mouseUp, 2)]
+        let result = precisionResolve(probe, g)
+        #expect(result.candidate?.text == "second phrase")
+        #expect(result.formulaSearch.contains("match=row"))
+    }
+
+    @Test func formulaRowFallbackPicksTheNearestFormulaStartingBeforeThePointer() {
+        let probe = FakeSelectionProbe()
+        addFormulaParagraph(to: probe)
+        probe.nodes[3]?.frame = CGRect(x: 100, y: 140, width: 1, height: 1)
+        probe.nodes[4]?.frame = CGRect(x: 240, y: 140, width: 1, height: 1)
+        let g = doubleClick(at: CGPoint(x: 400, y: 150))
+        probe.hitTargets = [(g.mouseUp, 2)]
+        #expect(precisionResolve(probe, g).candidate?.text == "second phrase")
+    }
+
+    @Test func formulaSearchRejectsFormulasOnAnotherRowOrAfterThePointer() {
+        for point in [CGPoint(x: 150, y: 200), CGPoint(x: 40, y: 150)] {
+            let probe = FakeSelectionProbe()
+            addFormulaParagraph(to: probe)
+            let g = doubleClick(at: point)
+            probe.hitTargets = [(g.mouseUp, 2)]
+            let result = precisionResolve(probe, g)
+            #expect(result.candidate?.tier != .pointerFormula)
+            #expect(result.formulaSearch.contains("match=none"))
+        }
+    }
+
+    @Test func formulaRowSearchReachesAWordFarPastANarrowHiddenCopy() {
+        let probe = FakeSelectionProbe()
+        addFormulaParagraph(to: probe)
+        probe.nodes[4]?.frame = CGRect(x: 100, y: 140, width: 60, height: 14)
+        let g = doubleClick(at: CGPoint(x: 280, y: 160))
+        probe.hitTargets = [(g.mouseUp, 2)]
+        let result = precisionResolve(probe, g)
+        #expect(result.candidate?.text == "second phrase")
+        #expect(result.formulaSearch.contains("match=row"))
+    }
+
+    @Test func formulaRowSearchStopsAtVisibleTextAfterTheFormula() {
+        let probe = FakeSelectionProbe()
+        addFormulaParagraph(to: probe)
+        probe.nodes[4]?.frame = CGRect(x: 100, y: 140, width: 60, height: 14)
+        probe.nodes[13] = .init(role: "AXStaticText", parent: 2, frame: CGRect(x: 220, y: 140, width: 90, height: 23))
+        let g = doubleClick(at: CGPoint(x: 280, y: 150))
+        probe.hitTargets = [(g.mouseUp, 2)]
+        let result = precisionResolve(probe, g)
+        #expect(result.candidate?.tier != .pointerFormula)
+        #expect(result.formulaSearch.contains("match=none"))
+    }
+
+    @Test func formulaRowSearchPrefersTheRowUnderThePointer() {
+        let probe = FakeSelectionProbe()
+        addFormulaParagraph(to: probe)
+        probe.nodes[3]?.frame = CGRect(x: 400, y: 120, width: 1, height: 1)
+        probe.nodes[4]?.frame = CGRect(x: 100, y: 140, width: 1, height: 1)
+        let g = doubleClick(at: CGPoint(x: 450, y: 145))
+        probe.hitTargets = [(g.mouseUp, 2)]
+        #expect(precisionResolve(probe, g).candidate?.text == "second phrase")
+    }
+
+    @Test func formulaSearchStopsAtItsNodeLimitAndNeverLeavesTheWebArea() {
+        let probe = FakeSelectionProbe()
+        addFormulaParagraph(to: probe)
+        for id in 100..<400 { probe.nodes[id] = .init(role: "AXGroup", parent: 1) }
+        let g = doubleClick(at: CGPoint(x: 150, y: 300))
+        probe.hitTargets = [(g.mouseUp, 2)]
+        let result = precisionResolve(probe, g)
+        #expect(result.formulaLookup == "no-formula:AXGroup")
+        #expect(result.formulaSearch.contains("climbed=0"))
+    }
+
+    @Test func formulaLogCarriesCountsAndRolesOnly() {
+        let probe = FakeSelectionProbe()
+        addFormulaParagraph(to: probe)
+        let g = doubleClick(at: CGPoint(x: 150, y: 150))
+        probe.hitTargets = [(g.mouseUp, 2)]
+        let result = precisionResolve(probe, g)
+        #expect(result.formulaLog.hasPrefix("found:AXGroup[match=inside visited=2 math=2 framed=2"))
+        #expect(!result.formulaLog.contains("phrase"))
+        #expect(!result.formulaLog.contains("150"))
+    }
+
     @Test func unreadableFormulaEmitsNothingFromThatFormula() {
         let probe = FakeSelectionProbe()
         addFormulaParagraph(to: probe)
