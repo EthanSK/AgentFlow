@@ -86,7 +86,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @MainActor private var terminationActivityChanges: AnyPublisher<Void, Never> {
-        var changes = [HistoryAudioRetryState.shared.$activeIDs.map { _ in () }.eraseToAnyPublisher()]
+        var changes = [HistoryAudioRetryState.shared.$activeIDs.map { _ in () }.eraseToAnyPublisher(),
+                       PairedVoiceMuteActivity.shared.changes]
         if let voiceInkEngine { changes.append(voiceInkEngine.terminationActivityChanges) }
         if let newChatRecordingService {
             changes.append(newChatRecordingService.$isCreatingChat.map { _ in () }.eraseToAnyPublisher())
@@ -106,6 +107,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // highlight made just before or during recorder start-up is not missed.
         // It records only pointer edges; text is read only during a recording.
         SelectionGestureWatcher.shared.start()
+        // Paired Macs reach this Mac's ChatGPT Voice suppression only through its own capture
+        // coordinator. Binding is unconditional and cheap; every acquire is refused unless
+        // this Mac opted in, and no request can do more than the existing mute ownership.
+        PairedVoiceMuteReceiver.shared.startForApplication()
         // Read-only update readiness is separate from speech-admission grants:
         // checking for an update must never consume permission to speak or stop audio.
         let center = DistributedNotificationCenter.default()
@@ -150,9 +155,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     static func shouldBlockTermination(
         hasInFlightSessions: Bool,
         hasHistoryRetries: Bool = false,
-        hasPendingRecordingStart: Bool = false
+        hasPendingRecordingStart: Bool = false,
+        hasPairedVoiceWork: Bool = false
     ) -> Bool {
-        hasInFlightSessions || hasHistoryRetries || hasPendingRecordingStart
+        hasInFlightSessions || hasHistoryRetries || hasPendingRecordingStart || hasPairedVoiceWork
     }
 
     @MainActor
@@ -174,12 +180,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return Self.shouldBlockTermination(
             hasInFlightSessions: hasInFlightSessions,
             hasHistoryRetries: !HistoryAudioRetryState.shared.activeIDs.isEmpty,
-            hasPendingRecordingStart: hasPendingRecordingStart
+            hasPendingRecordingStart: hasPendingRecordingStart,
+            hasPairedVoiceWork: PairedVoiceMuteActivity.shared.hasWork
         )
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard terminationIsBlocked else {
+        // Close background admission atomically with the final paired-idle check. Otherwise a
+        // receiver could post a mute between this main-thread check and actual process exit.
+        guard terminationIsBlocked || !PairedVoiceMuteActivity.shared.closeIfIdle() else {
             deferredTermination.cancel()
             return .terminateNow
         }

@@ -7100,6 +7100,7 @@ struct VoiceInkTests {
     @Test func cooperativeQuitIsBlockedWhileAnySessionIsInFlight() {
         #expect(AppDelegate.shouldBlockTermination(hasInFlightSessions: true))
         #expect(!AppDelegate.shouldBlockTermination(hasInFlightSessions: false))
+        #expect(AppDelegate.shouldBlockTermination(hasInFlightSessions: false, hasPairedVoiceWork: true))
     }
 
     @MainActor

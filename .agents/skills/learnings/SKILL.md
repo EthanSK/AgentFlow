@@ -751,6 +751,15 @@ actions, polling, notification consumers, global input mute or private app patch
 User correction — 2026-10-09; evidence: LEARNINGS.md, “State-unreadable mute refusal was not usable
 in the live Voice workflow”, and the refusal-only withdrawal in FAILED_APPROACHES.md.
 
+For explicitly configured paired-Mac Voice mute, read [PAIRED_VOICE_MUTE.md](../../../PAIRED_VOICE_MUTE.md)
+before changing the transport, receiver, ownership or setup. Ethan requested generic configured-device
+support, not an M1-only command. Preserve the source's accepted local shortcut and each recipient's
+validated existing binding, hardware-only capture hooks, nonblocking fan-out and last-owner restoration.
+Keep paired ownership and pending release work inside the cooperative-quit guard; close request
+admission atomically before final idle exit. Renewals must not scan ChatGPT or re-acquire an unknown
+lease. Unit/socket readiness does not prove a real Voice call muted. User-requested — 2026-11-08;
+ownership/quit safeguard verified by the 74-test focused Mini pass in LEARNINGS.md.
+
 Do not play Codex speech while Agent Flow records voice. Microphone-off typing may play speech; starting or resuming the microphone revokes the admitted child before hardware capture. Still send the notification and skip blocked speech without waiting or replaying it later. Keep microphone capture, manual Pause and every authored word unchanged. Stop creating live “Potential ignore” tags; retain older archives and their reader. Read `references/codex-spoken-reminder-capture.md` before changing the version-3 idle admission. User-requested — 2026-10-09; supersedes live overlap annotation. Typing-only exception requested — 2026-10-10.
 
 Keep real-time provider partials inside the black recorder HUD. The streaming callback may update only

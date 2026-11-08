@@ -2561,3 +2561,10 @@ bounded lazy History layout fix, not retrospective attribution of the older samp
 Reconsider an exact root-frame claim only with per-sample timestamps correlated to
 that finish/session and interval. Fixture speed and successful release tests also do
 not establish real-user end-to-end latency after installation.
+
+
+## 2026-11-08 — Quit protection based only on local sessions for a paired mute receiver — REJECTED
+
+The first uninstalled paired-mute pass registered no work with the app's quit guard. A recipient could mute Voice for another Mac while having zero local sessions, then accept normal Quit/update and forget restoration ownership. The replacement process would reject renewals as unknown, leaving the posted mute in place after the source stopped. This was established by source review, not a destructive live restart.
+
+Register admitted paired requests, active recipient ownership and pending outbound requests with the event-driven quit boundary. Keep release work registered until restoration has completed, not merely until the logical owner is removed. Atomically close request admission before returning final idle Quit. The focused Mini cases prove held restoration still vetoes Quit, idle exit rejects a new acquire, duplicate completion cannot clear another owner, and expiry releases protection. Reconsider an ownership-losing cooperative restart only with a separately proven same-call handover; a persisted PID or successful shortcut dispatch is not call identity.

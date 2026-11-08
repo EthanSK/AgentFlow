@@ -6256,3 +6256,14 @@ Evidence: Documents/Codex/2026-11-03/agentflow-send482/{review482.json,mini-focu
 ## 2026-11-05 — Reuse checksum-verified release signing tools
 
 Release workflows invoke the signing host's versioned Sparkle copy at `~/.local/share/sparkle-tools/2.10.1/bin`, after comparing it with the freshly downloaded, checksum-verified SDK. Provision this directory during signing-host setup; a missing or mismatched copy blocks signing instead of invoking an unverified or disposable helper. Keep per-app Keychain accounts and public-key checks. Reusing identical tool bytes does not promise approval survives a tool upgrade or a changed key.
+
+
+## 2026-11-08 — Paired Voice mute ownership and cooperative exit
+
+Ethan requested the existing microphone-mute behavior on explicitly configured Agent Bridge Macs, including his M1, rather than a hardcoded device command. The new receiver lives inside Agent Flow and accepts a bounded ownership protocol over an owner-only Unix socket reached through the existing SSH pairing. Only Recorder hardware capture fans out; incoming requests never fan out again. Recipients validate their own configured `realtimeVoice.toggleMicrophoneMute` chord; the source's accepted local F20 policy is unchanged. A per-launch source identity, increasing sequence, session identity and expiring ownership prevent duplicates, late releases and overlap from issuing extra toggles. Renewal performs no ChatGPT state reads.
+
+A paired recipient may have no local recording session while it still owns a mute. Its capture ownership and pending restoration must therefore block cooperative Quit/update, and outgoing SSH releases must remain registered through completion. A synchronized activity gate makes background request admission and final idle Quit mutually exclusive; event notifications wake the existing deferred quit rather than adding an idle poll. Crashes still lose ownership and are not safe grounds to toggle a later call.
+
+Validation: build 491 compiled and all 74 expected focused cases passed in 11 suites through the Mini's canonical Xcode action, including existing local mute tests, the Next/Primary route and HUD-only guards, socket opt-in/exclusivity, ordering/expiry, recipient bindings and quit/admission/restoration cases. No installed app, keybinding, microphone, provider or Mode changed during this pass. This is not evidence of completed public signing, installation, remote Voice audibility, background letter-shortcut acceptance or end-to-end remote latency. The existing unreadable-state paired-toggle/manual-mute risk is retained explicitly.
+
+Evidence: `Documents/Codex/2026-11-08/agentflow-cross-device-voice-mute/{focused-status.json,focused-xcode-focused.log,focused-selection.json,opus-reviewed-snapshot.json}`; configuration and limitations: `PAIRED_VOICE_MUTE.md`.

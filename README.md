@@ -115,6 +115,10 @@ The optional [Agent Flow Bridge](companions/youtube-bridge/README.md) pauses a p
 
 For the separate, advanced Codex speech integration, the optional [OBS spoken-reply companion](companions/obs-replies/README.md) reads the next15 seconds from an existing OBS microphone recording after a spoken reminder ends. It needs explicit setup, a current-model adapter and verified recording tracks; it is not enabled by the app download or `--all`. Question replies stay with the waiting agent, while completed-message replies use Agent Bridge's existing guarded chat delivery.
 
+## Voice mute across paired Macs (optional)
+
+[Paired Voice mute](PAIRED_VOICE_MUTE.md) lets a microphone recording on one Mac also mute ChatGPT Voice on explicitly configured Macs through an existing Agent Bridge pairing. Both Macs need Agent Flow build 491 or later; each recipient uses its own validated microphone shortcut and Accessibility grant. Typing-only sessions leave Voice alone. This is separate from the Chrome video bridge and the OBS companion, and adds no login helper. Read the setup and limitations before enabling it: remote mute follows the network round trip, and an unreadable, already-muted Voice control retains the existing toggle risk.
+
 ## Build from source
 
 Building instead of using the [public download](#download) requires **macOS 14.4 or later**, Xcode and Git. There is no Agent Flow Homebrew cask.

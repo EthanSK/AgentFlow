@@ -22,9 +22,36 @@ struct ChatGPTVoiceCaptureMuteLease: Equatable, Sendable {
     fileprivate let id: UInt64
 }
 
+/// What one suppression attempt observed. Local capture ignores it; a paired Mac's request
+/// reports it back so the source can log what actually happened instead of claiming success.
+enum ChatGPTVoiceSuppressionOutcome: String, Sendable {
+    case alreadyOwned
+    case noChatGPT
+    case noActiveVoice
+    case alreadyMuted
+    case shortcutFailed
+    case mutedVerified
+    case mutedUnverified
+}
+
+enum ChatGPTVoiceRestorationOutcome: String, Sendable {
+    case notOwned
+    /// Another capture owner (local or paired) still needs suppression.
+    case heldByOtherCapture
+    case processChanged
+    case voiceEnded
+    case userUnmuted
+    case shortcutFailed
+    case restoredVerified
+    case restoredUnverified
+}
+
 protocol ChatGPTVoiceMuteTransport: Sendable {
     func snapshot() async -> ChatGPTVoiceInputSnapshot?
-    func postMicrophoneToggle(to applicationPID: pid_t) async -> Bool
+    func postMicrophoneToggle(
+        to applicationPID: pid_t,
+        using authority: ChatGPTVoiceShortcutAuthority
+    ) async -> Bool
     func waitForMicrophoneState(
         _ microphoneState: ChatGPTVoiceMicrophoneState,
         applicationPID: pid_t
@@ -49,12 +76,32 @@ protocol ChatGPTVoiceMuteTransport: Sendable {
 /// Accessibility is never used to activate ChatGPT, set focus, press the control, or move the
 /// pointer; the only mutation remains the user-configured keyboard command. VoiceInk++ deliberately
 /// does not poll that tree while recording—the rejected polling experiment caused lag.
+///
+/// Paired Macs: a capture on another explicitly configured Mac is one more *owner* of the same
+/// suppression, never a second mechanism. Suppression is attempted when any owner begins (and
+/// is a no-op while already owned), and restoration runs only when the last owner ends, so a
+/// paired release can never unmute ChatGPT under this Mac's own live capture and vice versa.
+/// Paired ordering, duplicates and expiry are decided by `PairedVoiceMuteLedger` before any
+/// transition is queued. This Mac's own capture boundaries are forwarded to its configured
+/// recipients through `pairedFanOut`; requests received from other Macs are never forwarded,
+/// so two Macs configured for each other cannot loop.
+///
+/// Local capture still requires the exact accepted `F20` binding, while a paired owner on an
+/// opted-in Mac uses that Mac's own validated binding for the same command. Ownership remembers
+/// which one posted the mute, so the inverse pairs it whichever owner happens to finish last.
 actor ChatGPTVoiceCaptureMuteCoordinator {
     static let shared = ChatGPTVoiceCaptureMuteCoordinator(
-        transport: SystemChatGPTVoiceMuteTransport()
+        transport: SystemChatGPTVoiceMuteTransport(),
+        pairedFanOut: PairedVoiceMuteBroadcaster.shared,
+        localPairedSourceID: PairedVoiceMuteBroadcaster.shared.sourceID,
+        pairedActivity: .shared
     )
 
     private let transport: any ChatGPTVoiceMuteTransport
+    private let pairedFanOut: (any PairedVoiceMuteFanOut)?
+    private let localPairedSourceID: String?
+    private let pairedLeaseTimer: any PairedVoiceMuteLeaseTimer
+    private let pairedActivity: PairedVoiceMuteActivity?
     private let logger = Logger(
         subsystem: "com.ethansk.VoiceInkPlusPlus",
         category: "ChatGPTVoiceCaptureMute"
@@ -63,11 +110,27 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
     private var nextLeaseID: UInt64 = 0
     private var requestedLease: ChatGPTVoiceCaptureMuteLease?
     private var appliedLease: ChatGPTVoiceCaptureMuteLease?
+    /// Paired-Mac owners admitted by the ledger, applied in the same transition order.
+    private var appliedPairedOwners: Set<PairedVoiceMuteOwner> = []
+    private var pairedLedger = PairedVoiceMuteLedger()
+    private var pairedExpiries: [String: PairedVoiceMuteScheduledTimer] = [:]
     private var ownedMutedApplicationPID: pid_t?
+    /// Meaningful only while `ownedMutedApplicationPID` is set: the binding that posted the mute.
+    private var ownedShortcutAuthority: ChatGPTVoiceShortcutAuthority = .acceptedLocalBinding
     private var transitionTail: Task<Void, Never> = Task {}
 
-    init(transport: any ChatGPTVoiceMuteTransport) {
+    init(
+        transport: any ChatGPTVoiceMuteTransport,
+        pairedFanOut: (any PairedVoiceMuteFanOut)? = nil,
+        localPairedSourceID: String? = nil,
+        pairedLeaseTimer: any PairedVoiceMuteLeaseTimer = TaskPairedVoiceMuteLeaseTimer(),
+        pairedActivity: PairedVoiceMuteActivity? = nil
+    ) {
         self.transport = transport
+        self.pairedFanOut = pairedFanOut
+        self.localPairedSourceID = localPairedSourceID?.lowercased()
+        self.pairedLeaseTimer = pairedLeaseTimer
+        self.pairedActivity = pairedActivity
     }
 
     /// Finish listener suppression before VoiceInk++ opens the shared Core Audio input.
@@ -81,6 +144,11 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
         nextLeaseID &+= 1
         let lease = ChatGPTVoiceCaptureMuteLease(id: nextLeaseID)
         requestedLease = lease
+        // Paired Macs get their request in parallel with this Mac's own preflight. The call
+        // only records ordered intent and spawns bounded background SSH work; it never waits on
+        // the network, so an asleep or unreachable recipient cannot delay the start sound or
+        // AUHAL. Typing-only sessions never reach this method, so they mute nothing anywhere.
+        pairedFanOut?.captureBegan(localLeaseID: lease.id)
 
         let previous = transitionTail
         let transition = Task { [weak self] in
@@ -102,12 +170,69 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
             return
         }
         requestedLease = nil
+        // Only the exact current lease reaches paired Macs. A stale release from an older
+        // capture generation must not end the newer capture's remote suppression either.
+        pairedFanOut?.captureEnded(localLeaseID: lease.id)
 
         let previous = transitionTail
         transitionTail = Task { [weak self] in
             await previous.value
             guard !Task.isCancelled else { return }
             await self?.endCapture(lease)
+        }
+    }
+
+    /// Applies one request from a paired Mac's capture and reports what this Mac observed.
+    ///
+    /// The ledger decision and the queued transition are created in one actor turn, so the
+    /// transition order always equals the ledger's sequence order even when several SSH
+    /// deliveries race. Only `acquire` can post the mute shortcut; `renew` touches neither
+    /// ChatGPT nor Accessibility, preserving the no-polling rule during long recordings.
+    func handlePairedRequest(_ request: PairedVoiceMuteRequest) async -> PairedVoiceMuteResponse {
+        if let localPairedSourceID, request.source == localPairedSourceID {
+            // An Agent Bridge alias that resolves back to this Mac. This Mac's own capture
+            // already owns suppression locally; a second owner would only delay restoration.
+            return PairedVoiceMuteResponse(status: .rejected, detail: "loopback")
+        }
+        let operation = pairedActivity?.beginOperation()
+        guard pairedActivity == nil || operation != nil else {
+            return PairedVoiceMuteResponse(status: .rejected, detail: "shuttingDown")
+        }
+        defer {
+            if let operation {
+                pairedActivity?.finishOperation(operation,
+                    remoteCaptureActive: !pairedLedger.activeOwners.isEmpty)
+            }
+        }
+        let decision = pairedLedger.apply(request, now: ProcessInfo.processInfo.systemUptime)
+        switch decision {
+        case .stale:
+            logger.debug("Ignored a paired Voice mute request that was not newer than its source's last request")
+            return PairedVoiceMuteResponse(status: .stale)
+        case .unknownSession:
+            return PairedVoiceMuteResponse(status: .unknownSession)
+        case .capacityExceeded:
+            logger.error("Rejected a paired Voice mute request because too many paired sources are tracked")
+            return PairedVoiceMuteResponse(status: .rejected, detail: "capacity")
+        case .renewed(let owner, let lease):
+            schedulePairedExpiry(owner: owner, lease: lease)
+            return PairedVoiceMuteResponse(status: .renewed)
+        case .acquired(let owner, let replaced, let lease):
+            schedulePairedExpiry(owner: owner, lease: lease)
+            let transition = enqueuePairedTransition { coordinator in
+                await coordinator.beginPairedCapture(owner, replacing: replaced)
+            }
+            let outcome = await transition.value
+            logger.notice("Paired capture acquired seq=\(request.sequence, privacy: .public) session=\(String(request.session.prefix(8)), privacy: .public) outcome=\(outcome?.rawValue ?? "unavailable", privacy: .public)")
+            return PairedVoiceMuteResponse(status: .acquired, detail: outcome?.rawValue)
+        case .released(let owner):
+            cancelPairedExpiry(source: owner.source)
+            let transition = enqueuePairedTransition { coordinator in
+                await coordinator.endPairedCapture(owner)
+            }
+            let outcome = await transition.value
+            logger.notice("Paired capture released seq=\(request.sequence, privacy: .public) session=\(String(request.session.prefix(8)), privacy: .public) outcome=\(outcome?.rawValue ?? "unavailable", privacy: .public)")
+            return PairedVoiceMuteResponse(status: .released, detail: outcome?.rawValue)
         }
     }
 
@@ -120,40 +245,129 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
         (appliedLease != nil, ownedMutedApplicationPID)
     }
 
+    func pairedOwnerCountForTesting() -> Int {
+        appliedPairedOwners.count
+    }
+
+    private func enqueuePairedTransition<Result: Sendable>(
+        _ body: @escaping @Sendable (ChatGPTVoiceCaptureMuteCoordinator) async -> Result
+    ) -> Task<Result?, Never> {
+        let previous = transitionTail
+        let transition = Task { [weak self] () -> Result? in
+            await previous.value
+            guard let self else { return nil }
+            return await body(self)
+        }
+        transitionTail = Task { _ = await transition.value }
+        return transition
+    }
+
+    private func schedulePairedExpiry(
+        owner: PairedVoiceMuteOwner,
+        lease: PairedVoiceMuteLedger.Lease
+    ) {
+        pairedExpiries.removeValue(forKey: owner.source)?.cancel()
+        let source = owner.source
+        let generation = lease.generation
+        pairedExpiries[source] = pairedLeaseTimer.schedule(
+            after: TimeInterval(lease.seconds)
+        ) { [weak self] in
+            await self?.expirePairedLease(source: source, generation: generation)
+        }
+    }
+
+    private func cancelPairedExpiry(source: String) {
+        pairedExpiries.removeValue(forKey: source)?.cancel()
+    }
+
+    /// A source that slept, lost its network or crashed stops renewing. Ending its ownership
+    /// here uses the ordinary restoration path, including every same-PID, active-session and
+    /// readable-user-state check, so expiry is never a blind toggle.
+    private func expirePairedLease(source: String, generation: UInt64) async {
+        let operation = pairedActivity?.beginOperation()
+        guard pairedActivity == nil || operation != nil else { return }
+        defer {
+            if let operation {
+                pairedActivity?.finishOperation(operation,
+                    remoteCaptureActive: !pairedLedger.activeOwners.isEmpty)
+            }
+        }
+        guard let owner = pairedLedger.expire(source: source, generation: generation) else {
+            return
+        }
+        pairedExpiries.removeValue(forKey: source)
+        logger.notice("A paired Mac's capture lease expired without a release; ending its suppression ownership")
+        let transition = enqueuePairedTransition { coordinator in
+            await coordinator.endPairedCapture(owner)
+        }
+        _ = await transition.value
+    }
+
     private func beginCapture(_ lease: ChatGPTVoiceCaptureMuteLease) async {
         appliedLease = lease
-        await suppressChatGPTVoiceIfNeeded()
+        _ = await suppressChatGPTVoiceIfNeeded(using: .acceptedLocalBinding)
     }
 
     private func endCapture(_ lease: ChatGPTVoiceCaptureMuteLease) async {
         guard appliedLease == lease else { return }
         appliedLease = nil
-        await restoreChatGPTVoiceIfOwned()
+        guard appliedPairedOwners.isEmpty else {
+            // A paired Mac is still capturing speech that ChatGPT here must not hear.
+            logger.notice("Local capture ended while a paired Mac still needs ChatGPT Voice suppression; restoration deferred to the last owner")
+            return
+        }
+        _ = await restoreChatGPTVoiceIfOwned()
     }
 
-    private func suppressChatGPTVoiceIfNeeded() async {
-        guard ownedMutedApplicationPID == nil else { return }
+    private func beginPairedCapture(
+        _ owner: PairedVoiceMuteOwner,
+        replacing replaced: PairedVoiceMuteOwner?
+    ) async -> ChatGPTVoiceSuppressionOutcome {
+        // A newer capture from the same source replaces its older session in one step, so the
+        // owner set never passes through empty and no restore/re-mute pair is issued.
+        if let replaced {
+            appliedPairedOwners.remove(replaced)
+        }
+        appliedPairedOwners.insert(owner)
+        return await suppressChatGPTVoiceIfNeeded(using: .deviceConfiguredBinding)
+    }
+
+    private func endPairedCapture(
+        _ owner: PairedVoiceMuteOwner
+    ) async -> ChatGPTVoiceRestorationOutcome {
+        guard appliedPairedOwners.remove(owner) != nil else { return .notOwned }
+        guard appliedLease == nil, appliedPairedOwners.isEmpty else {
+            logger.notice("A paired Mac's capture ended while another capture still needs ChatGPT Voice suppression")
+            return .heldByOtherCapture
+        }
+        return await restoreChatGPTVoiceIfOwned()
+    }
+
+    private func suppressChatGPTVoiceIfNeeded(
+        using authority: ChatGPTVoiceShortcutAuthority
+    ) async -> ChatGPTVoiceSuppressionOutcome {
+        guard ownedMutedApplicationPID == nil else { return .alreadyOwned }
         guard let before = await transport.snapshot() else {
             logger.debug("Capture began without one resolvable ChatGPT application; listener suppression is a no-op")
-            return
+            return .noChatGPT
         }
         guard before.isInputRunning else {
             // An absent Voice session must remain untouched: a blind toggle could affect a later
             // session or another app state that VoiceInk++ does not own.
             logger.debug("Capture began while ChatGPT had no active input stream; microphone toggle was not posted pid=\(before.applicationPID, privacy: .public)")
-            return
+            return .noActiveVoice
         }
         guard before.microphoneState != .muted else {
             // A readable muted control belongs to the user; never invert it at recording start.
             logger.debug("Capture began while ChatGPT Voice was already muted; microphone toggle was not posted pid=\(before.applicationPID, privacy: .public)")
-            return
+            return .alreadyMuted
         }
         if before.microphoneState == nil {
             logger.notice("ChatGPT Voice control was unreadable; using one paired shortcut lease for the active session pid=\(before.applicationPID, privacy: .public)")
         }
-        guard await transport.postMicrophoneToggle(to: before.applicationPID) else {
+        guard await transport.postMicrophoneToggle(to: before.applicationPID, using: authority) else {
             logger.error("Could not post the configured ChatGPT Voice microphone shortcut pid=\(before.applicationPID, privacy: .public)")
-            return
+            return .shortcutFailed
         }
         let verifiedMuted: Bool
         if before.microphoneState == .listening {
@@ -171,31 +385,34 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
         // issuing the inverse. This preserves the proven background mute without polling or pointer
         // input while still avoiding a later toggle after the Voice session ends or the user unmutes.
         ownedMutedApplicationPID = before.applicationPID
+        ownedShortcutAuthority = authority
         if verifiedMuted {
             logger.notice("VoiceInk++ verified and owns ChatGPT Voice microphone suppression pid=\(before.applicationPID, privacy: .public)")
+            return .mutedVerified
         } else {
             logger.notice("VoiceInk++ owns one paired ChatGPT Voice microphone shortcut lease without readable post-state pid=\(before.applicationPID, privacy: .public)")
+            return .mutedUnverified
         }
     }
 
-    private func restoreChatGPTVoiceIfOwned() async {
-        guard let ownedPID = ownedMutedApplicationPID else { return }
+    private func restoreChatGPTVoiceIfOwned() async -> ChatGPTVoiceRestorationOutcome {
+        guard let ownedPID = ownedMutedApplicationPID else { return .notOwned }
         guard let current = await transport.snapshot(),
               current.applicationPID == ownedPID else {
             ownedMutedApplicationPID = nil
             logger.notice("ChatGPT process changed or exited; stale microphone-suppression ownership was discarded pid=\(ownedPID, privacy: .public)")
-            return
+            return .processChanged
         }
         guard current.isInputRunning else {
             ownedMutedApplicationPID = nil
             logger.notice("ChatGPT Voice session ended; microphone-suppression ownership was discarded without an inverse toggle pid=\(ownedPID, privacy: .public)")
-            return
+            return .voiceEnded
         }
         switch current.microphoneState {
         case .listening:
             ownedMutedApplicationPID = nil
             logger.notice("ChatGPT Voice microphone was visibly unmuted; restoration ownership was relinquished pid=\(ownedPID, privacy: .public)")
-            return
+            return .userUnmuted
         case .muted:
             break
         case nil:
@@ -203,11 +420,13 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
             // single shortcut posted at capture start exactly once; never retry an unobserved result.
             logger.notice("ChatGPT Voice control remained unreadable; pairing the owned microphone shortcut pid=\(ownedPID, privacy: .public)")
         }
-        guard await transport.postMicrophoneToggle(to: ownedPID) else {
+        // Not the authority of whichever owner finished last: on a Mac without the local binding,
+        // a local capture that joined a paired mute must still be able to undo that mute.
+        guard await transport.postMicrophoneToggle(to: ownedPID, using: ownedShortcutAuthority) else {
             // Keep the lease rather than lying that we restored it. A later real capture cycle can
             // still observe a user unmute and relinquish this stale ownership safely.
             logger.error("Could not post owned ChatGPT Voice microphone restoration pid=\(ownedPID, privacy: .public)")
-            return
+            return .shortcutFailed
         }
 
         let restored: Bool
@@ -222,10 +441,12 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
         ownedMutedApplicationPID = nil
         if restored {
             logger.notice("VoiceInk++ verified ChatGPT Voice microphone restoration pid=\(ownedPID, privacy: .public)")
+            return .restoredVerified
         } else {
             // The Voice session may have ended while muted. One targeted toggle was already sent;
             // never retry an unverified toggle because a late first action could invert the state.
             logger.notice("Owned ChatGPT Voice restoration was not observable; ownership ended without retry pid=\(ownedPID, privacy: .public)")
+            return .restoredUnverified
         }
     }
 
@@ -247,9 +468,14 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, @uncheck
         }.value
     }
 
-    func postMicrophoneToggle(to applicationPID: pid_t) async -> Bool {
+    func postMicrophoneToggle(
+        to applicationPID: pid_t,
+        using authority: ChatGPTVoiceShortcutAuthority
+    ) async -> Bool {
         await Task.detached(priority: .userInitiated) { [logger] in
-            guard Self.hasExpectedShortcutBinding() else {
+            // Resolved for every post, so a binding edited since the mute is never answered
+            // with a chord ChatGPT no longer maps to this command.
+            guard let shortcut = Self.shortcut(for: authority) else {
                 logger.error("ChatGPT Voice microphone shortcut is missing or changed; refusing targeted input")
                 return false
             }
@@ -261,21 +487,20 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, @uncheck
                   let source = CGEventSource(stateID: .privateState),
                   let keyDown = CGEvent(
                       keyboardEventSource: source,
-                      virtualKey: CGKeyCode(kVK_F20),
+                      virtualKey: shortcut.virtualKey,
                       keyDown: true
                   ),
                   let keyUp = CGEvent(
                       keyboardEventSource: source,
-                      virtualKey: CGKeyCode(kVK_F20),
+                      virtualKey: shortcut.virtualKey,
                       keyDown: false
                   ) else {
                 logger.error("Could not create the targeted ChatGPT Voice shortcut sequence")
                 return false
             }
 
-            let flags: CGEventFlags = [.maskCommand, .maskControl, .maskAlternate, .maskShift]
-            keyDown.flags = flags
-            keyUp.flags = flags
+            keyDown.flags = shortcut.flags
+            keyUp.flags = shortcut.flags
             keyDown.timestamp = mach_absolute_time()
             keyDown.postToPid(applicationPID)
             keyUp.timestamp = mach_absolute_time()
@@ -490,6 +715,58 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, @uncheck
         return bindings.contains {
             $0.command == shortcutCommand && $0.key == shortcutAccelerator
         }
+    }
+
+    /// The chord this Mac's own configuration binds to the real microphone command, for paired
+    /// requests and the readiness probe. It reads configuration and builds an unposted event;
+    /// it never writes `keybindings.json`, because that file is the user's choice to keep.
+    static func deviceShortcutResolution(
+        at url: URL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/keybindings.json")
+    ) -> ChatGPTVoiceShortcutResolution {
+        let resolution = ChatGPTVoiceShortcut.resolve(
+            keybindings: try? Data(contentsOf: url),
+            command: shortcutCommand
+        )
+        guard case .resolved(let shortcut) = resolution,
+              !shortcut.matchesLayout(producedCharacters: producedCharacters(for: shortcut)) else {
+            return resolution
+        }
+        return .unsupported
+    }
+
+    private static func shortcut(
+        for authority: ChatGPTVoiceShortcutAuthority
+    ) -> ChatGPTVoiceShortcut? {
+        switch authority {
+        case .acceptedLocalBinding:
+            return hasExpectedShortcutBinding() ? .acceptedLocal : nil
+        case .deviceConfiguredBinding:
+            guard case .resolved(let shortcut) = deviceShortcutResolution() else { return nil }
+            return shortcut
+        }
+    }
+
+    /// What the current layout types on this chord's key. Reading a never-posted event avoids
+    /// the Text Input Source APIs, which are not safe away from the main thread.
+    private static func producedCharacters(for shortcut: ChatGPTVoiceShortcut) -> String? {
+        guard shortcut.layoutCharacter != nil,
+              let source = CGEventSource(stateID: .privateState),
+              let probe = CGEvent(
+                  keyboardEventSource: source,
+                  virtualKey: shortcut.virtualKey,
+                  keyDown: true
+              ) else {
+            return nil
+        }
+        var length = 0
+        var units = [UniChar](repeating: 0, count: 4)
+        probe.keyboardGetUnicodeString(
+            maxStringLength: units.count,
+            actualStringLength: &length,
+            unicodeString: &units
+        )
+        return length > 0 ? String(utf16CodeUnits: units, count: length) : nil
     }
 
     private static func isExpectedChatGPTApplicationPID(_ pid: pid_t) -> Bool {

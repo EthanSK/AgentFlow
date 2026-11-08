@@ -16,7 +16,10 @@ private actor FakeChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport {
         currentSnapshot
     }
 
-    func postMicrophoneToggle(to applicationPID: pid_t) async -> Bool {
+    func postMicrophoneToggle(
+        to applicationPID: pid_t,
+        using authority: ChatGPTVoiceShortcutAuthority
+    ) async -> Bool {
         postPIDs.append(applicationPID)
         guard allowsPost else { return false }
         if changesStateOnPost,
