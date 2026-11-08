@@ -29,6 +29,15 @@ policy tests do not prove live Codex acceptance or authoritative acknowledgement
 of a handled Return. No installed 492 result is claimed here until the signed
 artifact/PID receipt exists.
 
+The first canonical full run executed all 878 tests and failed one dedicated
+`ImmediateKeyboardSequenceTests` case (two assertions), which still required the
+old single sleep and literal400ms declaration. It was not in the20-test selection.
+Its replacement checks the approved early wait, mutually exclusive remainder
+branches and one shared absolute fallback deadline; balanced key event checks
+remain unchanged. Include that suite alongside the main route guards for future
+Return timing changes. The release rerun must pass before signing or installation.
+
+
 ## 2026-11-08 — Optional OBS replies use actual playback completion
 
 The source-only `companions/obs-replies/` extension composes with the existing speech queue and recovery/question skills. Enable it only for an explicit after-reminder listening request. It creates one finite worker per eligible actual announcement, not a resident poller or another recording-notification consumer. It never starts/stops OBS or changes Agent Flow's microphone, Mode, native app or delivery routes. See its `AGENT_SETUP.md` for the reproducible integration, private settings, exact-origin routing and disable procedure.

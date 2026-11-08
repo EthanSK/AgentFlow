@@ -79,6 +79,14 @@ User-requested cleanup and recurrence prevention — 2026-10-06; see `LEARNINGS.
 
 1. Resolve the repository root and read its `AGENTS.md`.
 2. Read the newest relevant entries in `LEARNINGS.md` and the matching rejected/superseded sections in `FAILED_APPROACHES.md`. For either mouse button, recording destinations, focus restoration, recorder UI, paste, or auto-send, read `TERMINOLOGY.md` and `RECORDING_DESTINATIONS.md` completely. For background insertion, auto-send, or verification, also read `BACKGROUND_DELIVERY_TEST_MATRIX.md`.
+
+   For paste/Return timing changes, include the dedicated `ImmediateKeyboardSequenceTests`
+   alongside the Primary/Next guards in `VoiceInkTests`; its native-event and allowance
+   checks are not part of that other suite. Self-improved — 2026-11-08: the first
+   build 492 full gate caught its stale single-wait assertion after 20 other focused
+   guards passed; the corrected gate preserves balanced events and the absolute
+   fallback deadline rather than removing the timing guard.
+
 3. Search with one to three symptom or subsystem terms:
 
    ```sh

@@ -87,9 +87,15 @@ struct ImmediateKeyboardSequenceTests {
         let end = try #require(delivery.range(of: "private func deliverToBackgroundExactInput(", range: start.upperBound..<delivery.endIndex))
         let primary = delivery[start.lowerBound..<end.lowerBound]
         #expect(!primary.contains("NSWorkspace"))
-        #expect(primary.components(separatedBy: "Task.sleep").count == 2)
+        // Ethan's approved 50 ms/400 ms path has one early wait and two mutually
+        // exclusive remaining-deadline branches. Neither may append another full
+        // 400 ms wait after the early attempt; all key construction stays immediate.
+        #expect(primary.components(separatedBy: "Task.sleep").count == 4)
+        #expect(primary.contains("if autoSendKey == .enter, let primarySendPasteProof"))
+        #expect(primary.contains("Task.sleep(nanoseconds: PrimarySendAttemptPolicy.earlyNanoseconds)"))
+        #expect(primary.components(separatedBy: "fallbackDeadline - ProcessInfo.processInfo.systemUptime").count == 3)
         #expect(primary.contains("if autoSendKey.isEnabled"))
-        #expect(delivery.contains("primaryCurrentInputSettleNanoseconds: UInt64 = 400_000_000"))
+        #expect(delivery.contains("primaryCurrentInputSettleNanoseconds = PrimarySendAttemptPolicy.fallbackNanoseconds"))
         #expect(primary.contains("settleMs=\\(Self.primaryCurrentInputSettleNanoseconds / 1_000_000)"))
         #expect(primary.contains("resolveQueuedAutoSend(autoSendKey)"))
         // Only subsequent clipboard mutation/restoration has its existing deferred
