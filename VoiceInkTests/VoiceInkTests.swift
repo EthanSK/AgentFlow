@@ -7859,6 +7859,91 @@ struct VoiceInkTests {
         )
     }
 
+    @Test func primaryFastSendRequiresThisRecordsFreshArchiveInTheFullPaste() throws {
+        let record = UUID()
+        let marker = "prompt-\(record.uuidString.lowercased())-\(UUID().uuidString.lowercased())"
+        let proof = try #require(PrimarySendPasteProof(
+            archiveURL: URL(fileURLWithPath: "/tmp/\(marker).md"), recordID: record))
+        let paste = "[↗](/tmp/\(marker).html) hello"
+        #expect(PrimarySendAttemptPolicy.containsFreshPaste(
+            pastedText: paste, composerText: paste, proof: proof))
+        #expect(!PrimarySendAttemptPolicy.containsFreshPaste(
+            pastedText: paste, composerText: "hello", proof: proof))
+        #expect(!PrimarySendAttemptPolicy.containsFreshPaste(
+            pastedText: "hello", composerText: "hello", proof: proof))
+        #expect(!PrimarySendAttemptPolicy.containsFreshPaste(
+            pastedText: paste, composerText: "[↗](/tmp/\(marker).html)", proof: proof))
+        #expect(PrimarySendPasteProof(archiveURL: nil, recordID: record) == nil)
+        #expect(PrimarySendPasteProof(archiveURL: URL(fileURLWithPath: "/tmp/\(marker).md"),
+                                     recordID: UUID()) == nil)
+        #expect(PrimarySendPasteProof(archiveURL: URL(fileURLWithPath: "/tmp/prompt-old.md"),
+                                     recordID: record) == nil)
+    }
+
+    @Test func primaryFastSendRetriesOnlyAnUnchangedFocusedDraft() {
+        #expect(PrimarySendAttemptPolicy.earlyNanoseconds == 50_000_000)
+        #expect(PrimarySendAttemptPolicy.fallbackNanoseconds == 400_000_000)
+        #expect(PrimarySendAttemptPolicy.permitsRetry(
+            previousText: "draft", currentText: "draft", sameEditor: true,
+            inputCountsUnchanged: true))
+        let changedTexts: [String?] = [nil, "", "draft\n", "new draft", "draft "]
+        for text in changedTexts {
+            #expect(!PrimarySendAttemptPolicy.permitsRetry(
+                previousText: "draft", currentText: text, sameEditor: true,
+                inputCountsUnchanged: true))
+        }
+        #expect(!PrimarySendAttemptPolicy.permitsRetry(
+            previousText: "draft", currentText: "draft", sameEditor: false,
+            inputCountsUnchanged: true))
+        #expect(!PrimarySendAttemptPolicy.permitsRetry(
+            previousText: "draft", currentText: "draft", sameEditor: true,
+            inputCountsUnchanged: false))
+        #expect(!PrimarySendAttemptPolicy.permitsRetry(
+            previousText: "", currentText: "", sameEditor: true,
+            inputCountsUnchanged: true))
+    }
+
+    @Test func primaryFastSendRejectsInterveningTypingAndClicks() {
+        let before: [UInt32] = [20, 20, 10, 3, 2]
+        #expect(PrimarySendAttemptPolicy.inputCountsPermitRetry(
+            before: before, after: [21, 21, 10, 3, 2]))
+        let changedCounts: [[UInt32]] = [before, [21, 20, 10, 3, 2], [22, 22, 10, 3, 2],
+                                       [21, 21, 11, 3, 2], [21, 21, 10, 4, 2],
+                                       [21, 21, 10, 3, 3], []]
+        for after in changedCounts {
+            #expect(!PrimarySendAttemptPolicy.inputCountsPermitRetry(before: before, after: after))
+        }
+        #expect(PrimarySendAttemptPolicy.inputCountsPermitRetry(
+            before: [UInt32.max, UInt32.max, 10, 3, 2], after: [0, 0, 10, 3, 2]))
+    }
+
+    @Test func primaryFastSendReceiptCannotRetargetOrScanTheApp() throws {
+        let source = try repositorySource("VoiceInk/Transcription/Engine/TranscriptionDelivery.swift")
+        let start = try #require(source.range(of: "private struct PrimarySendReceipt:"))
+        let end = try #require(source.range(of: "enum PrimarySendAttemptPolicy"))
+        let receipt = source[start.lowerBound..<end.lowerBound]
+        #expect(receipt.contains("queue.async"))
+        #expect(receipt.contains("AXUIElementSetMessagingTimeout(app, 0.015)"))
+        #expect(receipt.contains("\"Work with Codex\""))
+        #expect(receipt.contains("kAXFocusedUIElementAttribute"))
+        #expect(receipt.contains("kAXValueAttribute"))
+        #expect(receipt.contains("PrimarySendAttemptPolicy.containsFreshPaste("))
+        for forbidden in ["AXUIElementSetAttributeValue", "AXUIElementPerformAction", "kAXChildrenAttribute",
+                          "captureFocusedInput", "prepareBackgroundDelivery", "activate(", "postToPid"] {
+            #expect(!receipt.contains(forbidden))
+        }
+        let primaryStart = try #require(source.range(of: "    private func deliverPrimaryToCurrentSystemInput("))
+        let primaryEnd = try #require(source.range(of: "    private func deliverToBackgroundExactInput("))
+        let body = source[primaryStart.lowerBound..<primaryEnd.lowerBound]
+        #expect(body.contains("await receipt.stillContainsUnsentPaste()"))
+        #expect(body.contains("receipt.permitsRetryReturn"))
+        #expect(body.contains("resolveQueuedAutoSend(autoSendKey).effectiveKey == .enter"))
+        #expect(body.contains("fallbackDeadline - ProcessInfo.processInfo.systemUptime"))
+        #expect(!body.contains("targetPID:"))
+        let pipeline = try repositorySource("VoiceInk/Transcription/Engine/TranscriptionPipeline.swift")
+        #expect(pipeline.contains("PrimarySendPasteProof(archiveURL: archivedPromptURL, recordID: transcription.id)"))
+    }
+
     @Test func primaryDeliveryUsesOnlyBaseVoiceInkSystemFocusedCommands() throws {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -7913,7 +7998,7 @@ struct VoiceInkTests {
         #expect(!primaryBody.contains("telegramTargetedHIDReturn"))
         #expect(!primaryBody.contains("pressNearbySubmitButton"))
         #expect(!primaryBody.contains("foregroundOpenAIVerificationContext"))
-        #expect(deliverySource.contains("primaryCurrentInputSettleNanoseconds: UInt64 = 400_000_000"))
+        #expect(deliverySource.contains("primaryCurrentInputSettleNanoseconds = PrimarySendAttemptPolicy.fallbackNanoseconds"))
 
         let engineSource = try String(
             contentsOf: repositoryRoot.appendingPathComponent(

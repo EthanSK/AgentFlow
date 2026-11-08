@@ -1,6 +1,165 @@
 import Foundation
 import AppKit   // NSWorkspace (frontmost-app pid for VIPPDebug paste logging)
+import ApplicationServices
 import os
+
+/// A read-only receipt for Ethan's "fast attempt and then a slow attempt" (2026-11-08).
+/// This is not a paste destination: it cannot activate, focus, resolve or write an
+/// editor. Only the already-focused Codex composer may opt into the early Return;
+/// unsupported/unreadable surfaces retain the existing single 400 ms Return.
+private struct PrimarySendReceipt: @unchecked Sendable {
+    let pid: pid_t
+    let editor: AXUIElement
+    let window: AXUIElement
+    let text: String
+    let inputCounts: [UInt32]
+
+    private static let queue = DispatchQueue(
+        label: "com.ethansk.AgentFlow.primary-send-observation", qos: .userInitiated
+    )
+
+    @MainActor
+    static func capture(pastedText: String, proof: PrimarySendPasteProof) async -> Self? {
+        guard pastedText.contains(proof.archiveMarker),
+              let app = NSWorkspace.shared.frontmostApplication,
+              app.bundleIdentifier == "com.openai.codex",
+              !pastedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        let pid = app.processIdentifier
+        let receipt: Self? = await withCheckedContinuation { continuation in
+            queue.async {
+                let result = read(pid: pid)
+                continuation.resume(returning: result.flatMap {
+                    PrimarySendAttemptPolicy.containsFreshPaste(
+                        pastedText: pastedText, composerText: $0.text, proof: proof
+                    ) ? $0 : nil
+                })
+            }
+        }
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else {
+            return nil
+        }
+        return receipt
+    }
+
+    @MainActor
+    func stillContainsUnsentPaste() async -> Bool {
+        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
+              Self.hasOnlyOurReturn(since: inputCounts) else { return false }
+        let unchanged: Bool = await withCheckedContinuation { continuation in
+            Self.queue.async {
+                guard let current = Self.read(pid: pid) else {
+                    continuation.resume(returning: false)
+                    return
+                }
+                continuation.resume(returning: PrimarySendAttemptPolicy.permitsRetry(
+                    previousText: text, currentText: current.text,
+                    sameEditor: CFEqual(current.editor, editor) && CFEqual(current.window, window),
+                    inputCountsUnchanged: Self.hasOnlyOurReturn(since: inputCounts)
+                ))
+            }
+        }
+        return unchanged && NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
+            && Self.hasOnlyOurReturn(since: inputCounts)
+    }
+
+    @MainActor
+    var permitsFirstReturn: Bool {
+        NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
+            && Self.currentInputCounts() == inputCounts
+    }
+
+    @MainActor
+    var permitsRetryReturn: Bool {
+        NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
+            && Self.hasOnlyOurReturn(since: inputCounts)
+    }
+
+    // Two bounded observations, not a tree scan or an idle polling service. AX work
+    // stays off the main actor so a slow recipient cannot freeze the recorder HUD.
+    private static func read(pid: pid_t) -> Self? {
+        let app = AXUIElementCreateApplication(pid)
+        _ = AXUIElementSetMessagingTimeout(app, 0.015)
+        guard let editor = element(kAXFocusedUIElementAttribute, from: app) else { return nil }
+        _ = AXUIElementSetMessagingTimeout(editor, 0.015)
+        guard string(kAXRoleAttribute, from: editor) == kAXTextAreaRole,
+              string(kAXDescriptionAttribute, from: editor) == "Work with Codex",
+              let window = element(kAXWindowAttribute, from: editor),
+              let text = string(kAXValueAttribute, from: editor),
+              !text.isEmpty, text.utf16.count <= 65_536 else { return nil }
+        return Self(pid: pid, editor: editor, window: window, text: text,
+                    inputCounts: currentInputCounts())
+    }
+
+    private static func element(_ attribute: String, from element: AXUIElement) -> AXUIElement? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        return unsafeBitCast(value, to: AXUIElement.self)
+    }
+
+    private static func string(_ attribute: String, from element: AXUIElement) -> String? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else {
+            return nil
+        }
+        return value as? String
+    }
+
+    private static func currentInputCounts() -> [UInt32] {
+        [CGEventType.keyDown, .keyUp, .leftMouseDown, .rightMouseDown, .otherMouseDown].map {
+            CGEventSource.counterForEventType(.combinedSessionState, eventType: $0)
+        }
+    }
+
+    private static func hasOnlyOurReturn(since before: [UInt32]) -> Bool {
+        PrimarySendAttemptPolicy.inputCountsPermitRetry(before: before, after: currentInputCounts())
+    }
+}
+
+/// Only the pipeline's newly written, record-bound archive can provide this proof.
+/// Its fresh UUID distinguishes a new paste from identical words already in the
+/// composer, without a pre-paste AX read or putting a hidden token into the message.
+struct PrimarySendPasteProof: Sendable {
+    let archiveMarker: String
+
+    init?(archiveURL: URL?, recordID: UUID) {
+        guard let archiveURL, archiveURL.isFileURL else { return nil }
+        let stem = archiveURL.deletingPathExtension().lastPathComponent
+        let prefix = "prompt-\(recordID.uuidString.lowercased())-"
+        guard stem.hasPrefix(prefix),
+              UUID(uuidString: String(stem.dropFirst(prefix.count))) != nil else { return nil }
+        archiveMarker = stem
+    }
+}
+
+enum PrimarySendAttemptPolicy {
+    static let earlyNanoseconds: UInt64 = 50_000_000
+    static let fallbackNanoseconds: UInt64 = 400_000_000
+
+    static func containsFreshPaste(
+        pastedText: String, composerText: String, proof: PrimarySendPasteProof
+    ) -> Bool {
+        pastedText.contains(proof.archiveMarker) && composerText.contains(pastedText)
+    }
+
+    static func permitsRetry(
+        previousText: String, currentText: String?, sameEditor: Bool,
+        inputCountsUnchanged: Bool
+    ) -> Bool {
+        sameEditor && inputCountsUnchanged && !previousText.isEmpty && currentText == previousText
+    }
+
+    static func inputCountsPermitRetry(before: [UInt32], after: [UInt32]) -> Bool {
+        // Combined-session counters must acknowledge exactly our one Return pair.
+        // Any intervening typing/click, or unavailable counter evidence, disables
+        // the retry rather than submitting the user's next unfinished message.
+        before.count == 5 && after.count == 5
+            && after[0] &- before[0] == 1 && after[1] &- before[1] == 1
+            && Array(after.dropFirst(2)) == Array(before.dropFirst(2))
+    }
+}
 
 @MainActor
 protocol TranscriptionDelivering {
@@ -16,11 +175,9 @@ final class TranscriptionDelivery: TranscriptionDelivering {
     init(recoveryPasteOverride: ((Request, Actions) async -> Void)? = nil) {
         self.recoveryPasteOverride = recoveryPasteOverride
     }
-    // Ethan requested 400 ms (2026-11-03) after another missed Send at 300 ms.
-    // A real zero-wait Chrome check processed Return before the paste event.
-    // Keep only this 400 ms consumer allowance; it is not
-    // transcription/local text work or an exact-input/readiness lookup.
-    static let primaryCurrentInputSettleNanoseconds: UInt64 = 400_000_000
+    // Keep the approved 400 ms single-attempt fallback when an early attempt cannot
+    // prove the paste arrived. The optional 50 ms attempt never changes ownership.
+    static let primaryCurrentInputSettleNanoseconds = PrimarySendAttemptPolicy.fallbackNanoseconds
 
     enum BackgroundAutoSendVerification: Equatable {
         case verifiedCleared
@@ -351,6 +508,9 @@ final class TranscriptionDelivery: TranscriptionDelivering {
         // Only an independently authored keyboard draft can cross a voice-failure
         // boundary. It stays a failed, retryable voice record and never submits.
         var recoversTypedDraft: Bool = false
+        // Presentation evidence only, never a destination: nil for raw/unsupported
+        // output. The pipeline supplies the fresh archive generated for this job.
+        var primarySendPasteProof: PrimarySendPasteProof? = nil
 
         var allowsTypedRecoveryPaste: Bool {
             recoversTypedDraft && transcription.transcriptionStatus == TranscriptionStatus.failed.rawValue
@@ -471,6 +631,7 @@ final class TranscriptionDelivery: TranscriptionDelivering {
                 text,
                 target: request.pasteTarget,
                 output: request.output,
+                primarySendPasteProof: request.primarySendPasteProof,
                 resolveQueuedPrimaryAutoSend: request.resolveQueuedPrimaryAutoSend,
                 onQueuedPrimaryAutoSendIssued: request.onQueuedPrimaryAutoSendIssued,
                 actions: actions
@@ -581,7 +742,8 @@ final class TranscriptionDelivery: TranscriptionDelivering {
         _ text: String,
         target: RecordingPasteTarget,
         output: OutputRuntimeConfiguration,
-        resolveQueuedPrimaryAutoSend: (
+        primarySendPasteProof: PrimarySendPasteProof? = nil,
+        resolveQueuedPrimaryAutoSend: @escaping (
             AutoSendKey
         ) -> PrimaryQueuedAutoSendResolution,
         onQueuedPrimaryAutoSendIssued: @escaping () -> Void,
@@ -598,8 +760,10 @@ final class TranscriptionDelivery: TranscriptionDelivering {
 
         // PRIMARY IS BASE VOICEINK. Compact prompt/file-link formatting happens
         // before delivery and still uses ONE paste. The normal toggle never owns a saved input
-        // and never runs Telegram/OpenAI/Terminal capture, focus, insertion, Send, or
-        // verification code. Ordinary system Cmd-V goes to whichever keyboard input
+        // and never runs the Next routes' capture, focus, insertion or semantic Send.
+        // The optional post-paste Primary receipt observes only the current composer;
+        // it cannot make that input a destination. Ordinary system Cmd-V goes to
+        // whichever keyboard input
         // macOS owns when the command is posted, followed immediately by the current
         // Mode's generic HID Return. Switching apps before delivery is expected and
         // changes the destination; only a physical Next press may freeze an exact one.
@@ -607,6 +771,7 @@ final class TranscriptionDelivery: TranscriptionDelivering {
             await deliverPrimaryToCurrentSystemInput(
                 pastedText,
                 autoSendKey: autoSendKey,
+                primarySendPasteProof: primarySendPasteProof,
                 resolveQueuedAutoSend: resolveQueuedPrimaryAutoSend,
                 onQueuedAutoSendIssued: onQueuedPrimaryAutoSendIssued
             )
@@ -766,13 +931,15 @@ final class TranscriptionDelivery: TranscriptionDelivering {
 
     /// Base VoiceInk's current-input route, intentionally free of every app-specific
     /// saved-input mechanism. The system keyboard focus at each ordinary event decides
-    /// where it goes; there is no exact-wrapper fallback, semantic Send, read-back,
-    /// retry, or app allowlist. This remains the ordinary Primary delivery path;
-    /// compact prompt/file-link content does not change this one-paste boundary.
+    /// where it goes; there is no saved-destination fallback or semantic Send.
+    /// Ethan's 2026-11-08 fast/slow request permits only a passive receipt for the
+    /// already-focused Codex composer, never an exact resolver or focus write.
+    /// Compact prompt/file-link content does not change this one-paste boundary.
     private func deliverPrimaryToCurrentSystemInput(
         _ pastedText: String,
         autoSendKey: AutoSendKey,
-        resolveQueuedAutoSend: (
+        primarySendPasteProof: PrimarySendPasteProof?,
+        resolveQueuedAutoSend: @escaping (
             AutoSendKey
         ) -> PrimaryQueuedAutoSendResolution,
         onQueuedAutoSendIssued: @escaping () -> Void
@@ -796,17 +963,70 @@ final class TranscriptionDelivery: TranscriptionDelivering {
             break
         }
 
-        // Only configured automatic Send needs this user-approved shorter wait.
-        // Paste-only Modes have no wait here. Primary stays generic: no app
-        // classification, saved AX input, readiness probe, focus rewrite or retry.
+        let pastePostedAt = ProcessInfo.processInfo.systemUptime
+        let fallbackDeadline = pastePostedAt
+            + Double(Self.primaryCurrentInputSettleNanoseconds) / 1_000_000_000
+        if autoSendKey == .enter, let primarySendPasteProof {
+            try? await Task.sleep(nanoseconds: PrimarySendAttemptPolicy.earlyNanoseconds)
+            // The new exception is read-only and post-paste. It never resurrects
+            // recording-start capture, chooses a destination, or delays paste-only
+            // Modes. If the full paste isn't readable yet, keep the old 400 ms Send.
+            if !Task.isCancelled,
+               resolveQueuedAutoSend(autoSendKey).effectiveKey == .enter,
+               let receipt = await PrimarySendReceipt.capture(
+                    pastedText: pastedText, proof: primarySendPasteProof
+               ),
+               receipt.permitsFirstReturn {
+                let first = await CursorPaster.performAutoSend(
+                    .enter, method: .cgEvent,
+                    canPost: {
+                        !RecorderTypingTextView.ownsKeyboard && receipt.permitsFirstReturn
+                            && resolveQueuedAutoSend(autoSendKey).effectiveKey == .enter
+                    }
+                )
+                if first == .commandPosted {
+                    onQueuedAutoSendIssued()
+                    vippLog.info("paste: primary early HID auto-send issued=true attempt=1 verification=pending targetMs=50")
+                    let remaining = fallbackDeadline - ProcessInfo.processInfo.systemUptime
+                    if remaining > 0 {
+                        try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+                    }
+                    // A cleared, changed, unreadable or different editor never gets
+                    // another Return. Input counters additionally reject intervening
+                    // typing/clicks, including a user's next message in the same box.
+                    guard !Task.isCancelled,
+                          resolveQueuedAutoSend(autoSendKey).effectiveKey == .enter,
+                          await receipt.stillContainsUnsentPaste() else {
+                        vippLog.info("paste: primary delayed retry skipped changedOrUnverified=true")
+                        return
+                    }
+                    let retry = await CursorPaster.performAutoSend(
+                        .enter, method: .cgEvent,
+                        canPost: {
+                            !RecorderTypingTextView.ownsKeyboard && receipt.permitsRetryReturn
+                                && resolveQueuedAutoSend(autoSendKey).effectiveKey == .enter
+                        }
+                    )
+                    vippLog.info("paste: primary delayed HID auto-send attempt=2 result=\(String(describing: retry), privacy: .public) targetMs=400 verification=unchangedFocusedComposer")
+                    return
+                }
+            }
+        }
+
+        // Unsupported/unreadable inputs and non-Enter keys retain one generic
+        // system-focused Send. Count the early observation inside the original
+        // allowance rather than adding another 400 ms. Paste-only has no wait.
         if autoSendKey.isEnabled {
-            try? await Task.sleep(nanoseconds: Self.primaryCurrentInputSettleNanoseconds)
+            let remaining = fallbackDeadline - ProcessInfo.processInfo.systemUptime
+            if remaining > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+            }
         }
         // This is the last safe boundary before the irreversible generic Return.
         // The delivery lease prevents a newer microphone capture from starting while
         // this check runs, and the resolver reads only internal FIFO/session state—no
-        // Accessibility target, app classifier, focus rewrite, or verification is
-        // added to Primary. Keep the configured key intact in the request so traces
+        // exact destination or focus rewrite is added. Keep the configured key
+        // intact in the request so traces
         // distinguish queue suppression from a Mode that genuinely selected `.none`.
         let queuedAutoSend = resolveQueuedAutoSend(autoSendKey)
         vippLog.info("paste: primary queued auto-send decision originalKey=\(queuedAutoSend.originalKey.rawValue, privacy: .public) effectiveKey=\(queuedAutoSend.effectiveKey.rawValue, privacy: .public) suppressed=\(queuedAutoSend.isSuppressed, privacy: .public) suppressionReason=\(queuedAutoSend.suppressionReason.rawValue, privacy: .public) successorCount=\(queuedAutoSend.consecutiveSuccessorCount, privacy: .public) tailSequence=\(queuedAutoSend.queuedTailSequence.map { String($0) } ?? "none", privacy: .public)")

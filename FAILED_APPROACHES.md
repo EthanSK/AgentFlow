@@ -1,5 +1,23 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-08 — Blind 50ms plus 400ms Return is not a conditional retry
+
+The earlier generic Return fallback experiments already established duplicate
+submission risk and that posting a key is not proof the recipient handled it.
+The new fast/slow request does not make two unconditional Returns safe: the second
+may reach a different input or the next message the user is typing. Candidate 492
+therefore permits the early path only with a readable complete focused Codex
+paste containing the current pipeline archive's fresh identifier. Matching only
+the words can accept identical text already in the draft before an asynchronous
+paste completes. The fresh marker is bound to this transcription and is not
+inferred from arbitrary pasted text. A later retry requires unchanged same-editor
+and input-event evidence.
+Unreadable/unsupported inputs retain the existing single 400 ms Send. Do not broaden
+this exception to blind retries, background targets, semantic Send or startup
+capture; reconsider another surface only with its own reliable focused composer
+state and disposable end-to-end evidence. Candidate policy tests are not that
+physical acceptance.
+
 ## 2026-11-08 — Reject completed audio solely from the outer TTS status
 
 **Observed failure:** A live spoken question completed its actual audio child with exit0, but the surrounding helper returned6. Rejecting every nonzero outer result discarded the reply window, even though bounded recovery from the active OBS MKV transcribed the user's response.

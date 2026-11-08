@@ -1,5 +1,34 @@
 # Learnings
 
+## 2026-11-08 — Conditional fast Primary Send without restoring input ownership
+
+Ethan requested an early Send at roughly 50 ms after paste, plus a slower attempt if
+the first missed. The previous accepted generic Primary transport waits 400 ms and
+posts one HID Return; its transport result is not a recipient acknowledgement.
+Blindly posting two Returns is therefore not the conditional behavior requested.
+
+Candidate 492 keeps one ordinary system paste and all Next destination machinery
+unchanged. A bounded worker reads only the already-focused `Work with Codex`
+textarea/window/value after paste; no ancestor/descendant scan, AX focus write,
+activation or saved recording-start destination is introduced. The early Enter
+requires the complete pasted payload and a record-bound fresh archive identifier
+to be readable. Source review caught that matching only the words could accept
+identical old draft text; the pipeline now passes its existing freshly generated
+archive filename as evidence, without another input read or hidden message token.
+At 400 ms from paste, one
+retry additionally requires the same raw unchanged editor/window, no intervening
+typing/click counts beyond the first Return pair, and a fresh queue-tail/cancel
+check. Cleared, changed, newline-mutated, replaced or unreadable post-state never
+permits retry. Other apps, unreadable inputs and non-Enter keys keep one 400 ms Send;
+paste-only Modes skip both waits. Both deadlines use the same 400 ms constant.
+
+The canonical Mini focused run passed all 20 named guards after the fresh-marker
+fix and timing cleanup, including the Primary/Next, raw/disabled and FIFO/cancel
+contracts. The release-boundary full pass remains separate. Source checks and pure
+policy tests do not prove live Codex acceptance or authoritative acknowledgement
+of a handled Return. No installed 492 result is claimed here until the signed
+artifact/PID receipt exists.
+
 ## 2026-11-08 — Optional OBS replies use actual playback completion
 
 The source-only `companions/obs-replies/` extension composes with the existing speech queue and recovery/question skills. Enable it only for an explicit after-reminder listening request. It creates one finite worker per eligible actual announcement, not a resident poller or another recording-notification consumer. It never starts/stops OBS or changes Agent Flow's microphone, Mode, native app or delivery routes. See its `AGENT_SETUP.md` for the reproducible integration, private settings, exact-origin routing and disable procedure.

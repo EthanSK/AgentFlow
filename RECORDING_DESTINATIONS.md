@@ -1,5 +1,18 @@
 # Recording destination controls (VoiceInk++)
 
+## Current timing exception — fast Send and conditional delayed retry
+
+Ethan requested a roughly 50 ms Send attempt followed by a delayed attempt if it
+missed (2026-11-08). Candidate 492 permits this only for the already-focused,
+readable `Work with Codex` composer after the complete paste and this job's fresh
+archive identifier are present. One
+400 ms retry requires the same unchanged editor/window, no intervening typing or
+clicks, and an uncanceled queue-tail session. Other inputs retain one 400 ms Send.
+There is no saved destination, startup capture, tree scan or focus change. This
+is a narrow exception to the historical no-read-back/no-retry Primary description
+below, not another destination route. Candidate installation and live acceptance
+remain separate from this source contract.
+
 ## Current UI override — secondary app icon removed
 
 Ethan requested removal on 2026-10-31 because the secondary icon was mostly an unused

@@ -1,5 +1,14 @@
 # VoiceInk++ background delivery test matrix
 
+**2026-11-08 Primary timing exception (candidate 492):** the explicit fast/slow
+request adds a read-only post-paste receipt only for a readable, focused `Work
+with Codex` composer and this job's fresh archive identifier. Check a successful early Enter produces no retry; an ignored
+first Enter with unchanged text may get one retry at 400 ms from paste; a clear,
+newline/edit, replacement, focus change, intervening input, cancellation or newer
+capture skips retry. Unreadable/unsupported inputs retain the single 400 ms Send.
+This supersedes only the historical Primary prohibition on this bounded receipt
+and retry. All no-targeting/no-focus-write and exact Next route guards remain.
+
 This is the permanent compatibility matrix for Ethan's main destinations. Read it and
 [FAILED_APPROACHES.md](FAILED_APPROACHES.md) before changing exact-input capture, background
 insertion, auto-send, focus restoration, or verification.
