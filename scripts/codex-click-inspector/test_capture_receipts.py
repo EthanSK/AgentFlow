@@ -13,12 +13,15 @@ class ClickFocusTests(unittest.TestCase):
     def run_worker(self, gesture: ClickGesture, *, side: bool = False,
                    newer_click: bool = False, newer_key: bool = False,
                    paused: bool = False, focus_inputs: bool = True,
-                   interrupt_highlight=None):
+                   interrupt_highlight=None, current_main: bool = False):
         region = Rect(0, 0, 600, 700)
         marker = "app-shell-tab-panel-app-shell-tab:68" if side else "fixture-chat-panel"
+        if current_main:
+            marker = ""  # The current main portal no longer supplies the old chat-panel id.
         sample = Sample(7, 8, Rect(0, 0, 1000, 700), 100, 620, (
             Node("AXGroup", "", "", region, True, False, "AXLandmarkRegion", True),
-            Node("AXGroup", "", marker, region, subrole="AXTabPanel" if side else "")), focus_stable=True)
+            Node("AXGroup", "", marker, region, subrole="AXTabPanel" if side else "",
+                 main_content=current_main)), focus_stable=True)
         owner = SimpleNamespace(sequence=2 if newer_click else 1, paused=paused,
             reader=Mock(), model=PaneModel(), focus_inputs=focus_inputs,
             focuser=Mock(), completed=Mock(), pending=Mock(), health=HelperHealth())
@@ -50,6 +53,12 @@ class ClickFocusTests(unittest.TestCase):
                         ClickGesture(click_count=3, modifier_held=True)):
             with self.subTest(gesture=gesture):
                 self.run_worker(gesture).focuser.focus.assert_called_once()
+
+    def test_current_main_portal_clicks_reach_the_existing_focus_writer(self):
+        for clicks in (1, 2, 3, 4):
+            owner = self.run_worker(ClickGesture(click_count=clicks), current_main=True)
+            owner.focuser.focus.assert_called_once()
+            self.assertEqual(owner.focuser.focus.call_args.args[2], "Main chat")
 
     def test_superseded_click_does_not_focus(self):
         self.run_worker(ClickGesture(click_count=3), newer_click=True).focuser.focus.assert_not_called()

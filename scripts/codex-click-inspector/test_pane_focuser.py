@@ -5,7 +5,7 @@ from unittest.mock import patch
 from collections import Counter
 import pane_focuser
 from pane_focuser import PaneInputFocuser, MAX_SEARCH_NODES
-from pane_model import Rect
+from pane_model import Rect, Node, Sample, Observation, PaneModel, input_focus_plan
 
 REGION_FRAME = Rect(1313, 197, 671, 1007)  # Side Conversation region measured live 2026-10-17.
 
@@ -211,6 +211,29 @@ class PaneFocuserTests(unittest.TestCase):
         status = self.focuser.focus(42, REGION_FRAME, "Side chat", window_key=hash("window"),
                                     click_point=(1400, 500))
         self.assertIn("verified", status)
+        self.assertEqual(self.focuser.writes, ["input"])
+        self.assertEqual(self.reader.hit_points, [(1400, 500)])
+        self.assertTrue(all(n == 0 for n in self.reader.refs.values()), self.reader.refs)
+
+    def test_current_main_plan_and_writer_leave_the_old_side_composer(self):
+        window = Rect(0, 0, 2200, 1400)
+        clicked = Sample(42, hash("window"), window, 1400, 500, (
+            Node("AXGroup", "", "", REGION_FRAME, subrole="AXLandmarkRegion", conversation=True),
+            Node("AXGroup", "", "", REGION_FRAME, main_content=True)))
+        old_input_frame = Rect(100, 1100, 500, 44)
+        focused = Sample(42, hash("window"), window, 350, 1122, (
+            Node("AXTextArea", "", "", old_input_frame, True, True),
+            Node("AXGroup", "", "", Rect(0, 0, 1000, 1400), conversation=True),
+            Node("AXGroup", "", "app-shell-tab-panel-app-shell-tab:68", None, subrole="AXTabPanel")),
+            focus_stable=True)
+        pane, frame = input_focus_plan(PaneModel(), Observation(clicked, focused, 1, host="ChatGPT.app"))
+        self.assertEqual((pane, frame), ("Main chat", REGION_FRAME))
+        self.reader.focused = "old-input"
+        self.reader.attrs["old-input"] = {"AXRole": "AXTextArea", "AXDescription": "Work with Codex",
+                                           "frame": old_input_frame}
+        status = self.focuser.focus(42, frame, pane, window_key=clicked.window_key,
+                                    click_point=(clicked.x, clicked.y))
+        self.assertIn("Focused Main chat input · verified", status)
         self.assertEqual(self.focuser.writes, ["input"])
         self.assertEqual(self.reader.hit_points, [(1400, 500)])
         self.assertTrue(all(n == 0 for n in self.reader.refs.values()), self.reader.refs)

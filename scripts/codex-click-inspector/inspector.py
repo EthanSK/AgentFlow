@@ -22,7 +22,7 @@ import AppKit as K
 import Quartz as Q
 import objc
 from Foundation import NSObject, NSTimer, NSRunLoop, NSRunLoopCommonModes, NSBundle, NSDictionary, NSProcessInfo, NSDistributedNotificationCenter, NSNotificationSuspensionBehaviorDeliverImmediately
-from pane_model import (Node, PaneModel, Rect, Sample, Observation, Diagnostics, describe, MAX_ANCESTORS,
+from pane_model import (Node, PaneModel, Rect, Sample, Observation, Diagnostics, describe, MAX_ANCESTORS, MAIN_CONTENT_CLASS,
                         ClickGesture, input_focus_plan, is_highlight_gesture)
 from pane_focuser import PaneInputFocuser
 from claude_prompt_focuser import ClaudePromptFocuser, CLAUDE_BUNDLE_ID, RECORDING_STOPPED, ENABLED as CLAUDE_FOCUS_ENABLED
@@ -70,6 +70,9 @@ class AXReader:
         self.equal = bind(self.cf, "CFEqual", C.c_bool, ptr, ptr)
         self.type_id = bind(self.cf, "CFGetTypeID", C.c_ulong, ptr)
         self.string_type = bind(self.cf, "CFStringGetTypeID", C.c_ulong)
+        self.array_type = bind(self.cf, "CFArrayGetTypeID", C.c_ulong)
+        self.array_count = bind(self.cf, "CFArrayGetCount", C.c_long, ptr)
+        self.array_item = bind(self.cf, "CFArrayGetValueAtIndex", ptr, ptr, C.c_long)
         self.bool_type = bind(self.cf, "CFBooleanGetTypeID", C.c_ulong)
         self.bool_value = bind(self.cf, "CFBooleanGetValue", C.c_bool, ptr)
         self.string = bind(self.cf, "CFStringCreateWithCString", ptr, ptr, C.c_char_p, C.c_uint32)
@@ -85,7 +88,7 @@ class AXReader:
         self.timeout = bind(self.ax, "AXUIElementSetMessagingTimeout", C.c_int, ptr, C.c_float)
         self.trusted = bind(self.ax, "AXIsProcessTrusted", C.c_bool)
         self.keys = {name: self.string(None, name.encode(), 0x08000100) for name in
-                     ("AXRole", "AXSubrole", "AXDescription", "AXIdentifier", "AXDOMIdentifier", "AXParent", "AXWindow", "AXPosition", "AXSize",
+                     ("AXRole", "AXSubrole", "AXDescription", "AXIdentifier", "AXDOMIdentifier", "AXDOMClassList", "AXParent", "AXWindow", "AXPosition", "AXSize",
                       "AXFocusedUIElement", "AXFocused", "AXEditable", "AXValue", "AXSelectedText")}
         self.timeout(self.system, 0.08)
         self.deadline, self.errors = 0, []
@@ -144,6 +147,26 @@ class AXReader:
         finally:
             self.release(value)
 
+    def main_content(self, element) -> bool:
+        """Reads only the known main-pane class marker; never retains arbitrary class names."""
+        classes = self.copy(element, "AXDOMClassList")
+        if not classes:
+            return False
+        try:
+            if self.type_id(classes) != self.array_type():
+                return False
+            for index in range(self.array_count(classes)):
+                if time.monotonic() >= self.deadline:
+                    break
+                value = self.array_item(classes, index)
+                if value and self.type_id(value) == self.string_type():
+                    buf = C.create_string_buffer(1024)
+                    if self.get_string(value, buf, len(buf), 0x08000100) and buf.value == MAIN_CONTENT_CLASS.encode():
+                        return True
+            return False
+        finally:
+            self.release(classes)
+
     def rect(self, element):
         pos, size = self.copy(element, "AXPosition"), self.copy(element, "AXSize")
         try:
@@ -188,7 +211,7 @@ class AXReader:
         original = current
         self.retain(original)
         seen, end, failure = set(), "", ""
-        focus_stable = None
+        focus_stable, conversation_seen = None, False
         try:
             pid = C.c_int()
             if self.get_pid(current, C.byref(pid)) or pid.value != expected_pid:
@@ -217,11 +240,13 @@ class AXReader:
                 # text or a chat title. Other AXDescription values are discarded.
                 conversation = (subrole == "AXLandmarkRegion"
                                 and self.text(current, "AXDescription") == "Conversation")
+                conversation_seen |= conversation
                 node = Node(role, self.text(current, "AXIdentifier"),
                             self.text(current, "AXDOMIdentifier"), self.rect(current),
                             self.boolean(current, "AXFocused") if focus and index == 0 else None,
                             self.editable(current, role) if focus and index == 0 else None,
-                            subrole, conversation)
+                            subrole, conversation,
+                            self.main_content(current) if conversation_seen and role == "AXGroup" else False)
                 nodes.append(node)
                 if node.role == "AXWindow":
                     window_key, window_rect = self.hash(current), node.frame

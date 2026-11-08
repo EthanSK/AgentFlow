@@ -121,6 +121,26 @@ class PaneModelTests(unittest.TestCase):
         self.assertEqual(self.classify_measured(self.measured())[0], "Main chat")
         self.assertEqual(self.classify_measured(self.measured(side=True))[0], "Side chat")
 
+    def test_current_main_content_marker_without_the_removed_chat_panel_id(self):
+        for editable in (False, True):
+            sample = self.measured(editable=editable)
+            sample = replace(sample, nodes=tuple(replace(n, dom_identifier="", main_content=True)
+                if n.dom_identifier.endswith("-chat-panel") else n for n in sample.nodes))
+            self.assertEqual(self.classify_measured(sample)[0], "Main chat")
+            if not editable:
+                self.assertEqual(self.plan(sample, self.measured(side=True))[0], "Main chat")  # Returning from another app can leave the side composer focused.
+            for host in ("Other.app", ""):
+                self.assertIsNone(self.plan(sample, sample, host=host)[0])
+            no_conversation = replace(sample, nodes=tuple(replace(n, conversation=False) for n in sample.nodes))
+            self.assertEqual(self.classify_measured(no_conversation)[0], "Unknown")
+
+    def test_side_scope_wins_over_a_current_main_content_ancestor(self):
+        sample = self.measured(side=True, editable=False)
+        sample = replace(sample, nodes=sample.nodes[:-1] +
+                         (Node("AXGroup", "", "", None, main_content=True), sample.nodes[-1]))
+        self.assertEqual(self.classify_measured(sample)[0], "Side chat")
+        self.assertEqual(self.plan(sample, sample)[0], "Side chat")
+
     def test_measured_structure_survives_app_updates_for_both_desktop_hosts(self):
         for host in ("ChatGPT.app", "Codex.app"):
             for version in ("26.1013.31256 / 20586", "26.1013.40934 / 20770", "future", ""):
