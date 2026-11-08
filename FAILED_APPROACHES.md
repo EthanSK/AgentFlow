@@ -8,6 +8,14 @@
 
 **Reconsider only if:** the outer outcome independently proves the audio was incomplete and agrees with actual child/recorded-audio evidence. A late lease cleanup status alone is insufficient.
 
+## 2026-11-08 — Test only already-flushed recording windows
+
+**Observed failure:** Real OBS had not flushed a complete end cluster. The growth-event path used `with select.kqueue()`, but Python's macOS kqueue has no context-manager protocol and raised TypeError. Ready-file extraction and mocked whole-worker fixtures never entered that native branch.
+
+**Use instead:** Explicitly close the native event queue in `finally` and test both a real file-write event and a bounded no-write timeout on the required Mac test machine. Private error receipts retain only frame basenames/functions/line numbers, never raw provider payloads, local variables or microphone samples.
+
+**Reconsider only if:** a supported Python API contract and a real growing-file test prove equivalent resource cleanup. Mocked readiness is not that proof.
+
 ## 2026-11-08 — Infer live MKV isolation and timing from saved metadata alone
 
 **Observed failures:** The saved profile differed from the running profile. Silent camera/browser sources advertised the mic track, so rejecting routing metadata alone prevented a valid source from passing. A whole-recording FFmpeg seek exceeded the bounded probe deadline on a long growing file. Assuming Timestamp was the first cluster child also rejected real OBS CRC-prefixed clusters.

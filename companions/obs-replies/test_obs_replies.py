@@ -3,6 +3,8 @@ import asyncio
 import json
 from pathlib import Path
 import tempfile
+import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -145,6 +147,28 @@ class RoutingTests(unittest.TestCase):
             path = Path(directory) / "chat.jsonl"
             path.write_text("x")
             self.assertTrue(replies.chat_has_new_user_message((path, path.stat().st_ino + 1, 0)))
+
+
+class RecordingGrowthTests(unittest.TestCase):
+    def test_actual_kqueue_receives_growing_recording_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)/'growing.mkv'
+            source.write_bytes(b'initial')
+            timer = threading.Timer(.05, lambda: source.write_bytes(b'new recording bytes'))
+            timer.start()
+            try:
+                replies.wait_for_growth(source, 1)
+            finally:
+                timer.join()
+            self.assertEqual(source.read_bytes(), b'new recording bytes')
+
+    def test_actual_kqueue_timeout_closes_without_context_manager(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory)/'growing.mkv'
+            source.touch()
+            start = time.monotonic()
+            replies.wait_for_growth(source, .01)
+            self.assertLess(time.monotonic()-start, .5)
 
 
 if __name__ == "__main__":

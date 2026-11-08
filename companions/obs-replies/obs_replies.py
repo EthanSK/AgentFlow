@@ -21,6 +21,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+import traceback
 import uuid
 from typing import Any
 
@@ -349,8 +350,9 @@ class CaptureGuard:
         self.initial_recordings = self.recording_metadata()
         await asyncio.to_thread(self.voice.__enter__)
         if not self.voice.allowed:
+            reason = self.voice.reason
             self.voice.__exit__()
-            raise ValueError("Codex Voice is active or its state is unknown")
+            raise ValueError("Codex Voice gate blocked OBS listening: " + reason)
         return self
 
     @property
@@ -364,13 +366,18 @@ class CaptureGuard:
 
 def wait_for_growth(source: Path, timeout: float) -> None:
     fd = os.open(source, os.O_RDONLY)
+    queue = None
     try:
-        with select.kqueue() as queue:
-            change = select.kevent(fd, filter=select.KQ_FILTER_VNODE,
-                flags=select.KQ_EV_ADD | select.KQ_EV_ONESHOT,
-                fflags=select.KQ_NOTE_WRITE | select.KQ_NOTE_EXTEND | select.KQ_NOTE_DELETE | select.KQ_NOTE_RENAME)
-            queue.control([change], 1, timeout)
+        # macOS kqueue has close(), but no context-manager protocol. Exercise
+        # the real growth event: ready-file fixtures never enter this path.
+        queue = select.kqueue()
+        change = select.kevent(fd, filter=select.KQ_FILTER_VNODE,
+            flags=select.KQ_EV_ADD | select.KQ_EV_ONESHOT,
+            fflags=select.KQ_NOTE_WRITE | select.KQ_NOTE_EXTEND | select.KQ_NOTE_DELETE | select.KQ_NOTE_RENAME)
+        queue.control([change], 1, timeout)
     finally:
+        if queue is not None:
+            queue.close()
         os.close(fd)
 
 
@@ -547,7 +554,9 @@ async def main() -> None:
         except Exception as error:
             # Keep raw provider/OBS payloads and credentials out of receipts.
             write_private(args.event / "outcome.json", {"status": "not_delivered",
-                "reason": str(error) if isinstance(error, ValueError) else type(error).__name__})
+                "reason": str(error) if isinstance(error, ValueError) else type(error).__name__,
+                "frames": [{"file": Path(frame.filename).name, "line": frame.lineno,
+                    "function": frame.name} for frame in traceback.extract_tb(error.__traceback__)]})
         else:
             write_private(args.event / "outcome.json", {"status": "processed"})
         finally:
