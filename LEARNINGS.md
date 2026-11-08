@@ -1,5 +1,15 @@
 # Learnings
 
+## 2026-11-08 — Separate gesture delivery, readable text and caret clearing
+
+Existing counts-only LiveSelection logs proved that Codex drag and double-click events arrived and started reads. One ordinary 39-character question prefix emitted into the session; eleven nearby reads were canceled by a newer gesture or stop. Other complete four-attempt failures returned unavailable marker text with zero elsewhere, overextension or prevented-widening counts. Do not diagnose every failed highlight as a missing mouse event, size filter or cancellation. Correlate gesture, captured/unavailable and final finished-outcome lines; a successful accessor alone does not prove an emitted context block.
+
+Ethan confirmed that an ordinary Unicode combining-underlined sample could be visibly selected, but the follow-up did not explicitly establish an attached Agent Flow session and no matching capture was observed. This is not acceptance of an ordinary-text workaround or permission to change global response formatting. The current resolver/accessor core matches build419; the historical build414 hard span veto was removed in415, and the October9 replies explicitly left live rendered-math precision unverified.
+
+A bounded Mini Chrome fixture compiled the current production reader and used scripted DOM ranges with synthetic fresh drag coordinates. Plain text, Unicode underline and a default KaTeX underline all returned before focus moved. One native AXFocused write into the fixture's separate textarea succeeded in each case; afterward its DOM selection was empty and the production reader returned no selected text. This proves the mechanism in that isolated Chromium fixture, not that the separate helper caused any particular live Codex failure or that Codex exposes the same math text. Preserve the user's separately approved focus-after-highlight behavior until a correlated live boundary establishes a replacement; do not blindly restore the old receipt veto. All owned Chrome processes exited and the desktop reservation was released. No native app, helper settings, microphone or global styling was changed.
+
+Evidence: task-local agentflow-underline-comparison/{complete-live-counts.json,sample-live-counts.json,october-session-evidence.json,mini-focus-summary.json,mini-evidence/run-nU4dGG/results.json}. Synthetic native-focus behavior, host-side rendered-math omission and real physical capture acceptance are distinct claims.
+
 ---
 **Date:** 2026-11-08 — Main-chat marker drift
 **Trigger:** Main-chat body clicks repeatedly left the side composer focused, including after returning from another app.
