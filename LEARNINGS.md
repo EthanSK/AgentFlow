@@ -60,8 +60,13 @@ Final source64755804 passed all879 named tests/41suites through canonical Xcode,
 then built universal arm64/x86_64. The public v2.0.492 ZIP passed its published
 checksums, deep/strict Developer ID signing, Automation/audio-input entitlements,
 stapled Apple notarization and Gatekeeper checks. Its updater feed/key and stable
-designated requirement match491. Local installation is separately guarded by
-the app's all-session cooperative quit; the first normal quit was deferred.
+designated requirement match491. The first normal quit was deferred by the
+all-session guard. Its process-exit waiter installed only after that app exited;
+build492 then launched asPID92041 and remained running. CDHash
+`88523010f4ee4d90c684c2ca3e45ef7d2f40b348`, Automation/audio-input entitlements,
+microphone/paired-Voice settings, keybindings and the untouched official VoiceInk
+executable were verified. Generated staging app copies were retired after ZIP
+rollback verification. Live Codex fast-Send acceptance remains user-operated.
 
 
 ## 2026-11-08 — Optional OBS replies use actual playback completion
