@@ -148,8 +148,15 @@ release plus 90 ms, not continuous keyboard focus tracking; Tab is not monitored
 A public AXIdentifier/AXDOMIdentifier containing an explicit main-chat/side-chat
 marker can identify a pane. The measured ChatGPT.app 26.1013.31256 / 20586 profile
 also recognises a Conversation region under a `-chat-panel` container (Main chat)
-or `app-shell-tab-panel-app-shell-tab:<number>` AXTabPanel (Side chat). These
-structural checks apply to both local `ChatGPT.app` and `Codex.app` independently
+or `app-shell-tab-panel-app-shell-tab:<number>` AXTabPanel (Side chat).
+ChatGPT.app 26.1103.41825 / 25679's bundled frontend no longer includes the old
+`-chat-panel` main marker. That build's main-content portal instead has the exact
+`@container/app-shell-main-content` class. The reader checks the public
+`AXDOMClassList` on the existing ancestor path after finding a Conversation and
+retains only a Boolean marker, never arbitrary class names. The nearest side
+scope still wins over an enclosing main scope. This source-backed marker support
+has synthetic regression coverage; real Codex click-to-caret acceptance is separate.
+These structural checks apply to both local `ChatGPT.app` and `Codex.app` independently
 of their release version. Version metadata is diagnostic only: an app update
 must not disable an unchanged pane structure. Unknown hosts remain excluded,
 and a changed or missing Conversation/panel structure still produces no focus

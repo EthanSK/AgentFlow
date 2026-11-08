@@ -4,7 +4,8 @@ import time
 import unittest
 from collections import Counter
 from inspector import AXReader
-from pane_model import Node, Rect, MAX_ANCESTORS
+from pane_model import Node, Rect, MAX_ANCESTORS, MAIN_CONTENT_CLASS, PaneModel
+from dataclasses import replace
 
 
 class FakeReader(AXReader):
@@ -89,6 +90,9 @@ class FakeReader(AXReader):
     def editable(self, element, role):
         return self.nodes[element].editable
 
+    def main_content(self, element):
+        return self.nodes[element].main_content
+
 
 class AXReaderTests(unittest.TestCase):
     def assert_released(self, reader):
@@ -103,6 +107,45 @@ class AXReaderTests(unittest.TestCase):
         self.assertTrue(sample.focus_stable)
         self.assertEqual([owner for owner, key in reader.reads if key == "AXFocusedUIElement"], [900, 900])
         self.assert_released(reader)
+
+    def test_current_main_class_survives_the_adapter_without_retaining_class_names(self):
+        reader = FakeReader()
+        reader.nodes[10] = replace(reader.nodes[10], dom_identifier="", main_content=True)
+        sample = reader.sample(100, 200, 42, focus=True)
+        self.assertTrue(sample.nodes[9].main_content)
+        self.assertEqual(PaneModel().classify(sample, "ChatGPT.app")[0], "Main chat")
+        self.assert_released(reader)
+
+    def test_native_class_list_requires_an_exact_string_and_releases_its_array(self):
+        for values, expected in (([MAIN_CONTENT_CLASS], True), (["unrelated", MAIN_CONTENT_CLASS], True),
+                                 (["prefix" + MAIN_CONTENT_CLASS], False), ([MAIN_CONTENT_CLASS + "-other"], False),
+                                 ([None, "unrelated"], False), ([], False)):
+            reader = FakeReader()
+            reader.deadline = time.monotonic() + 1
+            reader.copy = lambda element, name: reader.retain("classes") or "classes"
+            reader.type_id = lambda value: "array" if value == "classes" else "string" if isinstance(value, str) else "other"
+            reader.array_type = lambda: "array"
+            reader.string_type = lambda: "string"
+            reader.array_count = lambda value: len(values)
+            reader.array_item = lambda value, index: values[index]
+            def get_string(value, buffer, size, encoding):
+                buffer.value = value.encode()
+                return True
+            reader.get_string = get_string
+            self.assertEqual(AXReader.main_content(reader, 1), expected)
+            self.assert_released(reader)
+
+    def test_unreadable_or_expired_class_list_never_proves_main(self):
+        for value, kind, expired in ((None, "array", False), ("classes", "string", False), ("classes", "array", True)):
+            reader = FakeReader()
+            reader.deadline = time.monotonic() + (-1 if expired else 1)
+            reader.copy = lambda element, name: (reader.retain(value) or value) if value else None
+            reader.type_id = lambda item: kind
+            reader.array_type = lambda: "array"
+            reader.array_count = lambda item: 1
+            reader.array_item = lambda *args: self.fail("Expired reads must not inspect array items")
+            self.assertFalse(AXReader.main_content(reader, 1))
+            self.assert_released(reader)
 
     def test_bounded_partial_read_retains_nodes_and_rechecks_focus(self):
         reader = FakeReader(depth=60)

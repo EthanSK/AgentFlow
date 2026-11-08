@@ -1,5 +1,14 @@
 # Learnings
 
+---
+**Date:** 2026-11-08 — Main-chat marker drift
+**Trigger:** Main-chat body clicks repeatedly left the side composer focused, including after returning from another app.
+**Verified:** The separate helper was enabled, responsive and Accessibility-authorised. The installed ChatGPT.app 26.1103.41825 / 25679 frontend contains no old `-chat-panel` marker. Codex and an independent Opus 5.5 investigation found that the classifier could therefore reject main clicks before input lookup. The old model failed a current-main-marker regression on the Mini. This is source/fixture evidence, not proof of the exact live failure.
+**Fix:** Read the exact `@container/app-shell-main-content` portal marker through public `AXDOMClassList` during the existing bounded ancestor walk, retaining only a Boolean. Preserve Conversation proof, nearest-side precedence, unknown-host rejection, existing input/window/selection/supersession guards and all timing. No geometry-based main guess, broad scan, native Agent Flow, paste-delivery or Model Bar changes.
+**Guard:** The candidate passed 55 focused checks and all 146 helper checks on the Mini, including the real worker with the old main id absent. Only the separate helper was cooperatively reloaded; it returned fresh ready/Accessibility-enabled status with one worker/watchdog and zero errors. Computer Use refused com.openai.codex; no live AX workaround was used. Real caret acceptance remains pending Ethan's clicks. Repair evidence: ~/.codex/repair-notes/codex-pane-focus/2026-11-08-main-marker-drift/ (source chat 01a1bc25-a59c-76b2-8486-7fba52fbb140).
+---
+
+
 ## 2026-11-08 — Conditional fast Primary Send without restoring input ownership
 
 Ethan requested an early Send at roughly 50 ms after paste, plus a slower attempt if

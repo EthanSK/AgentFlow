@@ -12,6 +12,7 @@ PARTIAL_READ_ERRORS = {"Read timed out", "Ancestor limit reached", "Ancestor pat
 # structure, not a release number. Updates can preserve this structure unchanged.
 # The event reader already restricts owners to these two local desktop hosts.
 MEASURED_HOSTS = {"ChatGPT.app", "Codex.app"}
+MAIN_CONTENT_CLASS = "@container/app-shell-main-content"  # Codex 26.1103.41825 uses this main-content portal class instead of the removed -chat-panel id.
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,7 @@ class Node:
     editable: bool | None = None
     subrole: str = ""
     conversation: bool = False
+    main_content: bool = False
 
 
 @dataclass(frozen=True)
@@ -81,6 +83,8 @@ def measured_marker(nodes, host, version):
         conversation_seen |= node.conversation
         if not conversation_seen:
             continue
+        if node.role == "AXGroup" and node.main_content:
+            return "Main chat"
         # The nearest scope wins: a side panel can be inside the app's main
         # landmark. A generic panel/browser tab without Conversation is not chat.
         for identifier in (node.identifier, node.dom_identifier):
@@ -308,7 +312,7 @@ class Diagnostics:
                          "bounds_present": n.frame is not None, "focused": n.focused, "editable": n.editable}
                          | {"subrole": n.subrole if re.fullmatch(r"AX[A-Za-z]+", n.subrole) else "",
                             "conversation": n.conversation}
-                         | {"main_marker": any(s.endswith("-chat-panel") for s in (n.identifier, n.dom_identifier)),
+                         | {"main_marker": n.main_content or any(s.endswith("-chat-panel") for s in (n.identifier, n.dom_identifier)),
                             "panel_marker": any(bool(re.fullmatch(r"app-shell-tab-panel-app-shell-tab:[0-9]+", s))
                                                 for s in (n.identifier, n.dom_identifier))}
                         for n in sample.nodes[:MAX_ANCESTORS]],
