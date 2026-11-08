@@ -17,6 +17,8 @@ private final class FakeSelectionProbe: LiveSelectionAccessibilityProbe {
         var bounds: CGRect?
         var rangeBounds: CGRect?
         var markerBounds: CGRect?
+        var frame: CGRect?
+        var formulaText: String?
     }
 
     var nodes: [Int: Node] = [:]
@@ -62,6 +64,14 @@ private final class FakeSelectionProbe: LiveSelectionAccessibilityProbe {
     }
 
     func isSame(_ lhs: Int, _ rhs: Int) -> Bool { lhs == rhs }
+
+    func children(of element: Int) -> [Int] {
+        nodes.filter { $0.value.parent == element }.map(\.key).sorted()
+    }
+
+    func frame(of element: Int) -> CGRect? { nodes[element]?.frame }
+
+    func formulaText(of element: Int) -> String? { nodes[element]?.formulaText }
 }
 
 struct LiveSelectionFallbackTests {
@@ -823,6 +833,115 @@ struct LiveSelectionFallbackTests {
         #expect(LiveSelectionReadPolicy.accessibilityRetryDelays.first == 0)
         #expect(Double(LiveSelectionReadPolicy.messagingTimeout)
                 < LiveSelectionReadPolicy.accessibilityBudget)
+    }
+
+    // MARK: Codex double-click on a rendered formula
+
+    private func doubleClick(at point: CGPoint) -> LiveSelectionGesture {
+        var doubleClickGesture = gesture(point, point)
+        doubleClickGesture.clickCount = 2
+        return doubleClickGesture
+    }
+
+    /// One paragraph holding two formulas, shaped like the tree Chromium exposes
+    /// for KaTeX: the focused page reports only a stray neighbouring character.
+    private func addFormulaParagraph(to probe: FakeSelectionProbe) {
+        probe.focused = 1
+        probe.nodes[1] = .init(role: "AXWebArea", selectedText: ".")
+        probe.nodes[2] = .init(role: "AXGroup", parent: 1)
+        probe.nodes[3] = .init(role: "AXGroup", subrole: LiveSelectionReadPolicy.formulaSubrole, parent: 2,
+            frame: CGRect(x: 100, y: 100, width: 200, height: 23), formulaText: "first phrase")
+        probe.nodes[4] = .init(role: "AXGroup", subrole: LiveSelectionReadPolicy.formulaSubrole, parent: 2,
+            frame: CGRect(x: 100, y: 140, width: 200, height: 23), formulaText: "second phrase")
+    }
+
+    @Test func codexDoubleClickOnHiddenFormulaReadsOnlyThatFormula() {
+        let probe = FakeSelectionProbe()
+        addFormulaParagraph(to: probe)
+        let g = doubleClick(at: CGPoint(x: 150, y: 150))
+        probe.hitTargets = [(g.mouseUp, 2)]
+        let result = precisionResolve(probe, g)
+        #expect(result.candidate?.text == "second phrase")
+        #expect(result.candidate?.tier == .pointerFormula)
+        #expect(result.candidate?.evidence == .atGesture)
+        #expect(result.formulaLookup == "found:AXGroup")
+        #expect(probe.selectionReads.isEmpty)
+    }
+
+    @Test func codexDoubleClickOnMathTextLeafWalksUpToItsFormula() {
+        let probe = FakeSelectionProbe()
+        addFormulaParagraph(to: probe)
+        probe.nodes[5] = .init(role: "AXGroup", parent: 4)
+        probe.nodes[6] = .init(role: "AXStaticText", parent: 5)
+        let g = doubleClick(at: CGPoint(x: 150, y: 150))
+        probe.hitTargets = [(g.mouseUp, 6)]
+        let result = precisionResolve(probe, g)
+        #expect(result.candidate?.text == "second phrase")
+        #expect(result.formulaLookup == "found:AXStaticText")
+    }
+
+    @Test func codexDoubleClickOnVisibleTextOverlappingAFormulaBoxKeepsItsOwnSelection() {
+        let probe = FakeSelectionProbe()
+        addFormulaParagraph(to: probe)
+        let g = doubleClick(at: CGPoint(x: 150, y: 150))
+        probe.nodes[7] = .init(role: "AXStaticText", parent: 2, selectedText: "word",
+            bounds: CGRect(x: 140, y: 140, width: 40, height: 22))
+        probe.hitTargets = [(g.mouseUp, 7)]
+        let result = precisionResolve(probe, g)
+        #expect(result.candidate?.text == "word")
+        #expect(result.candidate?.tier == .pointerElement)
+        #expect(result.formulaLookup == "no-formula:AXStaticText")
+    }
+
+    @Test func codexDoubleClickOutsideEveryFormulaBoxDoesNotPickOne() {
+        let probe = FakeSelectionProbe()
+        addFormulaParagraph(to: probe)
+        let g = doubleClick(at: CGPoint(x: 150, y: 300))
+        probe.hitTargets = [(g.mouseUp, 2)]
+        let result = precisionResolve(probe, g)
+        #expect(result.candidate?.tier != .pointerFormula)
+        #expect(result.formulaLookup == "no-formula:AXGroup")
+    }
+
+    @Test func unreadableFormulaEmitsNothingFromThatFormula() {
+        let probe = FakeSelectionProbe()
+        addFormulaParagraph(to: probe)
+        probe.nodes[4]?.formulaText = nil
+        let g = doubleClick(at: CGPoint(x: 150, y: 150))
+        probe.hitTargets = [(g.mouseUp, 2)]
+        let result = precisionResolve(probe, g)
+        #expect(result.candidate?.tier != .pointerFormula)
+        #expect(result.formulaLookup == "unreadable:AXGroup")
+    }
+
+    @Test func formulaReadNeverAppliesToDragsOrOtherApps() {
+        let point = CGPoint(x: 150, y: 150)
+        let dragProbe = FakeSelectionProbe()
+        addFormulaParagraph(to: dragProbe)
+        dragProbe.hitTargets = [(point, 2)]
+        #expect(precisionResolve(dragProbe, gesture(point, point)).formulaLookup == "skipped")
+
+        let otherAppProbe = FakeSelectionProbe()
+        addFormulaParagraph(to: otherAppProbe)
+        otherAppProbe.hitTargets = [(point, 2)]
+        let otherApp = LiveSelectionAccessibilityResolver(
+            probe: otherAppProbe, gesture: doubleClick(at: point), gestureInSourceWindow: true
+        ).resolve()
+        #expect(otherApp.formulaLookup == "skipped")
+        #expect(otherApp.candidate?.tier != .pointerFormula)
+    }
+
+    @Test func secureFocusRefusesBeforeAnyFormulaRead() {
+        let probe = FakeSelectionProbe()
+        addFormulaParagraph(to: probe)
+        probe.focused = 8
+        probe.nodes[8] = .init(role: "AXTextField", subrole: "AXSecureTextField")
+        let g = doubleClick(at: CGPoint(x: 150, y: 150))
+        probe.hitTargets = [(g.mouseUp, 2)]
+        let result = precisionResolve(probe, g)
+        #expect(result.candidate == nil)
+        #expect(result.refusedSecure == 1)
+        #expect(probe.hitTests.isEmpty)
     }
 
     private func repositorySource(_ relativePath: String) throws -> String {

@@ -54,6 +54,8 @@ physical acceptance.
 
 **Reconsider only if:** the receiving host exposes a fresh readable range containing the actual selected rendered glyphs, or another explicitly authorized mechanism proves both content and boundaries. A full formula/paragraph, matching bounds, an extra retry, or a forced-renderer-accessibility fixture alone does not establish that proof.
 
+**Reconsidered 2026-11-08, for a Codex double-click only:** Ethan accepted the whole underlined phrase, as Claude captures it, when he double-clicks one of its words; surrounding prose stays unacceptable. That narrow exception reads the one `AXDocumentMath` group under the pointer, labelled as the whole formula. It adds no retry and weakens no guard. Drags, partial selections and every other app keep the rules above. Do not return a paragraph for this gesture: the unmodified reader did that in the Mini fixture.
+
 ## 2026-11-06 — Apply live-event freshness or HUD-first focus to startup capture
 
 **Observed failures:** A preselected Code range had no new watched gesture, so the bridge was skipped; an old selection-change timestamp also failed the live freshness check. A disposable Mini non-activating HUD with an automatically focused text view made Code's focused-pane query return no pane even though Code remained frontmost. The same selected range passed without that focus step.

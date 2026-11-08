@@ -52,6 +52,8 @@ enum LiveSelectionTier: String, Equatable, Sendable {
     case vscodeBridge
     case focusedElement
     case pointerElement
+    /// The whole rendered formula under a Codex double-click.
+    case pointerFormula
     case browserScript
     case telegramRegionImage
     /// The consented Codex drag image, logged separately from its text.
@@ -129,6 +131,10 @@ enum LiveSelectionReadPolicy {
     /// Deep enough for web DOMs, short enough that a window without any
     /// selection-bearing element is abandoned quickly.
     static let maximumAncestorDepth = 32
+    /// Chromium's subrole for a `<math>` root, the readable copy of a rendered formula.
+    static let formulaSubrole = "AXDocumentMath"
+    /// A formula's text sits only a few levels under its math root.
+    static let maximumFormulaDepth = 8
     /// Selection bounds within this many points of either gesture endpoint
     /// count as the gesture's own selection (drag overshoot, margins).
     static let boundsTolerance: CGFloat = 32
@@ -370,6 +376,9 @@ struct LiveSelectionResolution: Equatable, Sendable {
     var observedOverextended = 0
     var preventedWidening = 0
     var acceptedMarkerExpansion = 0
+    /// Text-free reason the Codex double-click formula read did or did not
+    /// apply, with the hit-test role: `found:AXGroup`, `no-formula:AXStaticText`.
+    var formulaLookup = "skipped"
 }
 
 /// Read-only Accessibility surface for one source process. The live
@@ -388,6 +397,9 @@ protocol LiveSelectionAccessibilityProbe {
     func subrole(of element: Element) -> String?
     func selection(of element: Element, source: LiveSelectionTextSource) -> LiveSelectionSnapshot?
     func isSame(_ lhs: Element, _ rhs: Element) -> Bool
+    func children(of element: Element) -> [Element]
+    func frame(of element: Element) -> CGRect?
+    func formulaText(of element: Element) -> String?
 }
 
 /// Pure tier policy over a probe, so ordering, secure-field refusal,
@@ -427,6 +439,10 @@ struct LiveSelectionAccessibilityResolver<Probe: LiveSelectionAccessibilityProbe
                 resolution.refusedSecure += 1
                 return resolution
             }
+            if let formula = doubleClickedFormula(into: &resolution) {
+                resolution.candidate = formula
+                return resolution
+            }
             if let candidate = read(
                 element, role: focusedRole, tier: .focusedElement, into: &resolution
             ) {
@@ -442,6 +458,9 @@ struct LiveSelectionAccessibilityResolver<Probe: LiveSelectionAccessibilityProbe
                 }
                 focusedCandidate = candidate
             }
+        } else if let formula = doubleClickedFormula(into: &resolution) {
+            resolution.candidate = formula
+            return resolution
         }
 
         if let gesture {
@@ -602,6 +621,61 @@ struct LiveSelectionAccessibilityResolver<Probe: LiveSelectionAccessibilityProbe
         return proven ?? unproven
     }
 
+    /// Returns the whole formula under a Codex double-click, or nil when the
+    /// pointer is not on one.
+    ///
+    /// KaTeX draws a formula twice: visible glyphs hidden from Accessibility,
+    /// and a MathML copy that Accessibility can read. Double-clicking selects a
+    /// visible word, which has no Accessibility position, so the host reports an
+    /// empty range, one neighbouring character or the whole paragraph. Ethan
+    /// accepts the whole underlined phrase here, as Claude captures it, so read
+    /// that one formula instead of the unreliable range. Drags keep their real
+    /// range, and double-clicks on ordinary text never enter this path.
+    private func doubleClickedFormula(
+        into resolution: inout LiveSelectionResolution
+    ) -> LiveSelectionCandidate? {
+        // `checksDragSpan` is the resolver's Codex-only flag.
+        guard checksDragSpan, let gesture, gesture.clickCount == 2 else { return nil }
+        let point = gesture.mouseUp
+        guard let hit = probe.element(at: point) else {
+            resolution.formulaLookup = "no-hit"
+            return nil
+        }
+        let hitRole = probe.role(of: hit)
+        let hitRoleLabel = hitRole ?? "none"
+        var formula: Probe.Element?
+        // Hidden glyphs hit-test to their text block. Visible text has its own
+        // leaf, and must win because a math box can extend over the next word.
+        if hitRole != kAXStaticTextRole {
+            formula = probe.children(of: hit).first {
+                probe.subrole(of: $0) == LiveSelectionReadPolicy.formulaSubrole
+                    && probe.frame(of: $0)?.contains(point) == true
+            }
+        }
+        // The hit can instead land on a text leaf inside the MathML copy.
+        var ancestor: Probe.Element? = hit
+        for _ in 0..<LiveSelectionReadPolicy.maximumFormulaDepth where formula == nil {
+            guard let current = ancestor, !probe.isExpired,
+                  probe.role(of: current) != "AXWebArea" else { break }
+            if probe.subrole(of: current) == LiveSelectionReadPolicy.formulaSubrole {
+                formula = current
+            }
+            ancestor = probe.parent(of: current)
+        }
+        guard let formula else {
+            resolution.formulaLookup = "no-formula:\(hitRoleLabel)"
+            return nil
+        }
+        guard let text = Self.meaningful(probe.formulaText(of: formula)) else {
+            resolution.formulaLookup = "unreadable:\(hitRoleLabel)"
+            return nil
+        }
+        resolution.formulaLookup = "found:\(hitRoleLabel)"
+        return LiveSelectionCandidate(
+            text: text, tier: .pointerFormula, source: .textMarkers, evidence: .atGesture
+        )
+    }
+
     private func prefersPointerSelection(
         _ pointer: LiveSelectionCandidate?, over marker: LiveSelectionCandidate
     ) -> Bool {
@@ -629,6 +703,7 @@ final class LiveAccessibilitySelectionProbe: LiveSelectionAccessibilityProbe {
     private static let stringForTextMarkerRange = "AXStringForTextMarkerRange"
     private static let attributedStringForTextMarkerRange = "AXAttributedStringForTextMarkerRange"
     private static let boundsForTextMarkerRange = "AXBoundsForTextMarkerRange"
+    private static let textMarkerRangeForUIElement = "AXTextMarkerRangeForUIElement"
 
     private let application: AXUIElement
     private let deadline: UInt64
@@ -738,6 +813,40 @@ final class LiveAccessibilitySelectionProbe: LiveSelectionAccessibilityProbe {
 
     func isSame(_ lhs: AXUIElement, _ rhs: AXUIElement) -> Bool {
         CFEqual(lhs, rhs)
+    }
+
+    func children(of element: AXUIElement) -> [AXUIElement] {
+        guard let children = copy(kAXChildrenAttribute, of: element) as? [AXUIElement] else {
+            return []
+        }
+        children.forEach(Self.limitMessaging)
+        return children
+    }
+
+    func frame(of element: AXUIElement) -> CGRect? {
+        guard let positionValue = copy(kAXPositionAttribute, of: element),
+              let sizeValue = copy(kAXSizeAttribute, of: element),
+              CFGetTypeID(positionValue) == AXValueGetTypeID(),
+              CFGetTypeID(sizeValue) == AXValueGetTypeID() else {
+            return nil
+        }
+        var origin = CGPoint.zero
+        var size = CGSize.zero
+        guard AXValueGetValue(positionValue as! AXValue, .cgPoint, &origin),
+              AXValueGetValue(sizeValue as! AXValue, .cgSize, &size) else {
+            return nil
+        }
+        return CGRect(origin: origin, size: size)
+    }
+
+    func formulaText(of element: AXUIElement) -> String? {
+        guard let range = parameterized(
+            Self.textMarkerRangeForUIElement, of: element, parameter: element
+        ) else { return nil }
+        return LiveSelectionRangeTextReader.read(
+            plain: { self.parameterized(Self.stringForTextMarkerRange, of: element, parameter: range) },
+            attributed: { self.parameterized(Self.attributedStringForTextMarkerRange, of: element, parameter: range) }
+        )
     }
 
     private func selectedRange(of element: AXUIElement) -> AXValue? {
@@ -965,12 +1074,13 @@ enum LiveSelectionDiagnostics {
         preventedWidening: Int = 0,
         acceptedMarkerExpansion: Int = 0,
         clickCount: Int? = nil,
-        callbackLagMilliseconds: Int? = nil
+        callbackLagMilliseconds: Int? = nil,
+        formulaLookup: String = "skipped"
     ) {
         // Historical .info captures were not retained, leaving real overcapture
         // untraceable. Persist only enum/count decisions, never text or geometry.
         logger.notice(
-            "Live selection captured tier=\(tier.rawValue, privacy: .public) source=\(source?.rawValue ?? "none", privacy: .public) evidence=\(evidence?.rawValue ?? "none", privacy: .public) span=\(span.rawValue, privacy: .public) chars=\(length, privacy: .public) overextended=\(observedOverextended, privacy: .public) preventedWidening=\(preventedWidening, privacy: .public) markerExpansion=\(acceptedMarkerExpansion, privacy: .public) clicks=\(clickCount ?? 0, privacy: .public) maxCallbackLagMs=\(callbackLagMilliseconds ?? -1, privacy: .public) attempt=\(attempt, privacy: .public) bundle=\(bundleID ?? "unknown", privacy: .public) durationMs=\(elapsedMilliseconds(since: startedAt), privacy: .public)"
+            "Live selection captured tier=\(tier.rawValue, privacy: .public) source=\(source?.rawValue ?? "none", privacy: .public) evidence=\(evidence?.rawValue ?? "none", privacy: .public) span=\(span.rawValue, privacy: .public) chars=\(length, privacy: .public) overextended=\(observedOverextended, privacy: .public) preventedWidening=\(preventedWidening, privacy: .public) markerExpansion=\(acceptedMarkerExpansion, privacy: .public) formula=\(formulaLookup, privacy: .public) clicks=\(clickCount ?? 0, privacy: .public) maxCallbackLagMs=\(callbackLagMilliseconds ?? -1, privacy: .public) attempt=\(attempt, privacy: .public) bundle=\(bundleID ?? "unknown", privacy: .public) durationMs=\(elapsedMilliseconds(since: startedAt), privacy: .public)"
         )
     }
 
@@ -981,7 +1091,7 @@ enum LiveSelectionDiagnostics {
         startedAt: UInt64
     ) {
         logger.notice(
-            "Live selection unavailable trusted=\(resolution.accessibilityTrusted, privacy: .public) attempts=\(attempts, privacy: .public) examined=\(resolution.examinedElements, privacy: .public) elsewhere=\(resolution.rejectedElsewhere, privacy: .public) overextended=\(resolution.observedOverextended, privacy: .public) preventedWidening=\(resolution.preventedWidening, privacy: .public) outsideSourceWindow=\(resolution.rejectedOutsideSourceWindow, privacy: .public) secure=\(resolution.refusedSecure, privacy: .public) hasGesture=\(resolution.hasGesture, privacy: .public) emptyHitTests=\(resolution.emptyHitTests, privacy: .public) unverifiable=\(resolution.rejectedUnverifiable, privacy: .public) cannotComplete=\(resolution.incompleteMessages, privacy: .public) missingMarkers=\(resolution.missingMarkerRanges, privacy: .public) unavailableMarkerText=\(resolution.unavailableMarkerText, privacy: .public) degenerateBounds=\(resolution.degenerateBounds, privacy: .public) budgetExhausted=\(resolution.budgetExhausted, privacy: .public) bundle=\(bundleID ?? "unknown", privacy: .public) durationMs=\(elapsedMilliseconds(since: startedAt), privacy: .public)"
+            "Live selection unavailable trusted=\(resolution.accessibilityTrusted, privacy: .public) attempts=\(attempts, privacy: .public) examined=\(resolution.examinedElements, privacy: .public) elsewhere=\(resolution.rejectedElsewhere, privacy: .public) overextended=\(resolution.observedOverextended, privacy: .public) preventedWidening=\(resolution.preventedWidening, privacy: .public) outsideSourceWindow=\(resolution.rejectedOutsideSourceWindow, privacy: .public) secure=\(resolution.refusedSecure, privacy: .public) hasGesture=\(resolution.hasGesture, privacy: .public) emptyHitTests=\(resolution.emptyHitTests, privacy: .public) unverifiable=\(resolution.rejectedUnverifiable, privacy: .public) cannotComplete=\(resolution.incompleteMessages, privacy: .public) missingMarkers=\(resolution.missingMarkerRanges, privacy: .public) unavailableMarkerText=\(resolution.unavailableMarkerText, privacy: .public) degenerateBounds=\(resolution.degenerateBounds, privacy: .public) budgetExhausted=\(resolution.budgetExhausted, privacy: .public) formula=\(resolution.formulaLookup, privacy: .public) bundle=\(bundleID ?? "unknown", privacy: .public) durationMs=\(elapsedMilliseconds(since: startedAt), privacy: .public)"
         )
     }
 

@@ -1,5 +1,13 @@
 # Learnings
 
+## 2026-11-08 — Read the whole formula under a Codex double-click
+
+KaTeX draws each formula twice: a visible `aria-hidden` copy and a MathML copy. A double-click selects a word in the hidden visible copy, which has no Accessibility position, so the host reports an empty or unrelated range. Counts-only live logs showed `clicks=2 attempts=4 examined=29 missingMarkers=7 unavailableMarkerText=22`, and one double-click captured a single stray character. Drags across the same text did read the MathML copy, so the text was reachable.
+
+Fix: on a Codex double-click only, hit-test the pointer. Chromium exposes each formula as an `AXDocumentMath` group, so choose the one under the pointer and read it whole through `AXTextMarkerRangeForUIElement`. A hit on a visible `AXStaticText` leaf keeps its normal selection, because a math group's frame can run about 11pt past its glyphs and over the next word. Ethan accepted the whole phrase for this gesture, matching what Claude captures; surrounding prose stays unacceptable. Formula text keeps the trailing `‾` that drag captures already carry.
+
+Validation: seven new resolver regressions plus the existing selection suite and four mandatory guards passed as 52 named tests through the Mini's Xcode action. Real Accessibility on a Mini Chrome KaTeX fixture returned the whole phrase for one-line and wrapped formulas (39-59ms), and left plain words, including one straight after a formula, unchanged. The unmodified reader returned the whole paragraph for that fixture. Chrome is not the Codex host: the live result is readable afterwards from the `formula=found:`, `no-formula:`, `unreadable:` and `no-hit` log field, and needs Ethan's real double-clicks.
+
 ## 2026-11-08 — Separate gesture delivery, readable text and caret clearing
 
 Existing counts-only LiveSelection logs proved that Codex drag and double-click events arrived and started reads. One ordinary 39-character question prefix emitted into the session; eleven nearby reads were canceled by a newer gesture or stop. Other complete four-attempt failures returned unavailable marker text with zero elsewhere, overextension or prevented-widening counts. Do not diagnose every failed highlight as a missing mouse event, size filter or cancellation. Correlate gesture, captured/unavailable and final finished-outcome lines; a successful accessor alone does not prove an emitted context block.
