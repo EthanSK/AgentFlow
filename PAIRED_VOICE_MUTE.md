@@ -12,11 +12,16 @@ checksum and signature checks. The same build is installed and running on the Ma
 and M1 recipient, with existing microphone settings and keyboard bindings unchanged.
 The configured Agent Bridge endpoint returned the recipient's readiness answer. Natural
 recordings from the installed source app also received acquire/renew/release replies, proving
-that app-originated transport works for this pair. The M1 still reported `accessibilityMissing`
-and `shortcutFailed`: its enabled Accessibility entry authorizes an older certificate and the
-current installed app fails that stored requirement. Refreshing that permission and actual
-cross-device Voice mute/restore acceptance remain required; the results above do not establish
-audibility or background shortcut acceptance. See [Acceptance checklist](#acceptance-checklist).
+that app-originated transport works for this pair. Refreshing the M1's stale Accessibility grant
+made its running recipient answer `ready`; the saved requirement now matches the installed
+Developer ID app. A natural recording returned `mutedUnverified` and `restoredUnverified`, and
+Ethan confirmed that the M1's Voice is muting. He also confirmed the inherited unreadable-state
+toggle limitation: an already-muted call can be inverted. This is not state-aware acceptance;
+manual-mute preservation and independently verified restoration remain open. A text-only private
+OpenAI feature request for a supported current-call state query, explicit microphone/output mute
+setters and change events was accepted on 2026-11-08. That submission is not an implemented
+state-control API or a promise of an individual response. See
+[Acceptance checklist](#acceptance-checklist).
 
 ## How it works
 
