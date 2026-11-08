@@ -79,6 +79,9 @@ private struct PrimarySendReceipt: @unchecked Sendable {
     // Two bounded observations, not a tree scan or an idle polling service. AX work
     // stays off the main actor so a slow recipient cannot freeze the recorder HUD.
     private static func read(pid: pid_t) -> Self? {
+        // A click/key arriving during AX reads must invalidate this receipt too;
+        // taking counters only afterward could bless evidence from the old input.
+        let inputCounts = currentInputCounts()
         let app = AXUIElementCreateApplication(pid)
         _ = AXUIElementSetMessagingTimeout(app, 0.015)
         guard let editor = element(kAXFocusedUIElementAttribute, from: app) else { return nil }
@@ -87,9 +90,10 @@ private struct PrimarySendReceipt: @unchecked Sendable {
               string(kAXDescriptionAttribute, from: editor) == "Work with Codex",
               let window = element(kAXWindowAttribute, from: editor),
               let text = string(kAXValueAttribute, from: editor),
-              !text.isEmpty, text.utf16.count <= 65_536 else { return nil }
+              !text.isEmpty, text.utf16.count <= 65_536,
+              currentInputCounts() == inputCounts else { return nil }
         return Self(pid: pid, editor: editor, window: window, text: text,
-                    inputCounts: currentInputCounts())
+                    inputCounts: inputCounts)
     }
 
     private static func element(_ attribute: String, from element: AXUIElement) -> AXUIElement? {
@@ -137,6 +141,14 @@ struct PrimarySendPasteProof: Sendable {
 enum PrimarySendAttemptPolicy {
     static let earlyNanoseconds: UInt64 = 50_000_000
     static let fallbackNanoseconds: UInt64 = 400_000_000
+
+    static func canMakeEarlyAttempt(pastePostedAt: TimeInterval, now: TimeInterval) -> Bool {
+        // Readiness has one extra early interval of grace, not another timed wait.
+        // A backed-up main actor/AX reply must fall back to one ordinary Send,
+        // never post a late "early" Return beside an expired retry deadline.
+        let elapsed = now - pastePostedAt
+        return elapsed >= 0 && elapsed < Double(earlyNanoseconds * 2) / 1_000_000_000
+    }
 
     static func containsFreshPaste(
         pastedText: String, composerText: String, proof: PrimarySendPasteProof
@@ -976,12 +988,18 @@ final class TranscriptionDelivery: TranscriptionDelivering {
                let receipt = await PrimarySendReceipt.capture(
                     pastedText: pastedText, proof: primarySendPasteProof
                ),
+               PrimarySendAttemptPolicy.canMakeEarlyAttempt(
+                    pastePostedAt: pastePostedAt, now: ProcessInfo.processInfo.systemUptime
+               ),
                receipt.permitsFirstReturn {
                 let first = await CursorPaster.performAutoSend(
                     .enter, method: .cgEvent,
                     canPost: {
                         !RecorderTypingTextView.ownsKeyboard && receipt.permitsFirstReturn
                             && resolveQueuedAutoSend(autoSendKey).effectiveKey == .enter
+                            && PrimarySendAttemptPolicy.canMakeEarlyAttempt(
+                                pastePostedAt: pastePostedAt, now: ProcessInfo.processInfo.systemUptime
+                            )
                     }
                 )
                 if first == .commandPosted {

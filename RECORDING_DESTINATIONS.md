@@ -5,7 +5,9 @@
 Ethan requested a roughly 50 ms Send attempt followed by a delayed attempt if it
 missed (2026-11-08). Candidate 492 permits this only for the already-focused,
 readable `Work with Codex` composer after the complete paste and this job's fresh
-archive identifier are present. One
+archive identifier are present. The early opportunity expires at100ms; a delayed
+observation keeps the single original Send. Input counters must remain unchanged
+across the whole read. One
 400 ms retry requires the same unchanged editor/window, no intervening typing or
 clicks, and an uncanceled queue-tail session. Other inputs retain one 400 ms Send.
 There is no saved destination, startup capture, tree scan or focus change. This

@@ -15,6 +15,10 @@ requires the complete pasted payload and a record-bound fresh archive identifier
 to be readable. Source review caught that matching only the words could accept
 identical old draft text; the pipeline now passes its existing freshly generated
 archive filename as evidence, without another input read or hidden message token.
+The early opportunity expires at100ms, checked again at key-down, so a stalled
+AX/main-actor continuation cannot bunch a late first Return with an expired
+retry deadline. Input counters bracket the entire AX read: a click/key during
+the observation invalidates it rather than becoming an accepted baseline.
 At 400 ms from paste, one
 retry additionally requires the same raw unchanged editor/window, no intervening
 typing/click counts beyond the first Return pair, and a fresh queue-tail/cancel
@@ -36,6 +40,13 @@ Its replacement checks the approved early wait, mutually exclusive remainder
 branches and one shared absolute fallback deadline; balanced key event checks
 remain unchanged. Include that suite alongside the main route guards for future
 Return timing changes. The release rerun must pass before signing or installation.
+
+The next full run passed all878 tests/41suites, but was cancelled before
+publication after source review found the late-first-attempt case. Build492 had
+not been published or installed. The corrected candidate adds the100ms expiry
+and stable whole-read counter guard; its final release gate is recorded separately.
+The corrected focused canonical Xcode action passed all26 named tests in2 suites,
+including the dedicated keyboard-sequence suite and the new expired-attempt guard.
 
 
 ## 2026-11-08 — Optional OBS replies use actual playback completion

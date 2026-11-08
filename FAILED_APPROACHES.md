@@ -11,7 +11,11 @@ paste containing the current pipeline archive's fresh identifier. Matching only
 the words can accept identical text already in the draft before an asynchronous
 paste completes. The fresh marker is bound to this transcription and is not
 inferred from arbitrary pasted text. A later retry requires unchanged same-editor
-and input-event evidence.
+and input-event evidence. Recording event counters only after AX reads can bless
+a click that occurred during those reads; bracket the observation instead.
+Allowing the early action after its deadline can bunch it with the400ms retry
+under UI lag. Expire that opportunity at100ms at both continuation/key-down
+boundaries and retain the single original delayed action; never add another wait.
 Unreadable/unsupported inputs retain the existing single 400 ms Send. Do not broaden
 this exception to blind retries, background targets, semantic Send or startup
 capture; reconsider another surface only with its own reliable focused composer

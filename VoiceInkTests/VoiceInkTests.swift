@@ -7880,6 +7880,14 @@ struct VoiceInkTests {
                                      recordID: record) == nil)
     }
 
+    @Test func primaryFastSendCannotBunchLateFirstAndSecondAttempts() {
+        #expect(PrimarySendAttemptPolicy.canMakeEarlyAttempt(pastePostedAt: 10, now: 10.05))
+        #expect(PrimarySendAttemptPolicy.canMakeEarlyAttempt(pastePostedAt: 10, now: 10.099))
+        for now in [10.101, 10.4, 10.6, 11, 9, Double.nan] {
+            #expect(!PrimarySendAttemptPolicy.canMakeEarlyAttempt(pastePostedAt: 10, now: now))
+        }
+    }
+
     @Test func primaryFastSendRetriesOnlyAnUnchangedFocusedDraft() {
         #expect(PrimarySendAttemptPolicy.earlyNanoseconds == 50_000_000)
         #expect(PrimarySendAttemptPolicy.fallbackNanoseconds == 400_000_000)
@@ -7937,6 +7945,9 @@ struct VoiceInkTests {
         let body = source[primaryStart.lowerBound..<primaryEnd.lowerBound]
         #expect(body.contains("await receipt.stillContainsUnsentPaste()"))
         #expect(body.contains("receipt.permitsRetryReturn"))
+        #expect(source.contains("currentInputCounts() == inputCounts else { return nil }"))
+        #expect(source.contains("inputCounts: inputCounts)"))
+        #expect(body.components(separatedBy: "PrimarySendAttemptPolicy.canMakeEarlyAttempt(").count == 3)
         #expect(body.contains("resolveQueuedAutoSend(autoSendKey).effectiveKey == .enter"))
         #expect(body.contains("fallbackDeadline - ProcessInfo.processInfo.systemUptime"))
         #expect(!body.contains("targetPID:"))

@@ -6,6 +6,8 @@ with Codex` composer and this job's fresh archive identifier. Check a successful
 first Enter with unchanged text may get one retry at 400 ms from paste; a clear,
 newline/edit, replacement, focus change, intervening input, cancellation or newer
 capture skips retry. Unreadable/unsupported inputs retain the single 400 ms Send.
+An early read or key preflight completed after100ms must instead retain that
+single delayed action; input activity during the receipt read must invalidate it.
 This supersedes only the historical Primary prohibition on this bounded receipt
 and retry. All no-targeting/no-focus-write and exact Next route guards remain.
 
