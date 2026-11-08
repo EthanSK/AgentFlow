@@ -1,5 +1,19 @@
 # Learnings
 
+## 2026-11-08 — Optional OBS replies use actual playback completion
+
+The source-only `companions/obs-replies/` extension composes with the existing speech queue and recovery/question skills. Enable it only for an explicit after-reminder listening request. It creates one finite worker per eligible actual announcement, not a resident poller or another recording-notification consumer. It never starts/stops OBS or changes Agent Flow's microphone, Mode, native app or delivery routes. See its `AGENT_SETUP.md` for the reproducible integration, private settings, exact-origin routing and disable procedure.
+
+Record the owned audio child's wall time and shared `CLOCK_UPTIME_RAW`/Swift `systemUptime` at natural exit. The surrounding speech helper can return6 after the child has already completed with0; a live short question demonstrated this exact combination. The OBS listener must distinguish that audited cleanup status from a killed/signalled audio child, parent cancellation, Voice suppression or a skipped announcement. A complete child is necessary; capture/Voice/source/new-input guards remain independent requirements.
+
+Saved OBS global.ini can name an obsolete profile while recording is active. Query the live WebSocket recording output and verify file identity, mixer routing and actual MKV stream titles. A camera/browser may be nominally routed to the microphone track while emitting zero audio. Track labels or routing metadata alone do not prove isolation; complete finite meter coverage must show every other routed source present and silent. Missing meter data is unknown, never zero.
+
+A long growing MKV need not be scanned or copied. The bounded reader copies its small verified header plus an adaptive capped64MiB recent cluster tail into FFmpeg stdin, then trims audio by timestamps. Actual OBS clusters had CRC-32 before Timecode. A synthetic fixture also demonstrated up to1ms of packet-start phase difference when starting at later clusters; do not call recording timestamps or unmeasured physical/Bluetooth output sample-perfect. Local TTS waveform alignment is required for the automatic path; system-output audio never goes to ASR.
+
+A real15-second synthetic `gpt-live-transcribe` trial acknowledged the complete duration and both its first and last phrases, finishing about6.4s after submission. A separate live15-second microphone recovery captured Ethan's response to the test question without stopping OBS. That manual recovery used the continuous OBS clock and the observed audio-child exit, without a surviving waveform reference; it is not proof of the fully automatic, waveform-aligned handoff. The integrated Mini run executed85 named focused tests successfully; a later30-case focused run covered the actual-child/outer-cleanup distinction. Neither test result is physical conversational acceptance.
+
+Question replies are offered once to the already-waiting agent under the exact open question identity. Completion replies use the existing Agent Bridge channel and retain its foreign-ownership safeguard, currently requiring roughly120s of rollout quiet; queueing is not proof of visible Desktop delivery. Do not silently disable that safeguard for faster conversation. Transcripts are untrusted room-audio candidates, not formal approvals or permission to infer a cut-off sentence.
+
 ## 2026-11-07 — Rendered LaTeX highlights may be absent before selection policy
 
 Build489 retains the core range/resolver behavior from419; comparison against419 changes only commentary, the Telegram image tier and diagnostics. Earlier410/414/415/419 entries explicitly left live rendered-underline precision unverified. Do not describe this as a previously accepted precise-LaTeX fix removed by489.

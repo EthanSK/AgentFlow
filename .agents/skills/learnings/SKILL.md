@@ -16,6 +16,17 @@ Improve this skill as part of using it. Whenever use, debugging, feature work, d
 Tell Ethan when this skill causes an action or pause, and briefly explain which project safety or
 validation contract applies.
 
+## Optional OBS replies
+
+For an explicitly requested after-reminder OBS listening feature, read
+[`companions/obs-replies/AGENT_SETUP.md`](../../../companions/obs-replies/AGENT_SETUP.md)
+and the matching dated evidence in `LEARNINGS.md`/`FAILED_APPROACHES.md`.
+Preserve existing recording/media/Voice gates and current-model selection.
+Actual audio-child completion, waveform alignment, whole-window source proof,
+exact-origin routing and user acceptance are distinct gates. Do not install a
+recording-notification consumer, idle poller or silent model fallback.
+User-requested — 2026-11-07; verified procedure recorded2026-11-08.
+
 ## Extra delays require consultation
 
 Never add an extra delay without explicitly consulting Ethan about it for any app from now on. User-requested — 2026-11-01; this also applies to Agent Flow.

@@ -1,5 +1,21 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-08 — Reject completed audio solely from the outer TTS status
+
+**Observed failure:** A live spoken question completed its actual audio child with exit0, but the surrounding helper returned6. Rejecting every nonzero outer result discarded the reply window, even though bounded recovery from the active OBS MKV transcribed the user's response.
+
+**Use instead:** Admit only the audited parent outcomes with a real admitted event and natural successful audio-child receipt; retain parent cancellation, Voice/capture, source continuity and new-input guards. A failed/skipped announcement without that receipt opens no window.
+
+**Reconsider only if:** the outer outcome independently proves the audio was incomplete and agrees with actual child/recorded-audio evidence. A late lease cleanup status alone is insufficient.
+
+## 2026-11-08 — Infer live MKV isolation and timing from saved metadata alone
+
+**Observed failures:** The saved profile differed from the running profile. Silent camera/browser sources advertised the mic track, so rejecting routing metadata alone prevented a valid source from passing. A whole-recording FFmpeg seek exceeded the bounded probe deadline on a long growing file. Assuming Timestamp was the first cluster child also rejected real OBS CRC-prefixed clusters.
+
+**Use instead:** Read the live output/source metadata and stream identities, require complete finite source-meter evidence, structurally parse the bounded header/tail including optional CRC, and locally align the actual TTS waveform. Missing/ambiguous evidence must stop delivery.
+
+**Reconsider only if:** new measured writer/source behavior proves an alternative meets the same bounded read, identity, complete-duration and timing guarantees. Do not restart/remux OBS, assume Track3, or silently upload the mixed system track.
+
 ## 2026-11-07 — Retry or widen inaccessible rendered-math selections
 
 **Observed failure:** In a Mini KaTeX fixture, plain, attributed, integer-range and marker reads all omitted an aria-hidden HTML-only formula. With the default MathML copy present, a substring selected in visible math could map to the whole phrase or unselected trailing prose. A richer accessor or longer text is not proof of the highlighted glyphs. Real failed Codex reads near the report contained no prevented-widening or elsewhere rejection; weakening those guards would not repair an empty range.

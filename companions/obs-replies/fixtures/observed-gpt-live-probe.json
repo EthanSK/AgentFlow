@@ -1,0 +1,19 @@
+{
+  "observation": "2026-11-08; actual adapter result from the configured live API; synthetic15-second speech, no private mic audio",
+  "captureScope": "Adapter result projection; original provider event fields not retained. Do not treat this as an exhaustive raw event fixture.",
+  "result": {
+    "status": "transcribed",
+    "text": "The first code is seven blue apples. The final code is nine green boats.",
+    "usage": {
+      "type": "duration",
+      "seconds": 15
+    },
+    "itemID": "item_REDACTED",
+    "seconds": 15.0,
+    "model": "gpt-live-transcribe",
+    "language": "en",
+    "delay": "xhigh",
+    "contextSupplied": false,
+    "elapsedSeconds": 6.402403749991208
+  }
+}
