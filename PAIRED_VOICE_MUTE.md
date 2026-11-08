@@ -10,10 +10,13 @@ Validation: build 491 passed 74 named focused tests in 11 suites and all 874 rel
 The universal Developer ID signed, notarized and stapled public ZIP passed its downloaded
 checksum and signature checks. The same build is installed and running on the MacBook source
 and M1 recipient, with existing microphone settings and keyboard bindings unchanged.
-The configured Agent Bridge endpoint returned the recipient's readiness answer, but the M1
-reported `accessibilityMissing`. That permission and actual cross-device Voice mute/restore
-acceptance remain required; no test result above establishes audibility or background shortcut
-acceptance. See [Acceptance checklist](#acceptance-checklist).
+The configured Agent Bridge endpoint returned the recipient's readiness answer. Natural
+recordings from the installed source app also received acquire/renew/release replies, proving
+that app-originated transport works for this pair. The M1 still reported `accessibilityMissing`
+and `shortcutFailed`: its enabled Accessibility entry authorizes an older certificate and the
+current installed app fails that stored requirement. Refreshing that permission and actual
+cross-device Voice mute/restore acceptance remain required; the results above do not establish
+audibility or background shortcut acceptance. See [Acceptance checklist](#acceptance-checklist).
 
 ## How it works
 

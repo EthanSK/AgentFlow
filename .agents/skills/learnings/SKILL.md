@@ -755,6 +755,7 @@ For explicitly configured paired-Mac Voice mute, read [PAIRED_VOICE_MUTE.md](../
 before changing the transport, receiver, ownership or setup. Ethan requested generic configured-device
 support, not an M1-only command. Preserve the source's accepted local shortcut and each recipient's
 validated existing binding, hardware-only capture hooks, nonblocking fan-out and last-owner restoration.
+If a recipient answers `accessibilityMissing` despite an enabled System Settings switch, compare the exact stored grant requirement with the installed app read-only. A mismatched signing certificate needs that app’s native permission entry refreshed, not a TCC reset, runtime bypass or signer change. Require the running recipient’s readiness result afterward.
 Keep paired ownership and pending release work inside the cooperative-quit guard; close request
 admission atomically before final idle exit. Renewals must not scan ChatGPT or re-acquire an unknown
 lease. Unit/socket readiness does not prove a real Voice call muted. User-requested — 2026-11-08;
