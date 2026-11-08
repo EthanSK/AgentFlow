@@ -2568,3 +2568,12 @@ not establish real-user end-to-end latency after installation.
 The first uninstalled paired-mute pass registered no work with the app's quit guard. A recipient could mute Voice for another Mac while having zero local sessions, then accept normal Quit/update and forget restoration ownership. The replacement process would reject renewals as unknown, leaving the posted mute in place after the source stopped. This was established by source review, not a destructive live restart.
 
 Register admitted paired requests, active recipient ownership and pending outbound requests with the event-driven quit boundary. Keep release work registered until restoration has completed, not merely until the logical owner is removed. Atomically close request admission before returning final idle Quit. The focused Mini cases prove held restoration still vetoes Quit, idle exit rejects a new acquire, duplicate completion cannot clear another owner, and expiry releases protection. Reconsider an ownership-losing cooperative restart only with a separately proven same-call handover; a persisted PID or successful shortcut dispatch is not call identity.
+
+
+## 2026-11-08 — Treating remote SSH AppleScript success as desktop app exit
+
+**Rejected mechanism:** Send normal Quit and relaunch from an SSH Background bootstrap, assume a zero AppleScript exit means the logged-in desktop received Quit, then wait indefinitely for its PID.
+
+**Observed result:** Agent Flow remained alive; the Background NSWorkspace inventory omitted it, while the same read-only update-readiness request from the GUI domain identified the idle app. The corrected GUI-domain one-shot installer completed normal quit and relaunched the verified build. No forced app exit or repeated vetoed Quit was used.
+
+**Reconsider only if:** The exact remote execution context can identify the intended desktop instance and authoritative readiness, and actual process exit/relaunch are verified. Prefer the verified logged-in GUI domain for the one bounded installer, retain all-session vetoes and a real warning, and remove its completed transient job afterward.

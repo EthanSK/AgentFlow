@@ -6,7 +6,7 @@ No private API keys, mouse profiles or personal settings are bundled.
 
 | Piece | Needed for | How to get it |
 | --- | --- | --- |
-| Agent Flow app | Recording, live recorder, transcription and final paste | [Notarized Mac download](https://github.com/EthanSK/AgentFlow/releases/download/v2.0.483/AgentFlow-v2.0.483-mac-universal.zip); macOS 14.4+. Xcode is only needed to build from source. |
+| Agent Flow app | Recording, live recorder, transcription and final paste | [Notarized Mac download](https://github.com/EthanSK/AgentFlow/releases/download/v2.0.491/AgentFlow-v2.0.491-mac-universal.zip); macOS 14.4+. Xcode is only needed to build from source. |
 | Your OpenAI API key and macOS grants | Recommended GPT Live transcription and input delivery | Create an [OpenAI API key](https://platform.openai.com/api-keys), enable API billing, then grant Microphone and Accessibility in macOS. A local Parakeet model remains available. |
 | [Context interpretation skill](.agents/skills/interpret-agent-flow-context/SKILL.md) | Helping local Codex and Claude Code read selection and screenshot references | Run the standalone skill installer below, before or after installing the app |
 | [Agent Flow Bridge](companions/youtube-bridge/README.md) | Pausing the playing YouTube or supported website video when dictation starts, plus optional Agentic Mouse Chrome controls | Separate optional installer; Chrome requires manual extension setup and all-HTTP/HTTPS website access |
@@ -25,7 +25,7 @@ and companion apps; it is an example, not a requirement for your Mac.
 
 ## First installation
 
-Download [Agent Flow v2.0.483](https://github.com/EthanSK/AgentFlow/releases/download/v2.0.483/AgentFlow-v2.0.483-mac-universal.zip), unzip it and move `AgentFlow.app` to Applications. The universal app is Developer ID signed, Apple notarized and stapled. Open it and finish the permissions and model setup below. [Release checksums](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.483) are public.
+Download [Agent Flow v2.0.491](https://github.com/EthanSK/AgentFlow/releases/download/v2.0.491/AgentFlow-v2.0.491-mac-universal.zip), unzip it and move `AgentFlow.app` to Applications. The universal app is Developer ID signed, Apple notarized and stapled. Open it and finish the permissions and model setup below. [Release checksums](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.491) are public.
 
 **Intel Macs:** use a supported cloud transcription provider with your own key. The app's Models page warns that local models do not work reliably on Intel. Apple-silicon Macs can use the downloaded local model without a provider key. A universal executable does not guarantee equal local-model support on both architectures.
 

@@ -5,11 +5,15 @@ explicitly list (the **recipients**) to apply the same ChatGPT Voice microphone 
 Agent Flow already applies locally. Releasing or pausing capture ends only the suppression that
 capture owns. Typing-only sessions never open the microphone and request nothing.
 
-Validation: build 491 compiled and passed 74 named focused tests in 11 suites through Xcode's
-normal test action on the Mac Mini. The complete release gate, signed installation and actual
-cross-device Voice mute acceptance are separate checks not established by that pass.
-Physical acceptance on a real pair of Macs is also still required; see
-[Acceptance checklist](#acceptance-checklist).
+Validation: build 491 passed 74 named focused tests in 11 suites and all 874 release tests in
+41 suites through Xcode's normal test action on the Mac Mini, at source commit `3884b86f`.
+The universal Developer ID signed, notarized and stapled public ZIP passed its downloaded
+checksum and signature checks. The same build is installed and running on the MacBook source
+and M1 recipient, with existing microphone settings and keyboard bindings unchanged.
+The configured Agent Bridge endpoint returned the recipient's readiness answer, but the M1
+reported `accessibilityMissing`. That permission and actual cross-device Voice mute/restore
+acceptance remain required; no test result above establishes audibility or background shortcut
+acceptance. See [Acceptance checklist](#acceptance-checklist).
 
 ## How it works
 
