@@ -20,6 +20,8 @@ Evidence limit: a Mini Chrome fixture with a narrower hidden copy reproduced `no
 
 Untried next idea: use the selected marker range's boundary (`AXPreviousTextMarkerForTextMarker`/`AXUIElementForTextMarker`) to find the math element beside the stray `.` selection.
 
+Release: source `9008a7af`/build 494 passed all 896 named tests in 41 suites through the release workflow. The first attempt stopped in two seconds with `The Fleet API timed out.` while this Mac's load was about 34; no job had been admitted, and rerunning the failed job on the same commit succeeded. The public v2.0.494 ZIP (sha256 `4888ff4d...4044`) passed its checksums, deep/strict Developer ID signing, stapled notarization and Gatekeeper. It is installed at `/Applications/AgentFlow.app` as PID 50957, CDHash `69477aed56acb09aace388c81c90da0b078d1cf5`. Agent Flow's own guard allowed the quit, Ethan got the five-second warning first, `/Applications/VoiceInk.app`, keybindings and microphone preferences were unchanged. Real Codex behaviour is not yet confirmed.
+
 ## 2026-11-08 — Separate gesture delivery, readable text and caret clearing
 
 Existing counts-only LiveSelection logs proved that Codex drag and double-click events arrived and started reads. One ordinary 39-character question prefix emitted into the session; eleven nearby reads were canceled by a newer gesture or stop. Other complete four-attempt failures returned unavailable marker text with zero elsewhere, overextension or prevented-widening counts. Do not diagnose every failed highlight as a missing mouse event, size filter or cancellation. Correlate gesture, captured/unavailable and final finished-outcome lines; a successful accessor alone does not prove an emitted context block.
