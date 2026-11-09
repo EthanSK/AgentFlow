@@ -40,6 +40,8 @@ Live hit tests, measured read-only on 2026-11-09: 30 points across 5 paragraphs 
 
 Verification limit: a read-only harness compiled the real resolver and simulated triple clicks at real paragraph positions, forcing an empty selection. The final run captured 54 of 56 points, all 54 at exactly the paragraph's length, with no KaTeX overline or no-break space left after cleanup. The transcript margin, composer and sidebar captured nothing. One earlier run returned a longer text for 3 points of one paragraph; it did not repeat, and its cause is unknown. Nothing was clicked in Codex, so a real triple click is Ethan's to confirm.
 
+Release: source `1b7a0a5b`/build 498 passed all 913 named tests in 41 suites through the release workflow, plus 220 focused Mini tests beforehand. The public v2.0.498 ZIP (sha256 `c7313e6e...918e`) passed its checksums, deep/strict Developer ID signing, stapled notarization and Gatekeeper.
+
 ## 2026-11-09 — Return typing focus after an empty Codex triple click (build 497)
 
 Ethan reported that a double click on Codex text put the caret back in Agent Flow's typing input, while a triple click left it in Codex's composer.
