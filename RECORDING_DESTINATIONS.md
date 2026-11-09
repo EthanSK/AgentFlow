@@ -1,19 +1,14 @@
 # Recording destination controls (VoiceInk++)
 
-## Current timing exception — fast Send and conditional delayed retry
+## Current timing — one Send after the existing paste allowance
 
-Ethan requested a roughly 50 ms Send attempt followed by a delayed attempt if it
-missed (2026-11-08). Candidate 492 permits this only for the already-focused,
-readable `Work with Codex` composer after the complete paste and this job's fresh
-archive identifier are present. The early opportunity expires at100ms; a delayed
-observation keeps the single original Send. Input counters must remain unchanged
-across the whole read. One
-400 ms retry requires the same unchanged editor/window, no intervening typing or
-clicks, and an uncanceled queue-tail session. Other inputs retain one 400 ms Send.
-There is no saved destination, startup capture, tree scan or focus change. This
-is a narrow exception to the historical no-read-back/no-retry Primary description
-below, not another destination route. Candidate installation and live acceptance
-remain separate from this source contract.
+Ethan removed the experimental early 50 ms Send and conditional retry on
+2026-11-09 after reporting worse submission. Normal Primary delivery again posts
+one system-focused paste, waits the previous 400 ms only when auto-send is enabled,
+and posts the configured generic key once. It performs no recipient read-back,
+archive-marker proof, early attempt or retry. Paste-only Modes have no Send wait.
+FIFO tail suppression, cancellation and HUD-keyboard ownership still gate that
+one key at its existing final boundary. Exact Next routes are unchanged.
 
 ## Current UI override — secondary app icon removed
 

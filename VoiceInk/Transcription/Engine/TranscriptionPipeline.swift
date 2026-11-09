@@ -1177,10 +1177,7 @@ class TranscriptionPipeline {
                 // can make the raw-paste guarantee at the routing point itself (belt-and-
                 // braces on top of the already-forced .paste output above).
                 skipPostProcessing: skipPostProcessingNow,
-                recoversTypedDraft: recoversTypedDraft,
-                primarySendPasteProof: usesCompactPrompt
-                    ? PrimarySendPasteProof(archiveURL: archivedPromptURL, recordID: transcription.id)
-                    : nil
+                recoversTypedDraft: recoversTypedDraft
             ),
             actions: TranscriptionDelivery.Actions(
                 setState: onStateChange,

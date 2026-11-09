@@ -1,5 +1,21 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-09 — Early Send and conditional retry superseded by the original single Send
+
+**Observed result:** Ethan reported that the early attempt was not improving
+submission and felt worse, and explicitly asked to keep the delay from before
+that experiment. This is user acceptance evidence, not proof that the 50 ms timer
+or a particular Accessibility read caused every missed Send.
+
+**Use instead:** Remove the early action, recipient observations, fresh-archive
+proof and retry. Preserve the previous single 400 ms paste-to-Send allowance and
+its existing FIFO/cancellation guards. Paste-only stays immediate; exact Next
+delivery is independent.
+
+**Reconsider only if:** Ethan explicitly asks to revisit early Send, with a
+separately verified acknowledgement mechanism and disposable recipient evidence.
+Do not restore the experiment merely because its policy tests passed.
+
 ## 2026-11-08 — Blind 50ms plus 400ms Return is not a conditional retry
 
 The earlier generic Return fallback experiments already established duplicate

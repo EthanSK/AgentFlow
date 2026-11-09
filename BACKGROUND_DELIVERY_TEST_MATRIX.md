@@ -1,15 +1,11 @@
 # VoiceInk++ background delivery test matrix
 
-**2026-11-08 Primary timing exception (candidate 492):** the explicit fast/slow
-request adds a read-only post-paste receipt only for a readable, focused `Work
-with Codex` composer and this job's fresh archive identifier. Check a successful early Enter produces no retry; an ignored
-first Enter with unchanged text may get one retry at 400 ms from paste; a clear,
-newline/edit, replacement, focus change, intervening input, cancellation or newer
-capture skips retry. Unreadable/unsupported inputs retain the single 400 ms Send.
-An early read or key preflight completed after100ms must instead retain that
-single delayed action; input activity during the receipt read must invalidate it.
-This supersedes only the historical Primary prohibition on this bounded receipt
-and retry. All no-targeting/no-focus-write and exact Next route guards remain.
+**2026-11-09 Primary timing restored:** Ethan removed the experimental 50 ms
+attempt and conditional retry. Require one system-focused paste and, only when
+Mode auto-send is enabled and the queue permits it, one generic Send after the
+previous 400 ms allowance. No recipient read-back, archive proof, app classifier
+or retry remains. Verify paste-only, cancellation, newer-capture/FIFO suppression
+and both exact Next route guards independently.
 
 This is the permanent compatibility matrix for Ethan's main destinations. Read it and
 [FAILED_APPROACHES.md](FAILED_APPROACHES.md) before changing exact-input capture, background
@@ -211,7 +207,7 @@ destination=primaryCurrentInput targetCaptured=false deliveryPolicy=baseCurrentI
 pipeline: about to DELIVER ... destination=primaryCurrentInput
 paste: primary current-input compatibility selected ... appSpecificDelivery=false
 paste: primary current-input command completed result=commandPosted
-paste: primary current-input HID auto-send issued=true verification=notRequired settleMs=220
+paste: primary current-input HID auto-send issued=true verification=notRequired settleMs=400
 ```
 
 The same delivery must contain no exact-input preparation/resolution, Telegram identity, OpenAI Send,
