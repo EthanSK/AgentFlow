@@ -89,6 +89,8 @@ Only an eligible Next route saves an exact input together with its app's Mode an
 
 Build 494 looks for the whole underlined phrase when you double-click one of its words in Codex.
 
+Build 496 also captures a Codex drag that starts or ends on an underlined phrase: you get the whole phrase, plus the sentence of ordinary text next to it.
+
 Build 495 restores one automatic Send 400 ms after paste, removing the experimental early attempt, recipient checks and retry. Paste-only Modes remain immediate. See [Send timing](RECORDING_DESTINATIONS.md#current-timing--one-send-after-the-existing-paste-allowance).
 
 Primary's recording-time double-press selects **Won’t paste** and finishes to the clipboard if no third press follows; a third press in the same gesture pauses capture, and a fourth finishes with paste but no auto-send. While paused, one fresh press resumes, two select **Won’t paste** and finish to the clipboard if no third press follows, and three resume the same capture. These are recording gestures, not extra destinations. Bare Escape stays with the foreground app.

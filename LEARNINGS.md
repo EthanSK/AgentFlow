@@ -30,6 +30,22 @@ and emitted-key checks.
 ---
 
 
+## 2026-11-09 — Capture a Codex drag that touches a formula (build 496)
+
+Ethan reported that dragging across an underlined phrase gives nothing or a stray `‾`. A real drag from plain text into a formula left `AXSelectedTextMarkerRange` collapsed and `AXSelectedText` nil, while Codex drew the highlight. So the app itself reports an empty selection; it isn't our range logic. Plain-only drags were always fine, and nothing in builds 493–495 touched drags, so this is not a regression.
+
+Fix: only after Codex's own selection comes back empty (or a lone character), classify each drag end as a formula or a plain run and read one marker range from the first element's start to the last element's end. A formula is taken whole, which Ethan accepted. A plain run is cut to the one sentence beside the formula, because no position inside a run exists. The cleanup strips `‾` and no-break spaces for Codex and Claude only. Captures contain no LaTeX source, so nothing needs translating.
+
+Live Codex facts, measured read-only on 2026-11-09:
+
+- `AXTextMarkerForPosition` and the bounds-to-marker calls return no value, on the hit element and on the web area. A screen point cannot become a marker.
+- `AXBoundsForTextMarkerRange` on word steps and `AXBoundsForRange` on text leaves are almost always empty rectangles. Walking words or characters by bounds over- and under-captured.
+- `AXUIElementCopyElementAtPosition` is approximate. A point not asked about last returns a window-sized `AXEmptyGroup` or a text run whose wrapped union frame merely covers it. Chromium remembers one hit test, so two points asked in turn keep evicting each other. Find a stuck end from the frames around the settled one.
+- A text-run hit therefore does not prove the point is on that run; the drag path still searches for a formula on that row.
+- The hidden formula box only marks where a formula starts. Its visible end is estimated from its length (about 7.4 points per character, 8 allowed).
+
+Verification limit: a read-only harness compiled the real resolver and ran synthetic drags against live Codex, forcing an empty selection. It passed 10–12 of 12 per run across real formulas. Failures were all "no capture", when both ends stayed placeholders on every retry, mostly on points past the end of a line.
+
 ## 2026-11-08 — Read the whole formula under a Codex double-click
 
 KaTeX draws each formula twice: a visible `aria-hidden` copy and a MathML copy. A double-click selects a word in the hidden visible copy, which has no Accessibility position, so the host reports an empty or unrelated range. Counts-only live logs showed `clicks=2 attempts=4 examined=29 missingMarkers=7 unavailableMarkerText=22`, and one double-click captured a single stray character. Drags across the same text did read the MathML copy, so the text was reachable.

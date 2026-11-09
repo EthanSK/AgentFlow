@@ -74,6 +74,8 @@ physical acceptance.
 
 **Build 493's formula lookup also failed in live Codex:** it required the formula to be a direct child of the hit block with a box containing the pointer, and logged `no-formula:AXGroup` on Ethan's real double-clicks. The hidden copy is laid out in a different font, so its box can stop short of the drawn word. A Mini fixture with a narrower hidden copy reproduced the same log line. Do not rely on the hidden copy's box alone, and do not treat a passing Chrome page as proof for Codex.
 
+**Reconsidered 2026-11-09, for a Codex drag that touches a formula:** Ethan accepted the whole formula here too, plus nearby plain text. A partial range inside a formula is still impossible: its visible glyphs have no Accessibility position. Point-to-marker lookup (`AXTextMarkerForPosition`), word-step marker bounds and integer character bounds all failed in live Codex, so whole elements are the only reliable boundaries. A plain end rounds out to the sentence beside the formula. Do not retry per-word or per-character geometry unless Codex's Chromium starts returning real bounds for them.
+
 ## 2026-11-06 — Apply live-event freshness or HUD-first focus to startup capture
 
 **Observed failures:** A preselected Code range had no new watched gesture, so the bridge was skipped; an old selection-change timestamp also failed the live freshness check. A disposable Mini non-activating HUD with an automatically focused text view made Code's focused-pane query return no pane even though Code remained frontmost. The same selected range passed without that focus step.

@@ -138,6 +138,9 @@ enum LiveSelectionReadPolicy {
     /// Live Codex can nest a formula below the block that macOS hit-tests, so
     /// search around that block. These limits keep one double-click cheap.
     static let maximumFormulaSearchNodes = 120
+    /// Widest a formula's character is expected to be drawn, in points. Measured
+    /// about 7.4 in live Codex (2026-11-09): its visible glyphs report no bounds.
+    static let maximumFormulaCharacterWidth: CGFloat = 8
     static let maximumFormulaSearchDepth = 6
     static let maximumFormulaSearchClimbs = 3
     /// Selection bounds within this many points of either gesture endpoint
@@ -198,6 +201,20 @@ struct LiveSelectionGesture: Equatable, Sendable {
         let dx = mouseUp.x - mouseDown.x
         let dy = mouseUp.y - mouseDown.y
         return dx * dx + dy * dy < 16 ? [mouseDown] : [mouseDown, mouseUp]
+    }
+
+    /// Whether this is a real drag rather than a click or multi-click. AppKit's
+    /// global monitor reports zero or one clicks for a drag.
+    var isDrag: Bool {
+        (0...1).contains(clickCount) && hitTestPoints.count == 2
+    }
+
+    /// The drag's two ends in reading order, whichever way the mouse went.
+    /// Within 8 points vertically is one row, as in `spanEvidence`.
+    var endsInReadingOrder: (first: CGPoint, last: CGPoint) {
+        let sameRow = abs(mouseUp.y - mouseDown.y) <= 8
+        let downComesFirst = sameRow ? mouseDown.x <= mouseUp.x : mouseDown.y <= mouseUp.y
+        return downComesFirst ? (mouseDown, mouseUp) : (mouseUp, mouseDown)
     }
 
     func evidence(for bounds: CGRect?) -> LiveSelectionBoundsEvidence {
@@ -391,6 +408,64 @@ struct LiveSelectionResolution: Equatable, Sendable {
     }
 }
 
+/// Text clean-up for selections that touched a rendered formula.
+enum LiveSelectionFormulaText {
+    private static let formulaHostBundleIDs: Set<String> = [
+        "com.openai.codex", "com.anthropic.claudefordesktop",
+    ]
+
+    /// Removes characters that exist only because the chat app drew text as a
+    /// formula. KaTeX's readable copy ends `\\underline` with an overline
+    /// character ("Keep the split‾") and spells its spaces as no-break spaces.
+    /// Other apps are left alone: there these may be the user's own text.
+    static func cleaned(_ text: String, bundleID: String?) -> String {
+        guard let bundleID, formulaHostBundleIDs.contains(bundleID) else { return text }
+        return text.replacingOccurrences(of: "\u{203E}", with: "")
+            .replacingOccurrences(of: "\u{00A0}", with: " ")
+    }
+
+    /// Shortens the plain run a drag started in to its sentence next to the
+    /// formula. Codex reports no position inside a run, so the part of it the
+    /// user covered is unknown; one sentence keeps the likely words without
+    /// pulling in a whole paragraph of unselected prose.
+    static func keepingLastSentence(ofLeadingRun run: String, in text: String) -> String {
+        guard text.hasPrefix(run) else { return text }
+        let characters = Array(run)
+        var index = characters.count - 1
+        while index >= 0, characters[index].isWhitespace { index -= 1 }
+        while index > 0 {
+            if characters[index].isWhitespace, endsSentence(characters[index - 1]) {
+                let kept = String(characters[(index + 1)...])
+                return kept + text.dropFirst(run.count)
+            }
+            index -= 1
+        }
+        return text
+    }
+
+    /// Shortens the plain run a drag ended in to its first sentence, for the
+    /// same reason. A run that opens with the formula's own punctuation keeps
+    /// the sentence after it.
+    static func keepingFirstSentence(ofTrailingRun run: String, in text: String) -> String {
+        guard text.hasSuffix(run) else { return text }
+        let characters = Array(run)
+        var index = 0
+        while index < characters.count, characters[index].isWhitespace || endsSentence(characters[index])
+            || characters[index] == "," { index += 1 }
+        while index < characters.count - 1 {
+            if endsSentence(characters[index]), characters[index + 1].isWhitespace {
+                return text.dropLast(run.count) + String(characters[...index])
+            }
+            index += 1
+        }
+        return text
+    }
+
+    private static func endsSentence(_ character: Character) -> Bool {
+        character.isNewline || ".!?".contains(character)
+    }
+}
+
 /// Read-only Accessibility surface for one source process. The live
 /// implementation is created from `AXUIElementCreateApplication(sourcePID)`,
 /// so every element it returns was vended by the source app itself. That
@@ -410,6 +485,10 @@ protocol LiveSelectionAccessibilityProbe {
     func children(of element: Element) -> [Element]
     func frame(of element: Element) -> CGRect?
     func formulaText(of element: Element) -> String?
+    /// Text from the start of `first` to the end of `last`.
+    func text(from first: Element, to last: Element) -> String?
+    /// An ordinary text element's own full text.
+    func plainText(of element: Element) -> String?
 }
 
 /// Pure tier policy over a probe, so ordering, secure-field refusal,
@@ -430,6 +509,19 @@ struct LiveSelectionAccessibilityResolver<Probe: LiveSelectionAccessibilityProbe
     var sourceWindowBounds: CGRect? = nil
 
     func resolve() -> LiveSelectionResolution {
+        var resolution = resolveAppSelection()
+        // Only after the app's own selection came back empty, so every drag that
+        // already works keeps its exact range. A lone character counts as empty:
+        // a real drag onto a formula captured just the "." beside it (2026-11-08).
+        let reportedText = resolution.candidate?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if resolution.refusedSecure == 0, reportedText.count <= 1,
+           let dragged = draggedAcrossFormula(into: &resolution) {
+            resolution.candidate = dragged
+        }
+        return resolution
+    }
+
+    private func resolveAppSelection() -> LiveSelectionResolution {
         var resolution = LiveSelectionResolution()
         resolution.hasGesture = gesture != nil
         var visited: [Probe.Element] = []
@@ -653,6 +745,176 @@ struct LiveSelectionAccessibilityResolver<Probe: LiveSelectionAccessibilityProbe
         }
         let hitRole = probe.role(of: hit)
         let hitRoleLabel = hitRole ?? "none"
+        var search = FormulaSearch()
+        let formula = formula(at: point, hit: hit, hitRole: hitRole, search: &search)
+        if search.ran { resolution.formulaSearch = search.summary }
+        guard let formula else {
+            resolution.formulaLookup = "no-formula:\(hitRoleLabel)"
+            return nil
+        }
+        guard let text = Self.meaningful(probe.formulaText(of: formula)) else {
+            resolution.formulaLookup = "unreadable:\(hitRoleLabel)"
+            return nil
+        }
+        resolution.formulaLookup = "found:\(hitRoleLabel)"
+        return LiveSelectionCandidate(
+            text: text, tier: .pointerFormula, source: .textMarkers, evidence: .atGesture
+        )
+    }
+
+    /// What sits under one end of a drag.
+    private enum DragEnd {
+        case formula(Probe.Element)
+        case plainText(Probe.Element)
+        /// Chromium answered with its placeholder; a later attempt gets the real element.
+        case unsettled
+        case unknown
+
+        var element: Probe.Element? {
+            switch self {
+            case let .formula(element), let .plainText(element): return element
+            case .unsettled, .unknown: return nil
+            }
+        }
+
+        var isFormula: Bool {
+            if case .formula = self { return true }
+            return false
+        }
+
+        var isUnsettled: Bool {
+            if case .unsettled = self { return true }
+            return false
+        }
+    }
+
+    /// Returns what a Codex drag covered when one of its ends is on a formula,
+    /// or nil when neither end is.
+    ///
+    /// KaTeX's visible glyphs have no Accessibility position, so a drag that
+    /// starts or ends on one leaves Codex reporting an empty selection (seen
+    /// live 2026-11-09). Live Codex also gave no usable position inside text:
+    /// `AXTextMarkerForPosition` returned nothing, and word and character
+    /// bounds came back as empty rectangles. Only whole elements can be
+    /// located, so this reads from the element under one end to the element
+    /// under the other. A formula is taken whole, which Ethan accepted
+    /// (2026-11-09), and a plain run is cut to one sentence.
+    private func draggedAcrossFormula(
+        into resolution: inout LiveSelectionResolution
+    ) -> LiveSelectionCandidate? {
+        guard checksDragSpan, !requiresGestureBounds, gestureInSourceWindow == true,
+              let gesture, gesture.isDrag else { return nil }
+        let ends = gesture.endsInReadingOrder
+        var search = FormulaSearch()
+        var upEnd = dragEnd(at: gesture.mouseUp, search: &search)
+        search.visited = 0 // One end's large block used the whole node limit in live Codex, starving the other end.
+        var downEnd = dragEnd(at: gesture.mouseDown, search: &search)
+        // Chromium remembers only its latest hit test (seen live 2026-11-09), so one
+        // end can stay a placeholder on every retry. Frames still work: find that
+        // end near the settled one.
+        if upEnd.isUnsettled, let settled = downEnd.element {
+            search.visited = 0
+            upEnd = dragEnd(at: gesture.mouseUp, near: settled, search: &search)
+        } else if downEnd.isUnsettled, let settled = upEnd.element {
+            search.visited = 0
+            downEnd = dragEnd(at: gesture.mouseDown, near: settled, search: &search)
+        }
+        let (first, last) = ends.first == gesture.mouseUp ? (upEnd, downEnd) : (downEnd, upEnd)
+        if search.ran { resolution.formulaSearch = search.summary }
+        // The capture loop already retries, and each read refreshes the hit test.
+        if first.isUnsettled || last.isUnsettled {
+            resolution.formulaLookup = "drag-unsettled"
+            resolution.candidate = nil // A stray "." would end the retries before Chromium has answered.
+            return nil
+        }
+        guard first.isFormula || last.isFormula,
+              let firstElement = first.element ?? last.element,
+              let lastElement = last.element ?? first.element else {
+            resolution.formulaLookup = "drag-no-formula"
+            return nil
+        }
+        let whichEnds = first.isFormula && last.isFormula ? "both" : first.isFormula ? "first" : "last"
+        var opening = first, closing = last
+        var read = probe.text(from: firstElement, to: lastElement).flatMap(Self.meaningful)
+        if read == nil { // Chromium can hit-test the two ends the other way round on one row, seen live 2026-11-09.
+            (opening, closing) = (last, first)
+            read = probe.text(from: lastElement, to: firstElement).flatMap(Self.meaningful)
+        }
+        guard var text = read else {
+            resolution.formulaLookup = "drag-unreadable:\(whichEnds)"
+            return nil
+        }
+        if case let .plainText(leaf) = opening, let run = probe.plainText(of: leaf) {
+            text = LiveSelectionFormulaText.keepingLastSentence(ofLeadingRun: run, in: text)
+        }
+        if case let .plainText(leaf) = closing, let run = probe.plainText(of: leaf) {
+            text = LiveSelectionFormulaText.keepingFirstSentence(ofTrailingRun: run, in: text)
+        }
+        guard let text = Self.meaningful(text) else {
+            resolution.formulaLookup = "drag-unreadable:\(whichEnds)"
+            return nil
+        }
+        resolution.formulaLookup = "drag-found:\(whichEnds)"
+        return LiveSelectionCandidate(
+            text: text, tier: .pointerFormula, source: .textMarkers, evidence: .atGesture
+        )
+    }
+
+    /// Classifies one end of a drag. Editable fields never hold a formula.
+    private func dragEnd(at point: CGPoint, search: inout FormulaSearch) -> DragEnd {
+        guard !probe.isExpired, let hit = probe.element(at: point) else { return .unknown }
+        let hitRole = probe.role(of: hit)
+        if hitRole == kAXTextAreaRole || hitRole == kAXTextFieldRole { return .unknown }
+        // Live Codex answers a point the pointer has left with an empty group
+        // the size of the whole window, then the real element on the next ask.
+        if probe.subrole(of: hit) == "AXEmptyGroup", let sourceWindowBounds,
+           let frame = probe.frame(of: hit), frame.insetBy(
+            dx: -LiveSelectionReadPolicy.windowTolerance, dy: -LiveSelectionReadPolicy.windowTolerance
+           ).contains(sourceWindowBounds) {
+            return .unsettled
+        }
+        return classifiedDragEnd(at: point, hit: hit, hitRole: hitRole, search: &search)
+    }
+
+    /// Classifies a drag end Chromium has not answered for, from the frames
+    /// around the end it did answer for.
+    private func dragEnd(at point: CGPoint, near settled: Probe.Element, search: inout FormulaSearch) -> DragEnd {
+        guard let scope = probe.parent(of: settled) else { return .unknown }
+        return classifiedDragEnd(at: point, hit: scope, hitRole: probe.role(of: scope), search: &search)
+    }
+
+    private func classifiedDragEnd(
+        at point: CGPoint, hit: Probe.Element, hitRole: String?, search: inout FormulaSearch
+    ) -> DragEnd {
+        // A text hit does not rule out a formula here: an unsettled answer can be a
+        // run whose wrapped frame merely covers the point (seen live 2026-11-09).
+        let searchRole = hitRole == kAXStaticTextRole ? nil : hitRole
+        if let formula = formula(at: point, hit: hit, hitRole: searchRole, search: &search),
+           !isPastVisibleGlyphs(of: formula, at: point) {
+            return .formula(formula)
+        }
+        if hitRole == kAXStaticTextRole { return .plainText(hit) }
+        // Wrapped runs report overlapping frames, so the tightest one is the likeliest.
+        let tightest = search.visibleText
+            .compactMap { element in probe.frame(of: element).map { (element: element, frame: $0) } }
+            .filter { $0.frame.contains(point) }
+            .min { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
+        return tightest.map { .plainText($0.element) } ?? .unknown
+    }
+
+    /// Whether `point` is on the words after a formula instead of on the formula.
+    /// The hidden copy only marks where a formula starts, so its visible end is
+    /// estimated from its length; the row match alone took those words as formula.
+    private func isPastVisibleGlyphs(of formula: Probe.Element, at point: CGPoint) -> Bool {
+        guard let frame = probe.frame(of: formula), let text = probe.formulaText(of: formula) else { return false }
+        let tolerance: CGFloat = 8
+        return point.x > frame.minX + CGFloat(text.count) * LiveSelectionReadPolicy.maximumFormulaCharacterWidth + tolerance
+    }
+
+    /// The formula at `point`, given what macOS hit-tested there.
+    private func formula(
+        at point: CGPoint, hit: Probe.Element, hitRole: String?, search: inout FormulaSearch
+    ) -> Probe.Element? {
         var formula: Probe.Element?
         // The hit can land on a text leaf inside the MathML copy.
         var ancestor: Probe.Element? = hit
@@ -669,26 +931,16 @@ struct LiveSelectionAccessibilityResolver<Probe: LiveSelectionAccessibilityProbe
         // Visible text has its own leaf, and must win because a math box can
         // extend over the next word.
         if formula == nil, hitRole != kAXStaticTextRole {
-            var search = FormulaSearch()
+            search.ran = true
             formula = searchForFormula(near: point, around: hit, search: &search)
-            resolution.formulaSearch = search.summary
         }
-        guard let formula else {
-            resolution.formulaLookup = "no-formula:\(hitRoleLabel)"
-            return nil
-        }
-        guard let text = Self.meaningful(probe.formulaText(of: formula)) else {
-            resolution.formulaLookup = "unreadable:\(hitRoleLabel)"
-            return nil
-        }
-        resolution.formulaLookup = "found:\(hitRoleLabel)"
-        return LiveSelectionCandidate(
-            text: text, tier: .pointerFormula, source: .textMarkers, evidence: .atGesture
-        )
+        return formula
     }
 
     /// What one formula search saw, for the counts-only log.
     private struct FormulaSearch {
+        var ran = false
+        var visibleText: [Probe.Element] = []
         var visited = 0
         var formulas = 0
         var framed = 0
@@ -723,6 +975,7 @@ struct LiveSelectionAccessibilityResolver<Probe: LiveSelectionAccessibilityProbe
                 under: current, skipping: searched, depth: 1,
                 into: &boxes, visibleText: &visibleText, search: &search
             )
+            search.visibleText += visibleText
             if let match = bestFormula(near: point, among: boxes, visibleText: visibleText, search: &search) {
                 return match
             }
@@ -977,6 +1230,29 @@ final class LiveAccessibilitySelectionProbe: LiveSelectionAccessibilityProbe {
             plain: { self.parameterized(Self.stringForTextMarkerRange, of: element, parameter: range) },
             attributed: { self.parameterized(Self.attributedStringForTextMarkerRange, of: element, parameter: range) }
         )
+    }
+
+    func text(from first: AXUIElement, to last: AXUIElement) -> String? {
+        guard let firstRange = markerRange(of: first), let lastRange = markerRange(of: last) else { return nil }
+        let range = AXTextMarkerRangeCreate(
+            kCFAllocatorDefault,
+            AXTextMarkerRangeCopyStartMarker(firstRange),
+            AXTextMarkerRangeCopyEndMarker(lastRange)
+        )
+        return LiveSelectionRangeTextReader.read(
+            plain: { self.parameterized(Self.stringForTextMarkerRange, of: first, parameter: range) },
+            attributed: { self.parameterized(Self.attributedStringForTextMarkerRange, of: first, parameter: range) }
+        )
+    }
+
+    func plainText(of element: AXUIElement) -> String? {
+        copy(kAXValueAttribute, of: element) as? String
+    }
+
+    private func markerRange(of element: AXUIElement) -> AXTextMarkerRange? {
+        guard let value = parameterized(Self.textMarkerRangeForUIElement, of: element, parameter: element),
+              CFGetTypeID(value) == AXTextMarkerRangeGetTypeID() else { return nil }
+        return (value as! AXTextMarkerRange)
     }
 
     private func selectedRange(of element: AXUIElement) -> AXValue? {

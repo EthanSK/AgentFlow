@@ -19,6 +19,7 @@ private final class FakeSelectionProbe: LiveSelectionAccessibilityProbe {
         var markerBounds: CGRect?
         var frame: CGRect?
         var formulaText: String?
+        var plainText: String?
     }
 
     var nodes: [Int: Node] = [:]
@@ -28,6 +29,8 @@ private final class FakeSelectionProbe: LiveSelectionAccessibilityProbe {
     private(set) var selectionReads: [Int] = []
     private(set) var roleReads = 0
     private(set) var hitTests: [CGPoint] = []
+    var markerRangeTexts: [String: String] = [:]
+    private(set) var markerRangeReads: [String] = []
 
     var isExpired: Bool {
         guard let expireAfterRoleReads else { return false }
@@ -72,6 +75,13 @@ private final class FakeSelectionProbe: LiveSelectionAccessibilityProbe {
     func frame(of element: Int) -> CGRect? { nodes[element]?.frame }
 
     func formulaText(of element: Int) -> String? { nodes[element]?.formulaText }
+
+    func text(from first: Int, to last: Int) -> String? {
+        markerRangeReads.append("\(first)-\(last)")
+        return markerRangeTexts["\(first)-\(last)"]
+    }
+
+    func plainText(of element: Int) -> String? { nodes[element]?.plainText }
 }
 
 struct LiveSelectionFallbackTests {
@@ -1042,6 +1052,154 @@ struct LiveSelectionFallbackTests {
         ).resolve()
         #expect(otherApp.formulaLookup == "skipped")
         #expect(otherApp.candidate?.tier != .pointerFormula)
+    }
+
+    /// Plain text, a formula, then a wrapped run whose frame covers the whole
+    /// paragraph, as live Codex reports. Only the formula's start has a position.
+    private func addDragParagraph(to probe: FakeSelectionProbe) {
+        probe.focused = 1
+        probe.nodes[1] = .init(role: "AXWebArea", selectedText: ".")
+        probe.nodes[2] = .init(role: "AXGroup", parent: 1, frame: CGRect(x: 100, y: 100, width: 700, height: 60))
+        probe.nodes[3] = .init(role: "AXStaticText", parent: 2, frame: CGRect(x: 100, y: 100, width: 100, height: 20),
+            plainText: "Earlier. Lead in ")
+        probe.nodes[4] = .init(role: "AXGroup", subrole: LiveSelectionReadPolicy.formulaSubrole, parent: 2,
+            frame: CGRect(x: 200, y: 100, width: 4, height: 20), formulaText: "the phrase")
+        probe.nodes[5] = .init(role: "AXStaticText", parent: 2, frame: CGRect(x: 100, y: 100, width: 700, height: 60),
+            plainText: ", then more. Another sentence.")
+        probe.nodes[6] = .init(role: "AXGroup", subrole: "AXEmptyGroup", parent: 1, frame: display)
+        probe.markerRangeTexts["3-4"] = "Earlier. Lead in the phrase"
+        probe.markerRangeTexts["4-5"] = "the phrase, then more. Another sentence."
+        probe.markerRangeTexts["4-4"] = "the phrase"
+    }
+
+    private let plainBeforeFormula = CGPoint(x: 150, y: 110)
+    private let onFormula = CGPoint(x: 250, y: 110)
+    private let wordsAfterFormula = CGPoint(x: 500, y: 110)
+
+    @Test func codexDragEndingOnFormulaReadsFromThePlainTextToTheFormula() {
+        let probe = FakeSelectionProbe()
+        addDragParagraph(to: probe)
+        probe.hitTargets = [(plainBeforeFormula, 3), (onFormula, 2)]
+        let result = precisionResolve(probe, gesture(plainBeforeFormula, onFormula))
+        #expect(result.candidate?.text == "Lead in the phrase") // The app's lone "." is not a selection.
+        #expect(result.candidate?.tier == .pointerFormula)
+        #expect(result.formulaLookup == "drag-found:last")
+    }
+
+    @Test func codexDragFromFormulaIntoLaterWordsKeepsTheirSentence() {
+        for (down, up) in [(onFormula, wordsAfterFormula), (wordsAfterFormula, onFormula)] {
+            let probe = FakeSelectionProbe()
+            addDragParagraph(to: probe)
+            probe.hitTargets = [(onFormula, 2), (wordsAfterFormula, 2)]
+            let result = precisionResolve(probe, gesture(down, up))
+            #expect(result.candidate?.text == "the phrase, then more.")
+            #expect(result.formulaLookup == "drag-found:first")
+        }
+    }
+
+    @Test func codexDragInsideOneFormulaReturnsTheWholeFormula() {
+        let probe = FakeSelectionProbe()
+        addDragParagraph(to: probe)
+        let insideFormula = CGPoint(x: 220, y: 110)
+        probe.hitTargets = [(insideFormula, 2), (onFormula, 2)]
+        let result = precisionResolve(probe, gesture(insideFormula, onFormula))
+        #expect(result.candidate?.text == "the phrase")
+        #expect(result.formulaLookup == "drag-found:both")
+    }
+
+    @Test func codexDragBetweenTwoFormulasReadsEverythingBetweenThem() {
+        let probe = FakeSelectionProbe()
+        addFormulaParagraph(to: probe)
+        probe.markerRangeTexts["3-4"] = "first phrase, words, second phrase"
+        let top = CGPoint(x: 150, y: 110), bottom = CGPoint(x: 150, y: 150)
+        probe.hitTargets = [(top, 2), (bottom, 2)]
+        let result = precisionResolve(probe, gesture(bottom, top))
+        #expect(result.candidate?.text == "first phrase, words, second phrase")
+        #expect(result.formulaLookup == "drag-found:both")
+    }
+
+    @Test func codexDragRetriesWhenTheHitIsStillChromiumsPlaceholder() {
+        let probe = FakeSelectionProbe()
+        addDragParagraph(to: probe)
+        probe.hitTargets = [(plainBeforeFormula, 6), (onFormula, 6)]
+        let result = precisionResolve(probe, gesture(plainBeforeFormula, onFormula))
+        #expect(result.candidate == nil)
+        #expect(result.formulaLookup == "drag-unsettled")
+    }
+
+    @Test func codexDragFindsAStillUnsettledEndFromTheSettledOnesFrames() {
+        for (down, up) in [(wordsAfterFormula, onFormula), (onFormula, wordsAfterFormula)] {
+            let probe = FakeSelectionProbe()
+            addDragParagraph(to: probe)
+            probe.hitTargets = [(onFormula, 2), (wordsAfterFormula, 6)]
+            let result = precisionResolve(probe, gesture(down, up))
+            #expect(result.candidate?.text == "the phrase, then more.")
+            #expect(result.formulaLookup == "drag-found:first")
+        }
+    }
+
+    @Test func codexDragOntoATextHitCoveringTheFormulaStillFindsIt() {
+        let probe = FakeSelectionProbe()
+        addDragParagraph(to: probe)
+        // An unsettled answer: the wrapped run after the formula covers its glyphs.
+        probe.hitTargets = [(plainBeforeFormula, 3), (onFormula, 5)]
+        let result = precisionResolve(probe, gesture(plainBeforeFormula, onFormula))
+        #expect(result.candidate?.text == "Lead in the phrase")
+    }
+
+    @Test func codexDragEndsHitTheWrongWayRoundStillReadInDocumentOrder() {
+        let probe = FakeSelectionProbe()
+        addDragParagraph(to: probe)
+        probe.nodes[4]?.frame = CGRect(x: 120, y: 130, width: 4, height: 20)
+        let plainRow = CGPoint(x: 700, y: 110), formulaRow = CGPoint(x: 150, y: 140)
+        probe.hitTargets = [(plainRow, 5), (formulaRow, 2)]
+        let result = precisionResolve(probe, gesture(plainRow, formulaRow))
+        #expect(probe.markerRangeReads == ["5-4", "4-5"])
+        #expect(result.candidate?.text == "the phrase, then more.")
+    }
+
+    @Test func plainOnlyCodexDragNeverEntersTheFormulaRead() {
+        let probe = FakeSelectionProbe()
+        addFormulaParagraph(to: probe)
+        probe.nodes[8] = .init(role: "AXStaticText", parent: 1, frame: CGRect(x: 400, y: 300, width: 200, height: 20))
+        let start = CGPoint(x: 420, y: 310), end = CGPoint(x: 560, y: 310)
+        probe.hitTargets = [(start, 8), (end, 8)]
+        let result = precisionResolve(probe, gesture(start, end))
+        #expect(result.formulaLookup == "drag-no-formula")
+        #expect(probe.markerRangeReads.isEmpty)
+    }
+
+    @Test func aRealSelectionFromTheAppNeverEntersTheFormulaRead() {
+        let probe = FakeSelectionProbe()
+        addDragParagraph(to: probe)
+        let dragBounds = CGRect(x: 150, y: 100, width: 100, height: 20)
+        probe.nodes[1] = .init(role: "AXWebArea", selectedText: "the app's own range", bounds: dragBounds)
+        probe.hitTargets = [(plainBeforeFormula, 3), (onFormula, 2)]
+        let result = precisionResolve(probe, gesture(plainBeforeFormula, onFormula))
+        #expect(result.candidate?.text == "the app's own range")
+        #expect(probe.markerRangeReads.isEmpty)
+    }
+
+    @Test func formulaDragReadIsCodexOnlyAndForegroundOnly() {
+        for (checksDragSpan, requiresGestureBounds) in [(false, false), (true, true)] {
+            let probe = FakeSelectionProbe()
+            addDragParagraph(to: probe)
+            probe.hitTargets = [(plainBeforeFormula, 3), (onFormula, 2)]
+            let result = LiveSelectionAccessibilityResolver(
+                probe: probe, gesture: gesture(plainBeforeFormula, onFormula), gestureInSourceWindow: true,
+                requiresGestureBounds: requiresGestureBounds, checksDragSpan: checksDragSpan,
+                sourceWindowBounds: display
+            ).resolve()
+            #expect(result.formulaLookup == "skipped")
+            #expect(probe.markerRangeReads.isEmpty)
+        }
+    }
+
+    @Test func formulaCleanupStripsKaTeXCharactersOnlyInChatApps() {
+        let captured = "Keep\u{00A0}the split\u{203E}"
+        #expect(LiveSelectionFormulaText.cleaned(captured, bundleID: "com.openai.codex") == "Keep the split")
+        #expect(LiveSelectionFormulaText.cleaned(captured, bundleID: "com.anthropic.claudefordesktop") == "Keep the split")
+        #expect(LiveSelectionFormulaText.cleaned(captured, bundleID: "com.apple.Safari") == captured)
     }
 
     @Test func secureFocusRefusesBeforeAnyFormulaRead() {

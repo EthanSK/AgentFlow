@@ -1894,7 +1894,7 @@ final class LiveSelectionCapture {
                     callbackLagMilliseconds: gesture?.callbackLagMilliseconds,
                     formulaLookup: last.formulaLog
                 )
-                return (candidate.text, last)
+                return (LiveSelectionFormulaText.cleaned(candidate.text, bundleID: bundleID), last)
             }
             // Without Accessibility trust a re-read cannot succeed.
             if !last.accessibilityTrusted { break }
