@@ -30,6 +30,16 @@ and emitted-key checks.
 ---
 
 
+## 2026-11-09 — Return typing focus after an empty Codex triple click (build 497)
+
+Ethan reported that a double click on Codex text put the caret back in Agent Flow's typing input, while a triple click left it in Codex's composer.
+
+Two things compete for focus after a highlight. The separate focus helper focuses Codex's composer about 0.4 s after the mouse-up, and Agent Flow's `returnAfterContext()` focuses its HUD editor, but only from `recordLiveSelection`, so only after text is captured. Double clicks on an underlined phrase read in about 55 ms through the formula path. Agent Flow's counts-only log for Ethan's 16:55 test showed all five triple clicks on that same line never committing: `finished outcome=canceled-by-new-gesture-or-stop` with `readMs` from 204 to 1342, no `captured` line and no `typing focus: restored` line. The retries run for up to 1.2 s, and nothing asked for focus.
+
+Fix: a live Codex triple click returns focus after its first empty read. Retries continue, and a later success still commits. All 20 triple clicks captured that day read on attempt 1, so the retries were never why focus waited. The read happens before focus moves, in the same order as a successful capture.
+
+Limit: this fixes focus, not capture. A triple click on a line with an underlined formula still adds no text, because `doubleClickedFormula` only covers `clickCount == 2`. Do not read the focus helper's live log to diagnose this; its README forbids it for agents. Agent Flow's own `LiveSelection` and `TypingFocus` log lines were enough.
+
 ## 2026-11-09 — Capture a Codex drag that touches a formula (build 496)
 
 Ethan reported that dragging across an underlined phrase gives nothing or a stray `‾`. A real drag from plain text into a formula left `AXSelectedTextMarkerRange` collapsed and `AXSelectedText` nil, while Codex drew the highlight. So the app itself reports an empty selection; it isn't our range logic. Plain-only drags were always fine, and nothing in builds 493–495 touched drags, so this is not a regression.

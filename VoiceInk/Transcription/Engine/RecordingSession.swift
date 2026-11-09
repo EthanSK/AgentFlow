@@ -860,6 +860,9 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
             },
             onImage: { [weak self] textCaptureID, image, spokenAnchor in
                 self?.attachLiveSelectionImage(image, after: textCaptureID, spokenAnchor: spokenAnchor) ?? false
+            },
+            onCodexTripleClickReadEmpty: { [weak self] in
+                self?.typingFocus.returnAfterContext()
             }
         )
         liveSelectionCapture = capture

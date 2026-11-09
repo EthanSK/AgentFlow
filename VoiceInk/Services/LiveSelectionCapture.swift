@@ -1238,6 +1238,10 @@ final class LiveSelectionCapture {
     /// committed text. Returns false when that text or capture is gone; the
     /// caller then deletes the file.
     private let onImage: (_ textCaptureID: UUID, _ image: LiveSelectionReference, _ spokenAnchor: String) -> Bool
+    /// Runs when a live Codex triple click's first read finds nothing, so the
+    /// session can return the keyboard to Agent Flow's typing input. No captured
+    /// text would ever request that for this gesture.
+    private let onCodexTripleClickReadEmpty: () -> Void
     private let speechSnapshot: () -> String
     /// True between start() and stop(). Replaces this object's former private
     /// NSEvent monitor: edges now arrive from the shared watcher only while attached.
@@ -1259,11 +1263,13 @@ final class LiveSelectionCapture {
          onCapture: @escaping (_ reference: LiveSelectionReference, _ precedesSpeech: Bool, _ spokenAnchor: String) -> Void,
          onLabels: @escaping (_ captureID: UUID, _ reference: LiveSelectionReference) -> Void,
          onImage: @escaping (_ textCaptureID: UUID, _ image: LiveSelectionReference,
-                             _ spokenAnchor: String) -> Bool = { _, _, _ in false }) {
+                             _ spokenAnchor: String) -> Bool = { _, _, _ in false },
+         onCodexTripleClickReadEmpty: @escaping () -> Void) {
         self.speechSnapshot = speechSnapshot
         self.onCapture = onCapture
         self.onLabels = onLabels
         self.onImage = onImage
+        self.onCodexTripleClickReadEmpty = onCodexTripleClickReadEmpty
     }
 
     @discardableResult
@@ -1690,7 +1696,13 @@ final class LiveSelectionCapture {
                     bridgeInputKind: bridgeInputKind,
                     bridgeInputDirection: bridgeInputDirection,
                     isInitialSelection: precedesSpeech,
-                    startedAt: startedAt
+                    startedAt: startedAt,
+                    onFirstEmptyRead: {
+                        guard Self.returnsTypingFocusAfterEmptyRead(
+                            clickCount: clickCount, isCodex: isCodex, precedesSpeech: precedesSpeech
+                        ) else { return }
+                        self?.onCodexTripleClickReadEmpty()
+                    }
                 )
                 selectedText = result.text
                 accessibility = result.resolution
@@ -1821,7 +1833,8 @@ final class LiveSelectionCapture {
         bridgeInputKind: String?,
         bridgeInputDirection: String?,
         isInitialSelection: Bool,
-        startedAt: UInt64
+        startedAt: UInt64,
+        onFirstEmptyRead: () -> Void
     ) async -> (text: String?, resolution: LiveSelectionResolution?) {
         // VS Code's default Monaco editor intentionally exposes no AX text.
         // Better Git proves a matching mouse, keyboard-extension or Select All
@@ -1896,6 +1909,8 @@ final class LiveSelectionCapture {
                 )
                 return (LiveSelectionFormulaText.cleaned(candidate.text, bundleID: bundleID), last)
             }
+            // Later attempts keep running; only the keyboard moves back early.
+            if attempts == 1 { onFirstEmptyRead() }
             // Without Accessibility trust a re-read cannot succeed.
             if !last.accessibilityTrusted { break }
         }
@@ -1966,6 +1981,21 @@ final class LiveSelectionCapture {
         let dx = end.x - start.x
         let dy = end.y - start.y
         return extendsSelection || clickCount >= 2 || dx * dx + dy * dy >= 16
+    }
+
+    /// Whether an empty first read should still return the keyboard to Agent
+    /// Flow's typing input. Only a live Codex triple click does.
+    ///
+    /// Focus normally comes back with captured text. Ethan reported on
+    /// 2026-11-09 that double clicks returned to Agent Flow's input while triple
+    /// clicks stayed in Codex's: a triple click across an underlined formula
+    /// leaves Codex with no readable selection, so its retries ran about 1.3 s,
+    /// nothing was captured, and the focus helper's Codex focus stood. All 20
+    /// triple clicks captured that day read on attempt 1, so waiting for the
+    /// retries gained nothing. Double clicks and drags still wait for text.
+    static func returnsTypingFocusAfterEmptyRead(clickCount: Int, isCodex: Bool,
+                                                 precedesSpeech: Bool) -> Bool {
+        isCodex && clickCount >= 3 && !precedesSpeech
     }
 
     static func usesPointerGeometry(from start: NSPoint, to end: NSPoint,

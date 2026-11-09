@@ -54,6 +54,23 @@ struct SelectionGestureWatcherTests {
             clickCount: 1, extendsSelection: true))
     }
 
+    @Test @MainActor func onlyLiveCodexTripleClicksReturnTypingFocusAfterAnEmptyRead() {
+        #expect(LiveSelectionCapture.returnsTypingFocusAfterEmptyRead(
+            clickCount: 3, isCodex: true, precedesSpeech: false))
+        #expect(LiveSelectionCapture.returnsTypingFocusAfterEmptyRead(
+            clickCount: 4, isCodex: true, precedesSpeech: false))
+        // A drag reports zero or one clicks. Those and double clicks wait for text.
+        for clickCount in 0...2 {
+            #expect(!LiveSelectionCapture.returnsTypingFocusAfterEmptyRead(
+                clickCount: clickCount, isCodex: true, precedesSpeech: false))
+        }
+        #expect(!LiveSelectionCapture.returnsTypingFocusAfterEmptyRead(
+            clickCount: 3, isCodex: false, precedesSpeech: false))
+        // A highlight made before the session attached is not a live gesture.
+        #expect(!LiveSelectionCapture.returnsTypingFocusAfterEmptyRead(
+            clickCount: 3, isCodex: true, precedesSpeech: true))
+    }
+
     @Test @MainActor func keyboardSelectionWaitsForReleaseAndRejectsTypingAndSourceChanges() {
         var sequence = SelectionGestureWatcher.KeyboardSequence()
         let now = Date(timeIntervalSince1970: 1000)
