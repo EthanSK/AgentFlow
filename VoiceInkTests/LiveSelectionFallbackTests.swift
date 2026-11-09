@@ -1195,6 +1195,123 @@ struct LiveSelectionFallbackTests {
         }
     }
 
+    private func tripleClick(at point: CGPoint) -> LiveSelectionGesture {
+        var tripleClickGesture = gesture(point, point)
+        tripleClickGesture.clickCount = 3
+        return tripleClickGesture
+    }
+
+    private let wholeParagraph = "Earlier. Lead in the phrase, then more. Another sentence."
+
+    private func addTripleClickParagraph(to probe: FakeSelectionProbe) {
+        addDragParagraph(to: probe)
+        probe.nodes[2]?.formulaText = wholeParagraph
+    }
+
+    @Test func codexTripleClickOnAFormulaLineReadsTheWholeParagraph() {
+        for hitElement in [2, 3, 4, 5] { // The paragraph, the words on either side of the formula, and the formula.
+            let probe = FakeSelectionProbe()
+            addTripleClickParagraph(to: probe)
+            probe.hitTargets = [(onFormula, hitElement)]
+            let result = precisionResolve(probe, tripleClick(at: onFormula))
+            #expect(result.candidate?.text == wholeParagraph) // Whole chunk: Codex's lone "." is not a selection.
+            #expect(result.candidate?.tier == .pointerFormula)
+            #expect(result.formulaLookup == "triple-found:AXGroup")
+        }
+    }
+
+    @Test func codexTripleClickOnBoldWordsStillReadsTheirWholeParagraph() {
+        for subrole in ["AXStrongStyleGroup", nil] { // Live Codex marks bold; a plain inline group has no subrole.
+            let probe = FakeSelectionProbe()
+            addTripleClickParagraph(to: probe)
+            probe.nodes[7] = .init(role: "AXGroup", subrole: subrole, parent: 2, frame: CGRect(x: 300, y: 100, width: 80, height: 20))
+            probe.nodes[8] = .init(role: "AXStaticText", parent: 7, frame: CGRect(x: 300, y: 100, width: 80, height: 20))
+            probe.hitTargets = [(onFormula, 8)]
+            #expect(precisionResolve(probe, tripleClick(at: onFormula)).candidate?.text == wholeParagraph)
+        }
+    }
+
+    @Test func codexTripleClickNeverCapturesAContainerOfParagraphs() {
+        let probe = FakeSelectionProbe()
+        addTripleClickParagraph(to: probe)
+        let inChatGap = CGPoint(x: 150, y: 165)
+        // The transcript holds stacked paragraphs, and live Codex also puts some text directly in it.
+        probe.nodes[20] = .init(role: "AXGroup", parent: 1, frame: CGRect(x: 90, y: 50, width: 720, height: 400), formulaText: "the whole chat")
+        probe.nodes[2]?.parent = 20
+        probe.nodes[21] = .init(role: "AXGroup", parent: 20, frame: CGRect(x: 100, y: 170, width: 700, height: 60))
+        probe.nodes[22] = .init(role: "AXStaticText", parent: 20, frame: CGRect(x: 100, y: 240, width: 100, height: 20))
+        // A wrapper around a single paragraph holds no words of its own.
+        probe.nodes[23] = .init(role: "AXGroup", parent: 1, frame: CGRect(x: 90, y: 50, width: 720, height: 400), formulaText: "the whole chat")
+        probe.nodes[24] = .init(role: "AXGroup", parent: 23, frame: CGRect(x: 100, y: 300, width: 700, height: 60))
+        for container in [20, 23] {
+            probe.hitTargets = [(inChatGap, container)]
+            let result = precisionResolve(probe, tripleClick(at: inChatGap))
+            #expect(result.candidate?.tier != .pointerFormula)
+            #expect(result.formulaLookup == "triple-no-formula")
+        }
+    }
+
+    @Test func codexTripleClickLeavesLinesWithoutAFormulaAlone() {
+        let probe = FakeSelectionProbe()
+        addTripleClickParagraph(to: probe)
+        probe.nodes[4] = nil
+        probe.hitTargets = [(onFormula, 2)]
+        let result = precisionResolve(probe, tripleClick(at: onFormula))
+        #expect(result.candidate?.tier != .pointerFormula)
+        #expect(result.formulaLookup == "triple-no-formula")
+    }
+
+    @Test func codexTripleClickIgnoresAHitThatDoesNotCoverThePointer() {
+        let probe = FakeSelectionProbe()
+        addTripleClickParagraph(to: probe)
+        let elsewhere = CGPoint(x: 900, y: 110)
+        probe.hitTargets = [(elsewhere, 2)]
+        #expect(precisionResolve(probe, tripleClick(at: elsewhere)).formulaLookup == "triple-no-formula")
+    }
+
+    @Test func codexTripleClickRetriesWhenTheHitIsStillChromiumsPlaceholder() {
+        let probe = FakeSelectionProbe()
+        addTripleClickParagraph(to: probe)
+        probe.hitTargets = [(onFormula, 6)]
+        let result = precisionResolve(probe, tripleClick(at: onFormula))
+        #expect(result.candidate == nil)
+        #expect(result.formulaLookup == "triple-unsettled")
+    }
+
+    @Test func codexTripleClickReportsAParagraphItCannotRead() {
+        let probe = FakeSelectionProbe()
+        addDragParagraph(to: probe)
+        probe.hitTargets = [(onFormula, 2)]
+        let result = precisionResolve(probe, tripleClick(at: onFormula))
+        #expect(result.candidate?.tier != .pointerFormula)
+        #expect(result.formulaLookup == "triple-unreadable:AXGroup")
+    }
+
+    @Test func codexTripleClickKeepsARealSelection() {
+        let probe = FakeSelectionProbe()
+        addTripleClickParagraph(to: probe)
+        probe.nodes[1]?.selectedText = "the real selected line"
+        probe.hitTargets = [(onFormula, 2)]
+        let result = precisionResolve(probe, tripleClick(at: onFormula))
+        #expect(result.candidate?.text == "the real selected line")
+        #expect(result.formulaLookup == "skipped")
+    }
+
+    @Test func formulaTripleClickReadIsCodexOnlyAndForegroundOnly() {
+        for (checksDragSpan, requiresGestureBounds) in [(false, false), (true, true)] {
+            let probe = FakeSelectionProbe()
+            addTripleClickParagraph(to: probe)
+            probe.hitTargets = [(onFormula, 2)]
+            let result = LiveSelectionAccessibilityResolver(
+                probe: probe, gesture: tripleClick(at: onFormula), gestureInSourceWindow: true,
+                requiresGestureBounds: requiresGestureBounds, checksDragSpan: checksDragSpan,
+                sourceWindowBounds: display
+            ).resolve()
+            #expect(result.formulaLookup == "skipped")
+            #expect(result.candidate?.text != wholeParagraph)
+        }
+    }
+
     @Test func formulaCleanupStripsKaTeXCharactersOnlyInChatApps() {
         let captured = "Keep\u{00A0}the split\u{203E}"
         #expect(LiveSelectionFormulaText.cleaned(captured, bundleID: "com.openai.codex") == "Keep the split")

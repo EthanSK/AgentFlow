@@ -515,8 +515,8 @@ struct LiveSelectionAccessibilityResolver<Probe: LiveSelectionAccessibilityProbe
         // a real drag onto a formula captured just the "." beside it (2026-11-08).
         let reportedText = resolution.candidate?.text.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if resolution.refusedSecure == 0, reportedText.count <= 1,
-           let dragged = draggedAcrossFormula(into: &resolution) {
-            resolution.candidate = dragged
+           let recovered = draggedAcrossFormula(into: &resolution) ?? tripleClickedBlock(into: &resolution) {
+            resolution.candidate = recovered
         }
         return resolution
     }
@@ -762,6 +762,97 @@ struct LiveSelectionAccessibilityResolver<Probe: LiveSelectionAccessibilityProbe
         )
     }
 
+    /// Returns the whole paragraph a Codex triple click landed on when that
+    /// paragraph holds a formula, or nil otherwise.
+    ///
+    /// Such a triple click leaves Codex reporting an empty selection (5 of 5
+    /// live on 2026-11-09), and only whole elements can be located, so this
+    /// reads the paragraph's own element. Ethan wants the whole chunk here, so
+    /// it is not cut to a sentence the way a drag's plain ends are.
+    private func tripleClickedBlock(
+        into resolution: inout LiveSelectionResolution
+    ) -> LiveSelectionCandidate? {
+        guard checksDragSpan, !requiresGestureBounds, gestureInSourceWindow == true,
+              let gesture, gesture.clickCount >= 3, !probe.isExpired else { return nil }
+        let point = gesture.mouseUp
+        guard let hit = probe.element(at: point) else {
+            resolution.formulaLookup = "triple-no-hit"
+            return nil
+        }
+        // The capture loop already retries, and each read refreshes the hit test.
+        if isUnsettledPlaceholder(hit) {
+            resolution.formulaLookup = "triple-unsettled"
+            resolution.candidate = nil // A stray "." would end the retries before Chromium has answered.
+            return nil
+        }
+        guard let block = textBlock(around: hit, containing: point), holdsFormula(block) else {
+            resolution.formulaLookup = "triple-no-formula"
+            return nil
+        }
+        let blockRole = probe.role(of: block) ?? "none"
+        guard let text = Self.meaningful(probe.formulaText(of: block)) else {
+            resolution.formulaLookup = "triple-unreadable:\(blockRole)"
+            return nil
+        }
+        resolution.formulaLookup = "triple-found:\(blockRole)"
+        return LiveSelectionCandidate(
+            text: text, tier: .pointerFormula, source: .textMarkers, evidence: .atGesture
+        )
+    }
+
+    /// The paragraph around `start`: the outermost single block in the unbroken
+    /// run of them going up, so a bold phrase resolves to the paragraph it sits
+    /// in, and the whole chat never counts.
+    private func textBlock(around start: Probe.Element, containing point: CGPoint) -> Probe.Element? {
+        var block: Probe.Element?
+        var current: Probe.Element? = start
+        for _ in 0..<LiveSelectionReadPolicy.maximumFormulaDepth {
+            guard let element = current, !probe.isExpired,
+                  probe.role(of: element) != "AXWebArea" else { break }
+            if isSingleTextBlock(element, containing: point) {
+                block = element
+            } else if block != nil {
+                break
+            }
+            current = probe.parent(of: element)
+        }
+        return block
+    }
+
+    /// Whether `element` is one paragraph or heading, not a container of them.
+    /// Line breaks can't tell them apart: a live 34,000-character Codex chat
+    /// reported only 5 (2026-11-09). Layout can: a paragraph holds its words or
+    /// formulas directly, and a container stacks full-width blocks.
+    private func isSingleTextBlock(_ element: Probe.Element, containing point: CGPoint) -> Bool {
+        let role = probe.role(of: element)
+        guard role == kAXGroupRole || role == "AXHeading", probe.subrole(of: element) == nil,
+              let frame = probe.frame(of: element), frame.contains(point) else { return false }
+        let children = probe.children(of: element)
+        // Lazy so a chat of hundreds of blocks stops at its second one.
+        let fullWidthBlocks = children.lazy.filter { child in
+            probe.role(of: child) == kAXGroupRole
+                && probe.subrole(of: child) != LiveSelectionReadPolicy.formulaSubrole
+                && (probe.frame(of: child)?.width ?? 0) >= frame.width * 0.9
+        }
+        guard fullWidthBlocks.prefix(2).count < 2 else { return false }
+        return children.contains { child in
+            probe.role(of: child) == kAXStaticTextRole
+                || probe.subrole(of: child) == LiveSelectionReadPolicy.formulaSubrole
+        }
+    }
+
+    /// Keeps this to lines with a formula: Codex's own selection works on the rest.
+    private func holdsFormula(_ block: Probe.Element) -> Bool {
+        var boxes: [(element: Probe.Element, frame: CGRect)] = []
+        var visibleText: [Probe.Element] = []
+        var search = FormulaSearch()
+        collectFormulas(
+            under: block, skipping: nil, depth: 1,
+            into: &boxes, visibleText: &visibleText, search: &search
+        )
+        return search.formulas > 0
+    }
+
     /// What sits under one end of a drag.
     private enum DragEnd {
         case formula(Probe.Element)
@@ -865,15 +956,18 @@ struct LiveSelectionAccessibilityResolver<Probe: LiveSelectionAccessibilityProbe
         guard !probe.isExpired, let hit = probe.element(at: point) else { return .unknown }
         let hitRole = probe.role(of: hit)
         if hitRole == kAXTextAreaRole || hitRole == kAXTextFieldRole { return .unknown }
-        // Live Codex answers a point the pointer has left with an empty group
-        // the size of the whole window, then the real element on the next ask.
-        if probe.subrole(of: hit) == "AXEmptyGroup", let sourceWindowBounds,
-           let frame = probe.frame(of: hit), frame.insetBy(
-            dx: -LiveSelectionReadPolicy.windowTolerance, dy: -LiveSelectionReadPolicy.windowTolerance
-           ).contains(sourceWindowBounds) {
-            return .unsettled
-        }
+        if isUnsettledPlaceholder(hit) { return .unsettled }
         return classifiedDragEnd(at: point, hit: hit, hitRole: hitRole, search: &search)
+    }
+
+    /// Live Codex answers a point the pointer has left with an empty group
+    /// the size of the whole window, then the real element on the next ask.
+    private func isUnsettledPlaceholder(_ hit: Probe.Element) -> Bool {
+        guard probe.subrole(of: hit) == "AXEmptyGroup", let sourceWindowBounds,
+              let frame = probe.frame(of: hit) else { return false }
+        return frame.insetBy(
+            dx: -LiveSelectionReadPolicy.windowTolerance, dy: -LiveSelectionReadPolicy.windowTolerance
+        ).contains(sourceWindowBounds)
     }
 
     /// Classifies a drag end Chromium has not answered for, from the frames

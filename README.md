@@ -93,6 +93,8 @@ Build 496 also captures a Codex drag that starts or ends on an underlined phrase
 
 Build 497 returns typing focus to the Agent Flow input after a Codex triple click, even when the click selects a line whose text can't be read.
 
+Build 498 captures the whole line or paragraph when a Codex triple click lands on text with an underlined phrase.
+
 Build 495 restores one automatic Send 400 ms after paste, removing the experimental early attempt, recipient checks and retry. Paste-only Modes remain immediate. See [Send timing](RECORDING_DESTINATIONS.md#current-timing--one-send-after-the-existing-paste-allowance).
 
 Primary's recording-time double-press selects **Won’t paste** and finishes to the clipboard if no third press follows; a third press in the same gesture pauses capture, and a fourth finishes with paste but no auto-send. While paused, one fresh press resumes, two select **Won’t paste** and finish to the clipboard if no third press follows, and three resume the same capture. These are recording gestures, not extra destinations. Bare Escape stays with the foreground app.

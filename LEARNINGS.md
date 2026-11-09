@@ -30,6 +30,16 @@ and emitted-key checks.
 ---
 
 
+## 2026-11-09 — Capture the whole line on a Codex triple click that touches a formula (build 498)
+
+Ethan wanted a triple click on a line with an underlined phrase to capture the whole line. Codex reports an empty selection for those, as it does for drags onto a formula, and no position inside text exists, so the fix reads the paragraph's own element. It runs only after Codex's selection comes back empty or as a lone character, so triple clicks that already work keep Codex's own range. The text is not cut to a sentence: Ethan asked for the whole chunk.
+
+Finding the paragraph needed live data. The planned rule of stopping at the first ancestor containing a line break would have failed: a live 34,000-character chat reported only 5 line breaks, so a container of several paragraphs often has none. What separates them is layout: a paragraph holds words or a formula as direct children, and a container stacks at least two full-width groups. Bold words have the `AXStrongStyleGroup` subrole, and inline groups are absorbed by climbing to the outermost block in the unbroken run.
+
+Live hit tests, measured read-only on 2026-11-09: 30 points across 5 paragraphs with formulas all landed on that paragraph or a group inside it, none on the transcript. Points in padding or margins return the transcript, its wrapper or the landmark region, which are refused. Reading the frames of all 255 transcript children took 15 ms.
+
+Verification limit: a read-only harness compiled the real resolver and simulated triple clicks at real paragraph positions, forcing an empty selection. The final run captured 54 of 56 points, all 54 at exactly the paragraph's length, with no KaTeX overline or no-break space left after cleanup. The transcript margin, composer and sidebar captured nothing. One earlier run returned a longer text for 3 points of one paragraph; it did not repeat, and its cause is unknown. Nothing was clicked in Codex, so a real triple click is Ethan's to confirm.
+
 ## 2026-11-09 — Return typing focus after an empty Codex triple click (build 497)
 
 Ethan reported that a double click on Codex text put the caret back in Agent Flow's typing input, while a triple click left it in Codex's composer.
@@ -38,7 +48,7 @@ Two things compete for focus after a highlight. The separate focus helper focuse
 
 Fix: a live Codex triple click returns focus after its first empty read. Retries continue, and a later success still commits. All 20 triple clicks captured that day read on attempt 1, so the retries were never why focus waited. The read happens before focus moves, in the same order as a successful capture.
 
-Limit: this fixes focus, not capture. A triple click on a line with an underlined formula still adds no text, because `doubleClickedFormula` only covers `clickCount == 2`. Do not read the focus helper's live log to diagnose this; its README forbids it for agents. Agent Flow's own `LiveSelection` and `TypingFocus` log lines were enough.
+Limit: this fixed focus, not capture. Build 498 added the capture. Do not read the focus helper's live log to diagnose this; its README forbids it for agents. Agent Flow's own `LiveSelection` and `TypingFocus` log lines were enough.
 
 Release: source `41ccab0a`/build 497 passed all 904 named tests in 41 suites through the release workflow, plus 211 focused Mini tests beforehand. The public v2.0.497 ZIP (sha256 `33fc4668...6186`) passed its checksums, deep/strict Developer ID signing, stapled notarization and Gatekeeper. Real triple-click acceptance is Ethan's.
 
