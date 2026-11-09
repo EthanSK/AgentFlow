@@ -270,17 +270,24 @@ def input_pane_after_click(model, observation, pane, action, previous_input_pane
     """Returns the pane whose input Codex holds after this click, or None when that is unproven."""
     # Codex does not expose which input a paste will go to, and a chat click has
     # already moved focus off the composer by the time this helper can look. So
-    # the only proof is what this helper just wrote or saw (Ethan, 2026-11-09).
-    # Anything unproven, such as a button that may open another pane, forgets the
-    # pane: the next highlight then focuses its input as usual and is proven again.
+    # the only proof is this helper's own verified focus write, or a click inside
+    # the focused input itself (Ethan, 2026-11-09). A composer that merely still
+    # has focus is not proof: a click on a tab or button is sampled before Codex
+    # moves focus to another pane's input. Anything unproven forgets the pane, so
+    # the next highlight focuses its input as usual and is proven again.
     if observation.focus.window_key == 0:
         return None
     if action == KEPT_HIGHLIGHT_ACTION:
         return previous_input_pane  # Nothing moved, so the earlier proof still holds.
-    if pane and action.startswith(f"Focused {pane} input"):
-        return pane
+    if pane:  # A proven chat-text click: it cannot move Codex's input anywhere except to this pane.
+        return pane if action.startswith(f"Focused {pane} input · verified") or previous_input_pane == pane else None
     focused_input, _ = model.classify_focus(observation.focus, observation.host, observation.version)
-    return focused_input if focused_input in ("Main chat", "Side chat") else None
+    leaf = observation.focus.nodes[0] if observation.focus.nodes else None
+    if (focused_input in ("Main chat", "Side chat") and leaf and leaf.frame
+            and observation.click.layout == observation.focus.layout
+            and leaf.frame.contains(observation.click.x, observation.click.y)):
+        return focused_input
+    return None
 
 
 def describe(model, observation):

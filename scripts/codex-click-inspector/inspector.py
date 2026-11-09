@@ -324,7 +324,8 @@ class Inspector(NSObject):
         self.focuser = PaneInputFocuser(self.reader) if self.reader else None
         self.focus_inputs, self.mouse_down_point, self.down_monitor = True, None, None  # Ethan: on by default.
         # Off until Agent Flow says otherwise, so a helper restarted mid-session just focuses inputs as usual.
-        self.typing_box_returns_keyboard, self.input_pane_by_window = False, {}
+        # input_proof is (window key, pane, click sequence): it only counts for the very next gesture, so a click this helper never finished reading cannot leave a stale pane behind.
+        self.typing_box_returns_keyboard, self.input_proof = False, None
         # Own reader: the click worker changes its reader's deadline at the same time.
         self.claude_focuser = ClaudePromptFocuser(AXReader()) if self.reader and CLAUDE_FOCUS_ENABLED else None  # Off: no observer, checkbox greyed out.
         self.claude_click_focuser = ClaudePromptFocuser(self.reader) if self.reader else None  # Separate from the dormant stop trigger above (Ethan, 2026-11-08). Shares the Codex reader because both run only on the one click worker.
@@ -486,6 +487,9 @@ class Inspector(NSObject):
         name = notification.name()
         if name == K.NSWorkspaceDidLaunchApplicationNotification:
             app = (notification.userInfo() or {}).get(K.NSWorkspaceApplicationKey)
+            if app and app.bundleIdentifier() == AGENT_FLOW_BUNDLE_ID:
+                self.typing_box_returns_keyboard = False  # A relaunch after a crash never sent Off for the old session.
+                return
             url = app.bundleURL() if app else None
             if not url or Path(str(url.path())).name not in ("Codex.app", "ChatGPT.app"):
                 return
@@ -825,7 +829,10 @@ class Inspector(NSObject):
             pane = None
             try:
                 pane, frame = input_focus_plan(self.model, observation)
-                input_pane = self.input_pane_by_window.pop(focused.window_key, None)  # A focus error below must leave this window unproven.
+                proof, self.input_proof = self.input_proof, None  # A focus error below must leave the pane unproven.
+                # Every click advances the sequence twice, at press and at release. So this accepts a proof only from the click just before this gesture or from the gesture's own clicks; any other click, pause or reconnect in between makes the gap too large.
+                input_pane = proof[1] if (proof and proof[0] == focused.window_key
+                                          and proof[2] >= sequence - 2 * max(1, gesture.click_count)) else None
                 if pane and (sequence != self.sequence or self.paused):
                     action = "Skipped · a newer click arrived"
                 elif (pane and highlight and pane == input_pane and self.typing_box_returns_keyboard
@@ -836,8 +843,8 @@ class Inspector(NSObject):
                         is_current=current,
                         window_key=focused.window_key,
                         click_point=(x, y)) if pane else frame
-                self.input_pane_by_window[focused.window_key] = input_pane_after_click(
-                    self.model, observation, pane, action, input_pane)
+                input_pane = input_pane_after_click(self.model, observation, pane, action, input_pane)
+                self.input_proof = (focused.window_key, input_pane, sequence) if input_pane else None
                 if highlight:
                     action = "After highlight · " + action
             except Exception as exc:

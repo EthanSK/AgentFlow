@@ -47,8 +47,13 @@ clears the highlight, so the text still lands in the highlighted pane. Speech
 sessions are unchanged. Focusing the pane at finish instead was rejected: nothing
 orders that write before a typed-only paste, and a late write would move the
 auto-send Return to the other pane. Codex does not expose which input it
-remembers, so the proof is the last composer this helper focused or saw focused
-in that window; a keyboard-only move to the other composer is not visible to it.
+remembers, so the proof is narrow: the click just before the highlight must be
+one where this helper verifiably focused that pane's input, a click inside that
+input, or an earlier kept highlight (the double or triple click's own clicks do
+not count against it). Any other click in between, such as a tab or button,
+forgets the pane and costs one cleared highlight. A keyboard-only move to
+the other composer is not visible to the helper. The flag also resets when Agent
+Flow launches, so a crash cannot leave it on.
 
 It never acts
 on learned regions, a remembered input or

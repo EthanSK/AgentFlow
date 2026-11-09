@@ -129,6 +129,18 @@ class LifecycleTests(unittest.TestCase):
         owner.typingBoxReturnChanged_(Mock(name=Mock(), **{"name.return_value": inspector.TYPING_BOX_RETURN_OFF}))
         self.assertFalse(owner.typing_box_returns_keyboard)
 
+    def test_agent_flow_launch_resets_the_typing_box_flag_without_reconnecting(self):
+        owner = inspector.Inspector.alloc().init()
+        owner.typing_box_returns_keyboard = True
+        launched = Mock()
+        launched.name.return_value = inspector.K.NSWorkspaceDidLaunchApplicationNotification
+        launched.userInfo.return_value = {inspector.K.NSWorkspaceApplicationKey: Mock(**{
+            "bundleIdentifier.return_value": inspector.AGENT_FLOW_BUNDLE_ID})}
+        with patch.object(inspector.Inspector, "reconnect_event_sources") as reconnect:
+            owner.workspaceChanged_(launched)
+        self.assertFalse(owner.typing_box_returns_keyboard)
+        reconnect.assert_not_called()
+
     def test_workspace_wake_session_and_codex_launch_reconnect_only_own_sources(self):
         owner = inspector.Inspector.alloc().init()
         with patch.object(inspector.Inspector, "reconnect_event_sources") as reconnect, \
@@ -193,6 +205,36 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual((request[0], request[3], request[5], request[8]), (2, 7, inspector.CLAUDE_BUNDLE_ID, 5))
         self.assertEqual((request[7].click_count, request[7].drag_points, request[7].modifier_held), (1, 1.0, False))
         self.assertEqual(owner.codex_clicks, 0)
+
+    def test_each_click_advances_the_sequence_twice_so_only_the_previous_click_can_prove_the_input(self):
+        # Guards the gap rule in process_request against a change in how clicks are counted.
+        owner = inspector.Inspector.alloc().init()
+        owner.paused, owner.sequence, owner.window, owner.pending, owner.last = False, 10, None, Mock(), None
+        owner.events_seen, owner.codex_clicks, owner.focus_inputs, owner.claude_click_focuser = 0, 0, True, None
+        codex, other = Mock(), Mock()
+        codex.bundleURL.return_value.path.return_value = "/Applications/Codex.app"
+        other.bundleURL.return_value.path.return_value = "/Applications/Notes.app"
+
+        def click(app, count):
+            event = Mock()
+            event.clickCount.return_value, event.modifierFlags.return_value = count, 0
+            with patch.object(inspector.K, "NSWorkspace") as workspace, patch.object(inspector, "NSBundle") as bundle, \
+                    patch.object(inspector.Q, "CGEventGetLocation", return_value=SimpleNamespace(x=100.0, y=200.0)), \
+                    patch.object(inspector.Q, "CGEventSourceCounterForEventType", return_value=0):
+                bundle.bundleWithPath_.return_value.infoDictionary.return_value = {}
+                workspace.sharedWorkspace.return_value.frontmostApplication.return_value = app
+                owner.mouse_down(event)
+                owner.clicked(event)
+            return owner.sequence
+
+        proof = click(codex, 1)  # The click whose focus proved the pane.
+        first, second = click(codex, 1), click(codex, 2)  # A double click.
+        self.assertEqual((first - proof, second - proof), (2, 4))
+        self.assertEqual(owner.pending.put_nowait.call_args.args[0][0], second)
+        self.assertGreaterEqual(proof, second - 2 * 2)  # Still the click just before the gesture.
+        click(other, 1)
+        drag_release = click(codex, 1)
+        self.assertLess(second, drag_release - 2 * 1)  # A click in another app came in between.
 
     def test_startup_registers_event_driven_recovery_without_starting_claude(self):
         owner = inspector.Inspector.alloc().init()
