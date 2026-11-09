@@ -46,6 +46,10 @@ Live Codex facts, measured read-only on 2026-11-09:
 
 Verification limit: a read-only harness compiled the real resolver and ran synthetic drags against live Codex, forcing an empty selection. It passed 10–12 of 12 per run across real formulas. Failures were all "no capture", when both ends stayed placeholders on every retry, mostly on points past the end of a line.
 
+The Mini's focused run also caught two bugs the live harness could not: the drag path was skipped when Codex reported a stray `.` through an early return, and that `.` ended the retries before Chromium had answered.
+
+Release: source `ba475d68`/build 496 passed all 903 named tests in 41 suites through the release workflow. The public v2.0.496 ZIP (sha256 `cffd01dd...b436`) passed its checksums, deep/strict Developer ID signing, stapled notarization and Gatekeeper. It is installed at `/Applications/AgentFlow.app` as PID 13029, CDHash `962b61a73a00ce337d3afeab6eb27eb14e2ff681`. Agent Flow's own guard allowed the quit, Ethan got the five-second warning first, and `/Applications/VoiceInk.app`, keybindings and microphone preferences were unchanged. A real drag in Codex is not yet confirmed. Read the log field `formula=` (`drag-found:`, `drag-no-formula`, `drag-unsettled`, `drag-unreadable:`) if it fails.
+
 ## 2026-11-08 — Read the whole formula under a Codex double-click
 
 KaTeX draws each formula twice: a visible `aria-hidden` copy and a MathML copy. A double-click selects a word in the hidden visible copy, which has no Accessibility position, so the host reports an empty or unrelated range. Counts-only live logs showed `clicks=2 attempts=4 examined=29 missingMarkers=7 unavailableMarkerText=22`, and one double-click captured a single stray character. Drags across the same text did read the MathML copy, so the text was reachable.
