@@ -93,6 +93,7 @@ struct ImmediateKeyboardSequenceTests {
         #expect(primary.contains("Task.sleep(nanoseconds: Self.primaryCurrentInputSettleNanoseconds)"))
         #expect(primary.components(separatedBy: "CursorPaster.performAutoSend(").count == 2)
         #expect(primary.contains("if autoSendKey.isEnabled"))
+        #expect(TranscriptionDelivery.primaryCurrentInputSettleNanoseconds == 400_000_000)
         #expect(delivery.contains("primaryCurrentInputSettleNanoseconds: UInt64 = 400_000_000"))
         #expect(!delivery.contains("PrimarySendReceipt"))
         #expect(!primary.contains("AXUIElement") && !primary.contains("PrimarySendAttemptPolicy"))

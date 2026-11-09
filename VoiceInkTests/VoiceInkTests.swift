@@ -7913,7 +7913,7 @@ struct VoiceInkTests {
         #expect(!primaryBody.contains("telegramTargetedHIDReturn"))
         #expect(!primaryBody.contains("pressNearbySubmitButton"))
         #expect(!primaryBody.contains("foregroundOpenAIVerificationContext"))
-        #expect(TranscriptionDelivery.primaryCurrentInputSettleNanoseconds == 400_000_000)
+        #expect(deliverySource.contains("primaryCurrentInputSettleNanoseconds: UInt64 = 400_000_000"))
         // The rejected fast/slow experiment must not leave a recipient reader,
         // retry, or pipeline proof behind the ordinary current-input route.
         #expect(primaryBody.components(separatedBy: "CursorPaster.performAutoSend(").count == 2)

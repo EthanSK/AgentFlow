@@ -1,5 +1,16 @@
 # Learnings
 
+---
+**Date:** 2026-11-09T01:42:02Z
+**Trigger:** 2026-11-09: remove the first early temporary delay and keep the old delay from before I asked
+**Symptom:** Early Send did not improve submission in Ethan’s use
+**Root cause:** Ethan reported worse submission and explicitly withdrew the 50 ms first-attempt experiment; a specific runtime cause is not established
+**Fix:** Restore one generic Send after the previous 400 ms allowance; remove Primary recipient receipts, fresh-archive proof and conditional retry while preserving paste-only, FIFO/cancellation and both Next routes
+**Commit:** 1323f415
+**Guard:** primaryDeliveryUsesOnlyBaseVoiceInkSystemFocusedCommands and ImmediateKeyboardSequenceTests; signed build495 and Mini release verification remain separate gates
+---
+
+
 ## 2026-11-08 — Read the whole formula under a Codex double-click
 
 KaTeX draws each formula twice: a visible `aria-hidden` copy and a MathML copy. A double-click selects a word in the hidden visible copy, which has no Accessibility position, so the host reports an empty or unrelated range. Counts-only live logs showed `clicks=2 attempts=4 examined=29 missingMarkers=7 unavailableMarkerText=22`, and one double-click captured a single stray character. Drags across the same text did read the MathML copy, so the text was reachable.

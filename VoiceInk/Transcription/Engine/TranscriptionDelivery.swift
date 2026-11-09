@@ -767,8 +767,7 @@ final class TranscriptionDelivery: TranscriptionDelivering {
     /// Base VoiceInk's current-input route, intentionally free of every app-specific
     /// saved-input mechanism. The system keyboard focus at each ordinary event decides
     /// where it goes; there is no saved-destination fallback or semantic Send.
-    /// Ethan's 2026-11-08 fast/slow request permits only a passive receipt for the
-    /// already-focused Codex composer, never an exact resolver or focus write.
+    /// Ethan restored one delayed Send on 2026-11-09: no recipient reads or retries.
     /// Compact prompt/file-link content does not change this one-paste boundary.
     private func deliverPrimaryToCurrentSystemInput(
         _ pastedText: String,
