@@ -42,6 +42,8 @@ Codex does not expose which input it remembers, and a chat click has already mov
 
 Limit: fixtures cannot show the highlight survives in live Codex or that Codex still routes the paste with a selection present; that needs Ethan's real use.
 
+Release: source `992b9cb9`/build 499 passed all 915 named tests in 41 suites through the release workflow, plus 222 focused Mini tests and 178 helper fixture tests beforehand. The public v2.0.499 ZIP (sha256 `c16e1680...8bfe`) passed its checksums, deep/strict Developer ID signing, stapled notarization and Gatekeeper. Installed over build 498 at 20:54:09 on 2026-11-09 (CDHash `9ad78b7a64345f4782f759f3844cc79ab4d4777b`); keybindings, microphone and paired-Voice settings unchanged; the verified 498 ZIP is the rollback. The helper change only takes effect once the live helper copy is updated and its LaunchAgent restarted.
+
 ## 2026-11-09 — Capture the whole line on a Codex triple click that touches a formula (build 498)
 
 Ethan wanted a triple click on a line with an underlined phrase to capture the whole line. Codex reports an empty selection for those, as it does for drags onto a formula, and no position inside text exists, so the fix reads the paragraph's own element. It runs only after Codex's selection comes back empty or as a lone character, so triple clicks that already work keep Codex's own range. The text is not cut to a sentence: Ethan asked for the whole chunk.
