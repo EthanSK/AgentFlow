@@ -119,8 +119,15 @@ class LifecycleTests(unittest.TestCase):
         first.close.assert_called_once()
         second.close.assert_not_called()
         names = [c.args[1] for c in center.addObserver_selector_name_object_suspensionBehavior_.call_args_list]
-        self.assertEqual(names, ["control:"] * 2)
+        self.assertEqual(names, ["control:", "typingBoxReturnChanged:", "typingBoxReturnChanged:"] * 2)
         owner.reader.create_app.assert_not_called()
+
+    def test_agent_flow_state_turns_the_typing_box_flag_on_and_off(self):
+        owner = inspector.Inspector.alloc().init()
+        owner.typingBoxReturnChanged_(Mock(name=Mock(), **{"name.return_value": inspector.TYPING_BOX_RETURN_ON}))
+        self.assertTrue(owner.typing_box_returns_keyboard)
+        owner.typingBoxReturnChanged_(Mock(name=Mock(), **{"name.return_value": inspector.TYPING_BOX_RETURN_OFF}))
+        self.assertFalse(owner.typing_box_returns_keyboard)
 
     def test_workspace_wake_session_and_codex_launch_reconnect_only_own_sources(self):
         owner = inspector.Inspector.alloc().init()

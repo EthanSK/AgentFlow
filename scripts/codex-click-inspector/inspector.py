@@ -23,7 +23,7 @@ import Quartz as Q
 import objc
 from Foundation import NSObject, NSTimer, NSRunLoop, NSRunLoopCommonModes, NSBundle, NSDictionary, NSProcessInfo, NSDistributedNotificationCenter, NSNotificationSuspensionBehaviorDeliverImmediately
 from pane_model import (Node, PaneModel, Rect, Sample, Observation, Diagnostics, describe, MAX_ANCESTORS, MAIN_CONTENT_CLASS,
-                        ClickGesture, input_focus_plan, is_highlight_gesture, needs_hit_retest, HIT_RETEST_ATTEMPTS, HIT_RETEST_INTERVAL_SECONDS)
+                        ClickGesture, input_focus_plan, input_pane_after_click, is_highlight_gesture, needs_hit_retest, KEPT_HIGHLIGHT_ACTION, HIT_RETEST_ATTEMPTS, HIT_RETEST_INTERVAL_SECONDS)
 from pane_focuser import PaneInputFocuser
 from claude_prompt_focuser import ClaudePromptFocuser, CLAUDE_BUNDLE_ID, RECORDING_STOPPED, ENABLED as CLAUDE_FOCUS_ENABLED
 from helper_runtime import (LatestResult, SingleInstance, HelperHealth, HealthLog, HelperPreferences)
@@ -33,10 +33,17 @@ OPTIONS = None
 HIGHLIGHT_FOCUS_DELAY_SECONDS = 0.3  # Preserve the existing opportunity for Agent Flow to read a highlight before focus moves.
 INSTANCE = None
 CONTROL_NAME = "com.ethansk.agentflow.codex-focus-helper.control"
+AGENT_FLOW_BUNDLE_ID = "com.ethansk.VoiceInkPlusPlus"
+TYPING_BOX_RETURN_ON = "com.ethansk.voiceink.typingBoxKeyboardReturnOn"  # Must match Agent Flow's RecorderTypingFocus.
+TYPING_BOX_RETURN_OFF = "com.ethansk.voiceink.typingBoxKeyboardReturnOff"  # Must match Agent Flow's RecorderTypingFocus.
 
 
 def control_object(demo=False):
     return f"{os.getuid()}:{'demo' if demo else 'live'}"
+
+
+def agent_flow_is_running():
+    return len(K.NSRunningApplication.runningApplicationsWithBundleIdentifier_(AGENT_FLOW_BUNDLE_ID)) > 0
 
 
 def is_close_shortcut(key_code, modifiers, inspector_is_key):
@@ -316,6 +323,8 @@ class Inspector(NSObject):
         self.reader = None if OPTIONS.demo else AXReader()
         self.focuser = PaneInputFocuser(self.reader) if self.reader else None
         self.focus_inputs, self.mouse_down_point, self.down_monitor = True, None, None  # Ethan: on by default.
+        # Off until Agent Flow says otherwise, so a helper restarted mid-session just focuses inputs as usual.
+        self.typing_box_returns_keyboard, self.input_pane_by_window = False, {}
         # Own reader: the click worker changes its reader's deadline at the same time.
         self.claude_focuser = ClaudePromptFocuser(AXReader()) if self.reader and CLAUDE_FOCUS_ENABLED else None  # Off: no observer, checkbox greyed out.
         self.claude_click_focuser = ClaudePromptFocuser(self.reader) if self.reader else None  # Separate from the dormant stop trigger above (Ethan, 2026-11-08). Shares the Codex reader because both run only on the one click worker.
@@ -392,6 +401,9 @@ class Inspector(NSObject):
         if self.claude_focuser:
             center.addObserver_selector_name_object_suspensionBehavior_(
                 self, "recordingStopped:", RECORDING_STOPPED, None, NSNotificationSuspensionBehaviorDeliverImmediately)
+        for name in (TYPING_BOX_RETURN_ON, TYPING_BOX_RETURN_OFF):
+            center.addObserver_selector_name_object_suspensionBehavior_(
+                self, "typingBoxReturnChanged:", name, None, NSNotificationSuspensionBehaviorDeliverImmediately)
         if self.reader:
             self.monitor = MouseMonitor(lambda kind, event: self.mouse_event(revision, kind, event))
             if not self.monitor.start():
@@ -801,17 +813,31 @@ class Inspector(NSObject):
         # double/triple clicks without Agent Flow capture. The old receipt veto
         # deliberately preserved pre-start selections; do not restore that veto
         # over this preference (task 01a0d315-7d5e-7be0-bc08-80626ca0729b).
+        # Ethan (2026-11-09) narrowed it for one case: while Agent Flow's typing box
+        # will take the keyboard back, a highlight in the pane that already has
+        # Codex's input stays highlighted, because the final paste lands there
+        # anyway. A highlight in any other pane still focuses its input so the
+        # 2026-10-17 paste rule holds. Rejected: focusing the pane at finish instead.
+        # Nothing orders that write before a typed-only paste, and a late write would
+        # move the auto-send Return to the other pane. This reads Agent Flow's state,
+        # not the old capture receipt, so it cannot race the capture.
         if self.focus_inputs and sequence == self.sequence and not self.paused:
             pane = None
             try:
                 pane, frame = input_focus_plan(self.model, observation)
+                input_pane = self.input_pane_by_window.pop(focused.window_key, None)  # A focus error below must leave this window unproven.
                 if pane and (sequence != self.sequence or self.paused):
                     action = "Skipped · a newer click arrived"
+                elif (pane and highlight and pane == input_pane and self.typing_box_returns_keyboard
+                      and agent_flow_is_running()):  # The running check covers Agent Flow crashing before it can say Off.
+                    action = KEPT_HIGHLIGHT_ACTION
                 else:
                     action = self.focuser.focus(pid, frame, pane,
                         is_current=current,
                         window_key=focused.window_key,
                         click_point=(x, y)) if pane else frame
+                self.input_pane_by_window[focused.window_key] = input_pane_after_click(
+                    self.model, observation, pane, action, input_pane)
                 if highlight:
                     action = "After highlight · " + action
             except Exception as exc:
@@ -984,6 +1010,9 @@ class Inspector(NSObject):
 
     def toggleClaudeFocus_(self, sender):
         self.focus_claude = sender.state() == K.NSControlStateValueOn
+
+    def typingBoxReturnChanged_(self, notification):
+        self.typing_box_returns_keyboard = str(notification.name()) == TYPING_BOX_RETURN_ON
 
     def recordingStopped_(self, notification):
         # Every Agent Flow finish posts this, including cancel and the clipboard-only

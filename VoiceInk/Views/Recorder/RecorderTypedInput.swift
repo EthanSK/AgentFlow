@@ -349,8 +349,14 @@ final class RecorderTypingTextView: NSTextView {
 @MainActor
 final class RecorderTypingFocus: ObservableObject {
     nonisolated static let automaticReturnDefaultsKey = "VIPPAutomaticTypingFocusReturnEnabled"
-    @Published private(set) var isEnabled = false
+    // The names are the whole contract with the Codex focus helper; keep them in sync with its inspector.py.
+    nonisolated static let keyboardReturnOnNotification = Notification.Name("com.ethansk.voiceink.typingBoxKeyboardReturnOn")
+    nonisolated static let keyboardReturnOffNotification = Notification.Name("com.ethansk.voiceink.typingBoxKeyboardReturnOff")
+    @Published private(set) var isEnabled = false {
+        didSet { publishKeyboardReturnState() }
+    }
     private(set) var initialFocusPending = false
+    private var publishedKeyboardReturn = false
     private var generation = 0
     private weak var preferredEditor: RecorderTypingTextView?
     private let editors = NSHashTable<RecorderTypingTextView>.weakObjects()
@@ -358,6 +364,7 @@ final class RecorderTypingFocus: ObservableObject {
     private let canAutomaticallyReturn: () -> Bool
     private let canFocus: () -> Bool
     private let mouseButtonsPressed: () -> Bool
+    private let postKeyboardReturnState: (Bool) -> Void
     private let retryDelay: UInt64
     private let maximumAttempts: Int
     private var returnTask: Task<Void, Never>?
@@ -376,11 +383,18 @@ final class RecorderTypingFocus: ObservableObject {
     }, canAutomaticallyReturn: @escaping () -> Bool = { true },
          canFocus: @escaping () -> Bool = { true },
          mouseButtonsPressed: @escaping () -> Bool = { NSEvent.pressedMouseButtons != 0 },
+         postKeyboardReturnState: @escaping (Bool) -> Void = { returnsKeyboard in
+             DistributedNotificationCenter.default().postNotificationName(
+                 returnsKeyboard ? RecorderTypingFocus.keyboardReturnOnNotification
+                     : RecorderTypingFocus.keyboardReturnOffNotification,
+                 object: nil, userInfo: nil, deliverImmediately: true)
+         },
          retryDelay: UInt64 = 50_000_000, maximumAttempts: Int = 40) {
         self.automaticReturnEnabled = automaticReturnEnabled
         self.canAutomaticallyReturn = canAutomaticallyReturn
         self.canFocus = canFocus
         self.mouseButtonsPressed = mouseButtonsPressed
+        self.postKeyboardReturnState = postKeyboardReturnState
         self.retryDelay = retryDelay
         self.maximumAttempts = max(1, maximumAttempts)
     }
@@ -421,6 +435,18 @@ final class RecorderTypingFocus: ObservableObject {
         isEnabled = true
         initialFocusPending = true
         scheduleReturn(initial: true)
+    }
+
+    /// Tells the Codex focus helper whether this box will take the keyboard back after a highlight.
+    ///
+    /// Ethan (2026-11-09): the helper's focus on Codex's input clears the highlight,
+    /// so it leaves same-pane highlights alone while this is on. It is a state rather
+    /// than a per-capture receipt because the capture finishes after the helper decides.
+    func publishKeyboardReturnState() {
+        let returnsKeyboard = isEnabled && automaticReturnEnabled() && canAutomaticallyReturn()
+        guard returnsKeyboard != publishedKeyboardReturn else { return }
+        publishedKeyboardReturn = returnsKeyboard
+        postKeyboardReturnState(returnsKeyboard)
     }
 
     func returnAfterContext() {

@@ -244,9 +244,14 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     // Keyboard mode remains an active composing session, not gesture-Pause:
     // one Primary press must finish, never unexpectedly turn the microphone on.
     @Published var microphoneOff = false {
-        didSet { updateAnnotationCaptureState(at: Date()) }
+        didSet {
+            updateAnnotationCaptureState(at: Date())
+            typingFocus.publishKeyboardReturnState() // Both microphone flags decide whether the typing box takes the keyboard back.
+        }
     }
-    @Published var microphoneTransitionPending = false
+    @Published var microphoneTransitionPending = false {
+        didSet { typingFocus.publishKeyboardReturnState() }
+    }
     // Frozen birth intent distinguishes real keyboard-only startup from a late
     // Command edge while a voice-start hardware await may already be in flight.
     var beganMicrophoneOff = false

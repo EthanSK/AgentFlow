@@ -30,6 +30,18 @@ and emitted-key checks.
 ---
 
 
+## 2026-11-09 — Keep a Codex highlight while typing in Agent Flow (build 499)
+
+Ethan asked whether a highlight could survive the focus helper focusing Codex's input. A Chromium page has one selection, so focusing the composer clears it; the only way to keep it is not to focus. While Agent Flow's typing box will take the keyboard back, the helper now leaves a highlight alone when it is in the pane that already has Codex's input, because the final paste lands there anyway.
+
+The signal is a state (`typingBoxKeyboardReturnOn`/`Off`, posted by `RecorderTypingFocus` whenever `isEnabled`, the hidden opt-out or either microphone flag changes it), not the old capture receipt. The helper decides about 0.4 s after the mouse-up and a capture can finish up to 1.3 s after it, so a per-capture receipt would race. Unknown means today's behaviour: the flag starts off, and a running check covers Agent Flow crashing before it can say Off.
+
+Do not focus the highlighted pane at finish. Ethan was first told that would happen, then the finish path ruled it out: nothing orders the helper's write before the paste, a typed-only finish skips transcription and posts no `recordingStopped`, and Primary may not wait on the helper. Only one finish, a speech one, was timed (1.24 s from stop to paste); a typed-only finish was not. A late write is worse than none, because the paste goes to Codex's remembered input and the helper then moves the 400 ms auto-send Return to the other pane.
+
+Codex does not expose which input it remembers, and a chat click has already moved focus off the composer before the helper can look. So the proof is the last composer the helper verifiably focused or saw focused in that window, and anything unproven forgets it, which only costs one highlight. Known limit: a keyboard-only move to the other composer is invisible to the helper. Highlights in another pane still focus that pane's input and lose the highlight, so the text still lands in the highlighted pane.
+
+Limit: fixtures cannot show the highlight survives in live Codex or that Codex still routes the paste with a selection present; that needs Ethan's real use.
+
 ## 2026-11-09 — Capture the whole line on a Codex triple click that touches a formula (build 498)
 
 Ethan wanted a triple click on a line with an underlined phrase to capture the whole line. Codex reports an empty selection for those, as it does for drags onto a formula, and no position inside text exists, so the fix reads the paragraph's own element. It runs only after Codex's selection comes back empty or as a lone character, so triple clicks that already work keep Codex's own range. The text is not cut to a sentence: Ethan asked for the whole chunk.

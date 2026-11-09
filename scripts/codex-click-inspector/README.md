@@ -35,7 +35,22 @@ all plan input focus (Ethan, 2026-11-06). Highlights retain the existing 300 ms
 settling interval so active Agent Flow capture has its usual opportunity to run,
 but capture confirmation no longer vetoes focus. This deliberately replaces the
 old behavior that preserved an uncaptured selection for a later Agent Flow Start.
-The helper no longer observes or stores selection-capture receipts. It never acts
+The helper no longer observes or stores selection-capture receipts.
+
+One exception keeps a highlight on screen (Ethan, 2026-11-09). While Agent Flow's
+typing box will take the keyboard back after a highlight, Agent Flow posts
+`com.ethansk.voiceink.typingBoxKeyboardReturnOn`, then `...ReturnOff` when that
+stops. During that state a highlight in the pane that already has Codex's input
+is left alone, because the final paste lands there anyway. A highlight in any
+other pane, or any pane the helper cannot prove, still focuses its input and
+clears the highlight, so the text still lands in the highlighted pane. Speech
+sessions are unchanged. Focusing the pane at finish instead was rejected: nothing
+orders that write before a typed-only paste, and a late write would move the
+auto-send Return to the other pane. Codex does not expose which input it
+remembers, so the proof is the last composer this helper focused or saw focused
+in that window; a keyboard-only move to the other composer is not visible to it.
+
+It never acts
 on learned regions, a remembered input or
 another app, re-checks focus and frontmost app right before the write, and
 reports `verified`, `not confirmed` or the skip reason. The input search is a

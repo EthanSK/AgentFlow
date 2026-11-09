@@ -93,6 +93,8 @@ Build 496 also captures a Codex drag that starts or ends on an underlined phrase
 
 Build 497 returns typing focus to the Agent Flow input after a Codex triple click, even when the click selects a line whose text can't be read.
 
+Build 499 keeps a Codex highlight on screen while you type in Agent Flow's typing box, when the highlight is in the pane that already has Codex's input.
+
 Build 498 captures the whole line or paragraph when a Codex triple click lands on text with an underlined phrase.
 
 Build 495 restores one automatic Send 400 ms after paste, removing the experimental early attempt, recipient checks and retry. Paste-only Modes remain immediate. See [Send timing](RECORDING_DESTINATIONS.md#current-timing--one-send-after-the-existing-paste-allowance).

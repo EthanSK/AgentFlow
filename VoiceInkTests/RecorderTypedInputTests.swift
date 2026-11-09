@@ -2687,6 +2687,42 @@ struct RecorderTypedInputTests {
         #expect(!active.typingFocus.isEnabled)
     }
 
+    @Test @MainActor func typingBoxTellsCodexHelperOnlyWhileItWillTakeTheKeyboardBack() {
+        var automaticReturn = true
+        var canReturn = true
+        var posted: [Bool] = []
+        let focus = RecorderTypingFocus(automaticReturnEnabled: { automaticReturn },
+                                        canAutomaticallyReturn: { canReturn },
+                                        postKeyboardReturnState: { posted.append($0) })
+        focus.requestInitialFocus()
+        focus.requestInitialFocus()
+        #expect(posted == [true]) // Repeating the same state must not post again.
+
+        canReturn = false // Speech turned on: Codex's caret is left alone, so the helper must focus as usual.
+        focus.publishKeyboardReturnState()
+        #expect(posted == [true, false])
+
+        canReturn = true
+        focus.publishKeyboardReturnState()
+        focus.disable(releaseKeyboard: false)
+        #expect(posted == [true, false, true, false])
+
+        automaticReturn = false // The hidden opt-out means the box never takes the keyboard back.
+        focus.requestInitialFocus()
+        #expect(posted == [true, false, true, false])
+    }
+
+    @Test func bothMicrophoneFlagsRepublishTheTypingBoxKeyboardState() throws {
+        let source = try String(contentsOf: URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("VoiceInk/Transcription/Engine/RecordingSession.swift"), encoding: .utf8)
+        for flag in ["var microphoneOff = false {", "var microphoneTransitionPending = false {"] {
+            let start = try #require(source.range(of: flag))
+            let observer = String(source[start.upperBound...].prefix(260))
+            #expect(observer.contains("typingFocus.publishKeyboardReturnState()"), "\(flag) must republish")
+        }
+    }
+
     @Test @MainActor func automaticTypingFocusReturnCanBeDisabledWithoutDisablingExplicitFocus() async throws {
         let defaults = try #require(UserDefaults(suiteName: "AgentFlow.Focus.\(UUID())"))
         #expect(RecorderTypingFocus.automaticReturnEnabled(in: defaults))
