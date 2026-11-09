@@ -8,6 +8,25 @@
 **Fix:** Restore one generic Send after the previous 400 ms allowance; remove Primary recipient receipts, fresh-archive proof and conditional retry while preserving paste-only, FIFO/cancellation and both Next routes
 **Commit:** 1323f415
 **Guard:** primaryDeliveryUsesOnlyBaseVoiceInkSystemFocusedCommands and ImmediateKeyboardSequenceTests; signed build495 and Mini release verification remain separate gates
+
+Verified follow-through: exact native source47a30dcc/build495 passed all891 named
+canonical Mini tests/41 suites, including all21 selected delivery/keyboard guards.
+The universal public495 ZIP passed its published checksums, Developer ID signing,
+stapled notarization, Gatekeeper and unchanged updater key/feed. The installed
+executable is `f0eb192f3d718df99384324871c342c443a243e23c9a763ad7e4d0536235d557`
+with CDHash `8d7a86c516f876dcf498b37cda6a96014e32fdd2`; the background relaunch
+persisted with Automation/audio-input entitlements. Official VoiceInk, microphone,
+paired-Voice settings and keybindings remained unchanged; verified494 ZIP rollback
+is retained. Public setup and the Opus-authored homepage now link495.
+
+The first private installer driver failed before delivering Quit because its
+copied `request-quit.swift` dependency was missing. Preserve that failure evidence;
+validate every referenced helper before warning/quit journaling. After restoring
+the helper, fresh readiness and a new delivered five-second warning preceded the
+single actual cooperative Quit. A driver-file failure is not a recording veto and
+must never be treated as permission for a forced app exit. Physical Codex submission
+reliability after this timing rollback remains distinct from these source/install
+and emitted-key checks.
 ---
 
 
