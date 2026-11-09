@@ -40,6 +40,8 @@ Fix: a live Codex triple click returns focus after its first empty read. Retries
 
 Limit: this fixes focus, not capture. A triple click on a line with an underlined formula still adds no text, because `doubleClickedFormula` only covers `clickCount == 2`. Do not read the focus helper's live log to diagnose this; its README forbids it for agents. Agent Flow's own `LiveSelection` and `TypingFocus` log lines were enough.
 
+Release: source `41ccab0a`/build 497 passed all 904 named tests in 41 suites through the release workflow, plus 211 focused Mini tests beforehand. The public v2.0.497 ZIP (sha256 `33fc4668...6186`) passed its checksums, deep/strict Developer ID signing, stapled notarization and Gatekeeper. Real triple-click acceptance is Ethan's.
+
 ## 2026-11-09 — Capture a Codex drag that touches a formula (build 496)
 
 Ethan reported that dragging across an underlined phrase gives nothing or a stray `‾`. A real drag from plain text into a formula left `AXSelectedTextMarkerRange` collapsed and `AXSelectedText` nil, while Codex drew the highlight. So the app itself reports an empty selection; it isn't our range logic. Plain-only drags were always fine, and nothing in builds 493–495 touched drags, so this is not a regression.
