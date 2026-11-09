@@ -14,9 +14,9 @@
 
 ## Download
 
-[Download Agent Flow v2.0.494 for Mac](https://github.com/EthanSK/AgentFlow/releases/download/v2.0.494/AgentFlow-v2.0.494-mac-universal.zip). Requires macOS 14.4 or later; supports Apple silicon and Intel. The public app is Developer ID signed, Apple notarized and stapled. Unzip it and move Agent Flow to Applications, then follow [Setup](SETUP.md).
+[Download Agent Flow v2.0.495 for Mac](https://github.com/EthanSK/AgentFlow/releases/download/v2.0.495/AgentFlow-v2.0.495-mac-universal.zip). Requires macOS 14.4 or later; supports Apple silicon and Intel. The public app is Developer ID signed, Apple notarized and stapled. Unzip it and move Agent Flow to Applications, then follow [Setup](SETUP.md).
 
-[Release notes and checksums](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.494) · [Build from source](#build-from-source)
+[Release notes and checksums](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.495) · [Build from source](#build-from-source)
 
 The app includes an Intel build, but local models are not reliable on Intel Macs; use a cloud transcription provider there. Cloud providers require your own account, key and any usage charges. Apple-silicon Macs can use the downloaded local model without a provider key.
 
@@ -89,7 +89,7 @@ Only an eligible Next route saves an exact input together with its app's Mode an
 
 Build 494 looks for the whole underlined phrase when you double-click one of its words in Codex.
 
-Build 492 adds an early automatic Enter attempt for a readable Codex composer, with one later retry only while the same pasted draft is unchanged and no typing or clicks intervene. Other inputs retain the single 400 ms Send allowance. See [Send timing](RECORDING_DESTINATIONS.md#current-timing-exception--fast-send-and-conditional-delayed-retry) for the limits; paste-only Modes remain immediate.
+Build 495 restores one automatic Send 400 ms after paste, removing the experimental early attempt, recipient checks and retry. Paste-only Modes remain immediate. See [Send timing](RECORDING_DESTINATIONS.md#current-timing--one-send-after-the-existing-paste-allowance).
 
 Primary's recording-time double-press selects **Won’t paste** and finishes to the clipboard if no third press follows; a third press in the same gesture pauses capture, and a fourth finishes with paste but no auto-send. While paused, one fresh press resumes, two select **Won’t paste** and finish to the clipboard if no third press follows, and three resume the same capture. These are recording gestures, not extra destinations. Bare Escape stays with the foreground app.
 
