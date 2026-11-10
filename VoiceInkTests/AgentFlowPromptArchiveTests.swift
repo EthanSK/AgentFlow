@@ -570,7 +570,7 @@ struct AgentFlowPromptArchiveTests {
         #expect(unmatched.contains("<h2>Text</h2>"))
     }
 
-    @Test func viewerScreenshotIsLocalLinkAndExactDuplicateOnlyIsHidden() {
+    @Test func viewerScreenshotIsLocalLinkAndExactDuplicateOnlyIsHidden() throws {
         let path = "/tmp/example (1) & 2.png"
         let reference = LiveSelectionStyledMath.localImageReference(path: path)
         let source = "<local_screenshot path=\"/tmp/example (1) &amp; 2.png\" captured_at=\"1.234\"/>\n\n\(reference)\n\nUnmatched prose remains\n<speech timing=\"unavailable\">hello</speech>"
@@ -583,7 +583,10 @@ struct AgentFlowPromptArchiveTests {
         #expect(!html.contains("<img"))
         #expect(html.contains("Preview unavailable"))
         let unsafe = AgentFlowPromptViewer.html("<local_screenshot path=\"javascript:alert(1)\"/>")
-        #expect(!unsafe.contains("href="))
+        // The trusted favicon links from the head. Screenshot paths must never
+        // produce a link in the body unless they resolve to a valid local path.
+        let bodyStart = try #require(unsafe.range(of: "<body>")).upperBound
+        #expect(!unsafe[bodyStart...].contains("href="))
     }
 
     private func screenshotFixture(in root: URL, width: Int = 8) throws -> URL {
