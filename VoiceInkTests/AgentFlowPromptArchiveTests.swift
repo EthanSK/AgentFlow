@@ -116,7 +116,7 @@ struct AgentFlowPromptArchiveTests {
         #expect(!html.contains("onclick="))
     }
 
-    @Test func savedViewerEmbedsAnOfflineTabIconFromThePackagedArtwork() throws {
+    @Test func savedViewerEmbedsAnOfflinePromptTabIcon() throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
         let prompt = "<typed_text>Prompt viewer tab icon</typed_text>"

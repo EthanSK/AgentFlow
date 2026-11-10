@@ -172,19 +172,41 @@ enum AgentFlowPromptArchive {
 /// No prompt-supplied scripts, external entities, fonts or network fetches. Genuine screenshot
 /// events can embed a bounded, decoded raster preview. The .md is authoritative.
 enum AgentFlowPromptViewer {
-    // Derive the browser tab icon once from the packaged app artwork. A data URL
-    // keeps archived pages self-contained under the existing offline CSP.
+    // Ethan uses browser tab icons to identify the viewer type. Draw a folded
+    // document that stays legible at 16 px and embed it for offline archives.
     private static let faviconLink: String = {
-        guard let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
-              let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-              let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceThumbnailMaxPixelSize: 32
-              ] as CFDictionary) else { return "" }
+        guard let canvas = CGContext(
+            data: nil, width: 32, height: 32, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return "" }
+
+        let tile = CGPath(roundedRect: CGRect(x: 1, y: 1, width: 30, height: 30),
+                          cornerWidth: 6, cornerHeight: 6, transform: nil)
+        canvas.setFillColor(red: 0.29, green: 0.24, blue: 0.67, alpha: 1)
+        canvas.addPath(tile)
+        canvas.fillPath()
+
+        canvas.setFillColor(red: 1, green: 1, blue: 1, alpha: 1)
+        canvas.addLines(between: [
+            CGPoint(x: 8, y: 5), CGPoint(x: 8, y: 27), CGPoint(x: 18, y: 27),
+            CGPoint(x: 24, y: 21), CGPoint(x: 24, y: 5)
+        ])
+        canvas.closePath()
+        canvas.fillPath()
+
+        canvas.setFillColor(red: 0.44, green: 0.37, blue: 0.75, alpha: 1)
+        canvas.addLines(between: [CGPoint(x: 18, y: 27), CGPoint(x: 18, y: 21), CGPoint(x: 24, y: 21)])
+        canvas.closePath()
+        canvas.fillPath()
+        canvas.fill([CGRect(x: 11, y: 14, width: 10, height: 2),
+                     CGRect(x: 11, y: 9, width: 7, height: 2)])
+
         let encoded = NSMutableData()
-        guard let destination = CGImageDestinationCreateWithData(encoded, "public.png" as CFString, 1, nil)
+        guard let image = canvas.makeImage(),
+              let destination = CGImageDestinationCreateWithData(encoded, "public.png" as CFString, 1, nil)
         else { return "" }
-        CGImageDestinationAddImage(destination, thumbnail, nil)
+        CGImageDestinationAddImage(destination, image, nil)
         guard CGImageDestinationFinalize(destination) else { return "" }
         return "<link rel=\"icon\" type=\"image/png\" href=\"data:image/png;base64,\((encoded as Data).base64EncodedString())\">"
     }()
