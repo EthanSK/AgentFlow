@@ -1,5 +1,26 @@
 # Learnings
 
+## 2026-11-10 — Add the Agent Flow icon to new prompt viewer tabs
+
+The offline prompt viewer embeds a 32 px PNG derived once per process from the
+packaged app icon. This reuses the installed artwork and the existing
+`img-src data:` policy. Keep the canonical Markdown reference before embedded
+images so the bounded prompt reader can resolve it. New viewer HTML is written
+through the existing exclusive-create archive path. Completed archives retain
+their original HTML and Markdown.
+
+An earlier screenshot test rejected any `href` in the whole unsafe fixture.
+The icon's trusted head link triggered it. Keep the negative check on the
+rendered body so every link emitted by an unsafe screenshot still fails.
+`savedViewerEmbedsAnOfflineTabIconFromThePackagedArtwork` decodes the saved icon
+and verifies the companion Markdown bytes. Both tests passed in the canonical
+Mini suite of 916 tests in 41 suites for source `fa2e7800`, build 500. A separate
+Mini fixture rendered synthetic text with the release viewer and bundled icon.
+The signed public download passed checksum, notarization and Gatekeeper
+verification. Build 500 relaunched after the five-second warning and normal
+quit, with CDHash `c27754a459ff6d0d91fee2ecdde10b19997513ef` and a verified build 499
+ZIP rollback.
+
 ---
 **Date:** 2026-11-09T01:42:02Z
 **Trigger:** 2026-11-09: remove the first early temporary delay and keep the old delay from before I asked
