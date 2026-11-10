@@ -169,9 +169,26 @@ enum AgentFlowPromptArchive {
 /// Offline timeline, parsed from the canonical XML. Payloads are always escaped
 /// as text; metadata remains available in disclosures. The complete canonical
 /// source lives once in the adjacent .md, linked here, not copied into HTML.
-/// No prompt-supplied scripts, external entities, fonts or network fetches. Only genuine screenshot
+/// No prompt-supplied scripts, external entities, fonts or network fetches. Genuine screenshot
 /// events can embed a bounded, decoded raster preview. The .md is authoritative.
 enum AgentFlowPromptViewer {
+    // Derive the browser tab icon once from the packaged app artwork. A data URL
+    // keeps archived pages self-contained under the existing offline CSP.
+    private static let faviconLink: String = {
+        guard let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceThumbnailMaxPixelSize: 32
+              ] as CFDictionary) else { return "" }
+        let encoded = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(encoded, "public.png" as CFString, 1, nil)
+        else { return "" }
+        CGImageDestinationAddImage(destination, thumbnail, nil)
+        guard CGImageDestinationFinalize(destination) else { return "" }
+        return "<link rel=\"icon\" type=\"image/png\" href=\"data:image/png;base64,\((encoded as Data).base64EncodedString())\">"
+    }()
+
     // Only this fixed handler may execute. Prompt content remains escaped data;
     // do not broaden the CSP to unsafe-inline scripts or interpolate payloads.
     // window.close requests only this tab. Some hosts refuse page-initiated
@@ -475,6 +492,7 @@ enum AgentFlowPromptViewer {
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="agent-flow-rainbow-start" content="\(rainbowStartIndex)">
         <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'sha256-\(closeScriptHash)'; base-uri 'none'; form-action 'none'">
+        \(faviconLink)
         <title>Agent Flow prompt</title>
         <style>
         :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#141416;color:#f1f5f9;font:17px/1.55 -apple-system,BlinkMacSystemFont,sans-serif}

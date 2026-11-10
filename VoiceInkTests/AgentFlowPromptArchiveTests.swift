@@ -116,6 +116,28 @@ struct AgentFlowPromptArchiveTests {
         #expect(!html.contains("onclick="))
     }
 
+    @Test func savedViewerEmbedsAnOfflineTabIconFromThePackagedArtwork() throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let prompt = "<typed_text>Prompt viewer tab icon</typed_text>"
+        let file = try AgentFlowPromptArchive.write(prompt, recordID: UUID(), directory: root)
+        try AgentFlowPromptArchive.writeViewer(prompt, for: file)
+        let viewer = try #require(AgentFlowPromptArchive.viewerURL(for: file))
+        let html = try String(contentsOf: viewer, encoding: .utf8)
+        let prefix = #"<link rel="icon" type="image/png" href="data:image/png;base64,"#
+        let parts = html.components(separatedBy: prefix)
+        try #require(parts.count == 2)
+        let base64 = try #require(parts[1].split(separator: "\"").first)
+        let png = try #require(Data(base64Encoded: String(base64)))
+        let icon = try #require(CGImageSourceCreateWithData(png as CFData, nil))
+        let image = try #require(CGImageSourceCreateImageAtIndex(icon, 0, nil))
+        #expect(CGImageSourceGetType(icon) as String? == "public.png")
+        #expect(image.width == 32 && image.height == 32)
+        #expect(parts[0].contains("img-src data:"))
+        #expect(parts[0].contains("name=\"agent-flow-source\""))
+        #expect(try String(contentsOf: file, encoding: .utf8) == AgentFlowPromptArchive.interpretationReminder + prompt)
+    }
+
     private func temporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("AgentFlowPromptTests-\(UUID())")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
