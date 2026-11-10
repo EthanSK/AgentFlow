@@ -1,5 +1,19 @@
 # Learnings
 
+## 2026-11-10 — Use a document icon for prompt viewer tabs
+
+Ethan clarified that a tab icon identifies the viewer type. The offline prompt
+renderer now draws a high-contrast folded document and embeds the 32 px PNG in
+new prompt pages. Keep the favicon and source metadata in the head and retain
+the existing screenshot-link check on the body. Previously saved prompt files
+are immutable. The Mini generated a synthetic page from the build 501 renderer,
+and Chrome displayed its icon at normal tab size on the MacBook Pro.
+
+Source `31f8c5cb`, build 501 passed the canonical Mini release suite of 916 named
+tests across 41 suites. GitHub Actions signed, notarized and published the
+universal ZIP. The independently downloaded archive passed checksum, Developer ID,
+notarization and Gatekeeper verification.
+
 ## 2026-11-10 — Add the Agent Flow icon to new prompt viewer tabs
 
 The offline prompt viewer embeds a 32 px PNG derived once per process from the
