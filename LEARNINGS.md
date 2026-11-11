@@ -1,5 +1,20 @@
 # Learnings
 
+## 2026-11-11 — Include reply preferences with the full-prompt footer
+
+The explicit **Read the full prompt** footer decides whether the optional local
+`Response Preferences.md` is copied into the new canonical Markdown. The
+opening arrow also appears on short messages, so it cannot make this decision.
+The renderer calls back from the same branch that emits the footer. Keep the
+reference in the linked file and preserve the authored timeline and HTML viewer.
+The existing full-prompt reader returns the appended guidance in the same read.
+
+Finalization checks the fresh archive's original bytes before appending and
+rechecks session authorization after the worker returns. A missing preference
+file still leaves the complete prompt available. The build 502 Mini run for
+`c17160e5` passed 917 named tests, including the full-prompt cases and the
+Primary, Next, and clipboard-only route guards.
+
 ## 2026-11-10 — Use a document icon for prompt viewer tabs
 
 Ethan clarified that a tab icon identifies the viewer type. The offline prompt
