@@ -40,7 +40,8 @@ class ClickFocusTests(unittest.TestCase):
                    interrupt_highlight=None, current_main: bool = False, coarse_hits: int = 0,
                    typing_box_returns_keyboard: bool = False, input_pane: str | None = None,
                    agent_flow_running: bool = True, focus_status: str = "fixture focus",
-                   proof_sequence: int = 0, focused_sample=None, click_sample=None, click_point=(100, 620)):
+                   proof_sequence: int = 0, focused_sample=None, click_sample=None, click_point=(100, 620),
+                   agent_flow_recording: bool = False, health=None):
         region = Rect(0, 0, 600, 700)
         marker = "app-shell-tab-panel-app-shell-tab:68" if side else "fixture-chat-panel"
         if current_main:
@@ -51,7 +52,8 @@ class ClickFocusTests(unittest.TestCase):
                  main_content=current_main)), focus_stable=True)
         owner = SimpleNamespace(sequence=2 if newer_click else 1, paused=paused,
             reader=Mock(), model=PaneModel(), focus_inputs=focus_inputs,
-            focuser=Mock(), completed=Mock(), pending=Mock(), health=HelperHealth(),
+            focuser=Mock(), completed=Mock(), pending=Mock(), health=health or HelperHealth(),
+            agent_flow_recording=agent_flow_recording, agent_flow_epoch=0,
             typing_box_returns_keyboard=typing_box_returns_keyboard,
             input_proof=(8, input_pane, proof_sequence) if input_pane else None)
         owner.process_request = lambda request: inspector.Inspector.process_request(owner, request)
@@ -77,7 +79,56 @@ class ClickFocusTests(unittest.TestCase):
                 event.return_value.wait.side_effect = lambda _: interrupt_highlight(owner)
             with self.assertRaises(StopIteration):
                 inspector.Inspector.worker(owner)
+            owner.highlight_waits = [call.args[0] for call in event.return_value.wait.call_args_list]
         return owner
+
+    IDLE_SLICES = round(inspector.IDLE_HIGHLIGHT_FOCUS_DELAY_SECONDS / inspector.IDLE_WAIT_SLICE_SECONDS)
+
+    def test_idle_highlight_waits_three_seconds_in_slices_then_focuses(self):
+        health = Mock()
+        owner = self.run_worker(ClickGesture(click_count=2), health=health)
+        self.assertEqual(owner.highlight_waits, [inspector.IDLE_WAIT_SLICE_SECONDS] * self.IDLE_SLICES)
+        self.assertEqual(self.IDLE_SLICES * inspector.IDLE_WAIT_SLICE_SECONDS, 3.0)
+        owner.focuser.focus.assert_called_once()
+        self.assertEqual(health.begin_job.call_count, 2)  # Restarted after the wait so the watchdog does not count it.
+
+    def test_highlight_during_a_recording_or_typing_session_keeps_the_short_wait(self):
+        for session in ({"agent_flow_recording": True}, {"typing_box_returns_keyboard": True}):
+            with self.subTest(session=session):
+                owner = self.run_worker(ClickGesture(click_count=2), **session)
+                self.assertEqual(owner.highlight_waits, [inspector.HIGHLIGHT_FOCUS_DELAY_SECONDS])
+                owner.focuser.focus.assert_called_once()
+
+    def test_agent_flow_not_running_counts_as_idle_even_if_it_last_said_recording(self):
+        owner = self.run_worker(ClickGesture(click_count=2), agent_flow_recording=True, agent_flow_running=False)
+        self.assertEqual(len(owner.highlight_waits), self.IDLE_SLICES)
+
+    def test_agent_flow_starting_during_the_idle_wait_leaves_the_highlight(self):
+        def start(current):
+            current.typing_box_returns_keyboard, current.agent_flow_epoch = True, current.agent_flow_epoch + 1
+        owner = self.run_worker(ClickGesture(click_count=3), interrupt_highlight=start)
+        owner.focuser.focus.assert_not_called()
+        self.assertEqual(len(owner.highlight_waits), 1)  # The wait ends at once; nothing queues behind it.
+
+    def test_agent_flow_stopping_during_the_short_wait_never_writes_focus(self):
+        def stop(current):
+            current.agent_flow_recording, current.agent_flow_epoch = False, current.agent_flow_epoch + 1
+        owner = self.run_worker(ClickGesture(click_count=2), agent_flow_recording=True, interrupt_highlight=stop)
+        owner.focuser.focus.assert_not_called()
+
+    def test_key_during_the_idle_wait_cancels_the_focus(self):
+        owner = self.run_worker(ClickGesture(drag_points=12),
+                                interrupt_highlight=lambda current: setattr(current, "key_count", lambda: 1))
+        owner.focuser.focus.assert_not_called()
+        self.assertEqual(len(owner.highlight_waits), 1)
+
+    def test_real_press_during_the_idle_wait_ends_it_without_focus(self):
+        def press(current):
+            with patch.object(inspector.Q, "CGEventGetLocation", return_value=SimpleNamespace(x=100.0, y=620.0)):
+                inspector.Inspector.mouse_down(current, Mock())
+        owner = self.run_worker(ClickGesture(click_count=2), interrupt_highlight=press)
+        owner.focuser.focus.assert_not_called()
+        self.assertEqual(len(owner.highlight_waits), 1)
 
     def test_typing_box_keeps_a_highlight_in_the_pane_that_has_codexs_input(self):
         for gesture in (ClickGesture(click_count=2), ClickGesture(click_count=3), ClickGesture(drag_points=12)):

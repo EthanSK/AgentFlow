@@ -234,7 +234,7 @@ def input_focus_plan(model, observation):
     """Returns (pane, Conversation frame) whose input may be focused, else (None, skip reason)."""
     # Ethan (2026-10-17): clicks AND highlights must move focus to that pane's
     # input, including modifier-assisted text selections (2026-11-06). Highlights
-    # keep the caller's existing settling interval; capture acknowledgement is
+    # keep the caller's settling interval (longer while Agent Flow is idle, 2026-11-11); capture acknowledgement is
     # no longer required. Buttons, links and other controls still own their clicks.
     clicked, click_reason, focused, focus_reason, _, _ = describe(model, observation)
     focus = observation.focus

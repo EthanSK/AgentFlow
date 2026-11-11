@@ -31,11 +31,15 @@ from mouse_monitor import MouseMonitor
 
 OPTIONS = None
 HIGHLIGHT_FOCUS_DELAY_SECONDS = 0.3  # Preserve the existing opportunity for Agent Flow to read a highlight before focus moves.
+IDLE_HIGHLIGHT_FOCUS_DELAY_SECONDS = 3.0  # Ethan (2026-11-11): "delay the input focus a bit" while Agent Flow is idle, so a highlight made just before pressing start is still there for it to read.
+IDLE_WAIT_SLICE_SECONDS = 0.025  # Short slices, so a newer click never queues behind the idle wait.
 INSTANCE = None
 CONTROL_NAME = "com.ethansk.agentflow.codex-focus-helper.control"
 AGENT_FLOW_BUNDLE_ID = "com.ethansk.VoiceInkPlusPlus"
 TYPING_BOX_RETURN_ON = "com.ethansk.voiceink.typingBoxKeyboardReturnOn"  # Must match Agent Flow's RecorderTypingFocus.
 TYPING_BOX_RETURN_OFF = "com.ethansk.voiceink.typingBoxKeyboardReturnOff"  # Must match Agent Flow's RecorderTypingFocus.
+RECORDING_STARTED = "com.ethansk.voiceink.recordingStarted"  # Must match Agent Flow's RecordingActivityNotifier.
+RECORDING_STOPPED_PRESERVING_PLAYBACK = "com.ethansk.voiceink.recordingStoppedPreservingPlayback"  # Must match Agent Flow's RecordingActivityNotifier.
 
 
 def control_object(demo=False):
@@ -326,6 +330,8 @@ class Inspector(NSObject):
         # Off until Agent Flow says otherwise, so a helper restarted mid-session just focuses inputs as usual.
         # input_proof is (window key, pane, click sequence): it only counts for the very next gesture, so a click this helper never finished reading cannot leave a stale pane behind.
         self.typing_box_returns_keyboard, self.input_proof = False, None
+        # Idle until Agent Flow says otherwise: a helper restarted mid-recording only focuses later, and that recording's stop still drops a waiting focus. The epoch counts Agent Flow's state changes so a waiting highlight can tell one happened.
+        self.agent_flow_recording, self.agent_flow_epoch = False, 0
         # Own reader: the click worker changes its reader's deadline at the same time.
         self.claude_focuser = ClaudePromptFocuser(AXReader()) if self.reader and CLAUDE_FOCUS_ENABLED else None  # Off: no observer, checkbox greyed out.
         self.claude_click_focuser = ClaudePromptFocuser(self.reader) if self.reader else None  # Separate from the dormant stop trigger above (Ethan, 2026-11-08). Shares the Codex reader because both run only on the one click worker.
@@ -402,6 +408,9 @@ class Inspector(NSObject):
         if self.claude_focuser:
             center.addObserver_selector_name_object_suspensionBehavior_(
                 self, "recordingStopped:", RECORDING_STOPPED, None, NSNotificationSuspensionBehaviorDeliverImmediately)
+        for name in (RECORDING_STARTED, RECORDING_STOPPED, RECORDING_STOPPED_PRESERVING_PLAYBACK):  # Separate from the dormant Claude stop trigger above, which stays off.
+            center.addObserver_selector_name_object_suspensionBehavior_(
+                self, "agentFlowRecordingChanged:", name, None, NSNotificationSuspensionBehaviorDeliverImmediately)
         for name in (TYPING_BOX_RETURN_ON, TYPING_BOX_RETURN_OFF):
             center.addObserver_selector_name_object_suspensionBehavior_(
                 self, "typingBoxReturnChanged:", name, None, NSNotificationSuspensionBehaviorDeliverImmediately)
@@ -488,7 +497,8 @@ class Inspector(NSObject):
         if name == K.NSWorkspaceDidLaunchApplicationNotification:
             app = (notification.userInfo() or {}).get(K.NSWorkspaceApplicationKey)
             if app and app.bundleIdentifier() == AGENT_FLOW_BUNDLE_ID:
-                self.typing_box_returns_keyboard = False  # A relaunch after a crash never sent Off for the old session.
+                self.typing_box_returns_keyboard = self.agent_flow_recording = False  # A relaunch after a crash never sent Off or Stopped for the old session.
+                self.agent_flow_epoch += 1
                 return
             url = app.bundleURL() if app else None
             if not url or Path(str(url.path())).name not in ("Codex.app", "ChatGPT.app"):
@@ -811,8 +821,27 @@ class Inspector(NSObject):
             focused = sample
         observation = Observation(sample, focused, sequence, host=host, version=version, gesture=gesture)
         highlight = is_highlight_gesture(gesture)
-        if highlight:
+        agent_flow_epoch = self.agent_flow_epoch
+        if highlight and (self.agent_flow_recording or self.typing_box_returns_keyboard) and agent_flow_is_running():
             threading.Event().wait(HIGHLIGHT_FOCUS_DELAY_SECONDS)
+        elif highlight:
+            # Ethan (2026-11-11): with Agent Flow idle, the usual 0.3 s focus cleared a
+            # highlight before he could press start, so nothing was added. Waiting here
+            # replaces "keep the existing settling interval" for the idle case only;
+            # recordings and the typing box keep 0.3 s. The focus below fires only if
+            # Agent Flow stayed idle for the whole wait. If it started, the highlight is
+            # left for its start-up read, which sends no receipt to wait for. If it
+            # stopped, a late focus could move the auto-send Return to another chat.
+            # Known limit: a typed-only session with automatic return switched off sends
+            # neither signal, so it counts as idle here.
+            for _ in range(round(IDLE_HIGHLIGHT_FOCUS_DELAY_SECONDS / IDLE_WAIT_SLICE_SECONDS)):  # Counted, not clocked, so the wait is exact under test.
+                threading.Event().wait(IDLE_WAIT_SLICE_SECONDS)
+                if (sequence != self.sequence or self.paused or self.key_count() != keys_at_click
+                        or agent_flow_epoch != self.agent_flow_epoch):
+                    break
+            if self.key_count() != keys_at_click:
+                return  # A key during the wait owns the keyboard now: a copy, typing or a shortcut.
+            self.health.begin_job()  # The wait was deliberate, not a stuck native call; the watchdog's 6 seconds apply to the work after it.
         # Ethan (2026-11-06): every chat-text click must focus its input, including
         # double/triple clicks without Agent Flow capture. The old receipt veto
         # deliberately preserved pre-start selections; do not restore that veto
@@ -835,6 +864,8 @@ class Inspector(NSObject):
                                           and proof[2] >= sequence - 2 * max(1, gesture.click_count)) else None
                 if pane and (sequence != self.sequence or self.paused):
                     action = "Skipped · a newer click arrived"
+                elif pane and highlight and agent_flow_epoch != self.agent_flow_epoch:
+                    action = "Skipped · Agent Flow started or stopped during the highlight wait"
                 elif (pane and highlight and pane == input_pane and self.typing_box_returns_keyboard
                       and agent_flow_is_running()):  # The running check covers Agent Flow crashing before it can say Off.
                     action = KEPT_HIGHLIGHT_ACTION
@@ -1020,6 +1051,11 @@ class Inspector(NSObject):
 
     def typingBoxReturnChanged_(self, notification):
         self.typing_box_returns_keyboard = str(notification.name()) == TYPING_BOX_RETURN_ON
+        self.agent_flow_epoch += 1
+
+    def agentFlowRecordingChanged_(self, notification):
+        self.agent_flow_recording = str(notification.name()) == RECORDING_STARTED
+        self.agent_flow_epoch += 1
 
     def recordingStopped_(self, notification):
         # Every Agent Flow finish posts this, including cancel and the clipboard-only
