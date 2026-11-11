@@ -103,12 +103,43 @@ class ClickFocusTests(unittest.TestCase):
         owner = self.run_worker(ClickGesture(click_count=2), agent_flow_recording=True, agent_flow_running=False)
         self.assertEqual(len(owner.highlight_waits), self.IDLE_SLICES)
 
-    def test_agent_flow_starting_during_the_idle_wait_leaves_the_highlight(self):
-        def start(current):
-            current.typing_box_returns_keyboard, current.agent_flow_epoch = True, current.agent_flow_epoch + 1
-        owner = self.run_worker(ClickGesture(click_count=3), interrupt_highlight=start)
+    @staticmethod
+    def start_then(after_start=None):
+        """Agent Flow starts on the first wait slice; `after_start` runs on the 0.3 s settle that follows."""
+        waits = [0]
+        def interrupt(current):
+            waits[0] += 1
+            if waits[0] == 1:
+                current.typing_box_returns_keyboard, current.agent_flow_epoch = True, current.agent_flow_epoch + 1
+            elif after_start:
+                after_start(current)
+        return interrupt
+
+    def test_agent_flow_starting_during_the_idle_wait_focuses_the_highlighted_pane_after_the_settle(self):
+        owner = self.run_worker(ClickGesture(click_count=3), interrupt_highlight=self.start_then())
+        self.assertEqual(owner.highlight_waits, [inspector.IDLE_WAIT_SLICE_SECONDS, inspector.HIGHLIGHT_FOCUS_DELAY_SECONDS])
+        owner.focuser.focus.assert_called_once()
+
+    def test_a_second_start_broadcast_during_the_settle_still_focuses(self):
+        def recording(current):
+            current.agent_flow_recording, current.agent_flow_epoch = True, current.agent_flow_epoch + 1
+        owner = self.run_worker(ClickGesture(click_count=2), interrupt_highlight=self.start_then(recording))
+        owner.focuser.focus.assert_called_once()
+
+    def test_agent_flow_starting_keeps_a_highlight_in_the_pane_that_has_codexs_input(self):
+        owner = self.run_worker(ClickGesture(click_count=2), input_pane="Main chat", interrupt_highlight=self.start_then())
+        owner.focuser.focus.assert_not_called()  # The paste lands in that pane anyway.
+
+    def test_agent_flow_stopping_during_the_settle_after_start_never_writes_focus(self):
+        def stop(current):
+            current.typing_box_returns_keyboard, current.agent_flow_epoch = False, current.agent_flow_epoch + 1
+        owner = self.run_worker(ClickGesture(click_count=2), interrupt_highlight=self.start_then(stop))
         owner.focuser.focus.assert_not_called()
-        self.assertEqual(len(owner.highlight_waits), 1)  # The wait ends at once; nothing queues behind it.
+
+    def test_typing_during_the_settle_after_start_leaves_codex_alone(self):
+        owner = self.run_worker(ClickGesture(click_count=2),
+                                interrupt_highlight=self.start_then(lambda current: setattr(current, "key_count", lambda: 1)))
+        owner.focuser.focus.assert_not_called()
 
     def test_agent_flow_stopping_during_the_short_wait_never_writes_focus(self):
         def stop(current):

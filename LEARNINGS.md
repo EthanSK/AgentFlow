@@ -80,6 +80,18 @@ and emitted-key checks.
 ---
 
 
+## 2026-11-11 — Focus the highlighted pane when Agent Flow starts during the idle wait (helper only)
+
+Ethan confirmed the 3-second wait works, then asked that a highlight made before starting still move Codex's input to its pane ("can it do both"), so the finished text lands in the chat he highlighted without a click. Before this, a start during the wait skipped the focus, and the paste went to whichever input Codex remembered.
+
+Fix: when Agent Flow's start broadcast ends the idle wait, the helper waits the usual in-session 0.3 s for Agent Flow's start-up read, then runs the normal in-session highlight path: a highlight in the pane that already has Codex's input is kept while the typing box returns the keyboard, any other pane's input is focused. A key in those 0.3 s, or the session ending, cancels it. A second start broadcast (voice plus typing) does not.
+
+Evidence: Agent Flow's log for the starts Ethan tried at 14:25, 14:26 and 14:30 shows typing-box starts capturing the pre-start highlight 40–60 ms after the typing box took the keyboard, each read finishing in 55–90 ms. That also settles the earlier worry that typing-box starts read nothing in Codex. Not settled: whether the helper's focus write in Codex takes the keyboard from the typing box. The same write already runs for mid-session highlights in another pane; if typing stops reaching the box after such a highlight, the fix is for Agent Flow to return the keyboard after the helper's write, natively.
+
+Rejected: waiting for a native "start-up read finished" broadcast. It needs a new app build, and the logged reads finish well inside 0.3 s; a formula-only read that retries for longer can still be cleared, exactly as mid-session.
+
+Guard: 196 helper fixture tests; the two focus tests fail on the previous helper.
+
 ## 2026-11-11 — Wait 3 seconds before focusing Codex's input after an idle highlight (helper only)
 
 Ethan reported that text selected in Codex before starting Agent Flow was no longer added, then asked: "can it delay the input focus a bit then? that should fix it". Since 2026-11-06 (`afaf4070`) the focus helper focused Codex's input about 0.4 s after every highlight, which clears it, while Agent Flow reads a pre-start highlight only once a session starts. One logged start (2026-11-11 13:49:37) found the pre-start drag and read an empty Codex selection 4 times over 2.1 s.

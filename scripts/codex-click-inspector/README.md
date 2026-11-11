@@ -42,9 +42,14 @@ While Agent Flow is idle, the helper waits 3 seconds before focusing the input
 after a highlight (Ethan, 2026-11-11: "delay the input focus a bit"). The 300 ms
 focus cleared a highlight before he could press start, so Agent Flow had nothing
 to add. The wait runs in 25 ms slices and ends early on a newer press, a key or
-Pause. The focus fires only if Agent Flow stayed idle throughout: if it started,
-the highlight is left for its start-up read; if it stopped, a late focus could
-move the auto-send Return to another chat. Agent Flow's recording start and stop
+Pause. If Agent Flow starts during the wait, the helper gives its start-up read
+the same 300 ms an in-session highlight gets, then focuses exactly as it would
+mid-session, so the paste lands in the highlighted pane without a click (Ethan,
+2026-11-11: "can it do both"). Typing a key in those 300 ms, or the session
+ending, cancels it. If Agent Flow stopped during the wait, a late focus could
+move the auto-send Return to another chat, so nothing is focused. Agent Flow's
+start-up read took 55–90 ms in the live typing-box starts logged that day; a
+formula-only read that retries for longer can still be cleared, as it can mid-session. Agent Flow's recording start and stop
 broadcasts and its typing-box state tell the helper which case it is in. A
 typed-only session with automatic return switched off sends neither and counts
 as idle. Cost: with Agent Flow idle, the input is focused 3 seconds after a

@@ -829,8 +829,8 @@ class Inspector(NSObject):
             # highlight before he could press start, so nothing was added. Waiting here
             # replaces "keep the existing settling interval" for the idle case only;
             # recordings and the typing box keep 0.3 s. The focus below fires only if
-            # Agent Flow stayed idle for the whole wait. If it started, the highlight is
-            # left for its start-up read, which sends no receipt to wait for. If it
+            # Agent Flow stayed idle for the whole wait. If it started, its start-up read
+            # gets the in-session 0.3 s first, since it sends no receipt to wait for. If it
             # stopped, a late focus could move the auto-send Return to another chat.
             # Known limit: a typed-only session with automatic return switched off sends
             # neither signal, so it counts as idle here.
@@ -841,6 +841,14 @@ class Inspector(NSObject):
                     break
             if self.key_count() != keys_at_click:
                 return  # A key during the wait owns the keyboard now: a copy, typing or a shortcut.
+            if (agent_flow_epoch != self.agent_flow_epoch and sequence == self.sequence and not self.paused
+                    and (self.agent_flow_recording or self.typing_box_returns_keyboard) and agent_flow_is_running()):
+                # Ethan (2026-11-11): "can it do both", so the paste lands in the highlighted pane without a click. Agent Flow started during the wait, so give its start-up read the same 0.3 s an in-session highlight gets, then focus as if the highlight came mid-session. A voice-plus-typing start posts two broadcasts, so only a session that ended during the settle skips.
+                threading.Event().wait(HIGHLIGHT_FOCUS_DELAY_SECONDS)
+                if self.key_count() != keys_at_click:
+                    return  # Typing into the typing box right after start: leave Codex alone rather than race those keys.
+                if (self.agent_flow_recording or self.typing_box_returns_keyboard) and agent_flow_is_running():
+                    agent_flow_epoch = self.agent_flow_epoch
             self.health.begin_job()  # The wait was deliberate, not a stuck native call; the watchdog's 6 seconds apply to the work after it.
         # Ethan (2026-11-06): every chat-text click must focus its input, including
         # double/triple clicks without Agent Flow capture. The old receipt veto
