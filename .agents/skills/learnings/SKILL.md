@@ -131,6 +131,13 @@ personal skill; cloud Chat/Cowork do not load a local symlink. User-requested
 Claude exception and shared skill — 2026-10-17. Preserve raw/skip output. Do not infer local-file access from
 presentation, a browser name or Tailscale connectivity. Clipboard
 completion has no selected recipient and must never consult foreground focus.
+For local Claude Code, verify the skill from the **This computer** session's
+slash menu and use a synthetic image to prove an actual file read. For
+delivery, check system foreground and visible receipt separately from
+app-local AX focus or emitted keys. Self-improved — 2026-11-11: Computer Use
+focused the Claude Prompt while the App Shortcut brought Agent Flow to the
+foreground. See the corresponding entries in `LEARNINGS.md` and
+`FAILED_APPROACHES.md`.
 Self-improved — 2026-10-01: the 12553 host update repeated the stale-presentation
 gate failure despite generic/old-host coverage; see the host-update entries in
 `LEARNINGS.md`, `FAILED_APPROACHES.md` and the native pipeline regression.

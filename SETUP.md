@@ -84,8 +84,11 @@ is supplied.
   Start a new Codex or Claude Code session to refresh its skill list. No global hooks,
   settings changes, API keys or background service are installed. The weekly skill
   update check asks before applying an available update and preserves local changes.
-  Cloud ChatGPT and Claude Desktop do not load these local skill folders; they need
-  the full inline context or an uploaded file, not a Mac-only file link.
+  In Claude Desktop, start a Code session using **This computer** and type
+  `/interpret-agent-flow-context` to check that the skill is available. Local Code
+  can read a screenshot path when the session has access to that file. Claude
+  Chat, Cowork, and remote Code sessions need context they can access, such as
+  inline text or an attached image.
 - **YouTube Bridge:** clone this repository into a folder you will keep, then follow the
   [companion's requirements and installer](companions/youtube-bridge/README.md#requirements-and-standalone-source).
   Run `./companions/youtube-bridge/scripts/install.sh` from the repository root. This builds

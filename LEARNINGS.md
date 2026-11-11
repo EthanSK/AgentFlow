@@ -1,5 +1,28 @@
 # Learnings
 
+## 2026-11-11 — Verify local Claude Code context and system focus separately
+
+On Claude Desktop 5.1231.0, a disposable Code session using **This computer**
+listed the shared Agent Flow and reply preference skills. It read a synthetic
+image outside the session folder by absolute path and answered correctly using
+that image and an inline selection. The local Claude CLI also interpreted the
+same fixture. These checks establish that the recipients can use the context
+they are given. Terminal's normal automatic paste still filters the context
+according to the host Mode and recipient policy.
+
+Double-clicking an underlined phrase in the disposable Claude reply exposed its
+text through Accessibility. Pasting with the highlight still active left the
+Prompt empty. Clicking Prompt first let an ordinary paste insert text. Preserve
+Primary's system-focus rule and the disabled focus-on-stop experiment. Test a
+candidate handoff against both microphone and typing-only finishes, and check
+the visible draft or submitted message as well as the emitted events.
+
+On Agent Flow build 502 the existing App Shortcut started capture on the
+Scarlett 18i8 USB. It also brought Agent Flow to the foreground. The subsequent
+Primary paste and Return trace did not correspond to a message in the Claude
+fixture. Claude's focused Accessibility element was app-local evidence, so
+verify the system foreground and the actual recipient before counting a run.
+
 ## 2026-11-11 — Include reply preferences with the full-prompt footer
 
 The explicit **Read the full prompt** footer decides whether the optional local

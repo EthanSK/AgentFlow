@@ -1,5 +1,20 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-11 — App-targeted input did not establish a physical Claude delivery test
+
+**Observed result:** Computer Use could focus the Prompt and select an
+underlined reply inside a disposable Claude Code window. Its modifier-only
+chord was rejected. The App Shortcut exercised the installed recorder and
+Primary route, but Agent Flow became frontmost and the Claude chat received
+no message. A posted paste and Return did not establish the intended recipient.
+
+**Use instead:** Check macOS foreground ownership immediately before a test
+that relies on system focus. For capture and focus-helper acceptance, require
+a correlated selection event and the visible result in the disposable chat.
+
+**Reconsider only if:** The controller can prove the test window owns system
+focus and the recorder observes the same input gesture as on the physical path.
+
 ## 2026-11-09 — Early Send and conditional retry superseded by the original single Send
 
 **Observed result:** Ethan reported that the early attempt was not improving
