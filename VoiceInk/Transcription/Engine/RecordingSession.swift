@@ -857,8 +857,9 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         guard liveSelectionCapture == nil else { return }
         let capture = LiveSelectionCapture(
             speechSnapshot: { [weak self] in self?.partialTranscript ?? "" },
-            onCapture: { [weak self] reference, precedesSpeech, spokenAnchor in
-                self?.recordLiveSelection(reference, precedesSpeech: precedesSpeech, spokenAnchor: spokenAnchor)
+            onCapture: { [weak self] reference, precedesSpeech, spokenAnchor, deferTypingFocus in
+                self?.recordLiveSelection(reference, precedesSpeech: precedesSpeech,
+                                          spokenAnchor: spokenAnchor, deferTypingFocus: deferTypingFocus)
             },
             onLabels: { [weak self] captureID, reference in
                 self?.updateLiveSelectionLabels(captureID: captureID, reference: reference)
@@ -866,7 +867,7 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
             onImage: { [weak self] textCaptureID, image, spokenAnchor in
                 self?.attachLiveSelectionImage(image, after: textCaptureID, spokenAnchor: spokenAnchor) ?? false
             },
-            onCodexTripleClickReadEmpty: { [weak self] in
+            onReturnTypingFocus: { [weak self] in
                 self?.typingFocus.returnAfterContext()
             }
         )
@@ -880,7 +881,7 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     /// attached (while reading, then pressing start). Its read can finish after
     /// the first live words arrive, so it is anchored before all speech instead.
     func recordLiveSelection(_ reference: LiveSelectionReference, precedesSpeech: Bool = false,
-                             spokenAnchor: String? = nil) {
+                             spokenAnchor: String? = nil, deferTypingFocus: Bool = false) {
         guard phase == .recording, !shouldCancel,
               liveRecordingState == .starting || liveRecordingState.isRecordingOrPaused else { return }
         // Freeze the live speech visible at selection mouse-up or screenshot
@@ -905,7 +906,7 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
             liveSelectionReferences.append(anchored)
         }
         noteRealtimeSessionActivity()
-        typingFocus.returnAfterContext()
+        if !deferTypingFocus { typingFocus.returnAfterContext() }
     }
 
     /// Codex drag image (approved 2026-11-07): the picture of a gesture whose

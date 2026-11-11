@@ -343,6 +343,13 @@ listen for raw Mouse Button 5.
 
 ## Codex and Claude Code destinations
 
+In Claude Desktop's Code tab, highlighting a reply can move the caret out of
+Prompt. When Agent Flow captures a fresh mouse highlight during a session, it
+can focus the unique Prompt in that same foreground session. This happens
+before the typing HUD takes the keyboard back. A new gesture or recording stop
+cancels pending focus work. The ordinary stop still pastes into the input that
+owns system focus at delivery.
+
 Codex desktop owns its composer directly, so VoiceInk++ can restore that exact input and use a
 bounded Send action only when the current Codex surface proves one. It must fail closed when it
 cannot distinguish Send from Stop or verify submission. Codex CLI and Claude Code do not own

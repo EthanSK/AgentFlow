@@ -153,14 +153,21 @@ final class SelectionGestureWatcher {
     func start() {
         guard monitor == nil else { return }
         monitor = NSEvent.addGlobalMonitorForEvents(
-            matching: [.leftMouseDown, .leftMouseUp, .keyDown, .keyUp, .flagsChanged]
+            matching: [.leftMouseDown, .leftMouseUp, .rightMouseDown, .otherMouseDown, .keyDown, .keyUp, .flagsChanged]
         ) { event in
             // AppKit guarantees event-monitor callbacks on the main thread.
             // Avoid a queued hop that can reorder an edge with capture attachment
             // or sample another frontmost app after the user's first highlight.
             MainActor.assumeIsolated {
                 let watcher = SelectionGestureWatcher.shared
-                if event.type == .keyDown || event.type == .keyUp || event.type == .flagsChanged {
+                if event.type == .rightMouseDown || event.type == .otherMouseDown {
+                    // A new Claude context-menu or auxiliary-button gesture
+                    // supersedes any pending focus work for the old highlight.
+                    if NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+                        == ClaudeSelectionPromptFocus.bundleIdentifier {
+                        watcher.listener?.selectionWillChange()
+                    }
+                } else if event.type == .keyDown || event.type == .keyUp || event.type == .flagsChanged {
                     // Keyboard intent exists only during an attached session.
                     // Idle monitoring retains neither typed keys nor selected text.
                     guard let listener = watcher.listener else { watcher.resetKeyboardGesture(); return }

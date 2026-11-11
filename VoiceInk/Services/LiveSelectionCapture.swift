@@ -1232,16 +1232,15 @@ final class LiveSelectionCapture {
 
     /// `precedesSpeech` is true only for a highlight made before this capture
     /// attached; the session anchors it before all dictated words.
-    private let onCapture: (_ reference: LiveSelectionReference, _ precedesSpeech: Bool, _ spokenAnchor: String) -> Void
+    private let onCapture: (LiveSelectionReference, Bool, String, Bool) -> Void
     private let onLabels: (_ captureID: UUID, _ reference: LiveSelectionReference) -> Void
     /// Places a Codex drag image directly after its gesture's already
     /// committed text. Returns false when that text or capture is gone; the
     /// caller then deletes the file.
     private let onImage: (_ textCaptureID: UUID, _ image: LiveSelectionReference, _ spokenAnchor: String) -> Bool
-    /// Runs when a live Codex triple click's first read finds nothing, so the
-    /// session can return the keyboard to Agent Flow's typing input. No captured
-    /// text would ever request that for this gesture.
-    private let onCodexTripleClickReadEmpty: () -> Void
+    /// Returns to the typing HUD after preparing a highlighted Claude pane, or
+    /// when a Codex triple click's first read found no text to trigger a return.
+    private let onReturnTypingFocus: () -> Void
     private let speechSnapshot: () -> String
     /// True between start() and stop(). Replaces this object's former private
     /// NSEvent monitor: edges now arrive from the shared watcher only while attached.
@@ -1260,16 +1259,17 @@ final class LiveSelectionCapture {
     private var screenshotScanTask: Task<Void, Never>?
 
     init(speechSnapshot: @escaping () -> String,
-         onCapture: @escaping (_ reference: LiveSelectionReference, _ precedesSpeech: Bool, _ spokenAnchor: String) -> Void,
+         onCapture: @escaping (_ reference: LiveSelectionReference, _ precedesSpeech: Bool,
+                               _ spokenAnchor: String, _ deferTypingFocus: Bool) -> Void,
          onLabels: @escaping (_ captureID: UUID, _ reference: LiveSelectionReference) -> Void,
          onImage: @escaping (_ textCaptureID: UUID, _ image: LiveSelectionReference,
                              _ spokenAnchor: String) -> Bool = { _, _, _ in false },
-         onCodexTripleClickReadEmpty: @escaping () -> Void) {
+         onReturnTypingFocus: @escaping () -> Void) {
         self.speechSnapshot = speechSnapshot
         self.onCapture = onCapture
         self.onLabels = onLabels
         self.onImage = onImage
-        self.onCodexTripleClickReadEmpty = onCodexTripleClickReadEmpty
+        self.onReturnTypingFocus = onReturnTypingFocus
     }
 
     @discardableResult
@@ -1402,7 +1402,7 @@ final class LiveSelectionCapture {
                     guard self.screenshotBaseline.insert(url.lastPathComponent).inserted,
                           let reference = LiveSelectionReference(screenshotURL: url) else { continue }
                     self.onCapture(reference.timed(at: created), created < activationTime,
-                                   created < activationTime ? "" : self.speechSnapshot())
+                                   created < activationTime ? "" : self.speechSnapshot(), false)
                 }
             }
         }
@@ -1482,8 +1482,8 @@ final class LiveSelectionCapture {
         return (value as? NSNumber)?.boolValue == true
     }
 
-    /// A fresh key-down cancels a pending older read before it can borrow the
-    /// range changed by typing or another keyboard selection.
+    /// A fresh key-down or Claude context-menu gesture supersedes a pending
+    /// read and any focus work attached to the older highlight.
     func selectionWillChange() {
         captureTask?.cancel()
     }
@@ -1701,7 +1701,7 @@ final class LiveSelectionCapture {
                         guard Self.returnsTypingFocusAfterEmptyRead(
                             clickCount: clickCount, isCodex: isCodex, precedesSpeech: precedesSpeech
                         ) else { return }
-                        self?.onCodexTripleClickReadEmpty()
+                        self?.onReturnTypingFocus()
                     }
                 )
                 selectedText = result.text
@@ -1743,7 +1743,7 @@ final class LiveSelectionCapture {
                     return
                 }
                 commitStartedAt = DispatchTime.now().uptimeNanoseconds
-                self.onCapture(image.timed(at: selectedAt), precedesSpeech, spokenAnchor)
+                self.onCapture(image.timed(at: selectedAt), precedesSpeech, spokenAnchor, false)
                 outcome = "emitted-to-session"
                 LiveSelectionDiagnostics.captured(tier: .codexRegionImage, source: nil,
                     evidence: .atGesture, attempt: 1, bundleID: bundleID, startedAt: startedAt)
@@ -1760,10 +1760,26 @@ final class LiveSelectionCapture {
             // Commit proven text before optional labels. A new click can cancel
             // metadata work, but must not erase an already-read highlight or
             // move it after newer speech/context while a log scan finishes.
+            let shouldPrepareClaudePrompt = bundleID == ClaudeSelectionPromptFocus.bundleIdentifier
+                && !precedesSpeech && identity.window != nil && Self.isFrontmost(sourcePID)
+                && accessibility?.candidate != nil && gesture != nil
             commitStartedAt = DispatchTime.now().uptimeNanoseconds
             self.onCapture(captured.timed(at: selectedAt).identifiedForCapture(captureID),
-                           precedesSpeech, spokenAnchor)
+                           precedesSpeech, spokenAnchor, shouldPrepareClaudePrompt)
             outcome = "emitted-to-session"
+            if shouldPrepareClaudePrompt, let gesture {
+                // Save the highlight before Claude can clear it. In typing-only
+                // sessions wait for the bounded focus work before the HUD takes
+                // the keyboard back. Stop cancels this task and keeps the text.
+                await ClaudeSelectionPromptFocus.prepare(processIdentifier: sourcePID, gesture: gesture) { [weak self] in
+                    self?.isAttached == true && Self.isFrontmost(sourcePID)
+                        && NSEvent.pressedMouseButtons == 0 && !RecorderTypingTextView.ownsKeyboard
+                        && Self.canRead(identity)
+                }
+                if !Task.isCancelled, self.isAttached, Self.isFrontmost(sourcePID) {
+                    self.onReturnTypingFocus()
+                }
+            }
             if isCodex, let receipt = Self.selectionReceipt(sourcePID: sourcePID, selectedAt: selectedAt,
                 precedesSpeech: precedesSpeech, hasGesture: gesture != nil) {
                 // Focus-after-highlight is separate from Primary delivery. The

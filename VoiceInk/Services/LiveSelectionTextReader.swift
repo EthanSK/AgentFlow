@@ -1203,6 +1203,36 @@ final class LiveAccessibilitySelectionProbe: LiveSelectionAccessibilityProbe {
         element(kAXFocusedUIElementAttribute, of: application)
     }
 
+    func focusedWindow() -> AXUIElement? {
+        element(kAXFocusedWindowAttribute, of: application)
+    }
+
+    func window(of element: AXUIElement) -> AXUIElement? {
+        self.element(kAXWindowAttribute, of: element)
+    }
+
+    func hasSameFocus(as expected: AXUIElement?) -> Bool {
+        switch (focusedElement(), expected) {
+        case (nil, nil): true
+        case let (current?, expected?): isSame(current, expected)
+        default: false
+        }
+    }
+
+    func isNamed(_ element: AXUIElement, _ name: String) -> Bool {
+        copy(kAXDescriptionAttribute, of: element) as? String == name
+            || copy(kAXTitleAttribute, of: element) as? String == name
+    }
+
+    func isEditable(_ element: AXUIElement) -> Bool {
+        let editableRoles = [kAXTextAreaRole, kAXTextFieldRole, kAXComboBoxRole, kAXSecureTextFieldSubrole]
+        if let role = role(of: element), editableRoles.contains(role) { return true }
+        guard !isExpired else { return true }
+        var settable: DarwinBoolean = false
+        return AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &settable) == .success
+            && settable.boolValue
+    }
+
     func element(at point: CGPoint) -> AXUIElement? {
         guard !isExpired else { return nil }
         // Passing the application element restricts the hit test to this
