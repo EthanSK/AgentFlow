@@ -1,5 +1,25 @@
 # Learnings
 
+## 2026-11-11 — Prepare the Claude Code Prompt while a captured highlight is current
+
+Claude's standalone Code window exposes a **Chat messages** region, a
+**Session tools** toolbar and a **Prompt** field without the main window's
+named pane group. Use the common session container and its unique Prompt,
+then require the hit and Prompt to belong to Claude's current focused window.
+A stale gesture, an editable input that already owns focus, a changed window
+or an ambiguous composer all veto the focus write.
+
+Commit the captured highlight first. Prepare the foreground Prompt during
+recording and then let the typing HUD return to its editor. A new gesture or
+stop cancels the pending work. The same capture path serves voice and
+microphone-off typing. Primary remains system-focused delivery.
+
+Source `d0a84307` passed 922 named tests across 42 suites in the Mini's
+canonical Xcode test action. The Developer ID signed and notarized build 503
+was installed locally after the five-second restart notice and cooperative
+idle quit. Build 502 has a verified ZIP rollback. Physical acceptance still
+requires the highlight, HUD return and one visible delivery in Claude Code.
+
 ## 2026-11-11 — Verify local Claude Code context and system focus separately
 
 On Claude Desktop 5.1231.0, a disposable Code session using **This computer**
