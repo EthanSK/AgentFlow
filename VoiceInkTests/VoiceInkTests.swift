@@ -2345,7 +2345,7 @@ struct VoiceInkTests {
             encoding: .utf8
         )
         let clipboardBranch = try #require(source.range(
-            of: "        func finishClipboardOnlyCompletion() {"
+            of: "        func finishClipboardOnlyCompletion()"
         ))
         let pasteTargetResolution = try #require(source.range(
             of: "        let pasteTargetForDelivery = await resolvePasteTarget()",
@@ -2624,7 +2624,7 @@ struct VoiceInkTests {
             "VoiceInk/Transcription/Engine/TranscriptionPipeline.swift"
         )
         let branchStart = try #require(pipelineSource.range(
-            of: "func finishClipboardOnlyCompletion() {"
+            of: "func finishClipboardOnlyCompletion()"
         ))
         let branchRemainder = pipelineSource[branchStart.lowerBound...]
         let branchEnd = try #require(branchRemainder.range(

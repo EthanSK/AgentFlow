@@ -375,7 +375,7 @@ struct StyledContextPresentationTests {
     @Test func styledContextUsesResolvedRouteModeWithoutTouchingDeliveryRoutes() throws {
         let pipeline = try repositorySource("VoiceInk/Transcription/Engine/TranscriptionPipeline.swift")
         let clipboardBranch = try #require(pipeline.range(
-            of: "        func finishClipboardOnlyCompletion() {"
+            of: "        func finishClipboardOnlyCompletion()"
         ))
         let pasteTarget = try #require(pipeline.range(
             of: "        let pasteTargetForDelivery = await resolvePasteTarget()",
@@ -388,7 +388,7 @@ struct StyledContextPresentationTests {
         #expect(!clipboardBody.contains("currentPromptRecipient()"))
         #expect(clipboardBody.contains("outputForDelivery?.outputMode == .paste"))
         #expect(clipboardBody.contains("outputForDelivery?.mode?.isStyledContextEnabled == true"))
-        #expect(clipboardBody.contains("compactFileURL: usesCompactPrompt ? archivedPromptURL : nil"))
+        #expect(clipboardBody.contains("compactArchive: usesCompactPrompt ? archivedPrompt : nil"))
         #expect(!clipboardBody.contains("outputConfiguration()"))
         #expect(!clipboardBody.contains("acquireDeliveryLease("))
         #expect(!clipboardBody.contains("delivery.deliver("))
