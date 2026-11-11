@@ -209,7 +209,7 @@ class TranscriptionPipeline {
         var finalText: String?
         var finalContextAttached = false
         var compactPromptText: String?
-        var archivedPromptURL: URL?
+        var archivedPrompt: AgentFlowPromptArchive.SavedPrompt?
         var archivedRainbowStartIndex = 0
         var archiveFailed = false
         var completePromptText: String?
@@ -263,8 +263,8 @@ class TranscriptionPipeline {
         func attachLiveSelectionsToFinalText(
             includeSourceContext: Bool = true,
             presentation: LiveSelectionReference.Presentation = .plain,
-            compactFileURL: URL? = nil
-        ) {
+            compactArchive: AgentFlowPromptArchive.SavedPrompt? = nil
+        ) async {
             // Insert complete XML-escaped selections and saved screenshot paths
             // alongside the speech that preceded them in the live HUD. The
             // provider only saw a compact HUD preview, not these full texts.
@@ -308,15 +308,23 @@ class TranscriptionPipeline {
                         default: return nil
                         }
                     }.joined(separator: "\n\n")
-                if let compactFileURL {
+                if let compactArchive {
+                    var showsFullPromptLink = false
                     compactPromptText = AgentFlowPromptPreview.make(
                         authoredText: authored,
                         sections: LiveSelectionReference.compactPromptSections(references, with: current),
-                        fileURL: compactFileURL,
-                        viewerURL: AgentFlowPromptArchive.viewerURL(for: compactFileURL),
+                        fileURL: compactArchive.url,
+                        viewerURL: AgentFlowPromptArchive.viewerURL(for: compactArchive.url),
                         completePromptText: completePromptText,
-                        rainbowStartIndex: rainbowStart
+                        rainbowStartIndex: rainbowStart,
+                        onFullPromptLink: { showsFullPromptLink = true }
                     )
+                    // The leading arrow is also present on short messages.
+                    // Only the explicit full-prompt footer authorizes the copy.
+                    if showsFullPromptLink, let completePromptText {
+                        await AgentFlowPromptArchive.includeResponsePreferences(in: compactArchive,
+                            authoredPrompt: completePromptText)
+                    }
                 }
             }
             finalContextAttached = true
@@ -329,13 +337,13 @@ class TranscriptionPipeline {
             }
         }
         func preservePrompt(_ text: String) async {
-            guard archivedPromptURL == nil, !archiveFailed,
+            guard archivedPrompt == nil, !archiveFailed,
                   !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
             completePromptText = text
             do {
                 let saved = try await archivePrompt(text, transcription.id)
                 let archiveResumedAt = DispatchTime.now().uptimeNanoseconds
-                archivedPromptURL = saved.url
+                archivedPrompt = saved
                 archivedRainbowStartIndex = saved.rainbowStartIndex
                 if let timing = saved.handoffTiming {
                     vippLog.notice("pipeline: archive handoff \(timing.description(resumedAt: archiveResumedAt), privacy: .public) \(jobIdentity.logDescription, privacy: .public)")
@@ -930,7 +938,7 @@ class TranscriptionPipeline {
         // paste destination. Finish the ordinary transcription/format/enhancement
         // work, then copy once and return before resolving any Accessibility target,
         // mode output action, custom command, paste, or Return key.
-        func finishClipboardOnlyCompletion() {
+        func finishClipboardOnlyCompletion() async {
             transcription.preservesOriginalAudioForRecovery = true
             // Won't paste changes the action, not the saved prompt format. There
             // is no recipient yet: the HUD or a source app may still be focused
@@ -947,10 +955,20 @@ class TranscriptionPipeline {
                 && outputForDelivery?.mode?.isEnabled == true
                 && outputForDelivery?.mode?.isStyledContextEnabled == true
                 ? .styledMath : .plain
-            attachLiveSelectionsToFinalText(
+            await attachLiveSelectionsToFinalText(
                 presentation: presentation,
-                compactFileURL: usesCompactPrompt ? archivedPromptURL : nil
+                compactArchive: usesCompactPrompt ? archivedPrompt : nil
             )
+            // A full-prompt appendix can suspend while it is written. Recheck
+            // the same cancellation and job ownership before a clipboard action.
+            if shouldCancel() {
+                await finishCanceledTranscription(recoveredText: finalText)
+                return
+            }
+            guard isDeliveryAuthorized() else {
+                saveTranscriptionAndPostCompletion()
+                return
+            }
             FocusLockService.shared.clearLock()
             SoundManager.shared.playStopSound()
             // The compact copy is safe only after the complete archive exists.
@@ -982,7 +1000,7 @@ class TranscriptionPipeline {
             if shouldCancel() {
                 await finishCanceledTranscription(recoveredText: finalText)
             } else if isDeliveryAuthorized() {
-                finishClipboardOnlyCompletion()
+                await finishClipboardOnlyCompletion()
             } else {
                 saveTranscriptionAndPostCompletion()
             }
@@ -1075,7 +1093,7 @@ class TranscriptionPipeline {
             if shouldCancel() {
                 await finishCanceledTranscription(recoveredText: finalText)
             } else if isDeliveryAuthorized() {
-                finishClipboardOnlyCompletion()
+                await finishClipboardOnlyCompletion()
             } else {
                 saveTranscriptionAndPostCompletion()
             }
@@ -1119,11 +1137,19 @@ class TranscriptionPipeline {
         let usesCompactPrompt = includesSourceContext && !skipPostProcessingNow && !assistant.isFollowUp
             && AgentFlowPromptPreview.supportsLocalFilePrompt(bundleID: presentationRecipient,
                 bundleURL: recipient.bundleURL)
-        attachLiveSelectionsToFinalText(
+        await attachLiveSelectionsToFinalText(
             includeSourceContext: includesSourceContext,
             presentation: contextPresentation,
-            compactFileURL: usesCompactPrompt ? archivedPromptURL : nil
+            compactArchive: usesCompactPrompt ? archivedPrompt : nil
         )
+        if shouldCancel() {
+            await finishCanceledTranscription(recoveredText: finalText)
+            return
+        }
+        guard isDeliveryAuthorized() else {
+            saveTranscriptionAndPostCompletion()
+            return
+        }
         // Recipient classification plus compact/styled text assembly.
         stageTimings.add("presentationMs", since: presentationStarted)
         if recoversTypedDraft {

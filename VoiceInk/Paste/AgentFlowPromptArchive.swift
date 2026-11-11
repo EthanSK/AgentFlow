@@ -14,11 +14,14 @@ enum AgentFlowPromptArchive {
         let url: URL
         let rainbowStartIndex: Int
         let handoffTiming: HandoffTiming?
+        fileprivate let canIncludeResponsePreferences: Bool
 
-        init(url: URL, rainbowStartIndex: Int, handoffTiming: HandoffTiming? = nil) {
+        init(url: URL, rainbowStartIndex: Int, handoffTiming: HandoffTiming? = nil,
+             canIncludeResponsePreferences: Bool = false) {
             self.url = url
             self.rainbowStartIndex = rainbowStartIndex
             self.handoffTiming = handoffTiming
+            self.canIncludeResponsePreferences = canIncludeResponsePreferences
         }
     }
 
@@ -95,7 +98,69 @@ enum AgentFlowPromptArchive {
         return SavedPrompt(url: result.0, rainbowStartIndex: result.1,
             handoffTiming: HandoffTiming(submitted: submitted, workerStarted: result.2,
                 workFinished: result.3, returnReady: result.4, joined: joined,
-                workerWasMainThread: result.5, joinWasMainThread: Thread.isMainThread))
+                workerWasMainThread: result.5, joinWasMainThread: Thread.isMainThread),
+            canIncludeResponsePreferences: true)
+    }
+
+    /// Finish the newly created Markdown before publishing a “Read the full
+    /// prompt” link. The worker uses an explicit local preference source and
+    /// never adds its contents to the inline paste or the HTML timeline.
+    static func includeResponsePreferences(in prompt: SavedPrompt, authoredPrompt: String,
+                                           source: URL? = nil) async {
+        guard prompt.canIncludeResponsePreferences else { return }
+        let preferences = source ?? directory.deletingLastPathComponent()
+            .appendingPathComponent("Response Preferences.md")
+        await Task.detached(priority: .userInitiated) {
+            try? appendResponsePreferences(to: prompt.url, authoredPrompt: authoredPrompt, from: preferences)
+        }.value
+    }
+
+    private static func appendResponsePreferences(to file: URL, authoredPrompt: String, from source: URL) throws {
+        // A local symlink can point at the live reference skill. Resolve it
+        // first and read only a bounded regular file, never a pipe or device.
+        let sourceFD = Darwin.open(source.resolvingSymlinksInPath().path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+        guard sourceFD >= 0 else { return }
+        defer { Darwin.close(sourceFD) }
+        var sourceStat = stat()
+        let maximumBytes = 64 * 1024
+        guard fstat(sourceFD, &sourceStat) == 0, sourceStat.st_mode & S_IFMT == S_IFREG,
+              sourceStat.st_size > 0, sourceStat.st_size <= maximumBytes else { return }
+        let input = FileHandle(fileDescriptor: sourceFD, closeOnDealloc: false)
+        guard let bytes = try input.read(upToCount: maximumBytes + 1), bytes.count == sourceStat.st_size,
+              let preferences = String(data: bytes, encoding: .utf8),
+              preferences.contains(where: { !$0.isWhitespace }) else { return }
+
+        let dir = Darwin.open(file.deletingLastPathComponent().path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
+        guard dir >= 0 else { return }
+        defer { Darwin.close(dir) }
+        let fd = openat(dir, file.lastPathComponent, O_RDWR | O_NOFOLLOW | O_NONBLOCK)
+        guard fd >= 0 else { return }
+        defer { Darwin.close(fd) }
+        let original = Data((interpretationReminder + authoredPrompt).utf8)
+        var saved = stat()
+        // Only this save's original bytes may receive an appendix. That also
+        // makes repeated finalization a no-op and protects existing archives.
+        guard flock(fd, LOCK_EX | LOCK_NB) == 0, fstat(fd, &saved) == 0,
+              saved.st_mode & S_IFMT == S_IFREG, saved.st_uid == getuid(),
+              saved.st_nlink == 1, saved.st_size == original.count else { return }
+        let archive = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
+        guard try archive.read(upToCount: original.count) == original else { return }
+        let guidance = """
+
+
+        ## Response preferences for this reply
+
+        The reference skill is copied below for convenience. Apply its reply style to this response using this copy. Skip the skill's loading, rereading, setup, and maintenance instructions. The user's request is the prompt above.
+
+        """
+        do {
+            try archive.write(contentsOf: Data((guidance + "\n" + preferences).utf8))
+            try archive.synchronize()
+        } catch {
+            // Preserve a complete original prompt if the optional append fails.
+            try? archive.truncate(atOffset: UInt64(original.count))
+            try? archive.synchronize()
+        }
     }
 
     static func write(_ text: String, recordID: UUID, directory: URL) throws -> URL {
@@ -704,7 +769,7 @@ enum AgentFlowPromptPreview {
 
     static func make(authoredText: String, sections: [Section], fileURL: URL,
                      viewerURL: URL? = nil, completePromptText: String? = nil,
-                     rainbowStartIndex: Int = 0) -> String? {
+                     rainbowStartIndex: Int = 0, onFullPromptLink: () -> Void = {}) -> String? {
         guard fileURL.isFileURL, fileURL.path.hasPrefix("/"),
               !fileURL.path.contains(where: { "\n\r<>".contains($0) }) else { return nil }
         // Codex's native file-reference scanner reparses the raw Markdown target,
@@ -754,7 +819,10 @@ enum AgentFlowPromptPreview {
         // The editable opening remains one paragraph. Captures keep their event
         // positions; only the appended timeline or footer gets a paragraph break.
         let body = parts.joined(separator: " ")
-        guard !body.isEmpty else { return pointer }
+        guard !body.isEmpty else {
+            onFullPromptLink()
+            return pointer
+        }
         let result = openingLink + " " + body
         // Keep Ethan's existing editable opening and interleaved markers first.
         // A fitting timeline is additional context underneath, not a replacement
@@ -774,6 +842,8 @@ enum AgentFlowPromptPreview {
                 if inline.utf16.count < pastedTextAttachmentThreshold { return inline }
             }
         }
-        return needsFullPrompt ? result + "\n\n" + pointer : result
+        guard needsFullPrompt else { return result }
+        onFullPromptLink()
+        return result + "\n\n" + pointer
     }
 }

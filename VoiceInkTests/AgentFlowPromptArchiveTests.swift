@@ -138,6 +138,46 @@ struct AgentFlowPromptArchiveTests {
         #expect(try String(contentsOf: file, encoding: .utf8) == AgentFlowPromptArchive.interpretationReminder + prompt)
     }
 
+    @Test func replyPreferencesAreCopiedOnlyForTheFullPromptFooter() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("ReplyStyle.md")
+        let preferences = "Use brief, scannable answers.\n"
+        try preferences.write(to: source, atomically: true, encoding: .utf8)
+        let configuredSource = root.appendingPathComponent("Response Preferences.md")
+        try FileManager.default.createSymbolicLink(at: configuredSource, withDestinationURL: source)
+        let selection = AgentFlowPromptPreview.Section(tag: "selection", text: "", color: "#67e8f9")
+
+        for (timeline, sections, wantsFooter) in [
+            ("<typed_text>Short prompt</typed_text>", [], false),
+            ("<app_selection><text>Short quote</text></app_selection>", [selection], false),
+            ("<app_selection><text>" + String(repeating: "A long quote. ", count: 600)
+                + "</text></app_selection>", [selection], true)
+        ] {
+            let saved = try await AgentFlowPromptArchive.save(timeline, recordID: UUID(), directory: root)
+            let viewer = try #require(AgentFlowPromptArchive.viewerURL(for: saved.url))
+            var hasFooter = false
+            let message = try #require(AgentFlowPromptPreview.make(authoredText: "Short prompt",
+                sections: sections, fileURL: saved.url, viewerURL: viewer, completePromptText: timeline,
+                rainbowStartIndex: saved.rainbowStartIndex, onFullPromptLink: { hasFooter = true }))
+            #expect(hasFooter == wantsFooter)
+            #expect(message.contains("[full prompt]") == wantsFooter)
+            #expect(!message.contains(preferences))
+            if hasFooter {
+                await AgentFlowPromptArchive.includeResponsePreferences(in: saved,
+                    authoredPrompt: timeline, source: configuredSource)
+                await AgentFlowPromptArchive.includeResponsePreferences(in: saved,
+                    authoredPrompt: timeline, source: configuredSource)
+            }
+            let markdown = try String(contentsOf: saved.url, encoding: .utf8)
+            let original = AgentFlowPromptArchive.interpretationReminder + timeline
+            #expect(markdown.hasPrefix(original))
+            #expect(markdown.components(separatedBy: preferences).count == (wantsFooter ? 2 : 1))
+            #expect(wantsFooter ? markdown.hasSuffix(preferences) : markdown == original)
+            #expect(!(try String(contentsOf: viewer, encoding: .utf8)).contains(preferences))
+        }
+    }
+
     private func temporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("AgentFlowPromptTests-\(UUID())")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
