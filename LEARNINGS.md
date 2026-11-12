@@ -137,6 +137,30 @@ and emitted-key checks.
 ---
 
 
+## 2026-11-11 — Focus the highlighted pane when Agent Flow starts during the idle wait (helper only)
+
+Ethan confirmed the 3-second wait works, then asked that a highlight made before starting still move Codex's input to its pane ("can it do both"), so the finished text lands in the chat he highlighted without a click. Before this, a start during the wait skipped the focus, and the paste went to whichever input Codex remembered.
+
+Fix: when Agent Flow's start broadcast ends the idle wait, the helper waits the usual in-session 0.3 s for Agent Flow's start-up read, then runs the normal in-session highlight path: a highlight in the pane that already has Codex's input is kept while the typing box returns the keyboard, any other pane's input is focused. A key in those 0.3 s, or the session ending, cancels it. A second start broadcast (voice plus typing) does not.
+
+Evidence: Agent Flow's log for the starts Ethan tried at 14:25, 14:26 and 14:30 shows typing-box starts capturing the pre-start highlight 40–60 ms after the typing box took the keyboard, each read finishing in 55–90 ms. That also settles the earlier worry that typing-box starts read nothing in Codex. Not settled: whether the helper's focus write in Codex takes the keyboard from the typing box. The same write already runs for mid-session highlights in another pane; if typing stops reaching the box after such a highlight, the fix is for Agent Flow to return the keyboard after the helper's write, natively.
+
+Rejected: waiting for a native "start-up read finished" broadcast. It needs a new app build, and the logged reads finish well inside 0.3 s; a formula-only read that retries for longer can still be cleared, exactly as mid-session.
+
+Guard: 196 helper fixture tests; the two focus tests fail on the previous helper.
+
+## 2026-11-11 — Wait 3 seconds before focusing Codex's input after an idle highlight (helper only)
+
+Ethan reported that text selected in Codex before starting Agent Flow was no longer added, then asked: "can it delay the input focus a bit then? that should fix it". Since 2026-11-06 (`afaf4070`) the focus helper focused Codex's input about 0.4 s after every highlight, which clears it, while Agent Flow reads a pre-start highlight only once a session starts. One logged start (2026-11-11 13:49:37) found the pre-start drag and read an empty Codex selection 4 times over 2.1 s.
+
+Fix: while Agent Flow is idle, the helper waits 3 seconds in counted 25 ms slices before the highlight focus. A newer press, a key or Pause ends the wait. The focus fires only if Agent Flow stayed idle throughout. If it started, the highlight is left for the start-up read, which sends no receipt (`receipt` returns nil when `precedesSpeech`), so the text then lands in Codex's remembered input, as before 2026-11-06. If it stopped, nothing is written, because a late focus can move the auto-send Return. Idle means no `recordingStarted` without a stop, the typing-box flag off, or Agent Flow not running. State changes are counted in a separate epoch; bumping the click sequence would break the `2 x click count` proof rule. The watchdog's job clock restarts after the wait, because 3 s plus the focuser's search, verify and hold check approached its 6 s restart limit.
+
+Limits. It only helps if he starts within about 3 seconds. Both of Ethan's recording shortcuts are modifier-only, which the helper's key-down counter never sees, so the start itself does not end the wait; Agent Flow's signal does. A voice start in the last 0.3 s of the window can still lose the race. A typed-only session with automatic return switched off sends no signal and counts as idle. Cost: with Agent Flow idle, the input is focused 3 s after a highlight, and a key pressed in that window cancels it, which partly undoes the 2026-11-06 request.
+
+Not verified live. The logged failure was a typing-box start, and the typing box takes the keyboard about 0.13 s after the press, before the start-up read; the wait for that read exists only for VS Code (`return startsInCode ? captureTask : nil`). If a typing-box start still adds nothing while the highlight is visibly present, that is the cause to fix next, natively. Read Agent Flow's `LiveSelection` log for a `captured` line with no `gesture` line just before it.
+
+Guard: 192 helper fixture tests, including one that ends the wait through the real `mouse_down`; the three idle tests fail when the old single 0.3 s wait is restored.
+
 ## 2026-11-09 — Keep a Codex highlight while typing in Agent Flow (build 499)
 
 Ethan asked whether a highlight could survive the focus helper focusing Codex's input. A Chromium page has one selection, so focusing the composer clears it; the only way to keep it is not to focus. While Agent Flow's typing box will take the keyboard back, the helper now leaves a highlight alone when it is in the pane that already has Codex's input, because the final paste lands there anyway.

@@ -104,7 +104,9 @@ physical acceptance.
 The separate focus helper previously kept an uncaptured highlight selected for a
 later Agent Flow Start. Ethan explicitly replaced that preference with input
 focus after every chat-text click, including double/triple and modifier-assisted
-selections. Keep the existing highlight settling interval and exact pane/window,
+selections. Keep the existing highlight settling interval (Ethan lengthened it to
+3 seconds on 2026-11-11, only while Agent Flow is idle, so a highlight made just
+before pressing start survives; recordings keep 300 ms) and exact pane/window,
 draft-selection and newer-input guards; do not reinstate capture confirmation as
 a focus veto without a fresh change to this preference. An uncaptured selection
 may clear when focus moves. This does not change Primary/Next delivery or claim

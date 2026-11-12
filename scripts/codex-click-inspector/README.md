@@ -31,11 +31,29 @@ input cancels the existing hold check in 25 ms slices instead of making the next
 click wait through the whole 0.6 seconds. These changes address Ethan's follow-up
 of 2026-10-31; they do not prove that every missing visible caret is repaired.
 Single, double, triple and modifier-assisted text clicks, plus completed text drags,
-all plan input focus (Ethan, 2026-11-06). Highlights retain the existing 300 ms
+all plan input focus (Ethan, 2026-11-06). While Agent Flow is recording or its
+typing box is active, highlights retain the existing 300 ms
 settling interval so active Agent Flow capture has its usual opportunity to run,
 but capture confirmation no longer vetoes focus. This deliberately replaces the
 old behavior that preserved an uncaptured selection for a later Agent Flow Start.
 The helper no longer observes or stores selection-capture receipts.
+
+While Agent Flow is idle, the helper waits 3 seconds before focusing the input
+after a highlight (Ethan, 2026-11-11: "delay the input focus a bit"). The 300 ms
+focus cleared a highlight before he could press start, so Agent Flow had nothing
+to add. The wait runs in 25 ms slices and ends early on a newer press, a key or
+Pause. If Agent Flow starts during the wait, the helper gives its start-up read
+the same 300 ms an in-session highlight gets, then focuses exactly as it would
+mid-session, so the paste lands in the highlighted pane without a click (Ethan,
+2026-11-11: "can it do both"). Typing a key in those 300 ms, or the session
+ending, cancels it. If Agent Flow stopped during the wait, a late focus could
+move the auto-send Return to another chat, so nothing is focused. Agent Flow's
+start-up read took 55–90 ms in the live typing-box starts logged that day; a
+formula-only read that retries for longer can still be cleared, as it can mid-session. Agent Flow's recording start and stop
+broadcasts and its typing-box state tell the helper which case it is in. A
+typed-only session with automatic return switched off sends neither and counts
+as idle. Cost: with Agent Flow idle, the input is focused 3 seconds after a
+highlight instead of 0.4, and a key pressed in that window cancels it.
 
 One exception keeps a highlight on screen (Ethan, 2026-11-09). While Agent Flow's
 typing box will take the keyboard back after a highlight, Agent Flow posts

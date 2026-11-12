@@ -119,19 +119,31 @@ class LifecycleTests(unittest.TestCase):
         first.close.assert_called_once()
         second.close.assert_not_called()
         names = [c.args[1] for c in center.addObserver_selector_name_object_suspensionBehavior_.call_args_list]
-        self.assertEqual(names, ["control:", "typingBoxReturnChanged:", "typingBoxReturnChanged:"] * 2)
+        self.assertEqual(names, (["control:"] + ["agentFlowRecordingChanged:"] * 3 + ["typingBoxReturnChanged:"] * 2) * 2)
         owner.reader.create_app.assert_not_called()
 
     def test_agent_flow_state_turns_the_typing_box_flag_on_and_off(self):
         owner = inspector.Inspector.alloc().init()
+        owner.agent_flow_epoch = 0
         owner.typingBoxReturnChanged_(Mock(name=Mock(), **{"name.return_value": inspector.TYPING_BOX_RETURN_ON}))
         self.assertTrue(owner.typing_box_returns_keyboard)
         owner.typingBoxReturnChanged_(Mock(name=Mock(), **{"name.return_value": inspector.TYPING_BOX_RETURN_OFF}))
         self.assertFalse(owner.typing_box_returns_keyboard)
 
+    def test_recording_broadcasts_set_the_recording_flag_and_every_change_advances_the_epoch(self):
+        owner = inspector.Inspector.alloc().init()
+        owner.agent_flow_recording, owner.agent_flow_epoch, owner.typing_box_returns_keyboard = False, 0, False
+        for name, recording in ((inspector.RECORDING_STARTED, True), (inspector.RECORDING_STOPPED, False),
+                                (inspector.RECORDING_STARTED, True), (inspector.RECORDING_STOPPED_PRESERVING_PLAYBACK, False)):
+            owner.agentFlowRecordingChanged_(Mock(**{"name.return_value": name}))
+            self.assertEqual(owner.agent_flow_recording, recording)
+        owner.typingBoxReturnChanged_(Mock(**{"name.return_value": inspector.TYPING_BOX_RETURN_ON}))
+        self.assertEqual(owner.agent_flow_epoch, 5)
+
     def test_agent_flow_launch_resets_the_typing_box_flag_without_reconnecting(self):
         owner = inspector.Inspector.alloc().init()
-        owner.typing_box_returns_keyboard = True
+        owner.typing_box_returns_keyboard = owner.agent_flow_recording = True
+        owner.agent_flow_epoch = 3
         launched = Mock()
         launched.name.return_value = inspector.K.NSWorkspaceDidLaunchApplicationNotification
         launched.userInfo.return_value = {inspector.K.NSWorkspaceApplicationKey: Mock(**{
@@ -139,6 +151,8 @@ class LifecycleTests(unittest.TestCase):
         with patch.object(inspector.Inspector, "reconnect_event_sources") as reconnect:
             owner.workspaceChanged_(launched)
         self.assertFalse(owner.typing_box_returns_keyboard)
+        self.assertFalse(owner.agent_flow_recording)
+        self.assertEqual(owner.agent_flow_epoch, 4)
         reconnect.assert_not_called()
 
     def test_workspace_wake_session_and_codex_launch_reconnect_only_own_sources(self):
