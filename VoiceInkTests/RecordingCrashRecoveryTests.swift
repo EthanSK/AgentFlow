@@ -5,6 +5,53 @@ import Testing
 
 @MainActor
 struct RecordingCrashRecoveryTests {
+    @Test func liveDraftBurstPreservesLatestFullSnapshotAndJournalOrder() throws {
+        let fixture = try Fixture()
+        defer { fixture.remove() }
+        let first = try fixture.journalStore.begin(
+            audioURL: fixture.recordingsDirectory.appendingPathComponent("first.wav")
+        )
+        let second = try fixture.journalStore.begin(
+            audioURL: fixture.recordingsDirectory.appendingPathComponent("second.wav")
+        )
+        let device = RecordingInputDeviceSnapshot(name: "Test Mic", uid: "test-mic-uid")
+        let fullSelection = String(repeating: "full captured reference ", count: 150)
+        let reference = try #require(LiveSelectionReference(fullSelection))
+        let transcript = String(repeating: "a long spoken draft ", count: 400)
+
+        for revision in 1...20 {
+            fixture.journalStore.persistLiveDraft(
+                first, transcript: "\(transcript)revision \(revision)",
+                references: [reference], inputDevice: device
+            )
+        }
+        fixture.journalStore.persistLiveDraft(
+            second, transcript: "other recording", references: [], inputDevice: nil
+        )
+        let entries = fixture.journalStore.pendingJournals().compactMap { journal -> RecordingRecoveryJournalEntry? in
+            if case let .entry(pending) = journal { return pending.entry }
+            return nil
+        }
+        let newest = try #require(entries.first { $0.id == first.id })
+        #expect(newest.realtimeDraftText == LiveSelectionReference.interleaving(
+            [reference], with: "\(transcript)revision 20", includeTiming: true
+        ))
+        #expect(newest.inputDeviceSnapshot == device)
+        #expect(entries.first { $0.id == second.id }?.realtimeDraftText
+            == LiveSelectionReference.interleaving([], with: "other recording", includeTiming: true))
+
+        let firstJournal = try #require(fixture.journalStore.pendingJournals().compactMap { journal -> URL? in
+            if case let .entry(pending) = journal, pending.entry.id == first.id { return pending.journalURL }
+            return nil
+        }.first)
+        fixture.journalStore.persistLiveDraft(
+            first, transcript: "queued before removal", references: [], inputDevice: device
+        )
+        try fixture.journalStore.remove(first)
+        #expect(fixture.journalStore.pendingJournals().count == 1)
+        #expect(!FileManager.default.fileExists(atPath: firstJournal.path))
+    }
+
     @Test func interruptedPCMIsHeaderRepairedAndRecoveredIntoPinnedHistory() throws {
         let fixture = try Fixture()
         defer { fixture.remove() }

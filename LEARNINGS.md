@@ -1,5 +1,19 @@
 # Learnings
 
+## 2026-11-12 — Keep live recovery writes off the recorder UI thread
+
+A live build-503 sample during capture found the main thread inside an atomic
+recovery draft write. Each cumulative partial had been formatting the full
+speech and reference snapshot and replacing the journal on that thread. The
+same sample also caught HUD text layout; it does not establish that recovery
+writes explain every stall.
+
+Use one serial journal worker for formatting and atomic writes. Keep only the
+latest pending snapshot per recording, using the same full timed references as
+before. Keep the first journal durable before audio starts and order removal
+after pending writes so a saved History row cannot leave a resurrected journal.
+A crash during a write still has the last completed snapshot and original WAV.
+
 ## 2026-11-11 — Prepare the Claude Code Prompt while a captured highlight is current
 
 Claude's standalone Code window exposes a **Chat messages** region, a

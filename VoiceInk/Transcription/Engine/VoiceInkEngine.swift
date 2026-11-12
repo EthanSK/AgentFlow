@@ -1561,13 +1561,14 @@ class VoiceInkEngine: NSObject, ObservableObject {
                             // Ethan's edits/focus, and duplicates the single final delivery below.
                             session.recordSpeechActivity(partial)
                             session.partialTranscript = partial
-                            self.persistRecoveryJournal(
-                                for: session,
-                                realtimeDraftText: LiveSelectionReference.interleaving(
-                                    session.liveSelectionReferencesForRecovery, with: partial,
-                                    includeTiming: true
+                            if let entry = session.recoveryJournalEntry {
+                                self.recoveryJournalStore.persistLiveDraft(
+                                    entry,
+                                    transcript: partial,
+                                    references: session.liveSelectionReferencesForRecovery,
+                                    inputDevice: session.recordingInputDevice
                                 )
-                            )
+                            }
                             // Mirror to the engine's derived partial only while this is the
                             // active recording session (it always is here, but be explicit).
                             if self.activeRecordingSession?.id == session.id {

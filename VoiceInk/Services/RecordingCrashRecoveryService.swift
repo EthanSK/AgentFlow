@@ -68,7 +68,7 @@ struct RecordingRecoveryJournalEntry: Codable, Equatable, Sendable {
 
 /// File-system boundary for active-capture journals. It is intentionally injectable
 /// so the recovery parser is testable without looking at Ethan's live recordings.
-struct RecordingRecoveryJournalStore {
+final class RecordingRecoveryJournalStore: @unchecked Sendable {
     struct PendingEntry {
         let journalURL: URL
         let entry: RecordingRecoveryJournalEntry
@@ -79,9 +79,21 @@ struct RecordingRecoveryJournalStore {
         case unreadable(URL)
     }
 
+    private struct LiveDraft: Sendable {
+        let entry: RecordingRecoveryJournalEntry
+        let transcript: String
+        let references: [LiveSelectionReference]
+        let inputDevice: RecordingInputDeviceSnapshot?
+    }
+
     let directory: URL
+    // One worker owns both the codecs and file operations. In particular, a
+    // History commit can retire a journal only after any in-flight write.
+    private let worker = DispatchQueue(label: "com.ethansk.agentflow.recovery-journal", qos: .utility)
+    private let pendingDrafts = OSAllocatedUnfairLock(initialState: [UUID: LiveDraft]())
     private let encoder: JSONEncoder
     private let decoder = JSONDecoder()
+    private let logger = Logger(subsystem: "com.ethansk.VoiceInkPlusPlus", category: "RecordingRecovery")
 
     init(directory: URL = RecordingRecoveryJournalStore.defaultDirectory) {
         self.directory = directory
@@ -103,6 +115,44 @@ struct RecordingRecoveryJournalStore {
     }
 
     func persist(_ entry: RecordingRecoveryJournalEntry) throws {
+        try worker.sync { try write(entry) }
+    }
+
+    /// Partial speech is a full snapshot. Replace an older queued snapshot for
+    /// this recording so a slow disk cannot queue a copy of every growing draft.
+    /// Keep the last completed atomic file and original WAV recoverable until
+    /// the worker finishes writing the newest available speech and references.
+    @MainActor
+    func persistLiveDraft(
+        _ entry: RecordingRecoveryJournalEntry,
+        transcript: String,
+        references: [LiveSelectionReference],
+        inputDevice: RecordingInputDeviceSnapshot?
+    ) {
+        let draft = LiveDraft(entry: entry, transcript: transcript, references: references,
+                              inputDevice: inputDevice)
+        let id = entry.id
+        pendingDrafts.withLock { drafts in
+            guard drafts.updateValue(draft, forKey: id) == nil else { return }
+            worker.async { [self] in
+                guard let draft = pendingDrafts.withLock({ $0.removeValue(forKey: id) }) else { return }
+                var entry = draft.entry
+                entry.update(
+                    realtimeDraftText: LiveSelectionReference.interleaving(
+                        draft.references, with: draft.transcript, includeTiming: true
+                    ),
+                    inputDevice: draft.inputDevice
+                )
+                do {
+                    try write(entry)
+                } catch {
+                    logger.error("Could not save live recovery draft id=\(id.uuidString, privacy: .public)")
+                }
+            }
+        }
+    }
+
+    private func write(_ entry: RecordingRecoveryJournalEntry) throws {
         try FileManager.default.createDirectory(
             at: directory,
             withIntermediateDirectories: true
@@ -114,12 +164,18 @@ struct RecordingRecoveryJournalStore {
     }
 
     func remove(_ entry: RecordingRecoveryJournalEntry) throws {
-        let url = journalURL(for: entry)
-        guard FileManager.default.fileExists(atPath: url.path) else { return }
-        try FileManager.default.removeItem(at: url)
+        try worker.sync {
+            let url = journalURL(for: entry)
+            guard FileManager.default.fileExists(atPath: url.path) else { return }
+            try FileManager.default.removeItem(at: url)
+        }
     }
 
     func pendingJournals() -> [PendingJournal] {
+        worker.sync { readPendingJournals() }
+    }
+
+    private func readPendingJournals() -> [PendingJournal] {
         guard FileManager.default.fileExists(atPath: directory.path),
               let urls = try? FileManager.default.contentsOfDirectory(
                 at: directory,
