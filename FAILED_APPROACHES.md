@@ -1,5 +1,17 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-13 — A speaker toggle receipt does not confirm restoration
+
+**Observed in the first 506 fixture:** Start can successfully silence the
+current call, then Stop can lose speaker readback. Refusing solely because
+of that missing readback can strand the mute. Ethan explicitly chose one
+paired attempt for a verified active call with unreadable output state.
+A shortcut post does not establish the result or rule out a manual change.
+
+**Use instead:** Keep the same-call and one-post limits. Do not claim
+guaranteed restoration unless a directional operation with applied
+acknowledgement is available.
+
 ## 2026-11-11 — App-targeted input did not establish a physical Claude delivery test
 
 **Observed result:** Computer Use could focus the Prompt and select an

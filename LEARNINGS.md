@@ -1,5 +1,30 @@
 # Learnings
 
+## 2026-11-13 — Keep automatic Voice speaker control tied to the same call
+
+Desktop 26.1106.51428/26605 exposes a speaker toggle distinct from the
+microphone toggle. H Chat recorded successful speaker readbacks for explicit
+commands, but also observed a live microphone and End control while the speaker
+label was unreadable. Do not infer output state from either control or Core
+Audio activity. A saved, unique current Voice session plus a readable speaker
+label lets the recording-owned path check identity and any available state at
+the action boundary. Do not change the saved shortcut or poll during capture.
+
+Ethan explicitly requested one reversible attempt even when a proven active
+call's speaker state is hidden. Require a unique saved call and a live Voice
+control at both boundaries. Pair one Start dispatch with at most one Stop
+dispatch to that same call. Keep the known-state checks, report dispatch
+separately from application, and never retry an unconfirmed toggle. When
+speaker state is hidden, Codex can apply a toggle in the opposite direction
+or an independent manual command can alter its result.
+
+Codex's experimental app-server schema includes thread-scoped appendText and
+appendSpeech, plus transcript/item completion. This desktop's app-server
+connection is private to its owner, and the schema exposes no playback-drained
+event for the native call. A completed transcript, item or posted shortcut does
+not prove its audio played. Do not start a separate call, send a normal chat
+turn, or clear a replay item from those observations.
+
 ## 2026-11-12 — Keep live recovery writes off the recorder UI thread
 
 A live build-503 sample during capture found the main thread inside an atomic

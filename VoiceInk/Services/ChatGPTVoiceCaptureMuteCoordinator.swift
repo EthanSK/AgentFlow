@@ -90,18 +90,23 @@ protocol ChatGPTVoiceMuteTransport: Sendable {
 /// opted-in Mac uses that Mac's own validated binding for the same command. Ownership remembers
 /// which one posted the mute, so the inverse pairs it whichever owner happens to finish last.
 actor ChatGPTVoiceCaptureMuteCoordinator {
-    static let shared = ChatGPTVoiceCaptureMuteCoordinator(
-        transport: SystemChatGPTVoiceMuteTransport(),
-        pairedFanOut: PairedVoiceMuteBroadcaster.shared,
-        localPairedSourceID: PairedVoiceMuteBroadcaster.shared.sourceID,
-        pairedActivity: .shared
-    )
+    static let shared: ChatGPTVoiceCaptureMuteCoordinator = {
+        let transport = SystemChatGPTVoiceMuteTransport()
+        return ChatGPTVoiceCaptureMuteCoordinator(
+            transport: transport,
+            pairedFanOut: PairedVoiceMuteBroadcaster.shared,
+            localPairedSourceID: PairedVoiceMuteBroadcaster.shared.sourceID,
+            pairedActivity: .shared,
+            speaker: ChatGPTVoiceCaptureSpeaker(transport: transport)
+        )
+    }()
 
     private let transport: any ChatGPTVoiceMuteTransport
     private let pairedFanOut: (any PairedVoiceMuteFanOut)?
     private let localPairedSourceID: String?
     private let pairedLeaseTimer: any PairedVoiceMuteLeaseTimer
     private let pairedActivity: PairedVoiceMuteActivity?
+    private let speaker: ChatGPTVoiceCaptureSpeaker?
     private let logger = Logger(
         subsystem: "com.ethansk.VoiceInkPlusPlus",
         category: "ChatGPTVoiceCaptureMute"
@@ -124,13 +129,15 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
         pairedFanOut: (any PairedVoiceMuteFanOut)? = nil,
         localPairedSourceID: String? = nil,
         pairedLeaseTimer: any PairedVoiceMuteLeaseTimer = TaskPairedVoiceMuteLeaseTimer(),
-        pairedActivity: PairedVoiceMuteActivity? = nil
+        pairedActivity: PairedVoiceMuteActivity? = nil,
+        speaker: ChatGPTVoiceCaptureSpeaker? = nil
     ) {
         self.transport = transport
         self.pairedFanOut = pairedFanOut
         self.localPairedSourceID = localPairedSourceID?.lowercased()
         self.pairedLeaseTimer = pairedLeaseTimer
         self.pairedActivity = pairedActivity
+        self.speaker = speaker
     }
 
     /// Finish listener suppression before VoiceInk++ opens the shared Core Audio input.
@@ -174,8 +181,15 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
         // capture generation must not end the newer capture's remote suppression either.
         pairedFanOut?.captureEnded(localLeaseID: lease.id)
 
+        // Recorder Stop can finish before this queued restoration. Keep a cooperative
+        // quit from dropping the speaker restore while the existing queue settles.
+        let speakerRestoration = speaker == nil ? nil : pairedActivity?.beginOperation()
+        let activity = pairedActivity
         let previous = transitionTail
         transitionTail = Task { [weak self] in
+            defer {
+                if let speakerRestoration { activity?.finishOperation(speakerRestoration) }
+            }
             await previous.value
             guard !Task.isCancelled else { return }
             await self?.endCapture(lease)
@@ -305,18 +319,27 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
 
     private func beginCapture(_ lease: ChatGPTVoiceCaptureMuteLease) async {
         appliedLease = lease
+        // Run the independent output preflight beside the existing microphone path.
+        // Both finish before AUHAL starts, including when the microphone was already muted.
+        async let silence: Void? = speaker?.silenceForCapture()
         _ = await suppressChatGPTVoiceIfNeeded(using: .acceptedLocalBinding)
+        _ = await silence
     }
 
     private func endCapture(_ lease: ChatGPTVoiceCaptureMuteLease) async {
         guard appliedLease == lease else { return }
         appliedLease = nil
-        guard appliedPairedOwners.isEmpty else {
+        // A queued local capture inherits silence. Paired capture owns only the
+        // existing microphone path, so it cannot keep the local speaker silenced.
+        if !appliedPairedOwners.isEmpty {
             // A paired Mac is still capturing speech that ChatGPT here must not hear.
             logger.notice("Local capture ended while a paired Mac still needs ChatGPT Voice suppression; restoration deferred to the last owner")
-            return
+        } else {
+            _ = await restoreChatGPTVoiceIfOwned()
         }
-        _ = await restoreChatGPTVoiceIfOwned()
+        if requestedLease == nil {
+            await speaker?.restoreAfterCapture()
+        }
     }
 
     private func beginPairedCapture(
@@ -452,10 +475,12 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
 
 }
 
-final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, @unchecked Sendable {
+final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTVoiceSpeakerTransport, @unchecked Sendable {
     static let applicationPath = "/Applications/ChatGPT.app"
     static let shortcutCommand = "realtimeVoice.toggleMicrophoneMute"
     static let shortcutAccelerator = "Command+Control+Option+Shift+F20"
+    static let speakerShortcutCommand = "realtimeVoice.toggleOutputMute"
+    private static let shortcutPostLock = NSLock()
 
     private let logger = Logger(
         subsystem: "com.ethansk.VoiceInkPlusPlus",
@@ -479,35 +504,89 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, @uncheck
                 logger.error("ChatGPT Voice microphone shortcut is missing or changed; refusing targeted input")
                 return false
             }
-            guard Self.isExpectedChatGPTApplicationPID(applicationPID) else {
-                logger.error("Refusing ChatGPT Voice shortcut because the target is not /Applications/ChatGPT.app pid=\(applicationPID, privacy: .public)")
+            guard Self.postTargetedShortcut(shortcut, applicationPID: applicationPID) else {
+                logger.error("Could not post the targeted ChatGPT Voice microphone shortcut pid=\(applicationPID, privacy: .public)")
                 return false
             }
-            guard AXIsProcessTrusted(),
-                  let source = CGEventSource(stateID: .privateState),
-                  let keyDown = CGEvent(
-                      keyboardEventSource: source,
-                      virtualKey: shortcut.virtualKey,
-                      keyDown: true
-                  ),
-                  let keyUp = CGEvent(
-                      keyboardEventSource: source,
-                      virtualKey: shortcut.virtualKey,
-                      keyDown: false
-                  ) else {
-                logger.error("Could not create the targeted ChatGPT Voice shortcut sequence")
-                return false
-            }
-
-            keyDown.flags = shortcut.flags
-            keyUp.flags = shortcut.flags
-            keyDown.timestamp = mach_absolute_time()
-            keyDown.postToPid(applicationPID)
-            keyUp.timestamp = mach_absolute_time()
-            keyUp.postToPid(applicationPID)
             logger.info("Posted one pointer-free ChatGPT Voice microphone shortcut pid=\(applicationPID, privacy: .public)")
             return true
         }.value
+    }
+
+    func activeSpeakerCall() async -> ChatGPTVoiceSpeakerCall? {
+        await Task.detached(priority: .userInitiated) { () -> ChatGPTVoiceSpeakerCall? in
+            guard AXIsProcessTrusted(),
+                  Self.configuredSpeakerShortcut() != nil,
+                  let application = Self.expectedApplication()
+            else { return nil }
+            return Self.speakerCall(for: application)
+        }.value
+    }
+
+    func postSpeakerToggle(
+        for call: ChatGPTVoiceSpeakerCall, mute: Bool
+    ) async -> ChatGPTVoiceSpeakerPost {
+        await Task.detached(priority: .userInitiated) { () -> ChatGPTVoiceSpeakerPost in
+            guard let application = Self.expectedApplication(),
+                  application.processIdentifier == call.applicationPID,
+                  mute || Self.speakerCall(for: application) == call
+            else { return .skipped }
+            let controls = Self.readVoiceControls(applicationPID: call.applicationPID, channel: .speaker)
+            // A saved call alone is insufficient. For hidden speaker state,
+            // require independent evidence from a live native Voice control.
+            guard controls.voiceControlFound, controls.isMuted != mute else { return .skipped }
+            // Check session identity again after the AX read. A new Voice call
+            // can appear in the same desktop process.
+            guard Self.speakerCall(for: application) == call,
+                  let shortcut = Self.configuredSpeakerShortcut(),
+                  Self.postTargetedShortcut(shortcut, applicationPID: call.applicationPID)
+            else { return .skipped }
+            return .posted(priorStateReadable: controls.isMuted != nil)
+        }.value
+    }
+
+    private static func configuredSpeakerShortcut() -> ChatGPTVoiceShortcut? {
+        let url = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/keybindings.json")
+        let resolution = ChatGPTVoiceShortcut.resolve(
+            keybindings: try? Data(contentsOf: url), command: speakerShortcutCommand
+        )
+        guard case .resolved(let shortcut) = resolution,
+              shortcut.matchesLayout(producedCharacters: producedCharacters(for: shortcut))
+        else { return nil }
+        return shortcut
+    }
+
+    private static func speakerCall(for application: NSRunningApplication) -> ChatGPTVoiceSpeakerCall? {
+        guard !application.isTerminated,
+              let launchedAt = application.launchDate,
+              let sessionID = ChatGPTVoiceSessionBoundaryReader.uniqueActiveSession(since: launchedAt)
+        else { return nil }
+        return .init(applicationPID: application.processIdentifier, sessionID: sessionID)
+    }
+
+    private static func postTargetedShortcut(
+        _ shortcut: ChatGPTVoiceShortcut,
+        applicationPID: pid_t
+    ) -> Bool {
+        guard isExpectedChatGPTApplicationPID(applicationPID),
+              AXIsProcessTrusted(),
+              let source = CGEventSource(stateID: .privateState),
+              let keyDown = CGEvent(keyboardEventSource: source, virtualKey: shortcut.virtualKey, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: shortcut.virtualKey, keyDown: false)
+        else { return false }
+
+        // A recording may need both channels. Keep each down/up pair together
+        // even when their read-only preflights finish at the same time.
+        shortcutPostLock.lock()
+        defer { shortcutPostLock.unlock() }
+        keyDown.flags = shortcut.flags
+        keyUp.flags = shortcut.flags
+        keyDown.timestamp = mach_absolute_time()
+        keyDown.postToPid(applicationPID)
+        keyUp.timestamp = mach_absolute_time()
+        keyUp.postToPid(applicationPID)
+        return true
     }
 
     func waitForMicrophoneState(
@@ -530,19 +609,7 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, @uncheck
     }
 
     static func readSnapshot() -> ChatGPTVoiceInputSnapshot? {
-        let matchingApps = NSRunningApplication.runningApplications(
-            withBundleIdentifier: "com.openai.codex"
-        ).filter { app in
-            guard !app.isTerminated,
-                  let bundleURL = app.bundleURL else { return false }
-            return normalizedPath(bundleURL.path) == normalizedPath(applicationPath)
-        }
-        guard matchingApps.count == 1,
-              let application = matchingApps.first,
-              isExpectedChatGPTApplicationPID(application.processIdentifier) else {
-            return nil
-        }
-
+        guard let application = expectedApplication() else { return nil }
         let processObjects = coreAudioProcessObjects()
         let inputIsRunning = processObjects.contains { processObject in
             guard let pid = processPID(for: processObject),
@@ -564,14 +631,39 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, @uncheck
         )
     }
 
+    private static func expectedApplication() -> NSRunningApplication? {
+        let matchingApps = NSRunningApplication.runningApplications(
+            withBundleIdentifier: "com.openai.codex"
+        ).filter { app in
+            guard !app.isTerminated,
+                  let bundleURL = app.bundleURL else { return false }
+            return normalizedPath(bundleURL.path) == normalizedPath(applicationPath)
+        }
+        guard matchingApps.count == 1,
+              let application = matchingApps.first,
+              isExpectedChatGPTApplicationPID(application.processIdentifier) else {
+            return nil
+        }
+        return application
+    }
+
     /// Reads only the current accessible label of ChatGPT Voice's microphone button. The previous
     /// listener experiment failed because `AXPress` could report success without changing state and
     /// its pointer fallback stole Ethan's mouse. This bounded traversal performs no AX action or
     /// attribute write; it exists solely to make the proven keyboard-command lease reversible.
     static func microphoneState(applicationPID: pid_t) -> ChatGPTVoiceMicrophoneState? {
+        readVoiceControls(applicationPID: applicationPID, channel: .microphone)
+            .isMuted.map { $0 ? .muted : .listening }
+    }
+
+    private enum VoiceControlChannel { case microphone, speaker }
+
+    private static func readVoiceControls(
+        applicationPID: pid_t, channel: VoiceControlChannel
+    ) -> (isMuted: Bool?, voiceControlFound: Bool) {
         guard AXIsProcessTrusted(),
               isExpectedChatGPTApplicationPID(applicationPID) else {
-            return nil
+            return (nil, false)
         }
 
         let application = AXUIElementCreateApplication(applicationPID)
@@ -579,6 +671,7 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, @uncheck
         var queue = (windows.isEmpty ? [application] : windows).map { ($0, 0) }
         var index = 0
         var visited: [AXUIElement] = []
+        var voiceControlFound = false
         let deadline = ContinuousClock.now.advanced(by: .milliseconds(120))
 
         while index < queue.count,
@@ -597,11 +690,23 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, @uncheck
                     kAXHelpAttribute,
                     kAXValueAttribute
                 ] {
-                    guard let label = stringAttribute(attribute, from: element),
-                          let state = microphoneState(accessibilityLabel: label) else {
-                        continue
+                    guard let label = stringAttribute(attribute, from: element) else { continue }
+                    switch channel {
+                    case .microphone:
+                        if let state = microphoneState(accessibilityLabel: label) {
+                            return (state == .muted, true)
+                        }
+                    case .speaker:
+                        if let muted = speakerMuteState(accessibilityLabel: label) {
+                            return (muted, true)
+                        }
+                        if microphoneState(accessibilityLabel: label) != nil
+                            || ["end voice", "end voice chat", "stop voice chat"].contains(
+                                label.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                            ) {
+                            voiceControlFound = true
+                        }
                     }
-                    return state
                 }
             }
 
@@ -610,7 +715,15 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, @uncheck
             queue.append(contentsOf: children.map { ($0, depth + 1) })
         }
 
-        return nil
+        return (nil, voiceControlFound)
+    }
+
+    static func speakerMuteState(accessibilityLabel: String) -> Bool? {
+        switch accessibilityLabel.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "mute speakers": return false
+        case "unmute speakers": return true
+        default: return nil
+        }
     }
 
     static func microphoneState(
