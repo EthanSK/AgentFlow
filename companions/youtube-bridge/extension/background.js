@@ -780,6 +780,133 @@ const handleManualPlaybackControl = (tabId, action, contentTimestamp) => {
   });
 };
 
+// -- H Chat explicit video control ----------------------------------------------------------------
+//
+// H Chat's spoken "pause video" / "play video" is a deliberate user choice, unlike a recording or
+// spoken-reminder pause. It never takes the automatic lease. During a recording/reminder it gives
+// that lease up, exactly as a manual Play/Pause after the start does, so the later automatic stop
+// cannot reverse the explicit choice. While idle it changes no ownership state, and an explicit
+// pause is never recorded as an adoptable manual pause. A status request is a version reply only.
+const HELLO_CHAT_VIDEO_PROTOCOL_VERSION = 1;
+// Matches the menu bar app's bound; re-checked when the serial queue finally runs the command.
+const HELLO_CHAT_VIDEO_MAX_AGE_MS = 2500;
+const HELLO_CHAT_VIDEO_REQUEST_ID = /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i;
+const HELLO_CHAT_VIDEO_REMEMBERED_REQUESTS = 64;
+/** @type {Map<string, number>} request id -> handled at (ms). A repeated id is dropped, never replayed. */
+const handledHelloChatVideoRequests = new Map();
+// A worker restart or navigation discards this hint. A bare tab ID cannot safely
+// identify the same video across a browser restart.
+let helloChatPausedTarget = null;
+
+const isHelloChatVideoRequestId = (requestId) =>
+  typeof requestId === 'string' && HELLO_CHAT_VIDEO_REQUEST_ID.test(requestId);
+
+const isFreshHelloChatVideoRequest = (issuedAt, now = Date.now()) =>
+  Number.isFinite(issuedAt) && now - issuedAt <= HELLO_CHAT_VIDEO_MAX_AGE_MS && issuedAt - now <= 1000;
+
+const rememberHelloChatVideoRequest = (requestId) => {
+  handledHelloChatVideoRequests.set(requestId, Date.now());
+  while (handledHelloChatVideoRequests.size > HELLO_CHAT_VIDEO_REMEMBERED_REQUESTS) {
+    handledHelloChatVideoRequests.delete(handledHelloChatVideoRequests.keys().next().value);
+  }
+};
+
+/**
+ * @param {string} requestId
+ * @param {'pause' | 'play'} videoAction
+ * @param {boolean} changed
+ * @param {string} reason
+ * @param {number | null} tabId
+ */
+const postHelloChatVideoResult = (requestId, videoAction, changed, reason, tabId = null) => {
+  postNativeMessage({
+    type: 'hellochat-video-result',
+    requestId,
+    videoAction,
+    changed,
+    reason,
+    tabId,
+    protocolVersion: HELLO_CHAT_VIDEO_PROTOCOL_VERSION,
+    extensionTimestamp: Date.now(),
+  });
+};
+
+// Same effect as a manual Play/Pause after a recording starts. Idle sessions are untouched, so an
+// explicit command can never poison the next recording or reminder.
+const relinquishAutomaticPlaybackForExplicitCommand = (action) => {
+  if (!isDictationActive()) return false;
+  const previousTarget = dictationPausedTabId;
+  dictationPlaybackRelinquished = true;
+  dictationPausedTabId = null;
+  dictationLastActivityAt = Date.now();
+  persistDictationPausedTabId();
+  persistDictationState();
+  clog('background', `hellochat-${action} RELINQUISHED automatic playback ownership previousTarget=${previousTarget ?? 'nil'} — later recording/reminder stop will not play or pause`);
+  return true;
+};
+
+/**
+ * One explicit directional command to one tab. Generic players use explicit commands that clear
+ * their automatic pause lease and are never stored by the router. YouTube's directional commands
+ * already act only in their own direction and mark the change as programmatic, so the content
+ * script does not report it back as a manual takeover.
+ * @param {number} tabId
+ * @param {'pause' | 'play'} action
+ */
+const sendHelloChatVideoCommand = (tabId, action, expiresAt) => sendDirectionalWithReinject(
+  tabId, action === 'pause' ? 'explicit-pause-video' : 'explicit-play-video', false, expiresAt,
+);
+
+/**
+ * Runs inside the dictation queue so it can never interleave with a recording edge.
+ * Prefer the watched player, then the video H Chat last paused, then the usual attention order.
+ * A player reporting that it already matches the request is the selected player.
+ * @param {string} requestId
+ * @param {'pause' | 'play'} action
+ * @param {number} issuedAt
+ */
+const controlVideoForHelloChat = async (requestId, action, issuedAt) => {
+  if (!isFreshHelloChatVideoRequest(issuedAt)) {
+    clog('background', `hellochat-${action} dropped: request went stale while queued`);
+    postHelloChatVideoResult(requestId, action, false, 'stale-request');
+    return;
+  }
+  const expiresAt = issuedAt + HELLO_CHAT_VIDEO_MAX_AGE_MS;
+  await hydrateFromStorage();
+  const ranked = await orderedDictationCandidates();
+  const attention = ranked.filter(({ why }) => why === 'pip-playing' || why === 'last-focused-active-live-check');
+  const remembered = helloChatPausedTarget ? [helloChatPausedTarget] : [];
+  const candidates = [...attention, ...remembered, ...ranked.filter(candidate => !attention.includes(candidate))];
+
+  const tried = new Set();
+  for (const candidate of candidates) {
+    if (Date.now() >= expiresAt) break;
+    if (tried.has(candidate.tabId)) continue;
+    tried.add(candidate.tabId);
+    const result = await sendHelloChatVideoCommand(candidate.tabId, action, expiresAt);
+    const response = result.response ?? {};
+    const reason = response.reason ?? result.reason ?? '';
+    clog('background', `hellochat-${action} try tab=${candidate.tabId} why=${candidate.why} delivered=${result.delivered} paused=${response.paused} resumed=${response.resumed} reason="${reason}"`);
+    const changed = action === 'pause' ? response.paused === true : response.resumed === true;
+    if (changed || reason === 'not-playing' || reason === 'already-playing') {
+      relinquishAutomaticPlaybackForExplicitCommand(action);
+      if (action === 'pause') helloChatPausedTarget = { tabId: candidate.tabId, why: 'previously-paused' };
+      else if (helloChatPausedTarget?.tabId === candidate.tabId) helloChatPausedTarget = null;
+      const outcome = action === 'pause' ? (changed ? 'paused' : 'already-paused') : (changed ? 'played' : 'already-playing');
+      postHelloChatVideoResult(requestId, action, changed, outcome, candidate.tabId);
+      return;
+    }
+    // This player accepted the command, or delivery could have reached it. Do
+    // not try a different tab after a blocked play or uncertain mutation.
+    if (reason === 'play-blocked' || reason === 'video-ended' ||
+        reason.startsWith('browser-timeout:') || (result.delivered && reason === 'missing-response')) {
+      postHelloChatVideoResult(requestId, action, false, reason, candidate.tabId);
+      return;
+    }
+  }
+  postHelloChatVideoResult(requestId, action, false, Date.now() >= expiresAt ? 'stale-request' : 'no-video');
+};
+
 // -- Persistent log funnel -----------------------------------------------------------------------
 //
 // WHY: the Chrome extension used to be the diagnostic blind spot for the intermittent
@@ -1162,6 +1289,55 @@ const handleNativeMessage = (message) => {
       return;
     }
 
+    // H Chat availability check: answer with the protocol version only. No storage, tab query,
+    // content-script message or ownership change, so a status request can never affect playback.
+    case 'hellochat-video-status-request': {
+      const { requestId } = /** @type {{ requestId?: unknown }} */ (message);
+      if (!isHelloChatVideoRequestId(requestId)) {
+        clog('background', 'hellochat-video-status-request dropped: invalid request id');
+        return;
+      }
+      postNativeMessage({
+        type: 'hellochat-video-status',
+        requestId,
+        protocolVersion: HELLO_CHAT_VIDEO_PROTOCOL_VERSION,
+        extensionTimestamp: Date.now(),
+      });
+      return;
+    }
+
+    case 'hellochat-video-command': {
+      const { requestId, videoAction, issuedAt } = /** @type {{ requestId?: unknown; videoAction?: unknown; issuedAt?: unknown }} */ (message);
+      if (!isHelloChatVideoRequestId(requestId)) {
+        clog('background', 'hellochat-video-command dropped: invalid request id');
+        return;
+      }
+      if (handledHelloChatVideoRequests.has(requestId)) {
+        // The first copy already owns this id's single reply; a second reply could be mistaken for it.
+        clog('background', `hellochat-video-command dropped duplicate request ${requestId}`);
+        return;
+      }
+      rememberHelloChatVideoRequest(requestId);
+      if (videoAction !== 'pause' && videoAction !== 'play') {
+        clog('background', `hellochat-video-command rejected action=${String(videoAction)}`);
+        return;
+      }
+      if (!isFreshHelloChatVideoRequest(issuedAt)) {
+        clog('background', `hellochat-${videoAction} dropped: stale request`);
+        postHelloChatVideoResult(requestId, videoAction, false, 'stale-request');
+        return;
+      }
+      void enqueueDictationOp(`hellochat-video-${videoAction}`, async () => {
+        try {
+          await controlVideoForHelloChat(requestId, videoAction, issuedAt);
+        } catch (error) {
+          clog('background', `hellochat-${videoAction} failed: ${String(error)}`);
+          postHelloChatVideoResult(requestId, videoAction, false, 'playback-command-failed');
+        }
+      });
+      return;
+    }
+
     case 'host-status':
       rememberStatus('nativeStatus', typedMessage);
       resolvePendingNativeStatusRequests();
@@ -1214,12 +1390,14 @@ const sendToggleToTab = async (tabId) => {
  * @param {'pause-youtube' | 'resume-youtube' | 'state-request'} type
  * @returns {Promise<{ delivered: boolean; response: Record<string, unknown> | null; reason: string }>}
  */
-const sendDirectionalToTab = async (tabId, type, canSend = () => true, respectMusicTitle = false) => {
+const sendDirectionalToTab = async (tabId, type, canSend = () => true, respectMusicTitle = false, deadline = Infinity) => {
   const generic = await usesGenericVideo(tabId);
+  if (Date.now() >= deadline) return { delivered: false, response: null, reason: 'playback-command-expired' };
   if (!canSend()) return { delivered: false, response: null, reason: 'playback-command-superseded' };
-  if (generic) return genericVideoRouter.send(tabId, { type }, canSend);
+  if (generic) return genericVideoRouter.send(tabId, { type, expiresAt: deadline }, canSend);
   try { return await browserCall(() => new Promise((resolve) => {
-    chrome.tabs.sendMessage(tabId, { type, respectMusicTitle, expiresAt: Date.now() + (genericVideoRouter?.browserTimeoutMs ?? 2000) }, (response) => {
+    const expiresAt = Math.min(deadline, Date.now() + (genericVideoRouter?.browserTimeoutMs ?? 2000));
+    chrome.tabs.sendMessage(tabId, { type, respectMusicTitle, expiresAt }, (response) => {
       if (chrome.runtime.lastError) {
         resolve({
           delivered: false,
@@ -1253,8 +1431,8 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * @param {'pause-youtube' | 'resume-youtube'} type
  * @returns {Promise<{ delivered: boolean; response: Record<string, unknown> | null; reason: string }>}
  */
-const sendDirectionalWithReinject = async (tabId, type, respectMusicTitle = false) => {
-  if (await usesGenericVideo(tabId)) return genericVideoRouter.send(tabId, { type });
+const sendDirectionalWithReinject = async (tabId, type, respectMusicTitle = false, deadline = Infinity) => {
+  if (await usesGenericVideo(tabId)) return genericVideoRouter.send(tabId, { type, expiresAt: deadline });
   if (respectMusicTitle) {
     // Only inspect the selected candidate, never wait for every open tab's startup injection.
     // A new worker cannot ask old page code to apply a policy it does not understand.
@@ -1270,15 +1448,15 @@ const sendDirectionalWithReinject = async (tabId, type, respectMusicTitle = fals
   // A healthy player already has its listener. Reinjecting before every recording
   // start needlessly waits for script evaluation and tears down the old listener.
   // Send first; retain the same bounded recovery when a receiver is actually missing.
-  let result = await sendDirectionalToTab(tabId, type, () => true, respectMusicTitle);
+  let result = await sendDirectionalToTab(tabId, type, () => true, respectMusicTitle, deadline);
 
   // No receiver ⇒ the content-script context was likely invalidated (extension reload / tab churn).
   // Re-inject a fresh listener and retry the same tab ONCE — don't abandon the correct target on a
   // single transient "no receiving end" error.
-  if (!result.delivered && !result.reason.startsWith('browser-timeout:')) {
+  if (!result.delivered && !result.reason.startsWith('browser-timeout:') && Date.now() < deadline) {
     clog('background', `${type} tab=${tabId} not delivered ("${result.reason}") — re-injecting + retrying once`);
     await injectContentScript(tabId);
-    result = await sendDirectionalToTab(tabId, type, () => true, respectMusicTitle);
+    result = await sendDirectionalToTab(tabId, type, () => true, respectMusicTitle, deadline);
     clog('background', `${type} tab=${tabId} retry delivered=${result.delivered} reason="${result.reason}"`);
   }
 
@@ -2403,6 +2581,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
+  if (helloChatPausedTarget?.tabId === tabId) helloChatPausedTarget = null;
   genericVideoRouter?.removed(tabId);
   void chromeTabHistory.removed(tabId);
   // Drop the closed tab from the most-recently-played tracker so it can never be picked as a
@@ -2437,6 +2616,7 @@ chrome.tabs.onActivated.addListener((activeInfo) => {
 });
 
 chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
+  if (helloChatPausedTarget?.tabId === removedTabId) helloChatPausedTarget = null;
   void chromeTabHistory.replaced(addedTabId, removedTabId);
 });
 
@@ -2445,6 +2625,9 @@ chrome.windows.onRemoved.addListener((windowId) => {
 });
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if ((changeInfo.url || changeInfo.status === 'loading') && helloChatPausedTarget?.tabId === tabId) {
+    helloChatPausedTarget = null;
+  }
   if (changeInfo.url) genericVideoRouter?.navigated(tabId);
   if (changeInfo.status === 'complete' && /^https?:\/\//.test(tab.url ?? '')) {
     injectContentScript(tabId);

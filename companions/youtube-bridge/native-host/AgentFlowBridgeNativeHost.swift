@@ -150,6 +150,14 @@ private final class NativeBridgeController { // Previously YoutubeSpotifyMediaKe
       case "youtube-tab-closed":
         postBridgeMessage(message)
 
+      // H Chat browser-video replies. The menu bar app relays them to H Chat by request id.
+      case "hellochat-video-status":
+        postBridgeMessage(message)
+
+      case "hellochat-video-result":
+        log("Chrome→app hellochat-video-result action=\(message.videoAction ?? "nil") changed=\(message.changed.map { String($0) } ?? "nil") tab=\(message.tabId.map { String($0) } ?? "nil") reason=\(message.reason ?? "")")
+        postBridgeMessage(message)
+
       // Persistent log funnel for the Chrome extension (background.js + content-script.js). The
       // extension's own console.* logs are ephemeral (they vanish when the MV3 service worker sleeps
       // or DevTools closes), which made the extension the blind spot for the intermittent
@@ -238,6 +246,22 @@ private final class NativeBridgeController { // Previously YoutubeSpotifyMediaKe
           return
         }
         log("app→Chrome open website=\(rawWebsite)")
+        sendNativeMessage(message)
+
+      // H Chat's explicit browser-video control. Status is a version check only; a command is exactly
+      // pause or play. Both need a UUID request id and an issue time so Chrome can drop late copies.
+      case "hellochat-video-status-request", "hellochat-video-command":
+        let isCommand = message.type == "hellochat-video-command"
+        guard let rawId = message.requestId, UUID(uuidString: rawId) != nil,
+              message.issuedAt != nil,
+              isCommand ? (message.videoAction == "pause" || message.videoAction == "play") : message.videoAction == nil
+        else {
+          log("Dropped malformed \(message.type) action=\(message.videoAction ?? "nil")")
+          return
+        }
+        if isCommand {
+          log("app→Chrome hellochat-video-command action=\(message.videoAction ?? "nil")")
+        }
         sendNativeMessage(message)
 
       default:

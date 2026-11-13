@@ -187,6 +187,23 @@
             report('voiceink-resume'); respond({ ok: playing(v), resumed: playing(v) });
           }, () => { r.pendingPlay = Math.max(0, r.pendingPlay - 1); respond({ ok: false, resumed: false, reason: 'play-blocked' }); });
           return true;
+        // H Chat's spoken "pause video" / "play video". Directional and repeat-safe, like the
+        // recording commands, but an explicit choice: clear any automatic pause lease so a later
+        // recording stop cannot reverse it. The pending counters keep this from looking manual.
+        case 'explicit-pause-video':
+          r.pausedByUs = null;
+          if (!playing(v)) { respond({ ok: true, paused: false, reason: 'not-playing' }); return false; }
+          r.pendingPause += 1; v.pause();
+          report('explicit-pause'); respond({ ok: v.paused, paused: v.paused }); return false;
+        case 'explicit-play-video':
+          if (v.ended) { respond({ ok: false, resumed: false, reason: 'video-ended' }); return false; }
+          if (playing(v)) { respond({ ok: true, resumed: false, reason: 'already-playing' }); return false; }
+          r.pendingPlay += 1;
+          Promise.resolve(v.play()).then(() => {
+            if (playing(v)) r.pausedByUs = null;
+            report('explicit-play'); respond({ ok: playing(v), resumed: playing(v), reason: playing(v) ? undefined : 'play-blocked' });
+          }, () => { r.pendingPlay = Math.max(0, r.pendingPlay - 1); respond({ ok: false, resumed: false, reason: 'play-blocked' }); });
+          return true;
         case 'toggle-youtube':
           r.pausedByUs = null;
           send({ type: 'generic-video-manual-control', instanceId, mediaId: r.id, action: v.paused ? 'play' : 'pause', contentTimestamp: Date.now() });

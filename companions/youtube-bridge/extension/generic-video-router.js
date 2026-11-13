@@ -81,7 +81,9 @@ function createGenericVideoRouter(chromeAPI = chrome) {
       if (!canSend()) return { delivered: false, response: null, reason: 'playback-command-superseded' };
       // Pages reject late delivery themselves; a worker timeout alone cannot cancel a queued
       // message in a frozen renderer. Preserve exact document/media identity as before.
-      const result = await rawSend(target, { ...message, expiresAt: Date.now() + browserTimeoutMs });
+      const expiresAt = Math.min(message.expiresAt ?? Infinity, Date.now() + browserTimeoutMs);
+      if (Date.now() >= expiresAt) return { delivered: false, response: null, reason: 'playback-command-expired' };
+      const result = await rawSend(target, { ...message, expiresAt });
       // Persist before returning pause success: a sleeping worker must retain the exact document.
       if (message.type === 'pause-youtube' && result.response?.paused === true) { leases[pauseKey] = target; await save(); }
       if (message.type === 'begin-youtube-speed-hold' && result.response?.speedHeld === true) { leases[speedKey] = target; await save(); }

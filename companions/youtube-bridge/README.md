@@ -1,6 +1,6 @@
 # Agent Flow Bridge
 
-Optional macOS + Chrome helper for pausing a playing video while Agent Flow is recording and resuming only that same video when recording stops. Extension 0.2.8 retains the dedicated YouTube adapter and adds ordinary website video players. Videos or playlists whose current title contains “music” keep playing during dictation; notification speech retains its normal pause/resume ownership.
+Optional macOS + Chrome helper for controlling YouTube and standard website video players. While Agent Flow records, it can pause a video and resume that same video when recording stops. Videos or playlists whose current title contains “music” keep playing during dictation; notification speech retains its normal pause/resume ownership.
 
 ## Website access
 
@@ -31,6 +31,10 @@ The extension popup's **Pause YouTube for VoiceInk** switch controls automatic r
 - This is complementary to Agent Flow's own media pause (Spotify / Apple Music / MediaRemote): those apps stay on the VoiceInk side; YouTube tabs in Chrome — which MediaRemote can't reliably pause — are covered here.
 
 The notification-name strings are the cross-app contract and live in both `shared/AgentFlowBridgeShared.swift` (`VoiceInkRecordingNotification`) and the Agent Flow repo's `RecordingActivityNotifier.swift`; keep them in sync.
+
+## Hello Chat video commands
+
+With the bridge and its Chrome extension connected, use **Pause video** or **Play video** in Hello Chat. The command targets one browser player and leaves Spotify, other apps and Codex Voice alone. Repeating it keeps that player's requested state. An accepted command during dictation takes priority over the recording's automatic resume. If Chrome blocks Play on a new site, start the video once using its own player.
 
 ## Agentic Mouse YouTube scrub
 

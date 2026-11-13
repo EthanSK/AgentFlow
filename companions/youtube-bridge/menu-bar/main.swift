@@ -74,6 +74,7 @@ private final class MenuBarMediaKeyController {
     observeBridgeMessages()
     observeVoiceInkRecording()
     observeAgenticMouseYouTubeCommands()
+    observeHelloChatVideoRequests()
     if isHardwareMediaKeyRoutingEnabled {
       observeAppActivation()
     }
@@ -314,6 +315,94 @@ private final class MenuBarMediaKeyController {
     log("Observing Agentic Mouse YouTube 2x hold notifications")
     log("Observing Agentic Mouse Chrome tab-history notifications")
     log("Observing Agentic Mouse Chrome website notification")
+  }
+
+  // H Chat's spoken "pause video" / "play video" commands and its availability check. Each request
+  // is one-shot: it is relayed at most once, only while the Chrome bridge is connected, and never
+  // retained for replay on reconnect (unlike VoiceInk's durable recording state).
+  private func observeHelloChatVideoRequests() {
+    DistributedNotificationCenter.default().addObserver(
+      self,
+      selector: #selector(handleHelloChatVideoRequest(_:)),
+      name: HelloChatVideoNotification.request,
+      object: nil,
+    )
+    log("Observing H Chat video requests=\(HelloChatVideoNotification.request.rawValue)")
+  }
+
+  @objc private func handleHelloChatVideoRequest(_ notification: Notification) {
+    guard let request = HelloChatVideoNotification.decodeRequest(notification) else {
+      log("Rejected malformed H Chat video request")
+      return
+    }
+    guard HelloChatVideoNotification.isFresh(issuedAt: request.issuedAt, now: BridgeNotification.now()) else {
+      log("Rejected stale H Chat video \(request.action.rawValue) request")
+      HelloChatVideoNotification.postReply(
+        requestId: request.requestId,
+        action: request.action.rawValue,
+        state: .rejected,
+        reason: "stale-request",
+      )
+      return
+    }
+    guard isBridgeConnected else {
+      // Availability means a connected extension, not just this app running. Never queue the request.
+      log("H Chat video \(request.action.rawValue) while bridge is down — replying unavailable")
+      HelloChatVideoNotification.postReply(
+        requestId: request.requestId,
+        action: request.action.rawValue,
+        state: .unavailable,
+        reason: "chrome-bridge-disconnected",
+      )
+      return
+    }
+
+    var message = BridgeMessage(
+      type: request.action == .status ? "hellochat-video-status-request" : "hellochat-video-command"
+    )
+    message.bridgeId = connectedBridgeId
+    message.requestId = request.requestId
+    message.videoAction = request.action == .status ? nil : request.action.rawValue
+    message.issuedAt = request.issuedAt
+    message.reason = "hellochat-video-\(request.action.rawValue)"
+    message.nativeTimestamp = BridgeNotification.now()
+    BridgeNotification.post(message, name: BridgeNotification.appToBridge)
+    if request.action != .status {
+      sendStatus("hellochat-video-\(request.action.rawValue)-requested")
+    }
+  }
+
+  // Relay the extension's answer. The request id is echoed verbatim; H Chat matches it against the
+  // one request it is waiting for and drops anything else.
+  private func relayHelloChatVideoReply(_ message: BridgeMessage) {
+    guard let rawId = message.requestId, let requestId = UUID(uuidString: rawId)?.uuidString else {
+      log("Dropped H Chat video reply without a valid request id")
+      return
+    }
+    if message.type == "hellochat-video-status" {
+      HelloChatVideoNotification.postReply(
+        requestId: requestId,
+        action: HelloChatVideoNotification.Action.status.rawValue,
+        state: .available,
+        protocolVersion: message.protocolVersion,
+      )
+      return
+    }
+    guard let action = message.videoAction.flatMap(HelloChatVideoNotification.Action.init(rawValue:)),
+          action != .status
+    else {
+      log("Dropped H Chat video result with action=\(message.videoAction ?? "nil")")
+      return
+    }
+    log("Chrome→app hellochat-video-result action=\(action.rawValue) changed=\(message.changed.map { String($0) } ?? "nil") tab=\(message.tabId.map { String($0) } ?? "nil") reason=\(message.reason ?? "")")
+    HelloChatVideoNotification.postReply(
+      requestId: requestId,
+      action: action.rawValue,
+      state: message.reason == "stale-request" || message.reason == "invalid-request" ? .rejected : .done,
+      changed: message.changed == true,
+      reason: message.reason,
+      protocolVersion: message.protocolVersion,
+    )
   }
 
   @objc private func handleAgenticMouseChromeTabHistory(_ notification: Notification) {
@@ -692,6 +781,10 @@ private final class MenuBarMediaKeyController {
       case "youtube-tab-closed":
         recordBridge(message)
         handleYouTubeTabClosed(message)
+
+      case "hellochat-video-status", "hellochat-video-result":
+        recordBridge(message)
+        relayHelloChatVideoReply(message)
 
       default:
         log("Ignoring unknown bridge message type: \(message.type)")

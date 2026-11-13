@@ -76,6 +76,14 @@ struct BridgeMessage: Codable {
   var voiceInkResumeAttemptCount: Int?
   var youtubePausedForDictationTabId: Int?
   var nativeTimestamp: Int?
+  // H Chat browser-video control. `requestId` correlates one request with its one reply; `issuedAt`
+  // lets every layer reject a delayed command instead of acting on it late. `videoAction` is only
+  // ever "pause" or "play"; a status request carries no action and has no playback effect.
+  var requestId: String?
+  var videoAction: String?
+  var issuedAt: Int?
+  var protocolVersion: Int?
+  var changed: Bool?
 
   init(type: String) {
     self.type = type
@@ -202,6 +210,89 @@ enum AgenticMouseChromeWebsite: String, CaseIterable {
           let rawValue = notification.userInfo?[websiteKey] as? String
     else { return nil }
     return Self(rawValue: rawValue)
+  }
+}
+
+// H Chat browser-video IPC contract.
+//
+// H Chat posts `request` with a UUID request id, a fixed action and its issue time (ms since 1970).
+// The menu bar app relays a request only while the Chrome bridge heartbeat is fresh; otherwise it
+// replies `unavailable` at once. The extension answers status without touching any tab, and answers
+// each pause/play once. Replies echo the request id; H Chat ignores ids it is not waiting for, so a
+// delayed or duplicate reply cannot replay playback. Nothing here can start a Codex Voice call.
+// H Chat's VideoBridge.swift hardcodes the same strings — keep the two in sync.
+enum HelloChatVideoNotification {
+  static let request = Notification.Name("com.ethansk.hellochat.video.request")
+  static let reply = Notification.Name("com.ethansk.hellochat.video.reply")
+  static let requestIdKey = "requestId"
+  static let actionKey = "action"
+  static let issuedAtKey = "issuedAt"
+  static let stateKey = "state"
+  static let changedKey = "changed"
+  static let reasonKey = "reason"
+  static let protocolVersionKey = "protocolVersion"
+  static let protocolVersion = 1
+  // A command older than this is dropped rather than relayed. The extension re-checks the same
+  // bound when its serial queue finally runs the command.
+  static let maximumRequestAgeMilliseconds = 2_500
+
+  enum Action: String {
+    case status
+    case pause
+    case play
+  }
+
+  enum ReplyState: String {
+    case available    // status: a compatible extension answered
+    case unavailable  // the Chrome bridge is not connected
+    case done         // pause/play finished; see changed + reason
+    case rejected     // malformed or stale request; nothing was sent to Chrome
+  }
+
+  struct Request: Equatable {
+    let requestId: String
+    let action: Action
+    let issuedAt: Int
+  }
+
+  static func decodeRequest(_ notification: Notification) -> Request? {
+    guard notification.name == request,
+          let rawId = notification.userInfo?[requestIdKey] as? String,
+          let requestId = UUID(uuidString: rawId)?.uuidString,
+          let rawAction = notification.userInfo?[actionKey] as? String,
+          let action = Action(rawValue: rawAction),
+          let issuedAt = (notification.userInfo?[issuedAtKey] as? NSNumber)?.intValue
+    else { return nil }
+    return Request(requestId: requestId, action: action, issuedAt: issuedAt)
+  }
+
+  static func isFresh(issuedAt: Int, now: Int) -> Bool {
+    // Allow a little clock skew forwards; never accept an old command.
+    now - issuedAt <= maximumRequestAgeMilliseconds && issuedAt - now <= 1_000
+  }
+
+  static func postReply(
+    requestId: String,
+    action: String,
+    state: ReplyState,
+    changed: Bool? = nil,
+    reason: String? = nil,
+    protocolVersion: Int? = nil
+  ) {
+    var userInfo: [String: Any] = [
+      requestIdKey: requestId,
+      actionKey: action,
+      stateKey: state.rawValue,
+    ]
+    if let changed { userInfo[changedKey] = changed }
+    if let reason { userInfo[reasonKey] = reason }
+    if let protocolVersion { userInfo[protocolVersionKey] = protocolVersion }
+    DistributedNotificationCenter.default().postNotificationName(
+      reply,
+      object: nil,
+      userInfo: userInfo,
+      deliverImmediately: true,
+    )
   }
 }
 

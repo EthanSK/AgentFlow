@@ -692,6 +692,21 @@
     return { ok: true, resumed, reason: resumed ? undefined : 'in-content-attempts-exhausted' };
   };
 
+  // Explicit Play uses the same selected player as Pause, with no automatic resume
+  // retries or button clicks that could restart a finished video or target a new clip.
+  const playYouTubeExplicitly = async (expiresAt) => {
+    const video = getActiveVideo();
+    if (!video || video.ended) return { ok: false, reason: video?.ended ? 'video-ended' : 'no-video' };
+    if (isVideoPlaying(video)) return { ok: true, resumed: false, reason: 'already-playing' };
+    if (Date.now() >= expiresAt) return { ok: false, reason: 'playback-command-expired' };
+    markProgrammaticPlay();
+    await waitForPlayAttempt(video.play(), Math.min(300, Math.max(1, expiresAt - Date.now())));
+    clearFailedProgrammaticPlay(video);
+    const resumed = isVideoPlaying(video);
+    if (resumed) sendState('explicit-play');
+    return { ok: resumed, resumed, reason: resumed ? undefined : 'play-blocked' };
+  };
+
   // Agentic Mouse's five-second scrub command. This touches only the chosen <video>'s timeline:
   // it never focuses Chrome, activates a tab, changes playback state, or synthesizes a key/click.
   // Use YouTube's actual visible control, not a guessed sponsor timestamp or a seek offset.
@@ -790,14 +805,21 @@
           );
         return true;
 
+      case 'explicit-pause-video':
       case 'pause-youtube':
         // VoiceInk record-start: pause only if playing. Response carries `paused` so the
         // background/menu-bar layers know whether this tab should be remembered for resume.
-        pauseYouTube(message.respectMusicTitle === true)
+        pauseYouTube(typedMessage.type === 'pause-youtube' && message.respectMusicTitle === true)
           .then((response) => sendResponse(response))
           .catch((error) =>
             sendResponse({ ok: false, paused: false, reason: String(error) }),
           );
+        return true;
+
+      case 'explicit-play-video':
+        playYouTubeExplicitly(message.expiresAt)
+          .then(sendResponse)
+          .catch(() => sendResponse({ ok: false, resumed: false, reason: 'play-blocked' }));
         return true;
 
       case 'resume-youtube':
