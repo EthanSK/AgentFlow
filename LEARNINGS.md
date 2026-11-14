@@ -27,6 +27,20 @@ eight suites, including nine production-reader fixtures, two layout cases,
 the uptime timestamp test and the Primary/Next/HUD-only guards. These
 checks used simulated controls and unposted events, not a live call.
 
+Build509 from source `6f9ff304` subsequently passed the canonical full Mini
+release gate:945 named tests in44 suites. The public universal archive
+passed checksum, Developer ID, deep/strict nested signing, notarization,
+Gatekeeper, Automation/audio-input entitlement and stable-updater checks.
+It was installed after the real five-second warning, two app-owned
+all-session readiness acknowledgements and one cooperative quit. The new
+runtime's CDHash is `f6d0b419a0bbb19a84b4e3cc6419fc6639df4da8`.
+Microphone preferences, keybindings, paired settings and official VoiceInk
+were preserved. Background launch was verified inactive and not hidden;
+the normal main-window close restored the prior closed state. Obsolete
+unpacked candidates were trashed and unregistered; the verified508 ZIP
+rollback remains. Audible silence/restoration during a real recording
+remains an attended acceptance check, not a consequence of the test pass.
+
 ## 2026-11-14 — Require a parked test child to acknowledge readiness before admission
 
 The real-process speech-admission fixture waited up to two seconds for
