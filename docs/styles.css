@@ -723,12 +723,16 @@ main:focus {
   font-size: 0.975rem;
 }
 
-/* Codex's editable opening stays plain: the ↗ full-prompt link, then every
-   authored word with the markers rendered as Codex's ordinary inline code. */
+/* Codex's message stays plain: the ↗ full-prompt link, every authored word with
+   the markers rendered as Codex's ordinary inline code, then the footer, whose
+   "full prompt" words are the same link. Only the opening arrow needs the gap. */
 .prompt-link {
-  margin-right: 0.15em;
   color: var(--mint-ink);
   font-weight: 600;
+}
+
+.msg-open .prompt-link {
+  margin-right: 0.15em;
 }
 
 .marker {
@@ -739,56 +743,6 @@ main:focus {
   color: var(--ink);
   font-size: 0.82em;
   white-space: nowrap;
-}
-
-/* The full timeline appended under a short message, one block per section. */
-.timeline {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.msg-xml {
-  margin: 0;
-  padding: 0.55rem 0.75rem;
-  border-left: 3px solid;
-  border-radius: 4px 8px 8px 4px;
-  font-size: 0.78rem;
-  line-height: 1.55;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.msg-xml .a {
-  color: var(--graphite);
-}
-
-/* Speech and typing keep neutral tags: cyan and violet stay reserved for references. */
-.xml-speech {
-  border-color: var(--rule);
-  background: #f4f6f5;
-}
-
-.xml-speech .t {
-  color: var(--graphite);
-}
-
-.xml-select {
-  border-color: var(--cyan-ink);
-  background: var(--cyan-tint);
-}
-
-.xml-select .t {
-  color: var(--cyan-ink);
-}
-
-.xml-shot {
-  border-color: var(--violet-ink);
-  background: var(--violet-tint);
-}
-
-.xml-shot .t {
-  color: var(--violet-ink);
 }
 
 .demo-caption {

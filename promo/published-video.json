@@ -18,11 +18,11 @@
   },
   "picture": {
     "sources": {
-      "scene.html": "b0c19fa6f536dc253cf06a8fbdbd8d14ebb9496c522833720dcaa9abd46bc4a8",
+      "scene.html": "4b05e862872a56a05a2ff895e807cca519c18be329e7b9ff319648bfe01d2d01",
       "timeline.mjs": "97a342fb64e34dd9e03ee9039f8fe9b6926d0e4ba0798afee12bdccbf912e620",
       "render.mjs": "a9fb0c79a305e24455ae04b24d25ff1c9c0111f5e28e8e125fc0a91cd3c57143",
       "music.mjs": "968a9cb21a1b75f12c6a2c6cec7c5497171218134517bc568031b5daf66f023f",
-      "narration.json": "9823bf1cf33494d4840f862912b501b1586ba749af3f38b7078f60673c9284ec"
+      "narration.json": "f75f06ce2b7ac73fc0294944ef38c9a91936a3a5a902a93a13014393787a67bf"
     },
     "deviceScale": 1
   },
@@ -33,7 +33,7 @@
     "channels": 2,
     "reusedFrom": {
       "file": "docs/assets/agentflow-promo.mp4",
-      "sha256": "0949ae0fa8608594a7b027ee5b150da1fc37e8996af6e22907980c042ebf24a8"
+      "sha256": "35eaacae9025080ddd480a79f363e52befbbe9b82253f6499d2f5a4b9a51d1c6"
     },
     "voiceTakes": "not used: the published soundtrack (voice, music and interface sounds) is copied unchanged"
   },
@@ -106,7 +106,7 @@
   "output": {
     "video": {
       "file": "docs/assets/agentflow-promo.mp4",
-      "sha256": "35eaacae9025080ddd480a79f363e52befbbe9b82253f6499d2f5a4b9a51d1c6"
+      "sha256": "4657697dd4a9d8dff40c26853e0d1b91835cdebbed87b92d266774eb929054d8"
     },
     "captions": {
       "file": "docs/assets/agentflow-promo.vtt",
@@ -114,8 +114,8 @@
     },
     "poster": {
       "file": "docs/assets/agentflow-promo-poster.jpg",
-      "sha256": "7634f0725e98f5175311bce1f4bdf9bf272cbb5cdcae729f4a609575918eea21"
+      "sha256": "a63ec06b7810aed35aefb5e23929b0125b45dc3aaf1c978490f84294afa9f28c"
     },
-    "chrome": "155.0.8059.85"
+    "chrome": "157.0.8103.51"
   }
 }

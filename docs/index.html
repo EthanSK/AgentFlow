@@ -58,19 +58,18 @@
       content with or without JavaScript. script.js only hides and re-reveals these
       existing parts in order (data-at is milliseconds from start); it holds no copy.
       Example text is invented. Never put Ethan's real selections or screenshot paths here.
-      Serialized tags match LiveSelectionReference. This demo deliberately uses
-      a generic selection from TextEdit; Codex keeps its own task-aware tag.
+      This demo deliberately uses a generic selection from TextEdit; a Codex highlight keeps
+      its own task-aware tag in the saved prompt.
       The recorder's typing line shows "Click to type" until the typed name appears; the
-      same typed words close the Codex paste. It matches the promo video's example.
-      The Codex pane mirrors AgentFlowPromptPreview.make in v2.0.477: one plain, editable
+      same typed words close the Codex opening. It matches the promo video's example.
+      The Codex pane mirrors AgentFlowPromptPreview.make in build 513: one plain, editable
       opening (a leading ↗ full-prompt link, every authored word, and inline-code
-      <selection>/<screenshot> markers), never rainbow-coloured. A message this short also
-      gets the canonical timeline appended underneath; at 5,000 UTF-16 units or more the
-      timeline is replaced by the "Read the full prompt before answering." footer link.
-      In Codex that appended timeline colours authored words in a rainbow and references
-      cyan/magenta; this page keeps its two signal colours and does not reproduce the
-      rainbow. Timing attributes are shown as "…" for width; the real output carries
-      start_at/end_at/captured_at values.
+      <selection>/<screenshot> markers), then a separate plain "Read the full prompt before
+      answering." footer with "full prompt" linked to the same local viewer. Every Codex
+      message gets that footer, however short. No timeline, colour or math markup is added
+      to the message; the timeline, with its <app_selection> and <local_screenshot> tags, is
+      only in the viewer and the saved prompt file. The link words use this page's mint, as
+      the ↗ does.
     -->
     <section class="hero" aria-labelledby="hero-title" data-demo-root data-stop-at="3050">
       <div class="wrap">
@@ -78,8 +77,8 @@
           <h1 id="hero-title">Speech to text, with your <span class="g-select">highlights</span> and <span class="g-shot">screenshots</span></h1>
           <div class="hero-aside" id="download">
             <p class="lede">Highlight text or take a screenshot while you talk. Agent Flow pastes your words with each reference near what you were saying, so your agent can see what you were looking at.</p>
-            <p class="actions"><a class="button" href="https://github.com/EthanSK/AgentFlow/releases/download/v2.0.510/AgentFlow-v2.0.510-mac-universal.zip">Download for Mac <span aria-hidden="true">↓</span></a></p>
-            <p class="release-note">v2.0.510 · macOS 14.4+ · Apple silicon and Intel<br>Developer ID signed and Apple notarized.</p>
+            <p class="actions"><a class="button" href="https://github.com/EthanSK/AgentFlow/releases/download/v2.0.513/AgentFlow-v2.0.513-mac-universal.zip">Download for Mac <span aria-hidden="true">↓</span></a></p>
+            <p class="release-note">v2.0.513 · macOS 14.4+ · Apple silicon and Intel<br>Developer ID signed and Apple notarized.</p>
             <p class="source-link"><a href="#build">Build from source</a></p>
           </div>
         </div>
@@ -164,13 +163,7 @@
             <p class="pane-label">Pasted into Codex</p>
             <div class="composer">
               <p class="msg msg-open step" data-at="3300"><span class="prompt-link" aria-hidden="true">↗</span><span class="sr-only">Full prompt link.</span> Rename this function <code class="marker">&lt;selection&gt;</code> and make the empty state look like this. <code class="marker">&lt;screenshot&gt;</code> Call it fetchRows.</p>
-              <div class="timeline">
-                <pre class="msg-xml xml-speech step" data-at="3600"><code><span class="t">&lt;speech</span> <span class="a">…</span><span class="t">&gt;</span>Rename this function<span class="t">&lt;/speech&gt;</span></code></pre>
-                <pre class="msg-xml xml-select step" data-at="3750"><code><span class="t">&lt;app_selection</span> <span class="a">index="1" source="TextEdit" characters="32" middle_omitted="false" truncated="false" bundle_id="com.apple.TextEdit" …</span><span class="t">&gt;&lt;text&gt;</span>func loadRows(from cache: Cache)<span class="t">&lt;/text&gt;&lt;/app_selection&gt;</span></code></pre>
-                <pre class="msg-xml xml-speech step" data-at="3900"><code><span class="t">&lt;speech</span> <span class="a">…</span><span class="t">&gt;</span>and make the empty state look like this.<span class="t">&lt;/speech&gt;</span></code></pre>
-                <pre class="msg-xml xml-shot step" data-at="4050"><code><span class="t">&lt;local_screenshot</span> <span class="a">path="/Users/you/Desktop/Screenshot 2026-09-24 at 10.41.12.png" …</span><span class="t">/&gt;</span></code></pre>
-                <pre class="msg-xml xml-speech step" data-at="4200"><code><span class="t">&lt;typed_text</span> <span class="a">…</span><span class="t">&gt;</span>Call it fetchRows.<span class="t">&lt;/typed_text&gt;</span></code></pre>
-              </div>
+              <p class="msg msg-foot step" data-at="3600">Read the <span class="prompt-link">full prompt</span> before answering.</p>
             </div>
           </div>
 
@@ -179,11 +172,11 @@
             <ul class="facts">
               <li>Live words stay in the recorder until you stop, then paste once.</li>
               <li>In Codex, your words arrive as plain, editable text, with &lt;selection&gt; and &lt;screenshot&gt; markers where you made them. The opening is never colour-styled.</li>
-              <li>A short message adds the full timeline underneath. A longer one ends with a “Read the full prompt” link instead; the ↗ at the start opens the same prompt.</li>
+              <li>Every Codex message ends with “Read the full prompt before answering.” The ↗ at the start opens the same prompt.</li>
               <li>Every full prompt is saved privately on your Mac and opens in a local viewer with your screenshots. Nothing is uploaded, so cloud-only chats can't open it.</li>
               <li>Click the recorder's typing line to add typed words. Enter places them at that point in your speech, Shift+Enter adds a line break, and Command+Enter finishes and sends. The microphone keeps recording.</li>
               <li>Highlights are kept in full, with whitespace intact. Separate highlights stay in order, even without speech between them.</li>
-              <li>Context is pasted only into the Codex, Claude and Telegram desktop apps. Other apps, including browsers and terminals, get your spoken and typed words without tags.</li>
+              <li>Context is pasted only into the Claude and Telegram desktop apps, and linked from Codex messages. Other apps, including browsers and terminals, get your spoken and typed words without tags.</li>
               <li>Saved screenshots add a file path, not an upload. Your agent needs access to that file.</li>
               <li>Placement is approximate: live recognition can revise earlier words.</li>
               <li>Selection capture depends on the app. Highlights are read without pressing Copy; password fields are skipped.</li>
@@ -199,13 +192,15 @@
       It reuses the hero demo's invented example and only states claims this page already
       makes, so re-render it whenever the demo example or those claims change. Speech,
       music and captions share the same timeline; audio starts only after a visitor plays it.
-      promo/scene.html now draws v2.0.458: the recorder on the screen's bottom edge with its
-      Pause control, the plain Codex opening with inline <selection>/<screenshot> markers and
-      the short timeline underneath, and the prompt viewer without a "Your words" copy. The
-      MP4 and poster are redrawn by render.mjs's reuse-audio mode (see promo/README.md), which
-      keeps the published soundtrack packet for packet and the captions byte for byte; their
-      ?v= values were rotated for that redraw, and the captions' value stays. Don't publish
-      this page with the old MP4 still in place: it shows the earlier rainbow opening.
+      promo/scene.html now draws build 513: the recorder on the screen's bottom edge with its
+      Pause control, the plain Codex opening with inline <selection>/<screenshot> markers,
+      the plain "Read the full prompt before answering." footer instead of a timeline, and
+      the prompt viewer without a "Your words" copy. The MP4 and poster are redrawn by
+      render.mjs's reuse-audio mode (see promo/README.md), which keeps the published
+      soundtrack packet for packet and the captions byte for byte; their ?v= values were
+      rotated to 513-file-prompt for that redraw, and the captions' value stays. Don't
+      publish this page before that redraw: the old MP4 shows the build 458 message with
+      the timeline underneath.
       Ethan asked for no visible title, subtitle or transcript here (2026-09-27): the video
       sits in the page like a normal embedded promo. The section keeps id="video" for the
       top navigation and takes its accessible name from aria-label. The captions track
@@ -216,11 +211,11 @@
       <div class="wrap">
         <figure class="promo-video">
           <video controls playsinline preload="metadata" width="1920" height="1080"
-            poster="assets/agentflow-promo-poster.jpg?v=458-plain-opening"
+            poster="assets/agentflow-promo-poster.jpg?v=513-file-prompt"
             aria-label="Agent Flow in use: dictating, highlighting a function, taking a screenshot and typing a name in the recorder, then sending one short message to Codex and opening its full prompt">
-            <source src="assets/agentflow-promo.mp4?v=458-plain-opening" type="video/mp4">
+            <source src="assets/agentflow-promo.mp4?v=513-file-prompt" type="video/mp4">
             <track kind="captions" src="assets/agentflow-promo.vtt?v=963678fc" srclang="en" label="English">
-            <a href="assets/agentflow-promo.mp4?v=458-plain-opening">Agent Flow video (MP4)</a>
+            <a href="assets/agentflow-promo.mp4?v=513-file-prompt">Agent Flow video (MP4)</a>
           </video>
         </figure>
       </div>

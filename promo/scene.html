@@ -33,19 +33,19 @@
     raw-mode, microphone and app icons are left out of this stylized bar.
   - A normal stop pastes into the input focused when the result arrives, so Codex is brought
     forward (focused composer) before the stop. This Codex Mode has auto-send turned on, so
-    the paste is sent as one message. Markdown and colour markup render only once sent, so
-    the composer shows the raw paste for that instant.
-  - The sent message mirrors AgentFlowPromptPreview.make in v2.0.458 for a message this
-    short: a plain, editable opening (a leading ↗ link to the full prompt, every authored
-    word, and `<selection>`/`<screenshot>` as inline code), then the canonical timeline
-    underneath with fixed type colours and rainbow authored words. No footer: "Read the
-    full prompt before answering." replaces the timeline only at 5,000 UTF-16 units or
-    more. Timing attributes are drawn as "…", as on the website. The rainbow starts at
-    palette index 0 here; the app continues it from message to message.
+    the paste is sent as one message. Markdown renders only once sent, so the composer
+    shows the raw paste for that instant.
+  - The sent message mirrors AgentFlowPromptPreview.make in build 513, which treats every
+    Codex message alike, however short: a plain, editable opening (a leading ↗ link to the
+    full prompt, every authored word, and `<selection>`/`<screenshot>` as inline code), then
+    a separate plain "Read the full prompt before answering." footer with "full prompt"
+    linked to the same viewer. No timeline, colour or math markup is added to the message;
+    the timeline lives only in the viewer and the saved prompt.
   - The prompt viewer mirrors AgentFlowPromptViewer.html(): title row with Close, a Source
     link, then one numbered section per event, rainbow authored words, Details folded,
     the screenshot embedded. There is no "Your words" opening or "Full source" copy.
-  - Nothing is uploaded: both links are local files.
+    Its rainbow starts at palette index 0 here.
+  - Nothing is uploaded: every link is a local file.
   - No third-party logos: TextEdit and Codex appear only as plain text labels. The Codex Dock
     icon is a generic glyph.
 -->
@@ -284,8 +284,7 @@
 
   /* The one sent message, in AgentFlowPromptPreview.make's order: the plain editable
      opening (↗ link, every authored word, markers as Codex's ordinary inline code), then
-     the canonical timeline. Only the timeline is coloured: italic tags in fixed type
-     colours, upright payloads, rainbow authored words. */
+     the plain "Read the full prompt before answering." footer. Nothing is coloured. */
   #bubble {
     position: absolute;
     right: 150px;
@@ -318,15 +317,8 @@
     white-space: nowrap;
   }
 
-  #bubbleTimeline {
-    margin-top: 26px;
-    font-size: 22px;
-    line-height: 1.45;
-    overflow-wrap: anywhere;
-  }
-
-  #bubbleTimeline p + p { margin-top: 12px; }
-  .tag { font-style: italic; }
+  /* The footer is a separate paragraph, as Codex renders it. */
+  #bubble p + p { margin-top: 22px; }
 
   #composer {
     position: absolute;
@@ -339,8 +331,8 @@
     background: #242428;
   }
 
-  /* The raw paste, for the instant before auto-send: Markdown and colour markup only
-     render once the message is sent. */
+  /* The raw paste, for the instant before auto-send: Markdown only renders once the
+     message is sent. */
   #composerRaw {
     position: absolute;
     left: 34px;
@@ -917,7 +909,7 @@
 
       <div class="window dark" id="codex">
         <div class="titlebar"><span class="lights"><i></i><i></i><i></i></span>Codex</div>
-        <div id="bubble"><p id="bubbleOpen"><a id="bubbleLink">↗</a></p><div id="bubbleTimeline"></div></div>
+        <div id="bubble"><p id="bubbleOpen"><a id="bubbleLink">↗</a></p><p id="bubbleFooter">Read the <a>full prompt</a> before answering.</p></div>
         <div id="composer">
           <span class="caret" id="emptyCaret"></span>
           <div id="composerRaw"></div>
@@ -1073,8 +1065,8 @@
   // AgentFlowPromptArchive: ~/Library/Application Support/AgentFlow/Prompts/prompt-<record
   // ID>-<file ID>.html, percent-encoded as the message's link target. IDs are invented.
   const VIEWER_PATH = "/Users/you/Library/Application%20Support/AgentFlow/Prompts/prompt-5d2a9c4e-1b7f-4e3a-9c08-6f2d8b1a7e45-0b9e3f71-c4d2-4a86-b5e1-2f7c9d0a6b38.html";
-  // AuthoredTextRainbow.palette, one colour per authored word; tags and references keep their
-  // section colours from LiveSelectionStyledMath. The message's opening is never coloured.
+  // AuthoredTextRainbow.palette, one colour per authored word in the prompt viewer; sections
+  // keep their colours from LiveSelectionStyledMath. The Codex message is never coloured.
   const RAINBOW = [
     "#fa7070", "#fa9370", "#fab570", "#fad870", "#fafa70", "#d8fa70",
     "#b5fa70", "#93fa70", "#70fa70", "#70fa93", "#70fab5", "#70fad8",
@@ -1119,10 +1111,10 @@
       return { ...part, el };
     });
 
-    // Codex's sent message, as AgentFlowPromptPreview.make builds it for a message this
-    // short. The opening stays plain and editable: the ↗ full-prompt link (in the markup,
-    // restored by Ethan because a queued message shows only its first line), every authored
-    // word, and the markers as Markdown inline code.
+    // Codex's sent message, as AgentFlowPromptPreview.make builds it at every length. The
+    // opening stays plain and editable: the ↗ full-prompt link (in the markup, restored by
+    // Ethan because a queued message shows only its first line), every authored word, and
+    // the markers as Markdown inline code. The footer is static markup; no timeline follows.
     const bubbleOpen = $("bubbleOpen");
     const openTokens = [
       ...SEG.dictate1.text.split(/\s+/),
@@ -1142,49 +1134,14 @@
         bubbleOpen.appendChild(code);
       }
     }
-    // Then the canonical timeline (coloredInlineTimeline): metadata tags italic in their
-    // type's fixed colour, the selected text upright cyan, authored words in the rainbow.
-    // Different section types are separate paragraphs. Timing attributes are drawn as "…".
-    const timelineBox = $("bubbleTimeline");
-    let messageRainbow = 0;
-    const run = (p, text, color, italic) => {
-      const span = document.createElement("span");
-      span.textContent = text;
-      span.style.color = color;
-      if (italic) span.className = "tag";
-      p.appendChild(span);
-    };
-    const authoredRun = (p, text) => text.split(/\s+/).forEach((word, i) => {
-      if (i) p.appendChild(document.createTextNode(" "));
-      run(p, word, RAINBOW[messageRainbow++ % RAINBOW.length], false);
-    });
-    const block = (build) => {
-      const p = document.createElement("p");
-      build(p);
-      timelineBox.appendChild(p);
-    };
-    const authoredBlock = (tag, color, text) => block((p) => {
-      run(p, `<${tag} …>`, color, true);
-      authoredRun(p, text);
-      run(p, `</${tag}>`, color, true);
-    });
-    authoredBlock("speech", COLOR.speech, SEG.dictate1.text);
-    block((p) => {
-      run(p, `<app_selection index="1" source="TextEdit" characters="${SELECTED.length}" middle_omitted="false" truncated="false" bundle_id="com.apple.TextEdit" …><text>`, COLOR.selection, true);
-      run(p, SELECTED, COLOR.selection, false);
-      run(p, "</text></app_selection>", COLOR.selection, true);
-    });
-    authoredBlock("speech", COLOR.speech, SEG.dictate2.text);
-    block((p) => run(p, `<local_screenshot path="${SHOT_PATH}" …/>`, COLOR.screenshot, true));
-    authoredBlock("typed_text", COLOR.typed, P.typed);
     // What the composer holds for an instant: the raw paste, beginning with the opening
     // link's Markdown. Its percent-encoded target is the viewer saved beside the prompt
     // archive; like the screenshot path, the file name's two IDs are invented.
     $("composerRaw").textContent = `[↗](${VIEWER_PATH}) ${SEG.dictate1.text} \`<selection>\` ${SEG.dictate2.text} \`<screenshot>\` ${P.typed}`;
 
     // The prompt viewer: one numbered section per event, in capture order. No opening copy
-    // of the words above them. Authored words continue the message's rainbow from the
-    // same reserved start (the viewer's agent-flow-rainbow-start).
+    // of the words above them. Authored words take the rainbow from the viewer's reserved
+    // start (agent-flow-rainbow-start), drawn here from palette index 0.
     const events = [
       { label: "Speech", color: COLOR.speech, text: SEG.dictate1.text, authored: true },
       { label: "Selection", color: COLOR.selection, app: "TextEdit", text: SELECTED, open: true, rows: [
@@ -1550,7 +1507,7 @@
     show($("codex"), prog(t, M.dockClick + 0.05, M.dockClick + 0.25), `scale(${lerp(0.12, 1, open).toFixed(4)})`);
 
     // One paste. The composer shows it raw for an instant, auto-send sends it, and Codex
-    // renders one message: the plain opening with its ↗ link and markers, then the timeline.
+    // renders one message: the plain opening with its ↗ link and markers, then the footer.
     const blink = (from) => (t >= from && Math.floor((t - from) / 0.53) % 2 === 0 ? "1" : "0");
     const rawShown = t >= M.pasteLand && t < M.sendAt;
     show($("composerRaw"), rawShown ? prog(t, M.pasteLand, M.pasteLand + 0.08) : 0);

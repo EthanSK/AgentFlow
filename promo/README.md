@@ -96,7 +96,7 @@ node render.mjs --reuse-audio --work "$W"                               # publis
 - A preview (`--out`) writes `<name>.mp4`, `.vtt`, `-poster.jpg` and `.receipt.json` beside it.
   Without `--out`, the video and poster in `docs/assets` are replaced, the captions are left
   as they are, and `promo/published-video.json` is updated. Needs ffmpeg/ffprobe 4.4 or later.
-- `docs/index.html` already asks for the video and poster as `?v=458-plain-opening` for this
+- `docs/index.html` already asks for the video and poster as `?v=513-file-prompt` for this
   redraw; the captions keep their query because they don't change. A later re-render needs a new
   value there, and that is a website change (Opus-authored, see `AGENTS.md`).
 
@@ -135,16 +135,17 @@ Flow's prompt viewer under "…so your agent can see what you were looking at."
   controls, mint waveform), not a pixel copy of the app. Like the native panel since build 457,
   its bottom edge sits on the screen's bottom edge. Codex appears only as a plain text label,
   with no logo.
-- After the stop, Codex's message and the prompt viewer mirror `AgentFlowPromptPreview.make`
-  and `AgentFlowPromptViewer.html` in v2.0.458. The opening is plain and editable: a `↗` link to
-  the full prompt, every authored word, and `<selection>`/`<screenshot>` as inline code. A
-  message this short then gets the canonical timeline underneath (italic tags in fixed colours,
-  rainbow authored words); only a message of 5,000 UTF-16 units or more ends with the
-  `Read the full prompt before answering.` link instead. The viewer has no "Your words" or
-  "Full source" copy. Timing attributes in the message are drawn as `…`, as on the website.
-  The Codex Mode shown has auto-send on, so the raw paste is visible for an instant before it
-  renders. Both links are local files; nothing is uploaded.
-- The published MP4 must be re-rendered from this scene (`--reuse-audio` keeps its soundtrack)
-  before it represents v2.0.458; until then it shows the earlier rainbow opening.
+- After the stop, Codex's message mirrors `AgentFlowPromptPreview.make` in build 513, which
+  treats every Codex message alike, however short, and the prompt viewer mirrors
+  `AgentFlowPromptViewer.html`. The message is plain and editable: a `↗` link to the full
+  prompt, every authored word, and `<selection>`/`<screenshot>` as inline code, then a
+  separate plain `Read the full prompt before answering.` footer with `full prompt` linked
+  to the same viewer. No timeline, colour or math markup is added to the message. The viewer
+  has no "Your words" or "Full source" copy. The Codex Mode shown has auto-send on, so the
+  raw paste is visible for an instant before it renders. Every link is a local file; nothing
+  is uploaded.
+- The published MP4 and poster must be redrawn from this scene (`--reuse-audio` keeps the
+  soundtrack) before they represent build 513; until then they show the build 458 message
+  with the timeline underneath.
 - When the site's demo or those claims change, update `narration.json` and the scene to match,
   then re-render.
