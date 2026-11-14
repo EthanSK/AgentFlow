@@ -13,9 +13,9 @@ The build513 footer also removes the surviving green TeX wrappers: always-file
 Codex delivery still exposed literal commands if the footer itself used math.
 Both links and the exact reminder wording remain ordinary Markdown.
 
-The local513 first launch placed the main window on the physical built-in screen
+The local build513 first launch placed the main window on the physical built-in screen
 while remaining inactive/unhidden. The canonical Mini release gate on exact
-source `d402165f` passed all960 named tests in45 suites, including the screen-count,
+source `d402165f` passed all 960 named tests in 45 suites, including the screen-count,
 physical-display and minimum-size cases. The first gate exposed a stale long-message
 test suffix that still expected TeX; its replacement asserts the complete plain
 footer and no math while preserving the all-authored-words checks. Runtime source
@@ -69,7 +69,7 @@ Start/Stop asymmetry; it does not prove the shortcut changed the audio. Mic's
 existing one-paired-attempt path still posted. The exact failed request is not
 retried on subsequent activation of that same process.
 
-After the macOS27.2.1 reboot, the unchanged511 binary still received the unsupported
+After the macOS 27.2.1 reboot, the unchanged build511 binary still received the unsupported
 request result, but two natural Start/Stop cycles found live Voice controls and
 posted both microphone and speaker shortcut pairs without truncation. Ethan
 confirmed that Start now muted both channels. This is qualified human Start
