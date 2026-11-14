@@ -1228,8 +1228,9 @@ struct RecorderTypedInputTests {
             if !text.isEmpty { #expect(archivedPrompts[0].contains(text)) }
             if !raw && !text.isEmpty {
                 #expect(output.messages[0].hasPrefix("[↗]("))
-                #expect(output.messages[0] == "[↗](/tmp/test-prompt.md) Submit typed words")
-                #expect(!output.messages[0].contains("[\(AgentFlowPromptPreview.fullPromptLinkLabel)]"))
+                #expect(output.messages[0] == "[↗](/tmp/test-prompt.md) Submit typed words\n\n"
+                    + AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/test-prompt.md"))
+                #expect(output.messages[0].contains("[\(AgentFlowPromptPreview.fullPromptLinkLabel)]"))
                 #expect(!output.messages[0].contains("start_at"))
                 #expect(record.text.contains("start_at"))
                 #expect(!record.text.contains("[full prompt]"))
@@ -1393,7 +1394,7 @@ struct RecorderTypedInputTests {
         let speech = "Speech before selection and after it"
         let result = try await clipboardPipelineFixture(typed: typed, speech: speech, lateShift: true)
         #expect(result.message.hasPrefix("[↗]("))
-        #expect(!result.message.contains("[\(AgentFlowPromptPreview.fullPromptLinkLabel)]"))
+        #expect(result.message.contains("[\(AgentFlowPromptPreview.fullPromptLinkLabel)]"))
         #expect(result.message.contains(typed) && result.archive.contains(typed))
         #expect(result.archive.contains("Selected exact content &amp; metadata"))
         // History stores the styled canonical message, whose adjacent LaTeX
@@ -1430,7 +1431,7 @@ struct RecorderTypedInputTests {
         }
     }
 
-    @Test @MainActor func updatedUnifiedCodexHostIncludesCompleteShortPlainContextInline() async throws {
+    @Test @MainActor func updatedUnifiedCodexHostAlwaysRequiresItsCompletePromptFile() async throws {
         for (version, build) in [("26.928.20755", "12246"), ("26.928.31416", "12553"),
                                  ("future-host-version", "future-build")] {
             try await assertUnifiedCodexInlinePrompt(version: version, build: build)
@@ -1449,14 +1450,16 @@ struct RecorderTypedInputTests {
         #expect(opening.contains("Editable typed words") && opening.contains("Speech before"))
         #expect(opening.contains("`<selection>`") && opening.contains("`<screenshot>`"))
         #expect(!opening.contains("<codex_selection") && !opening.contains("<speech "))
-        #expect(HistoryContextPresentation.document(result.message).plainText.hasSuffix("\n\n" + AgentFlowPromptPreview.compactTimeline(result.archive)))
+        #expect(result.message.hasSuffix(AgentFlowPromptPreview.fullPromptPointer(target: result.link)))
         #expect(!result.message.contains(AgentFlowPromptArchive.interpretationReminder))
         #expect(result.message.utf16.count < 5_000)
-        #expect(!result.message.contains("[full prompt]"))
-        #expect(result.message.contains("\\color{#67e8f9}"))
+        #expect(result.message.contains("[full prompt]"))
+        #expect(!result.message.contains("\\color{#67e8f9}"))
         let readable = HistoryContextPresentation.document(result.message).plainText
-        #expect(readable.contains("start_at=") && readable.contains("Selected exact content &amp; metadata"))
-        #expect(readable.contains("<codex_selection") && readable.contains("<local_screenshot"))
+        #expect(!readable.contains("start_at=") && !readable.contains("Selected exact content &amp; metadata"))
+        #expect(!readable.contains("<codex_selection") && !readable.contains("<local_screenshot"))
+        #expect(result.archive.contains("start_at=") && result.archive.contains("Selected exact content &amp; metadata"))
+        #expect(result.archive.contains("<codex_selection") && result.archive.contains("<local_screenshot"))
         let copied = try await clipboardPipelineFixture(typed: "Editable typed words",
             speech: "Speech before selection and after it", styled: true, recipientOverride: host)
         #expect(HistoryContextPresentation.document(result.message).plainText.replacingOccurrences(of: result.link, with: "PROMPT")
@@ -1496,12 +1499,12 @@ struct RecorderTypedInputTests {
             let result = try await clipboardPipelineFixture(clipboardOnly: false,
                 typed: typed, speech: speech, styled: true, recipientOverride: host)
             let compact = bundleID == "com.openai.codex"
-            #expect(!result.message.contains("[full prompt]"))
+            #expect(result.message.contains("[full prompt]") == compact)
             #expect(result.message.hasPrefix("[↗](") == compact)
             if compact {
                 let opening = result.message.components(separatedBy: "\n\n")[0]
                 #expect(opening.contains("Every typed word") && !opening.contains("<typed_text "))
-                #expect(HistoryContextPresentation.document(result.message).plainText.hasSuffix("\n\n" + AgentFlowPromptPreview.compactTimeline(result.archive)))
+                #expect(result.message.hasSuffix(AgentFlowPromptPreview.fullPromptPointer(target: result.link)))
                 #expect(!result.message.contains(AgentFlowPromptArchive.interpretationReminder))
             } else {
                 #expect(HistoryContextPresentation.document(result.message).plainText.contains("Selected exact content"))
@@ -1566,17 +1569,17 @@ struct RecorderTypedInputTests {
             for speech in ["", "spoken before source app switch"] {
                 let copied = try await clipboardPipelineFixture(typed: "typed after source app switch",
                     speech: speech, recipient: recipient)
-                #expect(!copied.message.contains("[\(AgentFlowPromptPreview.fullPromptLinkLabel)]"))
+                #expect(copied.message.contains("[\(AgentFlowPromptPreview.fullPromptLinkLabel)]"))
                 // Clipboard-only must reuse the same editable Codex preview,
                 // even if another app owns focus when the session finishes.
                 #expect(!copied.message.components(separatedBy: "\n\n")[0].contains("\\color{"))
-                #expect(copied.message.contains("\\color{#67e8f9}"))
+                #expect(!copied.message.contains("\\color{#67e8f9}"))
                 #expect(copied.message.contains("typed after source app switch"))
                 #expect(copied.archive.contains("typed after source app switch"))
                 let opening = copied.message.components(separatedBy: "\n\n")[0]
                 #expect(opening.contains("typed after source app switch"))
                 #expect(opening.contains("`<selection>`") && opening.contains("`<screenshot>`"))
-                #expect(HistoryContextPresentation.document(copied.message).plainText.hasSuffix("\n\n" + AgentFlowPromptPreview.compactTimeline(copied.archive)))
+                #expect(copied.message.hasSuffix(AgentFlowPromptPreview.fullPromptPointer(target: copied.link)))
                 #expect(!copied.message.contains(AgentFlowPromptArchive.interpretationReminder))
             }
         }
@@ -1601,7 +1604,7 @@ struct RecorderTypedInputTests {
                 let result = try await clipboardPipelineFixture(typed: "Every editable typed word",
                     speech: speech, lateShift: true, lateShiftStage: stage)
                 #expect(result.message.contains("Every editable typed word"))
-                #expect(!result.message.contains("[full prompt]"))
+                #expect(result.message.contains("[full prompt]"))
                 #expect(result.archive.contains("Selected exact content"))
                 #expect(result.archive.contains("start_at=") && !result.link.isEmpty)
                 #expect(HistoryContextPresentation.document(result.history).plainText.contains("Every editable typed word"))

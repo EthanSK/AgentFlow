@@ -1,5 +1,69 @@
 # Learnings
 
+## 2026-11-14 — Every Codex message requires its full prompt file
+
+Ethan explicitly superseded the short inline threshold after Codex began showing
+plain sent messages literally: “always do read the prompts, not have the minimum”.
+The Codex preview now always retains the editable authored opening, angular
+context markers, first-line link and full-prompt footer, including short and
+pure speech/typing prompts. It no longer allocates or appends the styled XML
+candidate at any size. The existing durable archive, viewer, response-preferences
+snapshot callback and normal/clipboard-only parity remain in use. Inline-only
+recipients such as Telegram/Claude and raw/skip output remain independent.
+This is presentation only: it changes neither Primary/Next targeting nor paste,
+Return timing, provider input, microphone, Voice control or session ownership.
+
+The preceding exact511 full canonical Mini run executed958 tests/45 suites and
+reported one failure in the existing parked-child readiness fixture: its Python
+child did not publish the ready marker within ten seconds. All eight new Voice
+preparation/diagnostic cases and the Primary/Next/HUD-only guards passed. An
+unchanged exact-source focused canonical repeat passed that fixture in1.274s;
+this does not turn the failed full run into a release pass. One other passing
+test name was split by an OS log. Both raw logs remain retained; do not claim a
+complete511 public gate or relax the product timing/one-shot Voice safeguards.
+
+
+## 2026-11-14 — Disposable Electron exposure does not prove live Codex support
+
+Ethan explicitly allowed a scoped Codex Voice `AXManualAccessibility=true`
+request. On the Mini, one successful request exposed a fresh visible-but-background
+VS Code web area after about 2.06 seconds without changing the foreground app.
+A hidden fixture stayed at its native shell after six seconds. A first fixture
+setup failed before any AX request because its Unix socket path exceeded 103
+characters; shortening only the disposable profile path fixed that setup.
+
+Build511 moves the request ahead of recording, once per exact host process birth
+on startup/launch/activation, with a configured speaker binding as opt-in. The
+request is off the main thread, skips test hosts, never toggles off or retries,
+and adds no recording delay, polling, focus or audio action. Its diagnostics
+separate microphone, End, speaker and disabled-speaker controls.
+
+The actual installed request returned `-25205` (`attributeUnsupported`) on the
+current ChatGPT desktop host. A later real capture saw one AX node and no live
+Voice control, so the speaker shortcut was skipped. Another capture found End
+after315 nodes, posted one unreadable-state silence attempt, then Stop expired
+after40 nodes with no live control and refused restoration. This reproduces the
+Start/Stop asymmetry; it does not prove the shortcut changed the audio. Mic's
+existing one-paired-attempt path still posted. The exact failed request is not
+retried on subsequent activation of that same process.
+
+The requested Claude execution chat actually called Computer Use on ChatGPT,
+but the tool refused `com.openai.codex`; a Claude model in this Codex harness has
+the same tool restriction. No custom live AX probe, focus action, private API or
+input injection was used to bypass it. H Chat's existing explicit audio-command
+reader uses a two-second budget and conditional focus recovery, which are not
+approved recording-start behavior.
+
+The ordinary universal Release511 source `0a321aa0` was built on the Mini and
+installed before full testing/public qualification, honoring the local-first
+policy. Stable Developer ID signing, Automation/audio entitlements, rollback,
+five-second warning, app-owned readiness and cooperative exit were preserved.
+The installed executable's CDHash is `4008c6a29aafd59016abd13de73a1752eb3769cd`.
+Microphone preferences, keybindings, paired settings and official VoiceInk were
+unchanged. This is an installed trial, not a completed speaker repair or public
+release. Evidence: `Documents/Codex/2026-11-14/agentflow-mic-session/` receipts,
+`run511-controls.log`, `ax511-fixture-results.json` and `claude-cua510-report.md`.
+
 
 ## 2026-11-14 — Local installation is separate from public qualification
 

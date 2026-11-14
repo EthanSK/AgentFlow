@@ -270,8 +270,8 @@ class TranscriptionPipeline {
             // provider only saw a compact HUD preview, not these full texts.
             // Screenshot pixels are not sent by this path. This remains
             // one final delivery, never a streaming composer edit. Local Codex
-            // gets the complete short timeline or a compact long preview with a
-            // durable file link in ONE paste;
+            // always gets the editable compact preview and required durable
+            // file link in ONE paste, including short and authored-only prompts;
             // the failed attachment-plus-opening mechanism is deliberately retired.
             // Keep raw/skip authored prose verbatim. Source references still do
             // not enter commands or recorder-assistant responses.
@@ -319,8 +319,9 @@ class TranscriptionPipeline {
                         rainbowStartIndex: rainbowStart,
                         onFullPromptLink: { showsFullPromptLink = true }
                     )
-                    // The leading arrow is also present on short messages.
-                    // Only the explicit full-prompt footer authorizes the copy.
+                    // Every successful Codex preview now includes this footer.
+                    // Its explicit read instruction authorizes the cached copy;
+                    // archive failure must still avoid claiming a valid file.
                     if showsFullPromptLink, let completePromptText {
                         await AgentFlowPromptArchive.includeResponsePreferences(in: compactArchive,
                             authoredPrompt: completePromptText)

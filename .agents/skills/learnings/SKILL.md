@@ -500,27 +500,20 @@ apostrophes — 2026-09-27; see LEARNINGS.md, “Compact metadata needs a bounda
 For default compact file-linked prompts, persist the complete canonical message before
 publishing its link, with a private directory and exclusive, synced, owner-only
 files. Never auto-expire them or replace full History/Copy recovery with a preview.
-For short local-Codex context messages, preserve the same plain editable opening
-and interleaved angular markers first, then append the exact cached canonical
-timeline underneath only when the whole paste is below 5,000 UTF-16 units. Count
-the encoded link, editable opening, paragraph separator and timeline together;
-authored words appear in both. Never replace the opening with XML or prepend a
-read-skill reminder. Do not embed the skill or reread the newly written archive.
-At 5,000 or more, retain the compact opening and its full-prompt footer. Agent
-interpretation guidance already available in a chat can be reused; it does not
-require rereading the skill every message. User correction — 2026-10-08.
-User-requested inline short prompts — 2026-10-08; see `AgentFlowPromptArchiveTests`
-and LEARNINGS.md, “A paste-event limit is not a same-draft attachment limit”. Ethan restored that
-link because queued messages hide the footer; never remove it as duplication.
-Only compact previews with hidden context include the
-separate `Read the full prompt before answering.` footer; pure speech/typing is
-already complete inline and omits the mandatory read. Retain the optional opening
-link either way. Decide from structural section tags, not authored mentions of
-captures; preserve possible TTS-overlap metadata and fail closed for unknown
-context types. When needed, the footer points to the same viewer with a literal
-`full prompt` label and no math commands. Preserve manual-paste parity.
-User-requested conditional footer — 2026-10-07; link restoration and inline angular markers
-— 2026-09-29/30; supersedes the 2026-09-28 opening-link removal.
+Every local-Codex prompt now uses the plain editable opening, inline angular
+markers, first-line archive link and separate `Read the full prompt before
+answering.` footer. Never append styled XML to its bubble, including short and
+pure speech/typing messages; no length threshold selects an inline timeline.
+Keep all authored words and both encoded viewer targets. The canonical file
+retains every timeline event and the existing response-preferences snapshot
+policy. Do not reread that newly written archive during preparation. Agent
+interpretation guidance already known in a chat can still be reused without
+rereading the skill each message. Preserve normal/manual-paste parity and the
+independent inline recipients, raw/skip modes and complete History/Copy recovery.
+User-requested — 2026-11-14: Codex's plain sent-message display exposed the LaTeX;
+“always do read the prompts, not have the minimum”. This supersedes the October
+short-inline threshold and conditional authored-only footer, not archive safety
+or the first-line link restored for queued messages.
 The optional offline HTML companion parses canonical XML into coloured sections;
 metadata stays in disclosures, but there is no second embedded Full source copy.
 The human-facing link uses that
@@ -775,6 +768,13 @@ posted shortcut distinct from an observed mute, and discard a failed restore rat
 than letting a later recording inherit it. See the 2026-11-13 and 2026-11-14 Voice
 entries in `LEARNINGS.md`. Self-improved — 2026-11-14: the newer call-scoped
 integration and regression fixtures supersede the earlier speaker-extension gate.
+
+Before changing Codex Voice control exposure or diagnosing alternating speaker
+Start/Stop reads, read [references/codex-voice-accessibility.md](references/codex-voice-accessibility.md).
+The approved request is scoped separately from VS Code selection capture; its
+success on disposable Electron does not establish support in the live Codex host.
+Self-improved — 2026-11-14: the installed request returned an unsupported attribute
+and actual capture still missed restoration.
 
 For explicitly configured paired-Mac Voice mute, read [PAIRED_VOICE_MUTE.md](../../../PAIRED_VOICE_MUTE.md)
 before changing the transport, receiver, ownership or setup. Ethan requested generic configured-device

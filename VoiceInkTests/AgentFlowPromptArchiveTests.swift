@@ -149,8 +149,8 @@ struct AgentFlowPromptArchiveTests {
         let selection = AgentFlowPromptPreview.Section(tag: "selection", text: "", color: "#67e8f9")
 
         for (timeline, sections, wantsFooter) in [
-            ("<typed_text>Short prompt</typed_text>", [], false),
-            ("<app_selection><text>Short quote</text></app_selection>", [selection], false),
+            ("<typed_text>Short prompt</typed_text>", [], true),
+            ("<app_selection><text>Short quote</text></app_selection>", [selection], true),
             ("<app_selection><text>" + String(repeating: "A long quote. ", count: 600)
                 + "</text></app_selection>", [selection], true)
         ] {
@@ -275,50 +275,51 @@ struct AgentFlowPromptArchiveTests {
         }
     }
 
-    @Test func shortInlinePromptPreservesExactCanonicalContextWithoutFileRead() throws {
+    @Test func shortPromptAlwaysLinksTheCompleteDurableContext() throws {
         let canonical = "<speech start_at=\"1.000\">before</speech>\n" +
             "<app_selection source=\"Code\" captured_at=\"2.000\"><text>  exact &amp; quote\nnext  </text></app_selection>\n" +
             "<local_screenshot path=\"/tmp/image.png\" captured_at=\"3.000\"/>\n" +
             "<potential_tts>possible unrelated speech</potential_tts>\n<typed_text>after</typed_text>"
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = try AgentFlowPromptArchive.write(canonical, recordID: UUID(), directory: root)
+        var readInstructions = 0
         let preview = try #require(AgentFlowPromptPreview.make(authoredText: "before after", sections: [
             .init(tag: "speech", text: "before", color: "#f1f5f9"),
             .init(tag: "selection", text: "compact omitted quote", color: "#67e8f9"),
             .init(tag: "screenshot", text: "image.png", color: "#e879f9"),
             .init(tag: "typed_text", text: "after", color: "#f4f4f5")
-        ], fileURL: URL(fileURLWithPath: "/tmp/never-created.md"), completePromptText: canonical))
-        #expect(preview == "[↗](/tmp/never-created.md) before `<selection>` `<screenshot>` after\n\n\n" + AgentFlowPromptPreview.coloredInlineTimeline(canonical))
+        ], fileURL: file, completePromptText: canonical, onFullPromptLink: { readInstructions += 1 }))
+        #expect(readInstructions == 1)
+        #expect(preview.contains("before `<selection>` `<screenshot>` after\n\n"))
         #expect(!preview.contains(AgentFlowPromptArchive.interpretationReminder))
         #expect(preview.utf16.count < 5_000)
-        #expect(!preview.contains("[full prompt]"))
-        #expect(preview.contains("\\color{#67e8f9}"))
-        #expect(HistoryContextPresentation.document(preview).plainText.hasSuffix(AgentFlowPromptPreview.compactTimeline(canonical)))
+        #expect(preview.contains("[full prompt]"))
+        #expect(!preview.contains("\\color{#67e8f9}") && !preview.contains("exact &amp; quote"))
+        #expect(try String(contentsOf: file, encoding: .utf8) == AgentFlowPromptArchive.interpretationReminder + canonical)
     }
 
-    @Test func inlinePasteBudgetCountsEditableOpeningLinksAndUTF16AtExactBoundary() throws {
+    @Test func allContextLengthsUseTheSameEncodedFilePointer() throws {
         let file = URL(fileURLWithPath: "/tmp/full (😀) prompt.md")
         let viewer = URL(fileURLWithPath: "/tmp/full (😀) prompt.html")
         let encoded = "/tmp/full%20%28%F0%9F%98%80%29%20prompt.html"
-        let prefix = "[↗](\(encoded)) keep these words `<selection>`\n\n\n"
+        let expected = "[↗](\(encoded)) keep these words `<selection>`\n\n"
+            + AgentFlowPromptPreview.fullPromptPointer(target: encoded)
         let sections = [AgentFlowPromptPreview.Section(tag: "speech", text: "keep these words", color: "#f1f5f9"),
                         AgentFlowPromptPreview.Section(tag: "selection", text: "hidden", color: "#67e8f9")]
-        for length in [4_999, 5_000, 5_001] {
-            // Emoji and combining characters must use the same length as JS,
-            // not Swift's grapheme count; include their real serialized bytes.
+        for length in [1, 4_999, 5_000, 5_001, 50_000] {
+            // The old UTF-16 attachment threshold must no longer choose whether
+            // context stays in the bubble. Unicode paths still round-trip.
             let section = "<app_selection><text>selected</text></app_selection>"
             let end = "\n😀e\u{301}"
-            let padding = length - (prefix + AgentFlowPromptPreview.coloredInlineTimeline(section) + end).utf16.count
-            let canonical = section + end + String(repeating: "x", count: padding)
+            let canonical = section + end + String(repeating: "x", count: length)
+            var readInstructions = 0
             let preview = try #require(AgentFlowPromptPreview.make(authoredText: "", sections: sections,
-                fileURL: file, viewerURL: viewer, completePromptText: canonical))
-            if length < 5_000 {
-                #expect(preview == prefix + AgentFlowPromptPreview.coloredInlineTimeline(canonical))
-                #expect(preview.utf16.count == length)
-            } else {
-                #expect(!preview.contains(canonical))
-                #expect(preview.contains("`<selection>`"))
-                #expect(preview.hasSuffix(AgentFlowPromptPreview.fullPromptPointer(target: encoded)))
-                #expect(!preview.components(separatedBy: "\n\n")[0].contains("\\color{"))
-            }
+                fileURL: file, viewerURL: viewer, completePromptText: canonical,
+                onFullPromptLink: { readInstructions += 1 }))
+            #expect(readInstructions == 1)
+            #expect(preview == expected)
+            #expect(!preview.contains(canonical))
         }
     }
 
@@ -368,8 +369,9 @@ struct AgentFlowPromptArchiveTests {
             .init(tag: "selection", text: "quoted", color: "#67e8f9"),
             .init(tag: "typed_text", text: "three", color: "#fff")
         ], fileURL: URL(fileURLWithPath: "/tmp/full.md"), completePromptText: source, rainbowStartIndex: 23))
-        #expect(!preview.components(separatedBy: "\n\n\n")[0].contains("\\color"))
-        #expect(preview.hasSuffix(colored))
+        #expect(!preview.components(separatedBy: "\n\n")[0].contains("\\color"))
+        #expect(preview.hasSuffix(AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/full.md")))
+        #expect(!preview.contains(colored))
     }
 
     @Test func duplicatedAuthoredOpeningCanRequireTheArchiveEvenWhenTimelineAloneFits() throws {
@@ -387,11 +389,11 @@ struct AgentFlowPromptArchiveTests {
         #expect(preview.utf16.count < 5_000)
     }
 
-    @Test func inlineContextBudgetDoesNotChangeAuthoredOnlyOrMissingCanonicalFallback() throws {
+    @Test func authoredOnlyAndMissingCanonicalPromptsStillRequireTheFileRead() throws {
         let file = URL(fileURLWithPath: "/tmp/full.md")
         let plain = try #require(AgentFlowPromptPreview.make(authoredText: "editable words", sections: [],
             fileURL: file, completePromptText: "<speech>editable words</speech>"))
-        #expect(plain == "[↗](/tmp/full.md) editable words")
+        #expect(plain == "[↗](/tmp/full.md) editable words\n\n" + AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/full.md"))
         for canonical in [nil, " \n\t", String(repeating: "large context ", count: 500)] {
             let result = try #require(AgentFlowPromptPreview.make(authoredText: "", sections: [
                 .init(tag: "unknown_context", text: "private", color: "#67e8f9"),
@@ -438,12 +440,12 @@ struct AgentFlowPromptArchiveTests {
         let firstTail = try #require(preview.range(of: "word1000"))
         let lastHead = try #require(preview.range(of: "word999"))
         #expect(lastHead.lowerBound < firstTail.lowerBound)
-        // Even one huge unbroken word survives without a needless full-file read.
+        // Even one huge unbroken word survives; the file read remains required.
         let huge = String(repeating: "z", count: 70_000)
         let hugePreview = try #require(AgentFlowPromptPreview.make(authoredText: huge, sections: [],
             fileURL: URL(fileURLWithPath: "/tmp/full.md")))
         #expect(hugePreview.filter { $0 == "z" }.count == huge.count)
-        #expect(!hugePreview.contains("…") && !hugePreview.contains("before answering."))
+        #expect(!hugePreview.contains("…") && hugePreview.contains("before answering."))
         #expect(hugePreview.hasPrefix("[↗](/tmp/full.md) "))
     }
 
@@ -480,7 +482,7 @@ struct AgentFlowPromptArchiveTests {
         #expect(LiveSelectionReference.compactPromptSections([typed], with: "spoken").map(\.tag) == ["typed_text", "speech"])
         let preview = try #require(AgentFlowPromptPreview.make(authoredText: "typed", sections: [],
             fileURL: URL(fileURLWithPath: "/tmp/full.md")))
-        #expect(preview == "[↗](/tmp/full.md) typed")
+        #expect(preview == "[↗](/tmp/full.md) typed\n\n" + AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/full.md"))
         #expect(!preview.contains("start_at"))
     }
 
@@ -544,8 +546,8 @@ struct AgentFlowPromptArchiveTests {
         let viewer = try #require(AgentFlowPromptArchive.viewerURL(for: file))
         let preview = try #require(AgentFlowPromptPreview.make(authoredText: "my request", sections: [], fileURL: file, viewerURL: viewer))
         #expect(preview.hasPrefix("[↗](\(viewer.path)) "))
-        #expect(preview.components(separatedBy: viewer.path).count == 2)
-        #expect(preview == "[↗](\(viewer.path)) my request")
+        #expect(preview.components(separatedBy: viewer.path).count == 3)
+        #expect(preview == "[↗](\(viewer.path)) my request\n\n" + AgentFlowPromptPreview.fullPromptPointer(target: viewer.path))
         let html = try String(contentsOf: viewer, encoding: .utf8)
         #expect(html.contains("class=\"event authored\""))
         #expect(html.contains("class=\"rainbow-word\""))
@@ -757,7 +759,7 @@ struct AgentFlowPromptArchiveTests {
         let decoded = try #require(target.removingPercentEncoding)
         #expect(decoded == file.path)
         #expect(try String(contentsOfFile: decoded, encoding: .utf8) == AgentFlowPromptArchive.interpretationReminder + full)
-        #expect(preview == "[↗](\(target)) request")
+        #expect(preview == "[↗](\(target)) request\n\n" + AgentFlowPromptPreview.fullPromptPointer(target: target))
     }
 
     @Test func queuedPreviewStartsWithClickableLinkOnSameLineAsWords() throws {
@@ -765,7 +767,7 @@ struct AgentFlowPromptArchiveTests {
             fileURL: URL(fileURLWithPath: "/tmp/prompt.md")))
         let firstLine = try #require(preview.split(separator: "\n").first)
         #expect(firstLine.hasPrefix("[↗](/tmp/prompt.md) first words"))
-        #expect(preview == "[↗](/tmp/prompt.md) first words")
+        #expect(preview == "[↗](/tmp/prompt.md) first words\n\n" + AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/prompt.md"))
     }
 
     @Test func emptyPreviewKeepsOnlyFooterWithoutLeadingWhitespace() throws {
@@ -791,12 +793,13 @@ struct AgentFlowPromptArchiveTests {
         #expect(!preview.contains("[\\") && !preview.contains("$$"))
     }
 
-    @Test func authoredSpeechAndTypingOmitMandatoryReadEvenWhenMentioningReferences() throws {
+    @Test func authoredSpeechAndTypingRequireReadEvenWithoutActualReferences() throws {
         let preview = try #require(AgentFlowPromptPreview.make(authoredText: "", sections: [
             .init(tag: "speech", text: "Discuss <selection> and screenshots", color: "#f1f5f9"),
             .init(tag: "typed_text", text: "without attaching either", color: "#f4f4f5")
         ], fileURL: URL(fileURLWithPath: "/tmp/full.md"), viewerURL: URL(fileURLWithPath: "/tmp/full.html")))
-        #expect(preview == "[↗](/tmp/full.html) Discuss <selection> and screenshots without attaching either")
+        #expect(preview == "[↗](/tmp/full.html) Discuss <selection> and screenshots without attaching either\n\n"
+            + AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/full.html"))
     }
 
     @Test(arguments: ["selection", "screenshot", "potential_tts", "future_reference"])

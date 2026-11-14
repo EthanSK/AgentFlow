@@ -1,5 +1,23 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-14 — Codex rejects the once-ahead renderer exposure request
+
+`AXManualAccessibility=true` succeeded on a disposable Mini Electron host, but
+the same approved, one-per-process-birth request in installed Agent Flow511
+returned `-25205` (`attributeUnsupported`) for the actual Codex host. Natural
+recordings still alternated between a one-node shell/no live control and an
+End-only Start followed by a timed-out Stop read. An early posted speaker
+shortcut therefore still lacked a matching restoration action. The request
+is a failed live candidate, not proof the permission was absent or the speaker
+mute state was readable.
+
+Do not repeat the request on activation, change to enhanced UI, take focus,
+lengthen the deadline or remove the accepted live-control gate to make this
+candidate appear successful. Reconsider only with exact-host/version evidence
+of supported exposure and readable Start/Stop controls without disrupting the
+user. A disposable fixture, successful setter or passing unit suite is not
+that evidence.
+
 ## 2026-11-14 — Native button search still expires with separate field reads
 
 Build 509 reached its Stop restore, but reading six separate attributes per

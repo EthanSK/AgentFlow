@@ -761,15 +761,9 @@ enum AgentFlowPromptPreview {
             + #") \(\textsf{\color{#22c55e}before answering.}\)"#
     }
 
-    // The native Codex handlePaste compares JS UTF-16 length against 5,000 per
-    // paste event (ChatGPT 26.1002.52244/13536, rechecked 2026-10-08). At the
-    // threshold it creates a pasted-text attachment. Count the entire plain-text
-    // payload, including the encoded link, editable opening and full timeline.
-    static let pastedTextAttachmentThreshold = 5_000
-
     static func make(authoredText: String, sections: [Section], fileURL: URL,
-                     viewerURL: URL? = nil, completePromptText: String? = nil,
-                     rainbowStartIndex: Int = 0, onFullPromptLink: () -> Void = {}) -> String? {
+                     viewerURL: URL? = nil, completePromptText _: String? = nil,
+                     rainbowStartIndex _: Int = 0, onFullPromptLink: () -> Void = {}) -> String? {
         guard fileURL.isFileURL, fileURL.path.hasPrefix("/"),
               !fileURL.path.contains(where: { "\n\r<>".contains($0) }) else { return nil }
         // Codex's native file-reference scanner reparses the raw Markdown target,
@@ -797,10 +791,11 @@ enum AgentFlowPromptPreview {
         // excerpt. Only context payload/attributes move to the archive; markers
         // keep their positions. A host may package a huge paste as an attachment,
         // but we must not silently discard a word or a long token.
-        // Pure speech/typing is already complete in the editable message. Only
-        // hidden references or interpretation metadata require opening the full
-        // prompt; use structural tags, never words that merely mention a capture.
-        let needsFullPrompt = ordered.contains { $0.tag != "speech" && $0.tag != "typed_text" }
+        // Ethan's "always read the full prompt" supersedes the short inline
+        // threshold, including pure speech/typing. Current Codex plain composer
+        // mode also makes sent messages literal, exposing the styled XML source.
+        // Keep every authored word and marker here; the durable file owns the
+        // complete timeline and interpretation guidance at every message length.
         for section in ordered {
             if section.tag == "speech" || section.tag == "typed_text" || section.tag == "potential_tts" {
                 if section.tag == "potential_tts" { parts.append("`<potential_tts>`") }
@@ -824,25 +819,6 @@ enum AgentFlowPromptPreview {
             return pointer
         }
         let result = openingLink + " " + body
-        // Keep Ethan's existing editable opening and interleaved markers first.
-        // A fitting timeline is additional context underneath, not a replacement
-        // opening. Reuse the pipeline's exact payload without the archive's skill
-        // reminder; normal skill discovery/reuse already handles interpretation.
-        // Leave an extra blank line between the editable opening and raw XML:
-        // compact question/queue surfaces can visually collapse the usual gap.
-        // Count the actual fixed-colour expansion, both copies of authored
-        // words and the separator. If it cannot fit, keep the plain compact
-        // preview plus file instruction; never leak colours into that branch.
-        if needsFullPrompt, let completePromptText,
-           completePromptText.contains(where: { !$0.isWhitespace }) {
-            // Reject an already-oversized plain candidate before allocating its
-            // larger styled representation. Colouring is bounded to short copies.
-            if (result + "\n\n\n" + completePromptText).utf16.count < pastedTextAttachmentThreshold {
-                let inline = result + "\n\n\n" + coloredInlineTimeline(completePromptText, rainbowStartIndex: rainbowStartIndex)
-                if inline.utf16.count < pastedTextAttachmentThreshold { return inline }
-            }
-        }
-        guard needsFullPrompt else { return result }
         onFullPromptLink()
         return result + "\n\n" + pointer
     }
