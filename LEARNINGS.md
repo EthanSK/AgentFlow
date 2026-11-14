@@ -27,6 +27,23 @@ eight suites, including nine production-reader fixtures, two layout cases,
 the uptime timestamp test and the Primary/Next/HUD-only guards. These
 checks used simulated controls and unposted events, not a live call.
 
+## 2026-11-14 — Require a parked test child to acknowledge readiness before admission
+
+The real-process speech-admission fixture waited up to two seconds for
+Python's handler-ready marker but still sent admission if that marker was
+absent. A full release run failed its idle marker assertion; that result
+alone did not identify whether startup or later admission was missed.
+Require the existing explicit readiness marker before any signal, with a
+bounded ten-second startup allowance for the test host. Keep the child's
+three-second alarm and the two-second completion check. The isolated
+canonical Mini fixture passed after this change. Product speech and
+recording deadlines are unchanged.
+
+Retain raw release logs when the named-pass check disagrees with Xcode's
+summary. One preceding run reported all 945 tests passed but a macOS log
+message split a passing test name across lines. That run was correctly
+withheld from publication; do not treat the summary alone as named proof.
+
 ## 2026-11-14 — Voice shortcut event timestamps use uptime nanoseconds
 
 The microphone and speaker transport assigned raw `mach_absolute_time()`

@@ -385,10 +385,15 @@ struct CodexSpeechPlaybackTests {
             """, marker.path]
             try child.run()
             defer { if child.isRunning { kill(child.processIdentifier, SIGKILL); child.waitUntilExit() } }
-            let limit = Date().addingTimeInterval(2)
+            // Python startup on a busy Mini is not admission. Wait for its
+            // explicit handler-ready marker, and never signal a child whose
+            // SIGUSR1 handler may not exist yet. Its own 3s alarm still bounds
+            // the parked state after readiness; no product timeout changes.
+            let limit = Date().addingTimeInterval(10)
             while !FileManager.default.fileExists(atPath: marker.path + ".ready") && Date() < limit {
                 Thread.sleep(forTimeInterval: 0.01)
             }
+            try #require(FileManager.default.fileExists(atPath: marker.path + ".ready"))
             #expect(SpeechPlaybackProcessIdentity.read(child.processIdentifier, audioChild: true) != nil)
             #expect(!FileManager.default.fileExists(atPath: marker.path))
             var active = false
