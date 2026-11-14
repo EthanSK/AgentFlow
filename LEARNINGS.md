@@ -26,6 +26,16 @@ those measurements. Source fixtures cover both floating mute states, unsupported
 native-search fallback, disabled controls and unrelated checkbox labels. Installed
 audible behavior and all three window contexts remain separate acceptance gates.
 
+Build514 was installed locally after 80 named focused Mini tests in eight suites
+and a universal Release build passed. The real five-second notice, all-session
+readiness, normal quit, stable Developer ID and outer entitlements were verified;
+microphone/keybinding/paired settings and official VoiceInk stayed unchanged.
+The later full canonical Mini gate passed 963 named tests in 45 suites on exact
+source `0a938c45`/build514. These checks do not establish audible restoration or
+the still-unobserved Codex-foreground/other-chat context. Shared UI observations
+are maintained in the canonical `live-voice-mode` skill reference rather than
+copied into a second cross-app rule set.
+
 ## 2026-11-14 — Laptop startup placement is main-window-only and one-shot
 
 Ethan requested the main Agent Flow window stay out of his main monitor when all
