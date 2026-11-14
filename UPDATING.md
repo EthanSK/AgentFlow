@@ -111,12 +111,13 @@ The built bundle is **`AgentFlow.app`** (output: `build.noindex/AgentFlow.app`) 
 
 ### Install completed fixes into the running app (mandatory)
 
-For an updater-enabled installation, use the Developer ID release in
-[`RELEASING.md`](RELEASING.md). The `make local` output above is a development
-artifact, not a replacement for the signed installed app. The automatic release
-job keeps compilation/testing on the Mini and signs its source-bound archive on
-the existing signing Mac; do not return the installed updater to the historical
-local certificate or an ad-hoc signature.
+For an authorized local update, follow AGENTS.md’s local-first rule: review and build a viable
+ordinary Release artifact, preserve the installed Developer ID identity, update key and
+entitlements, and install through the guarded procedure below. Full tests and the public
+`RELEASING.md` pipeline follow local use; a release receipt is not a local-install prerequisite.
+Never replace this installation with `make local`’s ad-hoc output or the historical local
+certificate. If macOS actually rejects a correctly signed local candidate, report that exact
+trust failure rather than assuming all public-release checks are required first.
 
 A native AgentFlow fix is not complete when the source builds: install that exact build into
 `/Applications/AgentFlow.app` and relaunch it so Ethan is testing the corrected binary. Never

@@ -1,5 +1,12 @@
 # Public Agent Flow releases
 
+This file qualifies public distribution. Ethan’s early local updates follow the local-first
+rule in `AGENTS.md` and `UPDATING.md`; do not make local use wait for this full pipeline.
+The existing public scripts still combine full tests, build and signing, so the installing
+owner must use or separate their viable local build/signing stage without weakening public
+qualification. Preserve one source identity, stable signing and the guarded local restart.
+User-corrected — 2026-11-14.
+
 The release scripts publish the version read from the app source. Keep the public
 download, setup guide and website version aligned after the artifact passes the
 gates below. Build/test happens on the dedicated Mini; Developer ID signing and

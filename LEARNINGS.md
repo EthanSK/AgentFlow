@@ -1,5 +1,12 @@
 # Learnings
 
+
+## 2026-11-14 — Local installation is separate from public qualification
+
+Ethan reaffirmed that he wants reviewed viable local fixes installed before full testing and public release. The October local-first policy had been followed for build 472, but the later updater workflow required `package-public-release.sh` for local replacements; that script runs the full named suite before producing a build receipt. Build 510 therefore waited for the public pipeline, including one retry caused by an OS log splitting a passing test name. This was a real written/scripted gate, not proof that full public qualification was intrinsically required for local use.
+
+The shared local-installation rule and project instructions now separate early local installation from public qualification. Preserve compatible Developer ID signing, updater identity, entitlements, rollback and the cooperative all-session restart; full tests and public notarisation/publication remain follow-through. The existing public scripts still combine their stages: the installation owner must use or separate the viable local path, not silently reinstate release-first or weaken public evidence. This documentation change does not prove a new local installer path or speaker restoration.
+
 ## 2026-11-14 — Batch Voice button fields within the existing restore deadline
 
 Ethan's ordinary build-509 recording trial confirmed speaker silence at Start,
