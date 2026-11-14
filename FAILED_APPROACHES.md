@@ -1,5 +1,15 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-14 — A process or an attempted microphone toggle is not restoration ownership
+
+An active Core Audio stream can outlast a Codex Voice call, and multiple
+successive calls can use the same desktop PID. A posted key event can also
+leave Voice visibly listening. PID-only ownership and a Boolean verification
+result misclassified these cases as safe to restore. Require matching
+same-call evidence at dispatch, distinguish readable listening from missing
+state, and drop ownership when a restore cannot be posted. Reconsider an
+automatic retry only with a directional operation and application acknowledgement.
+
 ## 2026-11-13 — A speaker toggle receipt does not confirm restoration
 
 **Observed in the first 506 fixture:** Start can successfully silence the

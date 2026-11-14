@@ -71,33 +71,32 @@ private actor PairedFakeVoiceTransport: ChatGPTVoiceMuteTransport {
     }
 
     func postMicrophoneToggle(
-        to applicationPID: pid_t,
+        from before: ChatGPTVoiceInputSnapshot,
+        toward target: ChatGPTVoiceMicrophoneState,
         using authority: ChatGPTVoiceShortcutAuthority
     ) async -> Bool {
+        guard let call = before.call else { return false }
         authorities.append(authority)
         guard authority != refusedAuthority else { return false }
-        posts.append(applicationPID)
+        posts.append(call.applicationPID)
         if posts.count == 2, holdRestoration {
             await withCheckedContinuation { restorationContinuation = $0 }
         }
-        if let currentSnapshot, currentSnapshot.applicationPID == applicationPID {
+        if let currentSnapshot, currentSnapshot.call == call {
             self.currentSnapshot = ChatGPTVoiceInputSnapshot(
-                applicationPID: applicationPID,
+                applicationPID: call.applicationPID,
                 isInputRunning: currentSnapshot.isInputRunning,
                 microphoneState: currentSnapshot.microphoneState.map {
                     $0 == .listening ? .muted : .listening
-                }
+                },
+                call: call
             )
         }
         return true
     }
 
-    func waitForMicrophoneState(
-        _ microphoneState: ChatGPTVoiceMicrophoneState,
-        applicationPID: pid_t
-    ) async -> Bool {
-        currentSnapshot?.applicationPID == applicationPID
-            && currentSnapshot?.microphoneState == microphoneState
+    func microphoneStateAfterToggle(for call: ChatGPTVoiceCall) async -> ChatGPTVoiceMicrophoneState? {
+        currentSnapshot?.call == call ? currentSnapshot?.microphoneState : nil
     }
 
     func postedPIDs() -> [pid_t] { posts }
@@ -149,7 +148,8 @@ struct PairedVoiceMuteActivityTests {
     @Test func recipientQuitWaitsThroughTheFinalRestorationNotJustLedgerRemoval() async throws {
         let activity = PairedVoiceMuteActivity()
         let transport = PairedFakeVoiceTransport(snapshot: ChatGPTVoiceInputSnapshot(
-            applicationPID: 4_242, isInputRunning: true, microphoneState: .listening
+            applicationPID: 4_242, isInputRunning: true, microphoneState: .listening,
+            call: .init(applicationPID: 4_242, sessionID: UUID())
         ))
         let coordinator = ChatGPTVoiceCaptureMuteCoordinator(
             transport: transport, pairedLeaseTimer: ManualPairedTimer(), pairedActivity: activity
@@ -180,7 +180,8 @@ struct PairedVoiceMuteActivityTests {
         let activity = PairedVoiceMuteActivity()
         let timer = ManualPairedTimer()
         let transport = PairedFakeVoiceTransport(snapshot: ChatGPTVoiceInputSnapshot(
-            applicationPID: 4_242, isInputRunning: true, microphoneState: .listening
+            applicationPID: 4_242, isInputRunning: true, microphoneState: .listening,
+            call: .init(applicationPID: 4_242, sessionID: UUID())
         ))
         let coordinator = ChatGPTVoiceCaptureMuteCoordinator(
             transport: transport, pairedLeaseTimer: timer, pairedActivity: activity
@@ -725,7 +726,8 @@ struct PairedVoiceMuteCoordinatorTests {
     private let pid: pid_t = 4_242
 
     private func listening() -> ChatGPTVoiceInputSnapshot {
-        ChatGPTVoiceInputSnapshot(applicationPID: pid, isInputRunning: true, microphoneState: .listening)
+        ChatGPTVoiceInputSnapshot(applicationPID: pid, isInputRunning: true, microphoneState: .listening,
+                                  call: .init(applicationPID: pid, sessionID: UUID()))
     }
 
     @Test func pairedAcquireMutesAndItsReleaseRestoresThroughTheSameOwnership() async {
@@ -866,7 +868,8 @@ struct PairedVoiceMuteCoordinatorTests {
 
     @Test func recipientUserMutedVoiceIsNeitherToggledNorOwned() async {
         let transport = PairedFakeVoiceTransport(snapshot: ChatGPTVoiceInputSnapshot(
-            applicationPID: pid, isInputRunning: true, microphoneState: .muted
+            applicationPID: pid, isInputRunning: true, microphoneState: .muted,
+            call: .init(applicationPID: pid, sessionID: UUID())
         ))
         let coordinator = ChatGPTVoiceCaptureMuteCoordinator(
             transport: transport, pairedLeaseTimer: ManualPairedTimer()

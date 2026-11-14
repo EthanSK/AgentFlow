@@ -6,7 +6,7 @@ import Testing
 
 private actor FakeVoiceSpeakerTransport: ChatGPTVoiceSpeakerTransport {
     struct State: Sendable {
-        let call: ChatGPTVoiceSpeakerCall
+        let call: ChatGPTVoiceCall
         let isMuted: Bool?
         var hasLiveControl = true
     }
@@ -19,9 +19,9 @@ private actor FakeVoiceSpeakerTransport: ChatGPTVoiceSpeakerTransport {
         current = snapshot
     }
 
-    func activeSpeakerCall() -> ChatGPTVoiceSpeakerCall? { current?.call }
+    func activeSpeakerCall() -> ChatGPTVoiceCall? { current?.call }
 
-    func postSpeakerToggle(for call: ChatGPTVoiceSpeakerCall, mute: Bool) -> ChatGPTVoiceSpeakerPost {
+    func postSpeakerToggle(for call: ChatGPTVoiceCall, mute: Bool) -> ChatGPTVoiceSpeakerPost {
         guard let current, current.call == call, current.hasLiveControl,
               current.isMuted != mute
         else { return .skipped }
@@ -38,7 +38,7 @@ private actor FakeVoiceSpeakerTransport: ChatGPTVoiceSpeakerTransport {
 }
 
 struct ChatGPTVoiceCaptureSpeakerTests {
-    private let call = ChatGPTVoiceSpeakerCall(applicationPID: 42, sessionID: UUID())
+    private let call = ChatGPTVoiceCall(applicationPID: 42, sessionID: UUID())
 
     @Test func aSingleRecordingOwnsAndRestoresItsSpeakerChange() async {
         let transport = FakeVoiceSpeakerTransport(.init(call: call, isMuted: false))

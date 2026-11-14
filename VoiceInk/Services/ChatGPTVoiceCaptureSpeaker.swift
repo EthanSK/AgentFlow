@@ -3,7 +3,7 @@ import Foundation
 import SQLite3
 import os
 
-struct ChatGPTVoiceSpeakerCall: Equatable, Sendable {
+struct ChatGPTVoiceCall: Equatable, Sendable {
     let applicationPID: pid_t
     let sessionID: UUID
 }
@@ -14,18 +14,18 @@ enum ChatGPTVoiceSpeakerPost: Equatable, Sendable {
 }
 
 protocol ChatGPTVoiceSpeakerTransport: Sendable {
-    func activeSpeakerCall() async -> ChatGPTVoiceSpeakerCall?
+    func activeSpeakerCall() async -> ChatGPTVoiceCall?
     // Check the current state at the action boundary. Another actor may
     // already have reached the requested state.
     func postSpeakerToggle(
-        for call: ChatGPTVoiceSpeakerCall, mute: Bool
+        for call: ChatGPTVoiceCall, mute: Bool
     ) async -> ChatGPTVoiceSpeakerPost
 }
 
 actor ChatGPTVoiceCaptureSpeaker {
     private let transport: any ChatGPTVoiceSpeakerTransport
     private let logger = Logger(subsystem: "com.ethansk.VoiceInkPlusPlus", category: "ChatGPTVoiceCaptureSpeaker")
-    private var ownedCall: ChatGPTVoiceSpeakerCall?
+    private var ownedCall: ChatGPTVoiceCall?
 
     init(transport: any ChatGPTVoiceSpeakerTransport) {
         self.transport = transport

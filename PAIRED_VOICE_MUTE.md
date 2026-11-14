@@ -43,7 +43,9 @@ Recorder start/resume ─► ChatGPTVoiceCaptureMuteCoordinator.prepareForCaptur
   Accessibility permission. No helper, shell interpreter or new permission owner runs on the
   recipient. The one difference is which key posts that command: the recipient uses the binding
   it already has for it (see [Setup](#setup)), and a mute's inverse always uses the binding that
-  posted the mute.
+  posted the mute. Both boundaries require the same exact local Voice call for a mute and its
+  inverse. If the call changes or cannot be identified, the old suppression is never restored
+  onto a replacement call. A readable muted control belongs to the user.
 - **Owners, not toggles.** A paired capture is one more owner of the recipient's suppression.
   Suppression is attempted when an owner begins (no-op if already owned) and restoration runs
   only when the last owner ends. A paired release therefore never unmutes ChatGPT under the

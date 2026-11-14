@@ -1,5 +1,29 @@
 # Learnings
 
+## 2026-11-14 — Identify the exact Voice call before a microphone shortcut
+
+Build 505 logged Start and Stop microphone shortcut attempts with unreadable
+state before the speaker feature was installed. ChatGPT's Core Audio stream
+was active at some boundaries where its desktop ledger held no live call.
+The stream can also remain active when Voice is manually muted. Use the
+existing read-only call boundary reader for microphone and speaker identity.
+Pair restoration with the exact call, even if a replacement uses the same
+desktop process. Never keep restoration ownership after a refused post.
+
+Desktop build 26605 also ships the integrated Voice labels **Turn off
+microphone** and **Turn on microphone**. Recognize both alongside **Mute
+microphone** and **Unmute microphone**. A readable muted control keeps its
+state. When the call is known and the control is unreadable, the existing
+one-shot microphone shortcut remains best effort. Posting it does not show
+that Codex applied it. The historical reports of misses establish that a
+dispatch cannot be treated as a confirmed microphone transition.
+
+If the existing post-toggle read still shows listening, do not claim a
+mute or send an inverse after the control disappears. The 58-test focused
+Mini pass exercised this case, replacement and unidentifiable calls,
+refused restore, and the paired ownership and recorder guards. That pass
+used simulated Voice state and did not send a real shortcut.
+
 ## 2026-11-13 — Keep automatic Voice speaker control tied to the same call
 
 Desktop 26.1106.51428/26605 exposes a speaker toggle distinct from the
