@@ -11,6 +11,32 @@ adding a wait or a retry. A test bounds the stamp between two reads of the
 nanosecond uptime clock. Actual missed Voice transitions still need
 separate observation; a corrected stamp alone does not acknowledge mute.
 
+The exact c208a181 build-508 canonical Mini release action named and passed
+934 tests in 43 suites, including the timestamp, call-ownership and unchanged
+Primary/Next/HUD-only guards. The public universal ZIP passed its checksum,
+Developer ID, notarization, Gatekeeper, nested-code and entitlement checks.
+The installed executable matched that download with CDHash
+`61dd35575b7875a3d23b66d85c64ac219e12e07a`; its launched process was inactive
+and not hidden. A normal user recording and visible microphone transition
+remain separate acceptance checks; no live call shortcut test was sent.
+
+## 2026-11-14 — Reconcile app identity again after cooperative quit
+
+A prepared 506-to-508 installer revalidated 506 before its one normal quit,
+then found the identical public 508 already at `/Applications/AgentFlow.app`
+before its own swap. The other replacement's owner was not established by
+the retained logs. Its identity guard correctly stopped rather than
+overwriting the changed installation. After verifying that installed copy
+against the signed candidate and confirming no running instance, one
+background launch restored the runtime without another quit or swap.
+
+Keep both pre-quit and post-exit identity checks. A changed identity needs
+reconciliation, never a blind retry. This case also recovered an old
+installer mistake: `open -gj` revives the rejected launch-hidden hazard
+recorded under f3a5a61. Use `open -g` and read the exact new process's hidden
+state before declaring the recorder available. Three materialized panels
+and zero visible panels do not identify the cause by themselves.
+
 ## 2026-11-14 — Identify the exact Voice call before a microphone shortcut
 
 Build 505 logged Start and Stop microphone shortcut attempts with unreadable

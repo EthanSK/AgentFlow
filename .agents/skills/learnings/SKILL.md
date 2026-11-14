@@ -758,13 +758,21 @@ For the separately existing, user-configured microphone shortcut coordinator, un
 proof of listening and Core Audio activity is not mute state. However, a refusal-only repair can
 skip every background mute: Ethan withdrew build 413 after reporting that it no longer muted at
 all and explicitly requested the exact build-412 rollback. Do not reapply that policy automatically
-or claim its unit tests prove live suppression. Preserve the requested rollback while clearly
-retaining the older manually-muted inversion limitation. Require a supported authoritative
-same-session state/control feed and physical initially-listening/manual-mute acceptance before
-claiming reconciliation or extending to speaker output. This does not authorize AXPress, pointer
+or claim its unit tests prove live suppression. Keep the manually-muted inversion limitation
+explicit. Require physical initially-listening/manual-mute acceptance before claiming
+reconciliation. This does not authorize AXPress, pointer
 actions, polling, notification consumers, global input mute or private app patching.
 User correction — 2026-10-09; evidence: LEARNINGS.md, “State-unreadable mute refusal was not usable
 in the live Voice workflow”, and the refusal-only withdrawal in FAILED_APPROACHES.md.
+
+For the later recording-owned speaker integration, Ethan requested one reversible
+attempt on an identified live call even when its state is unreadable. Microphone and
+speaker restoration must match that exact call, including when successive calls
+reuse the same app process. Readable manual state still takes precedence. Keep a
+posted shortcut distinct from an observed mute, and discard a failed restore rather
+than letting a later recording inherit it. See the 2026-11-13 and 2026-11-14 Voice
+entries in `LEARNINGS.md`. Self-improved — 2026-11-14: the newer call-scoped
+integration and regression fixtures supersede the earlier speaker-extension gate.
 
 For explicitly configured paired-Mac Voice mute, read [PAIRED_VOICE_MUTE.md](../../../PAIRED_VOICE_MUTE.md)
 before changing the transport, receiver, ownership or setup. Ethan requested generic configured-device

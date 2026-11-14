@@ -162,6 +162,15 @@ timeout or unknown identity preserves both app and candidate. Closing the warnin
 does not grant permission to force quit. Older builds have no retry button; keep
 their existing safe bounded installation procedure until this update is installed.
 
+Re-read the installed identity after the process exits, before any swap. Another
+installer can have completed the same release during the quit. If the installed
+copy already matches the exact verified candidate, reconcile that outcome and
+verify its running PID instead of repeating the quit or swapping it again. A
+newer or unrecognized build remains untouched while its owner is established.
+Relaunch with `open -g`, never `open -j` or `open -gj`: hiding the application also
+hides its recorder panels. Verify the exact launched process is not hidden;
+background launch and global application hiding are different states.
+
 ### Keep rollback backups out of app menus
 
 Use `python3 scripts/archive-local-rollback.py /Applications/AgentFlow.app` before a guarded
