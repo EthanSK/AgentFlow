@@ -3,6 +3,22 @@ import Darwin
 import Testing
 @testable import VoiceInkPlusPlus
 
+// These transports exercise real coordinator ownership without touching a Voice call.
+private actor CaptureBoundarySpeakerTransport: ChatGPTVoiceSpeakerTransport {
+    let call: ChatGPTVoiceCall
+    private var muted = false
+    private var posts: [Bool] = []
+    init(call: ChatGPTVoiceCall) { self.call = call }
+    func activeSpeakerCall() -> ChatGPTVoiceCall? { call }
+    func postSpeakerToggle(for call: ChatGPTVoiceCall, mute: Bool) -> ChatGPTVoiceSpeakerPost {
+        guard call == self.call, muted != mute else { return .skipped }
+        muted = mute
+        posts.append(mute)
+        return .posted(priorStateReadable: true)
+    }
+    func postedStates() -> [Bool] { posts }
+}
+
 private actor FakeChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport {
     var currentSnapshot: ChatGPTVoiceInputSnapshot?
     var allowsPost = true
@@ -70,6 +86,36 @@ struct ChatGPTVoiceCaptureMuteCoordinatorTests {
     ) -> ChatGPTVoiceInputSnapshot {
         .init(applicationPID: pid, isInputRunning: isInputRunning, microphoneState: state,
               call: isInputRunning ? .init(applicationPID: pid, sessionID: sessionID) : nil)
+    }
+
+    @Test func speakerRestoresAcrossCaptureOffResumeAndFinalCompletion() async {
+        let transport = FakeChatGPTVoiceMuteTransport(snapshot: voice(.listening))
+        let speakers = CaptureBoundarySpeakerTransport(call: .init(applicationPID: pid, sessionID: sessionID))
+        let coordinator = ChatGPTVoiceCaptureMuteCoordinator(
+            transport: transport, speaker: ChatGPTVoiceCaptureSpeaker(transport: speakers))
+        // Recorder's HUD mic-off and Pause both release the same capture lease;
+        // mic-on and Resume reacquire it. Final completion releases the last one.
+        for _ in 0..<3 {
+            let lease = await coordinator.prepareForCapture()
+            await coordinator.releaseCapture(lease)
+            await coordinator.waitForPendingTransitionsForTesting()
+        }
+        #expect(await speakers.postedStates() == [true, false, true, false, true, false])
+    }
+
+    @Test func staleCaptureOffCannotRestoreSpeakersDuringANewerCapture() async {
+        let transport = FakeChatGPTVoiceMuteTransport(snapshot: voice(.listening))
+        let speakers = CaptureBoundarySpeakerTransport(call: .init(applicationPID: pid, sessionID: sessionID))
+        let coordinator = ChatGPTVoiceCaptureMuteCoordinator(
+            transport: transport, speaker: ChatGPTVoiceCaptureSpeaker(transport: speakers))
+        let older = await coordinator.prepareForCapture()
+        let current = await coordinator.prepareForCapture()
+        await coordinator.releaseCapture(older)
+        await coordinator.waitForPendingTransitionsForTesting()
+        #expect(await speakers.postedStates() == [true])
+        await coordinator.releaseCapture(current)
+        await coordinator.waitForPendingTransitionsForTesting()
+        #expect(await speakers.postedStates() == [true, false])
     }
 
     @Test func activeVoiceIsMutedAndOwnedThenRestored() async {

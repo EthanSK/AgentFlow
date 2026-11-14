@@ -1,5 +1,32 @@
 # Learnings
 
+## 2026-11-14 — Batch Voice button fields within the existing restore deadline
+
+Ethan's ordinary build-509 recording trial confirmed speaker silence at Start,
+but output stayed muted after Stop. The restore transport was reached: its read
+ended with `liveControl=false`, `nodes=342`, `nativeSearches=1`, `truncated=true`.
+The next Start found muted speakers after 388 nodes and correctly acquired no
+new speaker owner. This is a failed restore observation, not a missing Stop hook
+or proof that the Voice call changed. Do not keep asking for the answered trial.
+
+The native button search still fetched role, enabled and four labels separately
+for each toolbar button. Use `AXUIElementCopyMultipleAttributeValues` for that
+single button observation, following FocusLockService's existing child/role and
+value/title reads. Validate role and enabled state, preserve unreadable fields,
+and use the original bounded accessors once only if the batch is unavailable or
+malformed. Keep the same 120ms deadline, fresh same-call checks and one-shot
+speaker ownership. Do not extend waits, poll, retain a refused restore owner,
+infer muted state, or retry an unconfirmed toggle.
+
+The HUD microphone toggle, Pause/Resume, normal finish, cancellation, failed
+startup and reset all use Recorder's shared capture-lease boundaries. Route
+refresh defers teardown during an active/paused session. Speaker control belongs
+to those existing boundaries, not transcription completion or extra UI hooks.
+The build-510 canonical focused Mini run executed 75 named tests in eight suites,
+including the production reader, shared speaker cycles, stale release, call and
+manual-state cases, and unchanged Primary/Next/HUD-only guards. These are fake
+control/transport checks; they do not prove audible restoration in a live call.
+
 ## 2026-11-14 — Resolve a Voice speaker letter through the current keyboard layout
 
 On Ethan's Dvorak layout, an unposted event for physical QWERTY O (31)
@@ -6771,3 +6798,15 @@ The inherited coordinator already skips a readable muted control; its active-but
 The latest official desktop Voice documentation describes interactive controls and the Voice hotkey; the inspected app-server experimental schema's realtime start/closed messages identify sessions but do not expose current microphone/output mute state or setters for the desktop's existing call. The installed app internally has snapshots and explicit boolean control intents, while its registered microphone/output keyboard actions remain toggles. No supported external same-call state/control interface was established. This is a bounded finding, not proof that every private mechanism is absent, and internal renderer RPC is not a supported integration contract.
 
 At Ethan's explicit conditional request, one sanitized text-only private feature request was accepted through the matching desktop client's `feedback/upload` route, classified `other`, with logs, screenshots, browser data and extra files excluded. The private correlation receipt is retained in the task's evidence folder, not published as a support ticket. Request current-call identity, reliable mute-state queries, idempotent microphone/output setters, applied-state acknowledgement and change events; preserve manual state and reject stale-call operations. No additional native release or fallback-policy change was made merely to imitate this missing state feed.
+
+### 2026-11-14 — Plain composer mode also selects sent-message display
+
+Read-only inspection of installed ChatGPT/Codex 26.1106.51428 / 26605 shows that user messages carry a local `plain` or `markdown` format. The sent-message renderer uses the recorded format, or falls back to `[desktop].composerPlainTextMode` when none is recorded. A plain message goes through a literal-text renderer rather than the Markdown/math renderer. Therefore the November 4 advice that Plain text mode only preserves the composing source while sent messages still render must not be assumed for this build. Changing the default also does not prove that an older message with a recorded plain format will change.
+
+Agent Flow's current preview still serializes angular selection/screenshot markers inside Markdown backticks and emits styled math for eligible short inline timelines. A screenshot of a sent message with literal TeX and unstyled markers is consistent with the host's plain-message path; it does not establish that Agent Flow dropped its formatting. The saved composer setting was enabled during this investigation. Computer Use refused this host, so no switch, live paste, message edit or rendering repair was performed. Compare a fresh message's source and its host display mode before changing Agent Flow's serializer or promising that changing the composer default repairs both composition and sent rendering.
+
+Evidence: `Documents/Codex/2026-11-14/agentflow-message-rendering/`; installed renderer modules `Oo9D`, `WB4T` and the user-message wrapper; `VoiceInk/Paste/AgentFlowPromptArchive.swift` marker and inline-timeline serialization.
+
+Ethan then tested Plain text mode off and reported that the rich composer reformatted the incoming source before Send. The submitted message visibly contains escaped link parentheses/backticks and doubled math delimiters. Do not recommend turning the switch off as a proven repair: preserving literal composing and rendering sent messages are separate requirements. The first affected client version remains unestablished. One authorized text-only private product report requested independent controls (or correction of the coupling), with diagnostics and attachments excluded; this is feedback acceptance, not an upstream fix or a support ticket.
+
+A later read-only comparison found a complete older client on the Mini: 26.1027.30824 / 22943. Its `user-message-bubble-ff0ee558e45c.js` always invokes the Markdown/math-capable `user-formatted-text-416edb36d8e6.js`, independently of the composer preference. Scanning every webview JavaScript entry in that archive found no later `codex-local-user-message-formats` store; the edit-composer path still reads `composerPlainTextMode`. The current 26.1106.51428 / 26605 wrapper adds the recorded per-message plain/Markdown format and composer-preference fallback. This establishes a client-code change between those versions, not its precise first release or rollout date. A preserved 26.928.20755 / 12246 renderer gives the same earlier separation and matches the saved archive entry. The public changelog has no matching desktop entry; its October 13 sent-prompt Markdown note is explicitly iOS, so it must not be used to date this desktop change. Evidence: `renderer-history.json` and `mini-older-renderer.json` in the same task evidence folder. No app, setting or process lifecycle was changed to inspect either client.

@@ -1,5 +1,18 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-14 — Native button search still expires with separate field reads
+
+Build 509 reached its Stop restore, but reading six separate attributes per
+toolbar button exhausted the existing 120ms bound at 342 nodes before a live
+Voice control. The following Start reached that control at 388 nodes and found
+the speakers already muted. Increasing the traversal limit or retaining stale
+speaker ownership would not fix the repeated IPC and could invert a later manual
+state or call. Batch the fields of each candidate with the existing native
+multiple-attribute API, validating role and preserving the same deadline.
+Reconsider longer reads or a restore retry only with new explicit timing
+approval and directional applied-state acknowledgement; a posted toggle is not
+such acknowledgement.
+
 ## 2026-11-14 — A fixed QWERTY position is not a configured Voice letter
 
 The saved speaker chord used O, but the nominal physical O key produced R

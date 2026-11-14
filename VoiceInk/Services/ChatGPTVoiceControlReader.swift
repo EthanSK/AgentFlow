@@ -25,13 +25,32 @@ struct ChatGPTVoiceButtonSearch<Node> {
     let complete: Bool
 }
 
+/// One native observation of a button. Reading these fields separately for every
+/// chat toolbar button exhausted the restore deadline before reaching Voice.
+struct ChatGPTVoiceButtonAttributes {
+    static let names = [kAXRoleAttribute, kAXEnabledAttribute, kAXTitleAttribute,
+                        kAXDescriptionAttribute, kAXHelpAttribute, kAXValueAttribute]
+    let role: String?
+    let enabled: Bool?
+    let labels: [String]
+
+    static func decode(_ values: [Any]?, fallback: () -> Self?) -> Self? {
+        // Match FocusLockService's established multiple-attribute read: only a
+        // failed/malformed batch uses the original accessors. Individual AX errors
+        // stay unreadable, never guessed state or another pass over that button.
+        guard let values, values.count == names.count else { return fallback() }
+        return .init(role: values[0] as? String, enabled: values[1] as? Bool,
+                     labels: values.dropFirst(2).compactMap { $0 as? String })
+    }
+}
+
 /// Extraction of the existing Voice-control walk, with a native button-search
 /// path matching H Chat. Reads remain bounded; missing controls never mean unmuted.
 enum ChatGPTVoiceControlReader {
     static func read<Node: Hashable>(
         roots: [Node], channel: ChatGPTVoiceControlChannel,
-        role: (Node) -> String?, enabled: (Node) -> Bool?,
-        label: (Node, String) -> String?, children: (Node) -> [Node],
+        role: (Node) -> String?, buttonAttributes: (Node) -> ChatGPTVoiceButtonAttributes?,
+        children: (Node) -> [Node],
         buttonSearch: (Node) -> ChatGPTVoiceButtonSearch<Node>?,
         canContinue: () -> Bool
     ) -> ChatGPTVoiceControlRead {
@@ -41,10 +60,12 @@ enum ChatGPTVoiceControlReader {
         var visited = Set<Node>()
 
         func inspectButton(_ node: Node) -> Bool {
-            guard canContinue(), enabled(node) != false else { return false }
-            for attribute in [kAXTitleAttribute, kAXDescriptionAttribute, kAXHelpAttribute, kAXValueAttribute] {
-                guard canContinue() else { result.truncated = true; return false }
-                guard let value = label(node, attribute) else { continue }
+            guard canContinue() else { result.truncated = true; return false }
+            let attributes = buttonAttributes(node)
+            guard canContinue() else { result.truncated = true; return false }
+            guard let attributes, attributes.role == kAXButtonRole,
+                  attributes.enabled != false else { return false }
+            for value in attributes.labels {
                 switch channel {
                 case .microphone:
                     if let state = SystemChatGPTVoiceMuteTransport.microphoneState(accessibilityLabel: value) {
@@ -84,7 +105,9 @@ enum ChatGPTVoiceControlReader {
                     }
                     guard visited.insert(button).inserted else { continue }
                     result.visitedCount = visited.count
-                    if role(button) == kAXButtonRole, inspectButton(button) { return result }
+                    // The native search returns button candidates. Validate role
+                    // with the same batched observation rather than another IPC.
+                    if inspectButton(button) { return result }
                 }
                 // Chromium's search already covered this web subtree. Do not walk
                 // thousands of message/text nodes after a complete button search.

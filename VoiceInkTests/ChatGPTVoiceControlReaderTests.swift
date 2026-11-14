@@ -15,6 +15,7 @@ private final class VoiceControlGraph {
     var searches: [Int: ChatGPTVoiceButtonSearch<Int>] = [:]
     var childrenReads: [Int] = []
     var searchReads: [Int] = []
+    var buttonReads: [Int] = []
     var running = true
     var expireAfterRole = false
 
@@ -25,8 +26,11 @@ private final class VoiceControlGraph {
                 if self.expireAfterRole { self.running = false }
                 return self.nodes[id]?.role
             },
-            enabled: { self.nodes[$0]?.enabled },
-            label: { self.nodes[$0]?.labelAttribute($1) },
+            buttonAttributes: { id in
+                self.buttonReads.append(id)
+                guard let node = self.nodes[id] else { return nil }
+                return .init(role: node.role, enabled: node.enabled, labels: node.label.map { [$0] } ?? [])
+            },
             children: { self.childrenReads.append($0); return self.nodes[$0]?.children ?? [] },
             buttonSearch: { self.searchReads.append($0); return self.searches[$0] },
             canContinue: { self.running }
@@ -34,11 +38,45 @@ private final class VoiceControlGraph {
     }
 }
 
-private extension VoiceControlGraph.Node {
-    func labelAttribute(_ attribute: String) -> String? { attribute == kAXTitleAttribute ? label : nil }
-}
-
 struct ChatGPTVoiceControlReaderTests {
+    @Test func hundredsOfToolbarButtonsUseOneSnapshotEachBeforeTheVoiceFooter() {
+        let graph = VoiceControlGraph()
+        graph.nodes[0] = .init(role: "AXWebArea")
+        for id in 1..<388 { graph.nodes[id] = .init(role: kAXButtonRole, label: "Copy") }
+        graph.nodes[388] = .init(role: kAXButtonRole, label: "Unmute speakers")
+        graph.searches[0] = .init(buttons: Array(1...388), complete: true)
+        let result = graph.read()
+        #expect(result.isMuted == true)
+        #expect(result.voiceControlFound)
+        #expect(!result.truncated)
+        #expect(graph.buttonReads == Array(1...388))
+    }
+
+    @Test func malformedBatchesUseOneFallbackButPerAttributeErrorsStayUnknown() {
+        var fallbacks = 0
+        let fallback: () -> ChatGPTVoiceButtonAttributes? = {
+            fallbacks += 1
+            return .init(role: kAXButtonRole, enabled: false, labels: ["Mute speakers"])
+        }
+        #expect(ChatGPTVoiceButtonAttributes.decode(nil, fallback: fallback)?.enabled == false)
+        #expect(ChatGPTVoiceButtonAttributes.decode([kAXButtonRole], fallback: fallback)?.enabled == false)
+        #expect(fallbacks == 2)
+        let unknown = ChatGPTVoiceButtonAttributes.decode(
+            [kAXButtonRole, NSNull(), NSNull(), "Unmute speakers", NSNull(), NSNull()], fallback: fallback)
+        #expect(unknown?.enabled == nil)
+        #expect(unknown?.labels == ["Unmute speakers"])
+        #expect(fallbacks == 2)
+    }
+
+    @Test func nativeSearchCandidatesStillRequireAButtonRole() {
+        let graph = VoiceControlGraph()
+        graph.nodes[0] = .init(role: "AXWebArea")
+        graph.nodes[1] = .init(role: kAXStaticTextRole, label: "Unmute speakers")
+        graph.searches[0] = .init(buttons: [1], complete: true)
+        #expect(graph.read().isMuted == nil)
+        #expect(!graph.read().voiceControlFound)
+    }
+
     @Test func nativeButtonSearchBypassesThousandsOfChatTextNodes() {
         let graph = VoiceControlGraph()
         graph.nodes[0] = .init(role: "AXWebArea", children: Array(1...3000))

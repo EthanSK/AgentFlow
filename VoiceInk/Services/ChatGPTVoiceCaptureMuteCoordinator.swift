@@ -716,11 +716,29 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTV
             role: { node in
                 prepare(node.element) ? stringAttribute(kAXRoleAttribute, from: node.element) : nil
             },
-            enabled: { node in
-                prepare(node.element) ? boolAttribute(kAXEnabledAttribute, from: node.element) : nil
-            },
-            label: { node, attribute in
-                prepare(node.element) ? stringAttribute(attribute, from: node.element) : nil
+            buttonAttributes: { node in
+                guard prepare(node.element) else { return nil }
+                var value: CFArray?
+                let status = AXUIElementCopyMultipleAttributeValues(node.element,
+                    ChatGPTVoiceButtonAttributes.names as CFArray,
+                    AXCopyMultipleAttributeOptions(rawValue: 0), &value)
+                // Same native batching pattern as FocusLockService. Keep the
+                // 120ms deadline and fresh per-call checks; do not extend the
+                // window, retain stale state or retry a refused speaker toggle.
+                return ChatGPTVoiceButtonAttributes.decode(
+                    status == .success ? value as? [Any] : nil,
+                    fallback: {
+                        guard prepare(node.element) else { return nil }
+                        let role = stringAttribute(kAXRoleAttribute, from: node.element)
+                        guard role == kAXButtonRole, prepare(node.element) else { return nil }
+                        let enabled = boolAttribute(kAXEnabledAttribute, from: node.element)
+                        var labels: [String] = []
+                        for attribute in ChatGPTVoiceButtonAttributes.names.dropFirst(2) {
+                            guard prepare(node.element) else { return nil }
+                            if let label = stringAttribute(attribute, from: node.element) { labels.append(label) }
+                        }
+                        return .init(role: role, enabled: enabled, labels: labels)
+                    })
             },
             children: { node in
                 var seen = Set<ChatGPTVoiceAXNode>()
