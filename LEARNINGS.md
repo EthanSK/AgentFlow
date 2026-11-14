@@ -1,5 +1,19 @@
 # Learnings
 
+## 2026-11-14 — Laptop startup placement is main-window-only and one-shot
+
+Ethan requested the main Agent Flow window stay out of his main monitor when all
+three screens are connected, including after relaunch/update. Use the physical
+built-in display from CoreGraphics, not main-screen status, coordinates or a
+screen-name guess. Apply this once at initial main-window configuration, before
+ordering it front. Preserve the stable frame descriptor for later manual moves
+and close/reopen; never continuously reposition, activate, or affect recorder HUDs.
+Size toward the shared desktop-border target while respecting the app minimum.
+The build513 footer also removes the surviving green TeX wrappers: always-file
+Codex delivery still exposed literal commands if the footer itself used math.
+Both links and the exact reminder wording remain ordinary Markdown.
+
+
 ## 2026-11-14 — Every Codex message requires its full prompt file
 
 Ethan explicitly superseded the short inline threshold after Codex began showing

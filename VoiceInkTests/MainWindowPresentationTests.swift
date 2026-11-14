@@ -7,6 +7,29 @@ import Testing
 
 @Suite(.serialized)
 struct MainWindowPresentationTests {
+    @Test func startupPlacementNeedsThreeDisplaysAndOnePhysicalLaptopScreen() {
+        let laptop = MainWindowDisplay(visibleFrame: NSRect(x: -1728, y: 0, width: 1728, height: 1050), isBuiltIn: true)
+        let external = MainWindowDisplay(visibleFrame: NSRect(x: 0, y: 0, width: 3440, height: 1400), isBuiltIn: false)
+        #expect(WindowManager.startupLaptopFrame(displays: [laptop]) == nil)
+        #expect(WindowManager.startupLaptopFrame(displays: [external, laptop]) == nil)
+        #expect(WindowManager.startupLaptopFrame(displays: [external, external, laptop]) == laptop.visibleFrame)
+        #expect(WindowManager.startupLaptopFrame(displays: [external, external, external]) == nil)
+        #expect(WindowManager.startupLaptopFrame(displays: [laptop, external, laptop]) == nil)
+    }
+
+    @Test func laptopPlacementCentersWithinUsableScreenAndPreservesMinimumSize() {
+        let visible = NSRect(x: -1728, y: -200, width: 1728, height: 1050)
+        let large = WindowManager.borderedFrame(windowFrame: NSRect(x: 2000, y: 500, width: 1400, height: 1000),
+            minimumSize: NSSize(width: 855, height: 689), visibleFrame: visible)
+        #expect(abs(large.width - 921.6) < 0.01)
+        #expect(large.height == 689)
+        #expect(large.midX == visible.midX && large.midY == visible.midY)
+        #expect(visible.contains(large))
+        let small = WindowManager.borderedFrame(windowFrame: NSRect(x: 0, y: 0, width: 400, height: 300),
+            minimumSize: NSSize(width: 300, height: 200), visibleFrame: visible)
+        #expect(small.size == NSSize(width: 400, height: 300))
+    }
+
     @Test func mainAppDefaultIsActualSizeWithoutChangingRecorderScale() {
         #expect(MainWindowLayout.defaultZoom == 1)
         #expect(MainWindowLayout.minimumSize == CGSize(width: 950, height: 730))

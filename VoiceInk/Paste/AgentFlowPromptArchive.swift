@@ -753,12 +753,10 @@ enum AgentFlowPromptPreview {
     // without actual recipient bubble evidence; keep both file targets intact.
     static let fullPromptLinkLabel = "full prompt"
 
-    // Ethan's “read the full prompt text can be green” refers to this footer.
-    // Style only the surrounding words: math inside the clickable label was
-    // shown as raw commands by Codex. Keep that label and target ordinary Markdown.
+    // Codex now displays sent plain-text messages literally too. The always-file
+    // footer must itself be ordinary Markdown or it would still expose TeX.
     static func fullPromptPointer(target: String) -> String {
-        #"\(\textsf{\color{#22c55e}Read the}\) ["# + fullPromptLinkLabel + "](" + target
-            + #") \(\textsf{\color{#22c55e}before answering.}\)"#
+        "Read the [" + fullPromptLinkLabel + "](" + target + ") before answering."
     }
 
     static func make(authoredText: String, sections: [Section], fileURL: URL,

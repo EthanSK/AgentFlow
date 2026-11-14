@@ -2,6 +2,12 @@ import SwiftUI
 import AppKit
 import OSLog
 import Combine
+import CoreGraphics
+
+struct MainWindowDisplay {
+    let visibleFrame: NSRect
+    let isBuiltIn: Bool
+}
 
 class WindowManager: NSObject {
     static let shared = WindowManager()
@@ -12,6 +18,7 @@ class WindowManager: NSObject {
     private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "WindowManager")
     private weak var mainWindow: NSWindow?
     private var didApplyInitialPlacement = false
+    private var didEvaluateStartupDisplay = false
     private var zoomObservation: AnyCancellable?
     private var zoomKeyMonitor: Any?
     private let zoomStore: MainWindowZoomStore
@@ -154,8 +161,47 @@ class WindowManager: NSObject {
             logger.notice("applyInitialPlacement: no saved frame; placed main window at top right")
         }
 
+        // Ethan's "out of my way" rule concerns the main app window, never the
+        // mirrored recording HUD. With both external monitors attached, use the
+        // physical laptop display once per launch, including after an update.
+        // Later manual moves and close/reopen restore the same stable descriptor;
+        // there is no display watcher, focus change, or recurring repositioning.
+        if !didEvaluateStartupDisplay {
+            didEvaluateStartupDisplay = true
+            let displays = NSScreen.screens.map { screen in
+                let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
+                return MainWindowDisplay(visibleFrame: screen.visibleFrame,
+                    isBuiltIn: number.map { CGDisplayIsBuiltin($0.uint32Value) != 0 } ?? false)
+            }
+            if let visibleFrame = Self.startupLaptopFrame(displays: displays) {
+                let minimum = window.frameRect(forContentRect:
+                    NSRect(origin: .zero, size: window.contentMinSize)).size
+                window.setFrame(Self.borderedFrame(windowFrame: window.frame,
+                    minimumSize: minimum, visibleFrame: visibleFrame), display: false)
+                logger.notice("applyInitialPlacement: placed main window on built-in display")
+            }
+        }
+
         didApplyInitialPlacement = true
         saveMainWindowFrame(window)
+    }
+
+    static func startupLaptopFrame(displays: [MainWindowDisplay]) -> NSRect? {
+        guard displays.count >= 3 else { return nil }
+        let builtIn = displays.filter(\.isBuiltIn)
+        guard builtIn.count == 1 else { return nil }
+        return builtIn[0].visibleFrame
+    }
+
+    static func borderedFrame(windowFrame: NSRect, minimumSize: NSSize,
+                              visibleFrame: NSRect) -> NSRect {
+        // Keep the desktop border when the app's real minimum permits it. Never
+        // change zoom or shrink controls below their usable minimum just to fit.
+        let fraction = 0.8 / 1.5
+        let size = NSSize(width: max(minimumSize.width, min(windowFrame.width, visibleFrame.width * fraction)),
+                          height: max(minimumSize.height, min(windowFrame.height, visibleFrame.height * fraction)))
+        return NSRect(x: visibleFrame.midX - size.width / 2,
+                      y: visibleFrame.midY - size.height / 2, width: size.width, height: size.height)
     }
 
     static func topRightFrame(

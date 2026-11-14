@@ -778,7 +778,7 @@ struct AgentFlowPromptArchiveTests {
         }
     }
 
-    @Test func greenFooterKeepsMathOutsidePlainLinkAndPreservesBothTargets() throws {
+    @Test func fullPromptFooterContainsNoMathAndPreservesBothTargets() throws {
         let label = AgentFlowPromptPreview.fullPromptLinkLabel
         #expect(label == "full prompt")
         let preview = try #require(AgentFlowPromptPreview.make(authoredText: "", sections: [
@@ -789,8 +789,8 @@ struct AgentFlowPromptArchiveTests {
         #expect(preview.components(separatedBy: "\n\n")[0] == "[↗](/tmp/full.html) editable words `<selection>`")
         #expect(preview.hasSuffix(AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/full.html")))
         #expect(preview.components(separatedBy: "/tmp/full.html").count == 3)
-        #expect(preview.hasSuffix(#"\(\textsf{\color{#22c55e}Read the}\) [full prompt](/tmp/full.html) \(\textsf{\color{#22c55e}before answering.}\)"#))
-        #expect(!preview.contains("[\\") && !preview.contains("$$"))
+        #expect(preview.hasSuffix("Read the [full prompt](/tmp/full.html) before answering."))
+        #expect(!preview.contains("\\(") && !preview.contains("$$") && !preview.contains("\\color"))
     }
 
     @Test func authoredSpeechAndTypingRequireReadEvenWithoutActualReferences() throws {
