@@ -594,11 +594,18 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTV
         defer { shortcutPostLock.unlock() }
         keyDown.flags = shortcut.flags
         keyUp.flags = shortcut.flags
-        keyDown.timestamp = mach_absolute_time()
+        keyDown.timestamp = shortcutEventTimestamp()
         keyDown.postToPid(applicationPID)
-        keyUp.timestamp = mach_absolute_time()
+        keyUp.timestamp = shortcutEventTimestamp()
         keyUp.postToPid(applicationPID)
         return true
+    }
+
+    static func shortcutEventTimestamp() -> CGEventTimestamp {
+        // CGEventTimestamp uses nanoseconds since startup. Raw Mach ticks use
+        // a CPU-specific scale and made these events appear older on Apple silicon.
+        // Match the established timestamp source in SkyLightTargetedMouseEventPost.
+        clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
     }
 
     func microphoneStateAfterToggle(for call: ChatGPTVoiceCall) async -> ChatGPTVoiceMicrophoneState? {

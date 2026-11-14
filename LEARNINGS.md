@@ -1,5 +1,16 @@
 # Learnings
 
+## 2026-11-14 — Voice shortcut event timestamps use uptime nanoseconds
+
+The microphone and speaker transport assigned raw `mach_absolute_time()`
+ticks to `CGEventTimestamp`. Quartz expects uptime nanoseconds. On Apple
+silicon the timebase is not 1:1, so those events carried timestamps in the
+past. Use `clock_gettime_nsec_np(CLOCK_UPTIME_RAW)`, matching the existing
+SkyLight targeted event sender. This corrects the event metadata without
+adding a wait or a retry. A test bounds the stamp between two reads of the
+nanosecond uptime clock. Actual missed Voice transitions still need
+separate observation; a corrected stamp alone does not acknowledge mute.
+
 ## 2026-11-14 — Identify the exact Voice call before a microphone shortcut
 
 Build 505 logged Start and Stop microphone shortcut attempts with unreadable

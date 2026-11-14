@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import Testing
 @testable import VoiceInkPlusPlus
 
@@ -352,6 +353,14 @@ struct ChatGPTVoiceCaptureMuteCoordinatorTests {
         #expect(!SystemChatGPTVoiceMuteTransport.belongsToChatGPTApplication(
             "/private/tmp/ChatGPT.app/Contents/MacOS/ChatGPT"
         ))
+    }
+
+    @Test func shortcutTimestampsUseNanosecondsFromTheUptimeClock() {
+        let lower = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
+        let stamp = SystemChatGPTVoiceMuteTransport.shortcutEventTimestamp()
+        let upper = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
+        #expect(stamp >= lower)
+        #expect(stamp <= upper)
     }
 
     @Test func shortcutBindingMustMatchTheExactSupportedCommandAndAccelerator() throws {
