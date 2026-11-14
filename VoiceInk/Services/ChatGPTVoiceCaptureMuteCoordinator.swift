@@ -526,46 +526,58 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTV
     }
 
     func activeSpeakerCall() async -> ChatGPTVoiceCall? {
-        await Task.detached(priority: .userInitiated) { () -> ChatGPTVoiceCall? in
+        await Task.detached(priority: .userInitiated) { [logger] () -> ChatGPTVoiceCall? in
             guard AXIsProcessTrusted(),
-                  Self.configuredSpeakerShortcut() != nil,
+                  await Self.configuredSpeakerShortcut() != nil,
                   let application = Self.expectedApplication()
-            else { return nil }
-            return Self.voiceCall(for: application)
+            else {
+                logger.notice("Speaker preflight skipped: application, Accessibility or configured shortcut unavailable")
+                return nil
+            }
+            let call = Self.voiceCall(for: application)
+            if call == nil { logger.notice("Speaker preflight skipped: no uniquely identified Voice call") }
+            return call
         }.value
     }
 
     func postSpeakerToggle(
         for call: ChatGPTVoiceCall, mute: Bool
     ) async -> ChatGPTVoiceSpeakerPost {
-        await Task.detached(priority: .userInitiated) { () -> ChatGPTVoiceSpeakerPost in
-            guard let application = Self.expectedApplication(),
+        await Task.detached(priority: .userInitiated) { [logger] () -> ChatGPTVoiceSpeakerPost in
+            // Resolve layout before the fresh controls/call checks, so awaiting the
+            // main-thread input-source API cannot open a gap after those checks.
+            guard let shortcut = await Self.configuredSpeakerShortcut(),
+                  let application = Self.expectedApplication(),
                   application.processIdentifier == call.applicationPID,
                   mute || Self.voiceCall(for: application) == call
             else { return .skipped }
             let controls = Self.readVoiceControls(applicationPID: call.applicationPID, channel: .speaker)
             // A saved call alone is insufficient. For hidden speaker state,
             // require independent evidence from a live native Voice control.
-            guard controls.voiceControlFound, controls.isMuted != mute else { return .skipped }
+            guard controls.voiceControlFound, controls.isMuted != mute else {
+                logger.notice("Speaker shortcut skipped: liveControl=\(controls.voiceControlFound, privacy: .public) matchingState=\(controls.isMuted == mute, privacy: .public) nodes=\(controls.visitedCount, privacy: .public) nativeSearches=\(controls.nativeSearchCount, privacy: .public) truncated=\(controls.truncated, privacy: .public)")
+                return .skipped
+            }
             // Check session identity again after the AX read. A new Voice call
             // can appear in the same desktop process.
             guard Self.voiceCall(for: application) == call,
-                  let shortcut = Self.configuredSpeakerShortcut(),
                   Self.postTargetedShortcut(shortcut, applicationPID: call.applicationPID)
             else { return .skipped }
             return .posted(priorStateReadable: controls.isMuted != nil)
         }.value
     }
 
-    private static func configuredSpeakerShortcut() -> ChatGPTVoiceShortcut? {
+    private static func configuredSpeakerShortcut() async -> ChatGPTVoiceShortcut? {
         let url = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".codex/keybindings.json")
         let resolution = ChatGPTVoiceShortcut.resolve(
             keybindings: try? Data(contentsOf: url), command: speakerShortcutCommand
         )
-        guard case .resolved(let shortcut) = resolution,
-              shortcut.matchesLayout(producedCharacters: producedCharacters(for: shortcut))
-        else { return nil }
+        guard case .resolved(let configured) = resolution else { return nil }
+        let shortcut = await MainActor.run {
+            configured.resolvingCharacterKey(using: ChatGPTVoiceShortcut.currentLayoutCharacters())
+        }
+        guard shortcut.matchesLayout(producedCharacters: producedCharacters(for: shortcut)) else { return nil }
         return shortcut
     }
 
@@ -676,66 +688,63 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTV
             .isMuted.map { $0 ? .muted : .listening }
     }
 
-    private enum VoiceControlChannel { case microphone, speaker }
-
     private static func readVoiceControls(
-        applicationPID: pid_t, channel: VoiceControlChannel
-    ) -> (isMuted: Bool?, voiceControlFound: Bool) {
+        applicationPID: pid_t, channel: ChatGPTVoiceControlChannel
+    ) -> ChatGPTVoiceControlRead {
         guard AXIsProcessTrusted(),
               isExpectedChatGPTApplicationPID(applicationPID) else {
-            return (nil, false)
+            return .init()
         }
-
-        let application = AXUIElementCreateApplication(applicationPID)
-        let windows = elementArrayAttribute(kAXWindowsAttribute, from: application)
-        var queue = (windows.isEmpty ? [application] : windows).map { ($0, 0) }
-        var index = 0
-        var visited: [AXUIElement] = []
-        var voiceControlFound = false
+        // Keep the existing 120ms work budget. Timeouts also apply to each IPC
+        // read, so a slow child cannot strand this background preflight. This
+        // requests no enhanced UI mode, activation, focus change or input.
         let deadline = ContinuousClock.now.advanced(by: .milliseconds(120))
-
-        while index < queue.count,
-              visited.count < 700,
-              ContinuousClock.now < deadline {
-            let (element, depth) = queue[index]
-            index += 1
-            guard !visited.contains(where: { CFEqual($0, element) }) else { continue }
-            visited.append(element)
-
-            if stringAttribute(kAXRoleAttribute, from: element) == kAXButtonRole,
-               boolAttribute(kAXEnabledAttribute, from: element) != false {
-                for attribute in [
-                    kAXTitleAttribute,
-                    kAXDescriptionAttribute,
-                    kAXHelpAttribute,
-                    kAXValueAttribute
-                ] {
-                    guard let label = stringAttribute(attribute, from: element) else { continue }
-                    switch channel {
-                    case .microphone:
-                        if let state = microphoneState(accessibilityLabel: label) {
-                            return (state == .muted, true)
-                        }
-                    case .speaker:
-                        if let muted = speakerMuteState(accessibilityLabel: label) {
-                            return (muted, true)
-                        }
-                        if microphoneState(accessibilityLabel: label) != nil
-                            || ["end voice", "end voice chat", "stop voice chat"].contains(
-                                label.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                            ) {
-                            voiceControlFound = true
-                        }
-                    }
-                }
-            }
-
-            guard depth < 14 else { continue }
-            let children = mergedChildren(of: element)
-            queue.append(contentsOf: children.map { ($0, depth + 1) })
+        func hasTime() -> Bool { ContinuousClock.now < deadline }
+        func prepare(_ element: AXUIElement, cap: Double = 0.04) -> Bool {
+            let remaining = ContinuousClock.now.duration(to: deadline).components
+            let seconds = Double(remaining.seconds) + Double(remaining.attoseconds) / 1e18
+            guard seconds > 0 else { return false }
+            AXUIElementSetMessagingTimeout(element, Float(min(cap, seconds)))
+            return true
         }
-
-        return (nil, voiceControlFound)
+        let application = AXUIElementCreateApplication(applicationPID)
+        guard prepare(application) else { return .init(truncated: true) }
+        let windows = elementArrayAttribute(kAXWindowsAttribute, from: application)
+        return ChatGPTVoiceControlReader.read(
+            roots: (windows.isEmpty ? [application] : windows).map(ChatGPTVoiceAXNode.init),
+            channel: channel,
+            role: { node in
+                prepare(node.element) ? stringAttribute(kAXRoleAttribute, from: node.element) : nil
+            },
+            enabled: { node in
+                prepare(node.element) ? boolAttribute(kAXEnabledAttribute, from: node.element) : nil
+            },
+            label: { node, attribute in
+                prepare(node.element) ? stringAttribute(attribute, from: node.element) : nil
+            },
+            children: { node in
+                var seen = Set<ChatGPTVoiceAXNode>()
+                var merged: [ChatGPTVoiceAXNode] = []
+                for attribute in ["AXChildrenInNavigationOrder", kAXVisibleChildrenAttribute, kAXChildrenAttribute] {
+                    guard prepare(node.element) else { break }
+                    for child in elementArrayAttribute(attribute, from: node.element).map(ChatGPTVoiceAXNode.init)
+                        where seen.insert(child).inserted { merged.append(child) }
+                }
+                return merged
+            },
+            buttonSearch: { node in
+                guard prepare(node.element, cap: 0.12) else { return nil }
+                let limit = 1000
+                let predicate: [String: Any] = ["AXSearchKey": "AXButtonSearchKey", "AXResultsLimit": limit,
+                    "AXDirection": "AXDirectionNext", "AXVisibleOnly": false]
+                var value: CFTypeRef?
+                let status = AXUIElementCopyParameterizedAttributeValue(node.element,
+                    "AXUIElementsForSearchPredicate" as CFString, predicate as CFDictionary, &value)
+                guard status == .success, let buttons = value as? [AXUIElement] else { return nil }
+                return .init(buttons: buttons.map(ChatGPTVoiceAXNode.init), complete: buttons.count < limit)
+            },
+            canContinue: hasTime
+        )
     }
 
     static func speakerMuteState(accessibilityLabel: String) -> Bool? {
@@ -760,22 +769,6 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTV
         default:
             return nil
         }
-    }
-
-    private static func mergedChildren(of element: AXUIElement) -> [AXUIElement] {
-        let attributes = [
-            "AXChildrenInNavigationOrder",
-            kAXVisibleChildrenAttribute,
-            kAXChildrenAttribute
-        ]
-        var merged: [AXUIElement] = []
-        for attribute in attributes {
-            for candidate in elementArrayAttribute(attribute, from: element)
-                where !merged.contains(where: { CFEqual($0, candidate) }) {
-                merged.append(candidate)
-            }
-        }
-        return merged
     }
 
     private static func elementArrayAttribute(

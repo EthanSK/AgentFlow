@@ -1,5 +1,20 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-14 — A fixed QWERTY position is not a configured Voice letter
+
+The saved speaker chord used O, but the nominal physical O key produced R
+on the live Dvorak layout. Validating that fixed position rejected the
+entire speaker route before any shortcut. Removing validation would send
+the wrong key. Resolve the base character through the current layout and
+keep the mismatch guard. Reconsider fixed positions only for explicitly
+physical bindings, such as the accepted F20 microphone chord.
+
+The former depth-14/700-node control walk also could not reach the measured
+deep Codex Voice buttons. Raising only the node limit would keep scanning
+chat text. Use native button search and a bounded fallback instead;
+reconsider a different traversal only with measured control visibility
+and a preserved work deadline, without claiming a post is acknowledgement.
+
 ## 2026-11-14 — A process or an attempted microphone toggle is not restoration ownership
 
 An active Core Audio stream can outlast a Codex Voice call, and multiple

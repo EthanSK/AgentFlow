@@ -1,5 +1,32 @@
 # Learnings
 
+## 2026-11-14 — Resolve a Voice speaker letter through the current keyboard layout
+
+On Ethan's Dvorak layout, an unposted event for physical QWERTY O (31)
+produced R. Agent Flow's speaker preflight rejected the configured
+Command-Control-Shift-O before dispatch, while the accepted F20 microphone
+shortcut remained available. Resolve the saved base character through the
+current no-modifier keyboard layout, then preserve all saved modifiers and
+validate the resolved position with the existing unposted-event check.
+This follows H Chat's layout-aware Voice shortcut path; it does not change
+the user's binding, keyboard layout, local F20 contract or paired binding.
+
+H Chat's measured Codex Voice controls were about 46 levels deep beneath
+thousands of message nodes. Agent Flow's old depth-14 walk could not reach
+them. Prefer Chromium's native AX button-search predicate at a web area,
+skip text/image/button leaves, and retain bounded traversal if search is
+unsupported or truncated. The extracted production reader uses hashed AX
+identity and retains the existing 120ms work deadline, including per-read
+remaining-time limits. It adds no polling, enhanced-UI request, activation,
+focus mutation, pointer action, retry or delay. A fresh live control and
+the existing same-call checks still gate a speaker dispatch; unreadable
+state remains best effort, not confirmation that audio was silenced.
+
+The canonical focused Mini action executed and passed 70 named tests in
+eight suites, including nine production-reader fixtures, two layout cases,
+the uptime timestamp test and the Primary/Next/HUD-only guards. These
+checks used simulated controls and unposted events, not a live call.
+
 ## 2026-11-14 — Voice shortcut event timestamps use uptime nanoseconds
 
 The microphone and speaker transport assigned raw `mach_absolute_time()`

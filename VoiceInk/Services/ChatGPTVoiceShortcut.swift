@@ -24,8 +24,8 @@ enum ChatGPTVoiceShortcutResolution: Equatable, Sendable {
 }
 
 /// One validated keyboard chord. This type only describes a chord; it can never post one, and it
-/// only ever comes from a binding for the real microphone command, so no setting can turn this
-/// path into arbitrary input.
+/// comes from a binding for the requested Voice microphone or speaker command. The transport
+/// still validates the resolved key before posting; this type itself cannot send input.
 struct ChatGPTVoiceShortcut: Equatable, Sendable {
     let virtualKey: CGKeyCode
     let flags: CGEventFlags
@@ -114,6 +114,41 @@ struct ChatGPTVoiceShortcut: Equatable, Sendable {
             return true
         }
         return producedCharacters.lowercased() == layoutCharacter
+    }
+
+    /// Resolve the configured base letter before adding its saved modifiers, as H Chat's
+    /// VoiceKeyCombination does. A fixed QWERTY O is R on Dvorak; rejecting that position
+    /// made Ethan's "mute speakers" shortcut unreachable. Function keys remain physical.
+    func resolvingCharacterKey(using characters: [CGKeyCode: String]) -> ChatGPTVoiceShortcut {
+        guard let layoutCharacter,
+              let key = characters.keys.sorted().first(where: {
+                  characters[$0]?.lowercased() == layoutCharacter
+              }) else { return self }
+        return .init(virtualKey: key, flags: flags, layoutCharacter: layoutCharacter)
+    }
+
+    /// Text Input Source APIs belong on the main thread. This only reads the current
+    /// layout; it never changes it or sends an event. The caller checks the resolved
+    /// key again with an unposted event before allowing a speaker shortcut.
+    @MainActor static func currentLayoutCharacters() -> [CGKeyCode: String] {
+        guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
+              let raw = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else { return [:] }
+        let data = Unmanaged<CFData>.fromOpaque(raw).takeUnretainedValue()
+        guard let bytes = CFDataGetBytePtr(data) else { return [:] }
+        let layout = UnsafeRawPointer(bytes).assumingMemoryBound(to: UCKeyboardLayout.self)
+        var mapping: [CGKeyCode: String] = [:]
+        for key in CGKeyCode(0)..<128 {
+            var dead: UInt32 = 0
+            var length = 0
+            var characters = [UniChar](repeating: 0, count: 4)
+            let result = UCKeyTranslate(layout, key, UInt16(kUCKeyActionDown), 0,
+                UInt32(LMGetKbdLast()), UInt32(kUCKeyTranslateNoDeadKeysBit),
+                &dead, characters.count, &length, &characters)
+            if result == noErr, dead == 0, length > 0 {
+                mapping[key] = String(utf16CodeUnits: characters, count: length)
+            }
+        }
+        return mapping
     }
 
     /// Finds the one chord this Mac binds to `command`, or explains why none can be trusted.

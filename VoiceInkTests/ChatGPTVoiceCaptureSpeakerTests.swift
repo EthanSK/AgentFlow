@@ -1,5 +1,6 @@
 // Exercises recording-scoped speaker ownership without sending real shortcuts.
 import Foundation
+import CoreGraphics
 import SQLite3
 import Testing
 @testable import VoiceInkPlusPlus
@@ -102,6 +103,28 @@ struct ChatGPTVoiceCaptureSpeakerTests {
         #expect(SystemChatGPTVoiceMuteTransport.speakerMuteState(accessibilityLabel: "Mute speakers") == false)
         #expect(SystemChatGPTVoiceMuteTransport.speakerMuteState(accessibilityLabel: " Unmute speakers ") == true)
         #expect(SystemChatGPTVoiceMuteTransport.speakerMuteState(accessibilityLabel: "Mute microphone") == nil)
+    }
+
+    @Test func speakerLetterResolvesThroughTheLayoutBeforeItsSavedModifiers() throws {
+        let configured = try #require(ChatGPTVoiceShortcut(accelerator: "Command+Control+Shift+O"))
+        let dvorak: [CGKeyCode: String] = [1: "o", 31: "r"]
+        #expect(!configured.matchesLayout(producedCharacters: dvorak[configured.virtualKey]))
+        let resolved = configured.resolvingCharacterKey(using: dvorak)
+        #expect(resolved.virtualKey == 1)
+        #expect(resolved.flags == configured.flags)
+        #expect(resolved.layoutCharacter == "o")
+        #expect(resolved.matchesLayout(producedCharacters: dvorak[resolved.virtualKey]))
+        #expect(configured.resolvingCharacterKey(using: [31: "o"]) == configured)
+    }
+
+    @Test func speakerLayoutLookupPreservesFunctionKeysAndDoesNotInventAMapping() throws {
+        let function = try #require(ChatGPTVoiceShortcut(accelerator: "Command+Shift+F13"))
+        #expect(function.resolvingCharacterKey(using: [1: "o"]) == function)
+        let letter = try #require(ChatGPTVoiceShortcut(accelerator: "Command+Control+Shift+O"))
+        #expect(letter.resolvingCharacterKey(using: [:]) == letter)
+        #expect(letter.resolvingCharacterKey(using: [31: "r"]) == letter)
+        #expect(!letter.matchesLayout(producedCharacters: "r"))
+        #expect(ChatGPTVoiceShortcut.acceptedLocal.resolvingCharacterKey(using: [1: "o"]) == .acceptedLocal)
     }
 
     @Test func persistedBoundariesRejectStaleEndedAndAmbiguousCalls() throws {
