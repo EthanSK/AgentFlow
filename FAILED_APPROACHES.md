@@ -1,5 +1,17 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-14 — The native button search is not limited to AXButton results
+
+A proposed floating-Voice workaround assumed a complete `AXButtonSearchKey`
+result excluded checkbox toggles and therefore required another dialog walk or
+checkbox search. Claude's repeated read-only probe on ChatGPT26.1111.21308 returned
+both microphone/output `AXCheckBox` controls from the existing button predicate;
+`AXCheckBoxSearchKey` returned none. The missing state was role/label rejection
+in Agent Flow, not missing native-search coverage. This was a corrected diagnostic
+hypothesis, not a shipped additional traversal. Reconsider another scan only with
+exact-host evidence that the existing predicate omits a needed control while
+preserving the existing work deadline and live-call safeguards.
+
 ## 2026-11-14 — Codex rejects the once-ahead renderer exposure request
 
 `AXManualAccessibility=true` succeeded on a disposable Mini Electron host, but

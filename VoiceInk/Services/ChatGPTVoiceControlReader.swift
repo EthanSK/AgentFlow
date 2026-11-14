@@ -49,8 +49,13 @@ struct ChatGPTVoiceButtonAttributes {
 }
 
 /// Extraction of the existing Voice-control walk, with a native button-search
-/// path matching H Chat. Reads remain bounded; missing controls never mean unmuted.
+/// path matching H Chat. Chromium also returns the floating panel's checkbox-backed
+/// toggle buttons from that search. Missing controls never mean unmuted.
 enum ChatGPTVoiceControlReader {
+    private static func isSupportedControlRole(_ role: String?) -> Bool {
+        role == kAXButtonRole || role == kAXCheckBoxRole
+    }
+
     static func read<Node: Hashable>(
         roots: [Node], channel: ChatGPTVoiceControlChannel,
         role: (Node) -> String?, buttonAttributes: (Node) -> ChatGPTVoiceButtonAttributes?,
@@ -63,11 +68,14 @@ enum ChatGPTVoiceControlReader {
         var index = 0
         var visited = Set<Node>()
 
-        func inspectButton(_ node: Node) -> Bool {
+        func inspectControl(_ node: Node) -> Bool {
             guard canContinue() else { result.truncated = true; return false }
             let attributes = buttonAttributes(node)
             guard canContinue() else { result.truncated = true; return false }
-            guard let attributes, attributes.role == kAXButtonRole else { return false }
+            // The main Voice chat uses AXButton; its floating panel uses
+            // AXCheckBox/AXToggleButton for the same microphone/speaker state.
+            // Only the exact channel labels below establish a readable state.
+            guard let attributes, isSupportedControlRole(attributes.role) else { return false }
             if attributes.enabled == false {
                 result.disabledSpeakerFound = result.disabledSpeakerFound || attributes.labels.contains {
                     SystemChatGPTVoiceMuteTransport.speakerMuteState(accessibilityLabel: $0) != nil
@@ -94,7 +102,8 @@ enum ChatGPTVoiceControlReader {
                         result.microphoneFound = true
                         result.voiceControlFound = true
                     }
-                    if ["end voice", "end voice chat", "stop voice chat"].contains(
+                    if attributes.role == kAXButtonRole,
+                       ["end voice", "end voice chat", "stop voice chat"].contains(
                         value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) {
                         result.endFound = true
                         result.voiceControlFound = true
@@ -110,7 +119,7 @@ enum ChatGPTVoiceControlReader {
             guard visited.insert(node).inserted else { continue }
             result.visitedCount = visited.count
             let currentRole = role(node)
-            if currentRole == kAXButtonRole, inspectButton(node) { return result }
+            if isSupportedControlRole(currentRole), inspectControl(node) { return result }
             if currentRole == "AXWebArea", canContinue(), let found = buttonSearch(node) {
                 result.nativeSearchCount += 1
                 for button in found.buttons {
@@ -120,15 +129,16 @@ enum ChatGPTVoiceControlReader {
                     }
                     guard visited.insert(button).inserted else { continue }
                     result.visitedCount = visited.count
-                    // The native search returns button candidates. Validate role
-                    // with the same batched observation rather than another IPC.
-                    if inspectButton(button) { return result }
+                    // AXButtonSearchKey includes Chromium's checkbox-backed toggle
+                    // buttons. Validate role/label in the existing single batch.
+                    if inspectControl(button) { return result }
                 }
                 // Chromium's search already covered this web subtree. Do not walk
                 // thousands of message/text nodes after a complete button search.
                 if found.complete { continue }
             }
-            if [kAXStaticTextRole, kAXImageRole, kAXButtonRole].contains(currentRole ?? "") { continue }
+            if isSupportedControlRole(currentRole)
+                || [kAXStaticTextRole, kAXImageRole].contains(currentRole ?? "") { continue }
             guard canContinue() else { result.truncated = true; return result }
             guard depth < 96 else { result.truncated = true; continue }
             queue.append(contentsOf: children(node).map { ($0, depth + 1) })

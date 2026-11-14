@@ -102,7 +102,12 @@ struct ChatGPTVoiceCaptureSpeakerTests {
     @Test func speakerControlLabelsDescribeTheCurrentState() {
         #expect(SystemChatGPTVoiceMuteTransport.speakerMuteState(accessibilityLabel: "Mute speakers") == false)
         #expect(SystemChatGPTVoiceMuteTransport.speakerMuteState(accessibilityLabel: " Unmute speakers ") == true)
+        #expect(SystemChatGPTVoiceMuteTransport.speakerMuteState(accessibilityLabel: "Mute voice chat") == false)
+        #expect(SystemChatGPTVoiceMuteTransport.speakerMuteState(accessibilityLabel: " Unmute voice chat ") == true)
         #expect(SystemChatGPTVoiceMuteTransport.speakerMuteState(accessibilityLabel: "Mute microphone") == nil)
+        #expect(SystemChatGPTVoiceMuteTransport.speakerMuteState(accessibilityLabel: "Stop voice chat") == nil)
+        #expect(SystemChatGPTVoiceMuteTransport.speakerMuteState(accessibilityLabel: "Start voice chat") == nil)
+        #expect(SystemChatGPTVoiceMuteTransport.speakerMuteState(accessibilityLabel: "Toggle voice chat") == nil)
     }
 
     @Test func speakerLetterResolvesThroughTheLayoutBeforeItsSavedModifiers() throws {

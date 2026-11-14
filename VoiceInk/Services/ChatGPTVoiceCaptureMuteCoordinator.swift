@@ -774,8 +774,10 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTV
 
     static func speakerMuteState(accessibilityLabel: String) -> Bool? {
         switch accessibilityLabel.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
-        case "mute speakers": return false
-        case "unmute speakers": return true
+        // Codex's main chat calls output "speakers"; its floating Voice panel
+        // calls the same channel "voice chat". Never match Start/Stop/Toggle here.
+        case "mute speakers", "mute voice chat": return false
+        case "unmute speakers", "unmute voice chat": return true
         default: return nil
         }
     }

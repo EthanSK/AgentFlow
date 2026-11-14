@@ -1,5 +1,31 @@
 # Learnings
 
+## 2026-11-14 — Floating Codex Voice mute controls are checkbox-backed toggles
+
+Claude's delegated read-only observation of ChatGPT26.1111.21308 on macOS27.2.1
+found the floating window in `AXWindows` as `AXWindow`/`AXDialog`, titled ChatGPT.
+Its microphone and output controls are `AXCheckBox`/`AXToggleButton`, labelled
+Mute/Unmute microphone and Mute/Unmute voice chat. The main Voice chat instead
+uses `AXButton` with Mute/Unmute speakers. Observed checkbox values agreed with
+the labels (1 muted,0 unmuted); labels remain the reader's source of state.
+
+The existing `AXButtonSearchKey` actually returns these checkbox-backed toggles.
+Build513 discarded them at role validation and lacked the floating output label,
+so a successful complete search could still leave state unreadable and select
+the accepted one-shot shortcut fallback. Support the two observed control roles
+and exact channel labels through that same batched reader; retain the120ms budget,
+same-call/ownership/manual-state guards and separate unknown-state fallbacks.
+Start/Stop/Toggle voice chat are not speaker-state labels, and a checkbox labelled
+Stop must not become the existing native End-button proof.
+
+The floating panel was absent during some passive observations; absence must stay
+unknown. Main-window plain traversal took133–259ms in the delegated probe while
+the38–98-node dialog took4–29ms; those are not production native-search timings.
+No extra scan, polling service, focus change or longer deadline is justified by
+those measurements. Source fixtures cover both floating mute states, unsupported
+native-search fallback, disabled controls and unrelated checkbox labels. Installed
+audible behavior and all three window contexts remain separate acceptance gates.
+
 ## 2026-11-14 — Laptop startup placement is main-window-only and one-shot
 
 Ethan requested the main Agent Flow window stay out of his main monitor when all

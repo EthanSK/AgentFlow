@@ -87,13 +87,55 @@ struct ChatGPTVoiceControlReaderTests {
         #expect(fallbacks == 2)
     }
 
-    @Test func nativeSearchCandidatesStillRequireAButtonRole() {
+    @Test func nativeSearchCandidatesStillRequireASupportedControlRole() {
         let graph = VoiceControlGraph()
         graph.nodes[0] = .init(role: "AXWebArea")
         graph.nodes[1] = .init(role: kAXStaticTextRole, label: "Unmute speakers")
         graph.searches[0] = .init(buttons: [1], complete: true)
         #expect(graph.read().isMuted == nil)
         #expect(!graph.read().voiceControlFound)
+    }
+
+    @Test(arguments: [false, true])
+    func floatingVoiceCheckboxesAreReadableThroughTheExistingNativeSearch(muted: Bool) {
+        let graph = VoiceControlGraph()
+        graph.nodes[0] = .init(role: kAXWindowRole, children: [1])
+        graph.nodes[1] = .init(role: "AXWebArea", children: [2, 3, 4])
+        graph.nodes[2] = .init(role: kAXCheckBoxRole,
+                               label: muted ? "Unmute microphone" : "Mute microphone")
+        graph.nodes[3] = .init(role: kAXButtonRole, label: "Stop voice chat")
+        graph.nodes[4] = .init(role: kAXCheckBoxRole,
+                               label: muted ? "Unmute voice chat" : "Mute voice chat")
+        // Observed AXButtonSearchKey returns these floating toggle checkboxes,
+        // so a complete search must inspect their roles rather than walk again.
+        graph.searches[1] = .init(buttons: [2, 3, 4], complete: true)
+        let speaker = graph.read()
+        #expect(speaker.isMuted == muted && speaker.speakerFound)
+        #expect(speaker.voiceControlFound && !speaker.truncated)
+        let microphone = graph.read(.microphone)
+        #expect(microphone.isMuted == muted && microphone.microphoneFound)
+        #expect(!graph.childrenReads.contains(1))
+    }
+
+    @Test func floatingCheckboxesAlsoWorkWhenNativeSearchIsUnsupported() {
+        let graph = VoiceControlGraph()
+        graph.nodes[0] = .init(role: "AXWebArea", children: [1])
+        graph.nodes[1] = .init(role: kAXCheckBoxRole, label: "Unmute voice chat")
+        let result = graph.read()
+        #expect(result.isMuted == true && result.speakerFound)
+        #expect(!result.truncated)
+    }
+
+    @Test func unrelatedAndDisabledCheckboxesNeverBecomeVoiceEvidence() {
+        let graph = VoiceControlGraph()
+        graph.nodes[0] = .init(role: "AXWebArea")
+        graph.nodes[1] = .init(role: kAXCheckBoxRole, label: "Unmute voice chat", enabled: false)
+        graph.nodes[2] = .init(role: kAXCheckBoxRole, label: "Stop voice chat")
+        graph.nodes[3] = .init(role: kAXCheckBoxRole, label: "Start voice chat")
+        graph.searches[0] = .init(buttons: [1, 2, 3], complete: true)
+        let result = graph.read()
+        #expect(result.isMuted == nil && !result.voiceControlFound)
+        #expect(result.disabledSpeakerFound)
     }
 
     @Test func nativeButtonSearchBypassesThousandsOfChatTextNodes() {
