@@ -111,6 +111,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // coordinator. Binding is unconditional and cheap; every acquire is refused unless
         // this Mac opted in, and no request can do more than the existing mute ownership.
         PairedVoiceMuteReceiver.shared.startForApplication()
+        // Prepare configured Codex Voice controls before the next recording,
+        // without placing Electron's tree construction on the capture path.
+        ChatGPTVoiceAccessibilityPreparation.shared.startForApplication()
         // Read-only update readiness is separate from speech-admission grants:
         // checking for an update must never consume permission to speak or stop audio.
         let center = DistributedNotificationCenter.default()

@@ -472,6 +472,8 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
 
 final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTVoiceSpeakerTransport, @unchecked Sendable {
     static let applicationPath = "/Applications/ChatGPT.app"
+    // Ethan's unqualified "mute" means microphone input; "mute speaker" means
+    // Voice output. Both commands use the same shortcut sender, never AXPress.
     static let shortcutCommand = "realtimeVoice.toggleMicrophoneMute"
     static let shortcutAccelerator = "Command+Control+Option+Shift+F20"
     static let speakerShortcutCommand = "realtimeVoice.toggleOutputMute"
@@ -552,6 +554,7 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTV
                   mute || Self.voiceCall(for: application) == call
             else { return .skipped }
             let controls = Self.readVoiceControls(applicationPID: call.applicationPID, channel: .speaker)
+            logger.notice("Speaker control read: mic=\(controls.microphoneFound, privacy: .public) end=\(controls.endFound, privacy: .public) speaker=\(controls.speakerFound, privacy: .public) disabledSpeaker=\(controls.disabledSpeakerFound, privacy: .public) readable=\(controls.isMuted != nil, privacy: .public) nodes=\(controls.visitedCount, privacy: .public) nativeSearches=\(controls.nativeSearchCount, privacy: .public) truncated=\(controls.truncated, privacy: .public) hostHidden=\(application.isHidden, privacy: .public)")
             // A saved call alone is insufficient. For hidden speaker state,
             // require independent evidence from a live native Voice control.
             guard controls.voiceControlFound, controls.isMuted != mute else {
@@ -663,7 +666,9 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTV
         )
     }
 
-    private static func expectedApplication() -> NSRunningApplication? {
+    // Shared with the one-time exposure preparation so it cannot introduce a
+    // broader app/PID allowlist than the actual Voice shortcut transport.
+    static func expectedApplication() -> NSRunningApplication? {
         let matchingApps = NSRunningApplication.runningApplications(
             withBundleIdentifier: "com.openai.codex"
         ).filter { app in
@@ -698,6 +703,8 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTV
         // Keep the existing 120ms work budget. Timeouts also apply to each IPC
         // read, so a slow child cannot strand this background preflight. This
         // requests no enhanced UI mode, activation, focus change or input.
+        // The separately approved one-time exposure request runs at app launch
+        // or activation, never inside this capture/restore read.
         let deadline = ContinuousClock.now.advanced(by: .milliseconds(120))
         func hasTime() -> Bool { ContinuousClock.now < deadline }
         func prepare(_ element: AXUIElement, cap: Double = 0.04) -> Bool {

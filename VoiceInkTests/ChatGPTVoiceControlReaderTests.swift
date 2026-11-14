@@ -39,6 +39,25 @@ private final class VoiceControlGraph {
 }
 
 struct ChatGPTVoiceControlReaderTests {
+    @Test func otherLiveVoiceControlsDoNotPretendToReadSpeakerState() {
+        let graph = VoiceControlGraph()
+        graph.nodes[0] = .init(children: [1, 2])
+        graph.nodes[1] = .init(role: kAXButtonRole, label: "Mute microphone")
+        graph.nodes[2] = .init(role: kAXButtonRole, label: "End Voice")
+        let result = graph.read()
+        #expect(result.voiceControlFound && result.microphoneFound && result.endFound)
+        #expect(!result.speakerFound && result.isMuted == nil)
+    }
+
+    @Test func disabledSpeakerEvidenceCannotBecomeLiveState() {
+        let graph = VoiceControlGraph()
+        graph.nodes[0] = .init(children: [1])
+        graph.nodes[1] = .init(role: kAXButtonRole, label: "Unmute speakers", enabled: false)
+        let result = graph.read()
+        #expect(result.disabledSpeakerFound)
+        #expect(!result.voiceControlFound && !result.speakerFound && result.isMuted == nil)
+    }
+
     @Test func hundredsOfToolbarButtonsUseOneSnapshotEachBeforeTheVoiceFooter() {
         let graph = VoiceControlGraph()
         graph.nodes[0] = .init(role: "AXWebArea")

@@ -15,6 +15,10 @@ enum ChatGPTVoiceControlChannel { case microphone, speaker }
 struct ChatGPTVoiceControlRead {
     var isMuted: Bool?
     var voiceControlFound = false
+    var microphoneFound = false
+    var endFound = false
+    var speakerFound = false
+    var disabledSpeakerFound = false
     var visitedCount = 0
     var nativeSearchCount = 0
     var truncated = false
@@ -63,25 +67,36 @@ enum ChatGPTVoiceControlReader {
             guard canContinue() else { result.truncated = true; return false }
             let attributes = buttonAttributes(node)
             guard canContinue() else { result.truncated = true; return false }
-            guard let attributes, attributes.role == kAXButtonRole,
-                  attributes.enabled != false else { return false }
+            guard let attributes, attributes.role == kAXButtonRole else { return false }
+            if attributes.enabled == false {
+                result.disabledSpeakerFound = result.disabledSpeakerFound || attributes.labels.contains {
+                    SystemChatGPTVoiceMuteTransport.speakerMuteState(accessibilityLabel: $0) != nil
+                }
+                return false
+            }
             for value in attributes.labels {
                 switch channel {
                 case .microphone:
                     if let state = SystemChatGPTVoiceMuteTransport.microphoneState(accessibilityLabel: value) {
                         result.isMuted = state == .muted
                         result.voiceControlFound = true
+                        result.microphoneFound = true
                         return true
                     }
                 case .speaker:
                     if let muted = SystemChatGPTVoiceMuteTransport.speakerMuteState(accessibilityLabel: value) {
                         result.isMuted = muted
                         result.voiceControlFound = true
+                        result.speakerFound = true
                         return true
                     }
-                    if SystemChatGPTVoiceMuteTransport.microphoneState(accessibilityLabel: value) != nil
-                        || ["end voice", "end voice chat", "stop voice chat"].contains(
-                            value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) {
+                    if SystemChatGPTVoiceMuteTransport.microphoneState(accessibilityLabel: value) != nil {
+                        result.microphoneFound = true
+                        result.voiceControlFound = true
+                    }
+                    if ["end voice", "end voice chat", "stop voice chat"].contains(
+                        value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) {
+                        result.endFound = true
                         result.voiceControlFound = true
                     }
                 }
