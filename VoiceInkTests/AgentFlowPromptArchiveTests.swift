@@ -436,7 +436,8 @@ struct AgentFlowPromptArchiveTests {
         #expect(!preview.contains("…"))
         for word in words { #expect(preview.contains(word)) }
         #expect(!preview.contains("private quoted context") && !preview.contains("private image path"))
-        #expect(preview.hasSuffix(#"before answering.}\)"#))
+        #expect(preview.hasSuffix("Read the [full prompt](/Users/test/Library/Application%20Support/AgentFlow/Prompts/full.md) before answering."))
+        #expect(!preview.contains("\\("))
         let firstTail = try #require(preview.range(of: "word1000"))
         let lastHead = try #require(preview.range(of: "word999"))
         #expect(lastHead.lowerBound < firstTail.lowerBound)
