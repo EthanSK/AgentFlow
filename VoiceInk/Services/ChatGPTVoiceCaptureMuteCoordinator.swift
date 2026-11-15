@@ -846,7 +846,10 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTV
             },
             canContinue: hasTime
         )
-        let expired = prepareRefused || !hasTime()
+        // A readable control passed the reader's final deadline check. Crossing
+        // the clock boundary while preparing telemetry cannot turn that success
+        // into a claimed truncated read.
+        let expired = result.isMuted == nil && (prepareRefused || !hasTime())
         result.truncated = result.truncated || expired
         let channelName: String
         switch channel { case .microphone: channelName = "microphone"; case .speaker: channelName = "speaker" }
