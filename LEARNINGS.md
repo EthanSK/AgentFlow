@@ -1,5 +1,39 @@
 # Learnings
 
+## 2026-11-15 — Claude local-file eligibility must come from its own Code pane
+
+Ethan asked for Codex-style full-prompt messages in local Claude Code while
+preserving remote use. The older blanket Claude-inline policy protected Chat,
+Cloud and SSH sessions that cannot read the sender's Mac files; it was not proof
+of a shared Codex Plain text setting. No equivalent Claude composer switch was
+verified. In Claude Desktop5.11492.5, a separate synthetic This computer session
+actually read an absolute prompt path outside its session directory and returned
+the exact requested token. Its user bubble displayed Markdown source literally.
+The manual test used two submitted messages, so this proves file access, not a
+single Agent Flow paste or physical recording acceptance.
+
+Native AX exposes that separate session's web area as `about:blank` even after it
+starts. The main Code URL uses `/epitaxy/local_`, but installed renderer evidence
+shows that prefix also covers SSH. Neither URL alone establishes local access.
+Native AX preserves unnamed group wrappers that Computer Use's readable tree
+omits. A first direct-sibling fixture passed unit tests but the real read returned
+false in5ms. Collapsing bounded single-child unnamed groups, while retaining named
+and branching containers, found the nearest Session tools + content shell and its
+own Session details → Environment → This computer label. The actual production
+reader returned local=true in14.13ms on that synthetic window without focus writes,
+keys, app activation, transcript reads or continuous scans.
+
+The presentation check runs once at finish on a worker, with an80ms actual-work
+deadline, per-attempt caches, explicit unknown fallback and fresh marker/window/
+focus checks. A collapsed session rail remains inline; never open it, change
+focus or infer locality from another pane to make classification pass. Local Code
+uses existing compact archive/preview assembly. Chat, Cloud, SSH, unknown panes,
+clipboard-only, raw/skip, ordinary app filtering and delivery ownership retain
+their existing routes. `ClaudePromptEnvironmentTests` covers native wrappers,
+popout/main URL distinctions, missing/ambiguous/unreadable cards, sibling local
+sessions and transcript exclusion. Verify the exact numbered installed binary
+separately; the native-window probe is not installation evidence.
+
 ## 2026-11-15 — A final empty child read can conceal an expired Voice deadline
 
 Ethan's natural515 recording at01:36:57 still skipped speaker dispatch. Both

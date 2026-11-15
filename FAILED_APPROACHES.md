@@ -1,5 +1,21 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-15 — A flattened Claude tree is not the native AX shape
+
+The initial local Code classifier required Session tools and Session details as
+direct siblings and an HTTPS `/epitaxy/local_` web URL. Its fake tree passed while
+the separate real Claude5.11492.5 window was rejected in about5ms. The native
+window retained many unnamed group wrappers and exposed `about:blank` after a
+session started. Increasing timeouts would not repair those structural errors.
+
+Use the measured pane shell, bounded single-child wrapper collapsing, a pane-local
+This computer card and the Code-heading requirement for native blank documents.
+Keep named containers and branching boundaries; do not replace this with a global
+window search or accept every local_ URL, because SSH uses that prefix too.
+Reconsider direct-child/HTTPS-only recognition only after a changed supported host
+actually exposes that shape and the same local/remote fixtures and own-window read
+pass. Keep an unknown environment inline rather than dropping its context.
+
 ## 2026-11-15 — Speaker-first ordering is insufficient when the initial tree fails
 
 Installed515 moved both observations before mic dispatch, yet the01:36:57 live

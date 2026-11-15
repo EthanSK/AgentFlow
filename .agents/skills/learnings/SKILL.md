@@ -123,8 +123,16 @@ first filter automatic output by its actual recipient: ordinary apps such as
 Chrome, Safari, editors, terminals and unknown identities receive authored
 speech/typing only, without prompt links, XML, timestamps or math. Only Codex,
 Telegram and Claude Desktop have context overrides: local Codex hosts use compact
-file links; both Telegram identities and `com.anthropic.claudefordesktop` retain
-inline XML. Cloud ChatGPT, Slack, Discord and all other apps receive plain authored
+file links; both Telegram identities retain inline XML. Claude Desktop uses compact
+files only when its focused Code pane's visible Environment card proves **This computer**;
+Chat, Cloud, SSH and unknown or hidden environments keep complete inline XML.
+This is a bounded, off-main-thread presentation check at finish, never a focus or
+delivery change, startup scan or poll. Native AX retains unnamed wrappers omitted
+by Computer Use; standalone Code windows expose `about:blank`, while `local_`
+session URLs can also identify SSH. Require measured pane-local proof, not either
+URL alone. User-requested local Code change and remote preservation — 2026-11-15;
+see the corresponding native-window evidence in `LEARNINGS.md`.
+Cloud ChatGPT, Slack, Discord and all other apps receive plain authored
 speech/typing. Claude Code in an ordinary terminal/editor does not identify itself
 as Claude Desktop; do not broaden those hosts automatically. Share the local
 interpretation skill with Claude Code through a symlink to the existing Codex
