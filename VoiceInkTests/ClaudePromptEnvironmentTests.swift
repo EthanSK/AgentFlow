@@ -132,18 +132,19 @@ import Testing
         wrapper.add(wrappers.toolbar)
         #expect(!wrappers.resolves())
         let unreadable = Fixture()
-        #expect(!ClaudePromptEnvironment.isLocalCode(from: unreadable.prompt,
+        let unreadableResult: Bool = ClaudePromptEnvironment.isLocalCode(from: unreadable.prompt,
             parent: { $0.parent }, children: { $0 === unreadable.details ? nil : $0.children },
             role: { $0.role }, named: { $0.name == $1 },
             transparent: { $0.role == "AXGroup" && $0.name.isEmpty }, same: { $0 === $1 },
-            localMarker: { $0.local }, codeDocument: { $0.code && ($1 || $0.mainDocument) }, expired: { false }))
+            localMarker: { $0.local }, codeDocument: { $0.code && ($1 || $0.mainDocument) }, expired: { false })
+        #expect(!unreadableResult)
     }
 
     @Test func classificationNeverVisitsMessageDescendantsOrReadsTheirValues() {
         let f = Fixture()
         f.conversation.add(Node("AXStaticText", "private message"))
         var visitedTranscript = false
-        #expect(ClaudePromptEnvironment.isLocalCode(from: f.prompt,
+        let result: Bool = ClaudePromptEnvironment.isLocalCode(from: f.prompt,
             parent: { $0.parent }, children: {
                 if $0 === f.conversation { visitedTranscript = true }
                 return $0.children
@@ -152,7 +153,8 @@ import Testing
             localMarker: { node in
                 #expect(node === f.marker)
                 return node.local
-            }, codeDocument: { $0.code && ($1 || $0.mainDocument) }, expired: { false }))
+            }, codeDocument: { $0.code && ($1 || $0.mainDocument) }, expired: { false })
+        #expect(result)
         #expect(!visitedTranscript)
     }
 
