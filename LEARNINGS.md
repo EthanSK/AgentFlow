@@ -1,5 +1,29 @@
 # Learnings
 
+## 2026-11-15 — A final empty child read can conceal an expired Voice deadline
+
+Ethan's natural515 recording at01:36:57 still skipped speaker dispatch. Both
+initial observations failed before any shortcut, disproving that post-mic
+ordering alone explains the missing controls. A later delegated read found the
+floating AXDialog's native button search returned its correctly labelled
+checkboxes in3ms. That observation does not prove the production window lookup
+completed within its budget; the proposed AXWindows timeout remains unmeasured.
+
+The reader advanced past its final queued root before children returned empty.
+If a child accessor then exhausted the deadline, index equalled queue.count and
+the result incorrectly said truncated=false. Recheck the budget after children
+and at loop exit. Record elapsed time, AXWindows status/count/read duration and
+deadline exhaustion without titles, labels or content. A complete empty tree and
+a timed-out tree are different evidence, neither proof that no Voice call exists.
+
+Within the unchanged120ms deadline and40ms ordinary IPC cap, prefer measured
+AXDialog roots and finish each window before another window's chat controls.
+One structural multiple-attribute read can replace three child IPCs, with the
+original bounded fallback only for whole-batch failure. Per-attribute errors
+remain unknown. These are search/diagnostic changes, not permission to add focus,
+polling, a blind speaker toggle or a larger budget. Real silence/restoration must
+still be established by the user's natural recording, not graph tests.
+
 ## 2026-11-15 — Observe both Voice channels before a microphone toggle
 
 Ethan's real 00:55 test on installed514 muted the microphone but left speakers

@@ -1,5 +1,22 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-15 — Speaker-first ordering is insufficient when the initial tree fails
+
+Installed515 moved both observations before mic dispatch, yet the01:36:57 live
+recording still returned an unreadable microphone and a one-node speaker result
+with no native search. No speaker shortcut was sent. Therefore the00:55
+post-mic failure is one episode, not a complete explanation or a verified fix.
+The one-node truncated=false result was also not reliable evidence of a complete
+tree: the final child read can exhaust the deadline after the queue index reaches
+its end. Preserve that failure and truthful timing before changing the budget.
+
+Reconsider a larger deadline or different root lookup only after actual
+production window-status/timing evidence identifies that boundary, under Ethan's
+required consultation. A later3ms dialog search and H Chat's slower successful
+reads do not establish that Agent Flow's entire120ms operation can succeed.
+Keep existing state/call/ownership safeguards; do not treat skipped dispatch as
+a Codex shortcut failure or file a product defect on that unsupported claim.
+
 ## 2026-11-15 — Parallel microphone and speaker checks can race their own toggle
 
 Installed514 used `async let` for the local speaker path while suppressing the

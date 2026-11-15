@@ -18,20 +18,27 @@ private final class VoiceControlGraph {
     var buttonReads: [Int] = []
     var running = true
     var expireAfterRole = false
+    var expireAfterChildren = false
+    var maximumButtonReads: Int?
 
-    func read(_ channel: ChatGPTVoiceControlChannel = .speaker) -> ChatGPTVoiceControlRead {
+    func read(_ channel: ChatGPTVoiceControlChannel = .speaker, roots: [Int] = [0]) -> ChatGPTVoiceControlRead {
         ChatGPTVoiceControlReader.read(
-            roots: [0], channel: channel,
+            roots: roots, channel: channel,
             role: { id in
                 if self.expireAfterRole { self.running = false }
                 return self.nodes[id]?.role
             },
             buttonAttributes: { id in
                 self.buttonReads.append(id)
+                if let limit = self.maximumButtonReads, self.buttonReads.count >= limit { self.running = false }
                 guard let node = self.nodes[id] else { return nil }
                 return .init(role: node.role, enabled: node.enabled, labels: node.label.map { [$0] } ?? [])
             },
-            children: { self.childrenReads.append($0); return self.nodes[$0]?.children ?? [] },
+            children: {
+                self.childrenReads.append($0)
+                if self.expireAfterChildren { self.running = false }
+                return self.nodes[$0]?.children ?? []
+            },
             buttonSearch: { self.searchReads.append($0); return self.searches[$0] },
             canContinue: { self.running }
         )
@@ -218,6 +225,60 @@ struct ChatGPTVoiceControlReaderTests {
         #expect(result.isMuted == nil)
         #expect(graph.searchReads.isEmpty)
         #expect(graph.childrenReads.isEmpty)
+    }
+
+    @Test func finalEmptyChildReadCannotHideDeadlineExpiry() {
+        let graph = VoiceControlGraph()
+        graph.nodes[0] = .init()
+        graph.expireAfterChildren = true
+        let result = graph.read()
+        #expect(result.visitedCount == 1)
+        #expect(result.truncated)
+        #expect(result.isMuted == nil && !result.voiceControlFound)
+    }
+
+    @Test func floatingDialogFinishesBeforeALargeOtherWindowCanSpendTheBudget() {
+        let graph = VoiceControlGraph()
+        graph.nodes[0] = .init(role: "AXWebArea")
+        graph.nodes[1] = .init(role: kAXWindowRole, children: [2])
+        graph.nodes[2] = .init(children: [3])
+        graph.nodes[3] = .init(role: "AXWebArea")
+        graph.nodes[4] = .init(role: kAXCheckBoxRole, label: "Mute voice chat")
+        for id in 10..<30 { graph.nodes[id] = .init(role: kAXButtonRole, label: "Copy") }
+        graph.searches[0] = .init(buttons: Array(10..<30), complete: true)
+        graph.searches[3] = .init(buttons: [4], complete: true)
+        graph.maximumButtonReads = 5
+        let roots = ChatGPTVoiceControlReader.prioritizingDialogs([0, 1]) {
+            $0 == 1 ? kAXDialogSubrole : kAXStandardWindowSubrole
+        }
+        let result = graph.read(roots: roots)
+        #expect(result.isMuted == false && result.speakerFound && !result.truncated)
+        #expect(graph.searchReads == [3])
+        #expect(graph.buttonReads == [4])
+        #expect(!graph.childrenReads.contains(0))
+    }
+
+    @Test func dialogPriorityReadsEachSubroleOnceAndPreservesOtherWindows() {
+        var reads: [Int] = []
+        let roots = ChatGPTVoiceControlReader.prioritizingDialogs([0, 1, 2, 3]) { node in
+            reads.append(node)
+            return node == 2 ? kAXDialogSubrole : nil
+        }
+        #expect(roots == [2, 0, 1, 3])
+        #expect(reads == [0, 1, 2, 3])
+    }
+
+    @Test func aLaterWindowIsStillReadWhenTheFirstContainsNoVoiceControls() {
+        let graph = VoiceControlGraph()
+        graph.nodes[0] = .init(role: "AXWebArea")
+        graph.nodes[1] = .init(role: "AXWebArea")
+        graph.nodes[2] = .init(role: kAXButtonRole, label: "Copy")
+        graph.nodes[3] = .init(role: kAXCheckBoxRole, label: "Unmute voice chat")
+        graph.searches[0] = .init(buttons: [2], complete: true)
+        graph.searches[1] = .init(buttons: [3], complete: true)
+        let result = graph.read(roots: [0, 1])
+        #expect(result.isMuted == true && result.speakerFound && !result.truncated)
+        #expect(graph.searchReads == [0, 1])
     }
 
     @Test func repeatedElementsAndCyclesAreReadOnce() {

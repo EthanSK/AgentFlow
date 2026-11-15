@@ -56,6 +56,21 @@ enum ChatGPTVoiceControlReader {
         role == kAXButtonRole || role == kAXCheckBoxRole
     }
 
+    /// The floating Voice window is an AXDialog. Finish its small tree before
+    /// spending this read's shared budget on a different, potentially huge chat.
+    /// This is only search order; exact control labels still prove Voice state.
+    static func prioritizingDialogs<Node>(
+        _ roots: [Node], subrole: (Node) -> String?
+    ) -> [Node] {
+        var dialogs: [Node] = []
+        var others: [Node] = []
+        for root in roots {
+            if subrole(root) == kAXDialogSubrole { dialogs.append(root) }
+            else { others.append(root) }
+        }
+        return dialogs + others
+    }
+
     static func read<Node: Hashable>(
         roots: [Node], channel: ChatGPTVoiceControlChannel,
         role: (Node) -> String?, buttonAttributes: (Node) -> ChatGPTVoiceButtonAttributes?,
@@ -64,8 +79,6 @@ enum ChatGPTVoiceControlReader {
         canContinue: () -> Bool
     ) -> ChatGPTVoiceControlRead {
         var result = ChatGPTVoiceControlRead()
-        var queue = roots.map { ($0, 0) }
-        var index = 0
         var visited = Set<Node>()
 
         func inspectControl(_ node: Node) -> Bool {
@@ -113,37 +126,52 @@ enum ChatGPTVoiceControlReader {
             return false
         }
 
-        while index < queue.count, visited.count < 12_000, canContinue() {
-            let (node, depth) = queue[index]
-            index += 1
-            guard visited.insert(node).inserted else { continue }
-            result.visitedCount = visited.count
-            let currentRole = role(node)
-            if isSupportedControlRole(currentRole), inspectControl(node) { return result }
-            if currentRole == "AXWebArea", canContinue(), let found = buttonSearch(node) {
-                result.nativeSearchCount += 1
-                for button in found.buttons {
-                    guard canContinue(), visited.count < 12_000 else {
-                        result.truncated = true
-                        return result
+        // A single breadth-first queue interleaved every chat window ahead of
+        // the dialog's descendants. Keep breadth-first order inside each root,
+        // but finish the preferred window before touching another window.
+        for root in roots {
+            var queue = [(root, 0)]
+            var index = 0
+            while index < queue.count, visited.count < 12_000, canContinue() {
+                let (node, depth) = queue[index]
+                index += 1
+                guard visited.insert(node).inserted else { continue }
+                result.visitedCount = visited.count
+                let currentRole = role(node)
+                if isSupportedControlRole(currentRole), inspectControl(node) { return result }
+                if currentRole == "AXWebArea", canContinue(), let found = buttonSearch(node) {
+                    result.nativeSearchCount += 1
+                    for button in found.buttons {
+                        guard canContinue(), visited.count < 12_000 else {
+                            result.truncated = true
+                            return result
+                        }
+                        guard visited.insert(button).inserted else { continue }
+                        result.visitedCount = visited.count
+                        // AXButtonSearchKey includes Chromium's checkbox-backed toggle
+                        // buttons. Validate role/label in the existing single batch.
+                        if inspectControl(button) { return result }
                     }
-                    guard visited.insert(button).inserted else { continue }
-                    result.visitedCount = visited.count
-                    // AXButtonSearchKey includes Chromium's checkbox-backed toggle
-                    // buttons. Validate role/label in the existing single batch.
-                    if inspectControl(button) { return result }
+                    // Chromium's search already covered this web subtree. Do not walk
+                    // thousands of message/text nodes after a complete button search.
+                    if found.complete { continue }
                 }
-                // Chromium's search already covered this web subtree. Do not walk
-                // thousands of message/text nodes after a complete button search.
-                if found.complete { continue }
+                if isSupportedControlRole(currentRole)
+                    || [kAXStaticTextRole, kAXImageRole].contains(currentRole ?? "") { continue }
+                guard canContinue() else { result.truncated = true; return result }
+                guard depth < 96 else { result.truncated = true; continue }
+                let descendants = children(node)
+                // An empty result after IPC exhausted the deadline is not a
+                // complete tree. In particular the final root may have no queued
+                // children, so index < queue.count alone misses this timeout.
+                guard canContinue() else { result.truncated = true; return result }
+                queue.append(contentsOf: descendants.map { ($0, depth + 1) })
             }
-            if isSupportedControlRole(currentRole)
-                || [kAXStaticTextRole, kAXImageRole].contains(currentRole ?? "") { continue }
-            guard canContinue() else { result.truncated = true; return result }
-            guard depth < 96 else { result.truncated = true; continue }
-            queue.append(contentsOf: children(node).map { ($0, depth + 1) })
+            if index < queue.count || !canContinue() {
+                result.truncated = true
+                return result
+            }
         }
-        if index < queue.count { result.truncated = true }
         return result
     }
 }
