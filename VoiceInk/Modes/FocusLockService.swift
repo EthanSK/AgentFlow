@@ -77,6 +77,12 @@ final class FocusLockService: ObservableObject {
         let displayInfo: DisplayInfo
         var processIdentifier: pid_t { pid }
         var hasExactInput: Bool { element != nil }
+
+        func supportsLocalClaudePrompt() async -> Bool {
+            guard bundleIdentifier == ClaudePromptEnvironment.bundleIdentifier,
+                  app.bundleURL?.lastPathComponent == "Claude.app", let element else { return false }
+            return await ClaudePromptEnvironment.read(processIdentifier: pid, element: element)
+        }
     }
 
     struct FocusedInputTextSnapshot {

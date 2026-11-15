@@ -1543,6 +1543,29 @@ struct RecorderTypedInputTests {
         #expect(raw.message == "Raw Claude words")
     }
 
+    @Test @MainActor func confirmedLocalClaudeCodeGetsTheSamePlainFullPromptHandoffAsCodex() async throws {
+        let host = AgentFlowPromptPreview.Recipient(bundleID: "com.anthropic.claudefordesktop",
+            bundleURL: URL(fileURLWithPath: "/Applications/Claude.app"))
+        for styled in [false, true] {
+            for typed in ["Short Claude prompt", String(repeating: "All Claude words survive. ", count: 100)] {
+                let result = try await clipboardPipelineFixture(clipboardOnly: false, typed: typed,
+                    speech: "Speech before selection and after it", styled: styled,
+                    recipientOverride: host, localClaudeCode: true)
+                #expect(result.message.hasPrefix("[↗]("))
+                #expect(result.message.contains(typed))
+                #expect(result.message.contains("`<selection>`") && result.message.contains("`<screenshot>`"))
+                #expect(result.message.hasSuffix(AgentFlowPromptPreview.fullPromptPointer(target: result.link)))
+                #expect(!result.message.contains("\\color{") && !result.message.contains("start_at="))
+                #expect(!result.message.contains("Selected exact content"))
+                #expect(result.archive.contains("Selected exact content &amp; metadata"))
+                #expect(result.archive.contains("<local_screenshot") && result.archive.contains(typed))
+            }
+        }
+        let raw = try await clipboardPipelineFixture(clipboardOnly: false, typed: "Raw Claude remains raw",
+            raw: true, recipientOverride: host, localClaudeCode: true)
+        #expect(raw.message == "Raw Claude remains raw")
+    }
+
     @Test @MainActor func clipboardOnlyArchiveFailureRawAndOtherRecipientsRetainFullText() async throws {
         let typed = "Keep every typed word\nand second line"
         let failed = try await clipboardPipelineFixture(typed: typed, speech: "spoken words", archiveFails: true)
@@ -1648,7 +1671,8 @@ struct RecorderTypedInputTests {
         clipboardOnly: Bool = true, typed: String, speech: String = "", styled: Bool = true,
         raw: Bool = false, recipient: String = "com.openai.codex", archiveFails: Bool = false,
         includeContext: Bool = true, outputMode: ModeOutputMode = .paste,
-        recipientOverride: AgentFlowPromptPreview.Recipient? = nil, lateShift: Bool = false,
+        recipientOverride: AgentFlowPromptPreview.Recipient? = nil, localClaudeCode: Bool = false,
+        lateShift: Bool = false,
         lateShiftStage: String = "beforePolicy", providerFails: Bool = false,
         canceled: Bool = false, authorized: Bool = true, emptyProvider: Bool = false,
         realRecoveryGate: Bool = false, hudRecovery: String = "", enhancementResult: String? = nil,
@@ -1694,6 +1718,9 @@ struct RecorderTypedInputTests {
             }, currentPromptRecipient: {
                 recipientReads += 1
                 return recipientOverride ?? .init(bundleID: recipient, bundleURL: URL(fileURLWithPath: "/Applications/Codex.app"))
+            }, localClaudePrompt: { _, target in
+                #expect(target.destination == .primaryCurrentInput && target.focusedInput == nil)
+                return localClaudeCode
             }, copyCompletedText: { text in
                 copies += 1
                 return ClipboardManager.setClipboard(text, transient: false, on: board)

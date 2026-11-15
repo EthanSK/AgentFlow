@@ -722,11 +722,15 @@ enum AgentFlowPromptPreview {
     }
 
     static func supportsLocalFilePrompt(bundleID: String?, bundleURL: URL?,
-                                        version _: String? = nil, build _: String? = nil) -> Bool {
+                                        version _: String? = nil, build _: String? = nil,
+                                        claudeLocalCodeConfirmed: Bool = false) -> Bool {
         // Compact local files are for the known native Codex hosts, independent
         // of their release version. Ordinary apps must not receive agent prompts;
-        // Telegram and Claude instead retain their inline context format. This
+        // Telegram and unconfirmed Claude panes retain inline context. Claude's
+        // measured local Code pane may opt in only after the scoped read proves
+        // "This computer"; a desktop bundle or local_ session ID is not proof. This
         // classifier changes presentation only, never exact-input authority.
+        if bundleID == ClaudePromptEnvironment.bundleIdentifier { return claudeLocalCodeConfirmed }
         guard bundleID == "com.openai.codex" else { return false }
         guard let bundleURL else { return true }
         return ["Codex.app", "ChatGPT.app"].contains(bundleURL.lastPathComponent)
@@ -734,7 +738,7 @@ enum AgentFlowPromptPreview {
 
     static let inlineContextRecipientBundleIdentifiers: Set<String> = [
         "ru.keepcoder.Telegram", "org.telegram.desktop",
-        // Explicit recipient opt-in: Claude needs the full XML in the paste.
+        // Explicit recipient opt-in: unknown Claude panes need full inline XML.
         // Its Chat/remote Code modes cannot be assumed to read this Mac's files.
         // This never allows Claude-specific focus, insertion or Send behavior.
         "com.anthropic.claudefordesktop"
