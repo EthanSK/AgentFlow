@@ -34,6 +34,18 @@ popout/main URL distinctions, missing/ambiguous/unreadable cards, sibling local
 sessions and transcript exclusion. Verify the exact numbered installed binary
 separately; the native-window probe is not installation evidence.
 
+Qualification follow-up: the implementation at `6ee49585` passed all983 named
+tests in46 suites through canonical `xcodebuild test`, including the80 focused
+checks. Local build517 used the installed Developer ID requirement, Automation,
+audio-input entitlement and updater identity. Its event-driven installer waited
+for the app's own idle response, delivered the real five-second warning and made
+one normal quit request; the relaunched app was not hidden or foregrounded.
+Microphone preferences, keyboard bindings and the official VoiceInk executable
+were unchanged. The previous bundle was archived and its retired Trash path was
+unregistered, leaving no extra launchable staging copy. This local receipt does
+not qualify the separate outstanding first-recording Voice-speaker behavior or
+claim a new public download.
+
 ## 2026-11-15 — A final empty child read can conceal an expired Voice deadline
 
 Ethan's natural515 recording at01:36:57 still skipped speaker dispatch. Both
