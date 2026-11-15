@@ -1,5 +1,33 @@
 # Learnings
 
+## 2026-11-15 — Observe both Voice channels before a microphone toggle
+
+Ethan's real 00:55 test on installed514 muted the microphone but left speakers
+audible. The exact trace posted the mic shortcut, then both its post-state read
+and the concurrent speaker read became unreadable. The speaker read exhausted
+the existing budget at one node with no native search and deliberately skipped
+dispatch. There was no speaker ownership or inverse to restore at Stop. Mic
+restoration later read state successfully. The mic pre-state being readable is
+inferred from its branch-specific verification path; the internal cause of
+Codex's temporary AX unresponsiveness is not established.
+
+Claude's single idle baseline found ordinary reads below0.2ms and AXWindows
+at18.6ms. AXWindow rejected the native button predicate with-25213. Selection
+reads began after the failed speaker check, so they were not competing in this
+episode. These facts do not justify a window-root search, a larger deadline,
+continuous polling, focus recovery or a blind speaker toggle.
+
+The local transition must read the mic first, finish the speaker operation, then
+apply the mic operation using that transition's existing snapshot. At Stop it
+must similarly preserve the current mic snapshot and restore speakers before
+posting mic-unmute. Merely moving the speaker first without preserving that mic
+snapshot could invert a manually muted/unmuted mic if a speaker repaint hides
+the controls. Same-call checks at each dispatch, per-channel ownership and paired
+last-owner rules remain separate. No snapshot survives into another transition.
+Regression fixtures model controls disappearing after either toggle, protect
+manual mic/speaker states and require the actual command order. Audible acceptance
+still requires a real call; passing these fixtures is not such acceptance.
+
 ## 2026-11-14 — Floating Codex Voice mute controls are checkbox-backed toggles
 
 Claude's delegated read-only observation of ChatGPT26.1111.21308 on macOS27.2.1

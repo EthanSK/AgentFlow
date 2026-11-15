@@ -52,7 +52,7 @@ struct ChatGPTVoiceButtonAttributes {
 /// path matching H Chat. Chromium also returns the floating panel's checkbox-backed
 /// toggle buttons from that search. Missing controls never mean unmuted.
 enum ChatGPTVoiceControlReader {
-    private static func isSupportedControlRole(_ role: String?) -> Bool {
+    static func isSupportedControlRole(_ role: String?) -> Bool {
         role == kAXButtonRole || role == kAXCheckBoxRole
     }
 

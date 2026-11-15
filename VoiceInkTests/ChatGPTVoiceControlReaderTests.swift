@@ -85,6 +85,11 @@ struct ChatGPTVoiceControlReaderTests {
         #expect(unknown?.enabled == nil)
         #expect(unknown?.labels == ["Unmute speakers"])
         #expect(fallbacks == 2)
+        let checkbox = ChatGPTVoiceButtonAttributes.decode(nil) {
+            .init(role: kAXCheckBoxRole, enabled: true, labels: ["Unmute voice chat"])
+        }
+        #expect(ChatGPTVoiceControlReader.isSupportedControlRole(checkbox?.role))
+        #expect(!ChatGPTVoiceControlReader.isSupportedControlRole(kAXGroupRole))
     }
 
     @Test func nativeSearchCandidatesStillRequireASupportedControlRole() {

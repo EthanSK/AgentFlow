@@ -318,26 +318,37 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
 
     private func beginCapture(_ lease: ChatGPTVoiceCaptureMuteLease) async {
         appliedLease = lease
-        // Run the independent output preflight beside the existing microphone path.
-        // Both finish before AUHAL starts, including when the Voice microphone was already muted.
-        async let silence: Void? = speaker?.silenceForCapture()
-        _ = await suppressChatGPTVoiceIfNeeded(using: .acceptedLocalBinding)
-        _ = await silence
+        // Read the microphone before either channel changes. Codex can stop
+        // answering AX just after its mic shortcut; racing that shortcut with
+        // the speaker check made the real speaker attempt disappear. Finishing
+        // the speaker operation first avoids that race. Carry the existing
+        // microphone snapshot through this one transition so a speaker repaint
+        // cannot turn an already-muted mic into the unknown-state fallback.
+        let before = await transport.snapshot()
+        await speaker?.silenceForCapture()
+        _ = await suppressChatGPTVoiceIfNeeded(using: .acceptedLocalBinding, before: before)
     }
 
     private func endCapture(_ lease: ChatGPTVoiceCaptureMuteLease) async {
         guard appliedLease == lease else { return }
         appliedLease = nil
+        // Preserve a readable manual mic-unmute before the speaker action can
+        // repaint Voice, and restore speakers before the mic shortcut can make
+        // their controls unreadable. This is one fresh transition snapshot,
+        // never cached state for a later capture/call. Paired owners still own
+        // only the microphone and keep the same last-owner restoration rule.
+        let before = appliedPairedOwners.isEmpty && ownedMicrophoneMute != nil
+            ? await transport.snapshot() : nil
+        if requestedLease == nil {
+            await speaker?.restoreAfterCapture()
+        }
         // A queued local capture inherits silence. Paired capture owns only the
         // existing microphone path, so it cannot keep the local speaker silenced.
         if !appliedPairedOwners.isEmpty {
             // A paired Mac is still capturing speech that ChatGPT here must not hear.
             logger.notice("Local capture ended while a paired Mac still needs ChatGPT Voice suppression; restoration deferred to the last owner")
         } else {
-            _ = await restoreChatGPTVoiceIfOwned()
-        }
-        if requestedLease == nil {
-            await speaker?.restoreAfterCapture()
+            _ = await restoreChatGPTVoiceIfOwned(current: before)
         }
     }
 
@@ -368,7 +379,15 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
     private func suppressChatGPTVoiceIfNeeded(
         using authority: ChatGPTVoiceShortcutAuthority
     ) async -> ChatGPTVoiceSuppressionOutcome {
-        guard let before = await transport.snapshot() else {
+        let before = await transport.snapshot()
+        return await suppressChatGPTVoiceIfNeeded(using: authority, before: before)
+    }
+
+    private func suppressChatGPTVoiceIfNeeded(
+        using authority: ChatGPTVoiceShortcutAuthority,
+        before: ChatGPTVoiceInputSnapshot?
+    ) async -> ChatGPTVoiceSuppressionOutcome {
+        guard let before else {
             logger.debug("Capture began without one resolvable ChatGPT application; listener suppression is a no-op")
             return .noChatGPT
         }
@@ -416,11 +435,19 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
     }
 
     private func restoreChatGPTVoiceIfOwned() async -> ChatGPTVoiceRestorationOutcome {
+        guard ownedMicrophoneMute != nil else { return .notOwned }
+        let current = await transport.snapshot()
+        return await restoreChatGPTVoiceIfOwned(current: current)
+    }
+
+    private func restoreChatGPTVoiceIfOwned(
+        current: ChatGPTVoiceInputSnapshot?
+    ) async -> ChatGPTVoiceRestorationOutcome {
         guard let owned = ownedMicrophoneMute else { return .notOwned }
         // A refused post must not leave ownership that a later recording can inherit.
         ownedMicrophoneMute = nil
         let ownedPID = owned.call.applicationPID
-        guard let current = await transport.snapshot(),
+        guard let current,
               current.applicationPID == ownedPID else {
             logger.notice("ChatGPT process changed or exited; stale microphone-suppression ownership was discarded pid=\(ownedPID, privacy: .public)")
             return .processChanged
@@ -737,7 +764,8 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTV
                     fallback: {
                         guard prepare(node.element) else { return nil }
                         let role = stringAttribute(kAXRoleAttribute, from: node.element)
-                        guard role == kAXButtonRole, prepare(node.element) else { return nil }
+                        guard ChatGPTVoiceControlReader.isSupportedControlRole(role),
+                              prepare(node.element) else { return nil }
                         let enabled = boolAttribute(kAXEnabledAttribute, from: node.element)
                         var labels: [String] = []
                         for attribute in ChatGPTVoiceButtonAttributes.names.dropFirst(2) {

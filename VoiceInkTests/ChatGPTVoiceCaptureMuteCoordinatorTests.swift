@@ -76,6 +76,61 @@ private actor FakeChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport {
     }
 }
 
+// Models the real failure: a successful toggle can temporarily hide both AX
+// controls. Read both channels before the microphone action, without a timer,
+// retry, live call or a second source of mute state in the coordinator.
+private actor RepaintingVoiceTransport: ChatGPTVoiceMuteTransport, ChatGPTVoiceSpeakerTransport {
+    let call = ChatGPTVoiceCall(applicationPID: 42, sessionID: UUID())
+    private var microphoneMuted: Bool
+    private var speakerMuted: Bool
+    private var controlsReadable = true
+    private var commands: [String] = []
+
+    init(microphoneMuted: Bool = false, speakerMuted: Bool = false) {
+        self.microphoneMuted = microphoneMuted
+        self.speakerMuted = speakerMuted
+    }
+
+    func snapshot() -> ChatGPTVoiceInputSnapshot? {
+        .init(applicationPID: call.applicationPID, isInputRunning: true,
+              microphoneState: controlsReadable ? (microphoneMuted ? .muted : .listening) : nil,
+              call: call)
+    }
+
+    func postMicrophoneToggle(
+        from before: ChatGPTVoiceInputSnapshot, toward target: ChatGPTVoiceMicrophoneState,
+        using authority: ChatGPTVoiceShortcutAuthority
+    ) -> Bool {
+        guard before.call == call else { return false }
+        commands.append(target == .muted ? "mic mute" : "mic restore")
+        microphoneMuted.toggle()
+        controlsReadable = false
+        return true
+    }
+
+    func microphoneStateAfterToggle(for call: ChatGPTVoiceCall) -> ChatGPTVoiceMicrophoneState? {
+        guard self.call == call, controlsReadable else { return nil }
+        return microphoneMuted ? .muted : .listening
+    }
+
+    func activeSpeakerCall() -> ChatGPTVoiceCall? { call }
+
+    func postSpeakerToggle(for call: ChatGPTVoiceCall, mute: Bool) -> ChatGPTVoiceSpeakerPost {
+        guard self.call == call, controlsReadable, speakerMuted != mute else { return .skipped }
+        commands.append(mute ? "speaker mute" : "speaker restore")
+        speakerMuted.toggle()
+        controlsReadable = false
+        return .posted(priorStateReadable: true)
+    }
+
+    func revealControls(manualMicrophoneMuted: Bool? = nil) {
+        if let manualMicrophoneMuted { microphoneMuted = manualMicrophoneMuted }
+        controlsReadable = true
+    }
+
+    func postedCommands() -> [String] { commands }
+}
+
 struct ChatGPTVoiceCaptureMuteCoordinatorTests {
     private let pid: pid_t = 4_242
     private let sessionID = UUID()
@@ -86,6 +141,51 @@ struct ChatGPTVoiceCaptureMuteCoordinatorTests {
     ) -> ChatGPTVoiceInputSnapshot {
         .init(applicationPID: pid, isInputRunning: isInputRunning, microphoneState: state,
               call: isInputRunning ? .init(applicationPID: pid, sessionID: sessionID) : nil)
+    }
+
+    @Test func speakerChecksAndRestorationPrecedeTheMicrophoneRepaint() async {
+        let transport = RepaintingVoiceTransport()
+        let coordinator = ChatGPTVoiceCaptureMuteCoordinator(
+            transport: transport, speaker: ChatGPTVoiceCaptureSpeaker(transport: transport))
+        let lease = await coordinator.prepareForCapture()
+        #expect(await transport.postedCommands() == ["speaker mute", "mic mute"])
+        await transport.revealControls()
+        await coordinator.releaseCapture(lease)
+        await coordinator.waitForPendingTransitionsForTesting()
+        #expect(await transport.postedCommands() == ["speaker mute", "mic mute", "speaker restore", "mic restore"])
+    }
+
+    @Test func speakerRepaintDoesNotUnmuteAnInitiallyManuallyMutedMicrophone() async {
+        let transport = RepaintingVoiceTransport(microphoneMuted: true)
+        let coordinator = ChatGPTVoiceCaptureMuteCoordinator(
+            transport: transport, speaker: ChatGPTVoiceCaptureSpeaker(transport: transport))
+        let lease = await coordinator.prepareForCapture()
+        await transport.revealControls()
+        await coordinator.releaseCapture(lease)
+        await coordinator.waitForPendingTransitionsForTesting()
+        #expect(await transport.postedCommands() == ["speaker mute", "speaker restore"])
+    }
+
+    @Test func speakerRestorationRepaintPreservesAManualMicrophoneUnmute() async {
+        let transport = RepaintingVoiceTransport()
+        let coordinator = ChatGPTVoiceCaptureMuteCoordinator(
+            transport: transport, speaker: ChatGPTVoiceCaptureSpeaker(transport: transport))
+        let lease = await coordinator.prepareForCapture()
+        await transport.revealControls(manualMicrophoneMuted: false)
+        await coordinator.releaseCapture(lease)
+        await coordinator.waitForPendingTransitionsForTesting()
+        #expect(await transport.postedCommands() == ["speaker mute", "mic mute", "speaker restore"])
+    }
+
+    @Test func manualSpeakerMuteRemainsUnownedAcrossTheOrderedTransition() async {
+        let transport = RepaintingVoiceTransport(speakerMuted: true)
+        let coordinator = ChatGPTVoiceCaptureMuteCoordinator(
+            transport: transport, speaker: ChatGPTVoiceCaptureSpeaker(transport: transport))
+        let lease = await coordinator.prepareForCapture()
+        await transport.revealControls()
+        await coordinator.releaseCapture(lease)
+        await coordinator.waitForPendingTransitionsForTesting()
+        #expect(await transport.postedCommands() == ["mic mute", "mic restore"])
     }
 
     @Test func speakerRestoresAcrossCaptureOffResumeAndFinalCompletion() async {

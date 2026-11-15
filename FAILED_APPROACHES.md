@@ -1,5 +1,25 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-15 — Parallel microphone and speaker checks can race their own toggle
+
+Installed514 used `async let` for the local speaker path while suppressing the
+microphone. In Ethan's00:55 recording the mic posted first; the following mic
+verification and speaker checks were unreadable, with the speaker exhausting
+120ms at node1 and skipping dispatch. The real test therefore never silenced
+speakers despite the earlier checkbox fix and passing fixture suite. Keep both
+channels' observations before the mic toggle and restore speakers first. Preserve
+the mic snapshot through that same transition so a speaker repaint does not
+convert a readable manual state to the accepted unknown-state fallback.
+
+Three separate children queries worsen a stalled read, but an idle native
+baseline found each under0.2ms; they are not the established trigger here.
+Reconsider that optimization separately with measured pre-toggle pressure.
+AXWindow returned-25213 for the native search predicate, so moving the search
+onto window roots is not a supported shortcut. Reconsider parallel dispatch only
+with actual evidence that both channels are read before either mutation and
+manual state/call boundaries remain intact; a posted key or a fake graph alone
+does not establish audible silence/restoration.
+
 ## 2026-11-14 — The native button search is not limited to AXButton results
 
 A proposed floating-Voice workaround assumed a complete `AXButtonSearchKey`
