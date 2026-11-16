@@ -78,13 +78,17 @@
           <div class="hero-aside" id="download">
             <p class="lede">Highlight text or take a screenshot while you talk. Agent Flow pastes your words with each reference near what you were saying, so your agent can see what you were looking at.</p>
             <!--
-              Build 514: reads the floating Codex Voice panel's mute state through its
-              checkbox controls, so recording can check the microphone and speakers
-              before falling back to the shortcut. Presentation is unchanged, so the
-              build 513 demo, promo video and captions stay accurate.
+              Build 519: finishes with only typed words are silent; speech and mixed
+              sessions keep the finish sound. Automatic Codex Voice speaker mute and
+              unmute is off for now; microphone muting stays. Local Code panes in the
+              Claude desktop app, when positively identified, get the same full-prompt
+              file handoff as Codex; cloud, SSH and unknown Claude chats keep full
+              inline content, and terminal Claude Code stays plain like other
+              terminals. Codex presentation is unchanged, so the build 513 demo, promo
+              video and captions stay accurate.
             -->
-            <p class="actions"><a class="button" href="https://github.com/EthanSK/AgentFlow/releases/download/v2.0.514/AgentFlow-v2.0.514-mac-universal.zip">Download for Mac <span aria-hidden="true">↓</span></a></p>
-            <p class="release-note">v2.0.514 · macOS 14.4+ · Apple silicon and Intel<br>Developer ID signed and Apple notarized.</p>
+            <p class="actions"><a class="button" href="https://github.com/EthanSK/AgentFlow/releases/download/v2.0.519/AgentFlow-v2.0.519-mac-universal.zip">Download for Mac <span aria-hidden="true">↓</span></a></p>
+            <p class="release-note">v2.0.519 · macOS 14.4+ · Apple silicon and Intel<br>Developer ID signed and Apple notarized.</p>
             <p class="source-link"><a href="#build">Build from source</a></p>
           </div>
         </div>
@@ -182,7 +186,7 @@
               <li>Every full prompt is saved privately on your Mac and opens in a local viewer with your screenshots. Nothing is uploaded, so cloud-only chats can't open it.</li>
               <li>Click the recorder's typing line to add typed words. Enter places them at that point in your speech, Shift+Enter adds a line break, and Command+Enter finishes and sends. The microphone keeps recording.</li>
               <li>Highlights are kept in full, with whitespace intact. Separate highlights stay in order, even without speech between them.</li>
-              <li>Context is pasted only into the Claude and Telegram desktop apps, and linked from Codex messages. Other apps, including browsers and terminals, get your spoken and typed words without tags.</li>
+              <li>Context is linked from Codex messages and local Code panes in the Claude desktop app, and pasted into the app's other chats and the Telegram desktop app. Other apps, including browsers and terminals, get your spoken and typed words without tags.</li>
               <li>Saved screenshots add a file path, not an upload. Your agent needs access to that file.</li>
               <li>Placement is approximate: live recognition can revise earlier words.</li>
               <li>Selection capture depends on the app. Highlights are read without pressing Copy; password fields are skipped.</li>
@@ -250,7 +254,7 @@
           <p class="note">No API keys, private endpoints or personal settings are bundled. Your key stays in macOS Keychain, and providers bill you directly.</p>
           <p class="note"><strong>On an Intel Mac</strong>, use a cloud transcription provider with your own key, which bills you for usage. Local models aren't reliable on Intel; the on-device model is for Apple silicon.</p>
           <p class="note">Auto-send presses Return after pasting. It starts off; enable it per app in Modes if you want it. For Codex CLI or Claude Code, configure the terminal or editor it runs in.</p>
-          <p class="note">Updates are manual: new versions are on <a href="https://github.com/EthanSK/AgentFlow/releases">GitHub releases</a>. Agent Flow never replaces itself or installs upstream VoiceInk.</p>
+          <p class="note">Agent Flow can check for updates daily and offer new versions, which are also on <a href="https://github.com/EthanSK/AgentFlow/releases">GitHub releases</a>. Updates install only when nothing is recording, transcribing or pasting, and the updater never installs upstream VoiceInk, a separate app.</p>
           <details class="optional" id="pieces">
             <summary>Optional extras</summary>
             <dl class="pieces">

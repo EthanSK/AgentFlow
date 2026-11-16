@@ -18,6 +18,16 @@ handling and manual speaker shortcuts. Do not re-enable this from a saved shortc
 or a later repair without Ethan asking to revisit it. The former fresh-call
 speaker-repair acceptance check is superseded by this explicit off instruction.
 
+Build519 retains the present speaker service for capture/quit accounting but its
+disabled control issues zero reads or posts over repeated transitions. The
+mic-only regression verifies both owned mute/restore and an initially manually
+muted microphone. The local source7df7b097 passed64 named canonical Mini checks
+and the five exact-source sound dispatch checks before guarded installation.
+The native-identical main integration07f6ac85 then passed986 named Mini tests in46
+suites. Public v2.0.519 is Developer ID signed, Apple-notarized and stapled; its
+downloaded ZIP passed checksum, strict signature and Gatekeeper checks. Dispatch
+and state tests do not claim a physical listening check.
+
 ## 2026-11-16 — Stop feedback belongs to the finished job's audio history
 
 Ethan wants typed Agent Flow sends silent and the finish sound kept for actual
@@ -34,8 +44,9 @@ typing silence, speech dispatch, overlapping-job isolation, the existing sound
 preference, and unchanged start/cancel dispatch. The signed ordinary universal
 Release518 was installed through an8.26-second warning and one cooperative quit;
 stable signing, microphone settings, keybindings and official VoiceInk verified.
-This is dispatch evidence, not a physical listening check. Public qualification
-remains held by the earlier fresh-Voice-call speaker acceptance.
+This is dispatch evidence, not a physical listening check. The initial518 public
+qualification waited for the fresh-Voice-call speaker acceptance; the later519
+speaker-disable instruction above supersedes that hold.
 
 ## 2026-11-15 — Claude local-file eligibility must come from its own Code pane
 
