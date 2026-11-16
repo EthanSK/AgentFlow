@@ -9,6 +9,16 @@ to every delivery output and clipboard-only completion; the current microphone
 state may belong to a newer overlapping recording. Keep the existing sound
 preference, start/cancel/error feedback, paste and Send timing unchanged.
 
+Build518 source887419d0 passed nine focused canonical Mini tests, including the
+typed/mixed production pipelines and Primary/Next/HUD-only guards. Compiling the
+exact SoundManager with silent playback ports separately proved five checks:
+typing silence, speech dispatch, overlapping-job isolation, the existing sound
+preference, and unchanged start/cancel dispatch. The signed ordinary universal
+Release518 was installed through an8.26-second warning and one cooperative quit;
+stable signing, microphone settings, keybindings and official VoiceInk verified.
+This is dispatch evidence, not a physical listening check. Public qualification
+remains held by the earlier fresh-Voice-call speaker acceptance.
+
 ## 2026-11-15 — Claude local-file eligibility must come from its own Code pane
 
 Ethan asked for Codex-style full-prompt messages in local Claude Code while
