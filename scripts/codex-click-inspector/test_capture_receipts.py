@@ -1,4 +1,5 @@
 """Regress the former capture-receipt veto using the real worker and fake AX only."""
+from __future__ import annotations
 import time
 import unittest
 from types import SimpleNamespace

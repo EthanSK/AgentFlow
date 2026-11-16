@@ -61,6 +61,7 @@ class Sample:
     elapsed_ms: int = 0
     errors: tuple[str, ...] = ()
     focus_stable: bool | None = None
+    element_key: int = 0  # Native identity only, never the editor's text.
 
     @property
     def layout(self):

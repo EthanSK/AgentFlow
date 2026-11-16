@@ -88,6 +88,7 @@ class FakeFocuser(PaneInputFocuser):
         self.follow_write = True
         self.caret_writes, self.draft_length = [], 7
         self.selected_length = 0
+        self.remembered_input = None
 
     def selection_length(self, target):
         return self.selected_length
@@ -388,6 +389,95 @@ class PaneFocuserTests(unittest.TestCase):
         self.assertTrue(self.run_focus().startswith("Focused Side chat input · verified"))
         self.assertEqual(self.focuser.writes, ["input"])
 
+
+
+class RememberedInputTests(unittest.TestCase):
+    def setUp(self):
+        self.reader = FakeReader()
+        self.focuser = FakeFocuser(self.reader)
+        self.reader.focused, self.reader.frontmost = "input", 99
+        self.sample = Sample(42, hash("window"), Rect(0, 0, 2500, 1500), 0, 0, (
+            Node("AXTextArea", "", "", self.reader.rect("input"), False, True),
+            Node("AXGroup", "", "", REGION_FRAME, subrole="AXLandmarkRegion", conversation=True),
+            Node("AXTabPanel", "app-shell-tab-panel-app-shell-tab:2", "", REGION_FRAME)),
+            focus_stable=True, element_key=hash("input"))
+        self.reader.sample = lambda *args, **kwargs: self.sample
+
+    def tearDown(self):
+        self.focuser.forget()
+        self.assertTrue(all(n == 0 for n in self.reader.refs.values()), self.reader.refs)
+
+    def remember(self):
+        self.focuser.remember(42, "ChatGPT.app")
+        self.assertIsNotNone(self.focuser.remembered_input)
+
+    def test_departed_input_is_remembered_even_when_inactive_focused_flag_is_false(self):
+        self.remember()
+        self.assertEqual(self.focuser.writes, [])
+
+    def test_main_and_side_restore_exact_input_without_touching_draft_caret_or_selection(self):
+        from dataclasses import replace
+        for main in (False, True):
+            if main:
+                self.sample = replace(self.sample, nodes=self.sample.nodes[:2] + (
+                    Node("AXGroup", "", "", REGION_FRAME, subrole="AXLandmarkMain"),))
+            self.reader.focused, self.reader.frontmost = "input", 99
+            self.remember()
+            self.reader.focused, self.reader.frontmost = "region", 42
+            self.focuser.selected_length = 3
+            self.focuser.restore(42, lambda: True)
+            self.assertEqual(self.reader.focused, "input")
+            self.assertEqual(self.focuser.caret_writes, [])
+            self.assertIsNone(self.focuser.remembered_input)
+
+    def test_already_correct_focus_is_left_untouched(self):
+        self.remember()
+        self.reader.frontmost = 42
+        self.focuser.restore(42, lambda: True)
+        self.assertEqual(self.focuser.writes, [])
+
+    def test_newer_click_typing_or_app_switch_prevents_restore(self):
+        for current, frontmost in ((False, 42), (True, 99)):
+            self.reader.focused, self.reader.frontmost = "input", 99
+            self.remember()
+            self.reader.focused, self.reader.frontmost = "region", frontmost
+            self.focuser.restore(42, lambda: current)
+        self.assertEqual(self.focuser.writes, [])
+
+    def test_other_window_annotation_and_closed_pane_prevent_restore(self):
+        for change in ("window", "annotation", "closed"):
+            self.setUp()
+            self.remember()
+            self.reader.frontmost = 42
+            if change == "window":
+                self.reader.window = "another-window"
+            elif change == "annotation":
+                self.reader.attrs["annotation"] = {"AXRole": "AXTextArea", "AXDescription": "Annotation"}
+                self.reader.focused = "annotation"
+            else:
+                self.reader.tree["wrap5"] = []
+            self.focuser.restore(42, lambda: True)
+            self.assertEqual(self.focuser.writes, [])
+            self.tearDown()
+
+    def test_failed_departure_replaces_old_memory_instead_of_reusing_wrong_pane(self):
+        from dataclasses import replace
+        self.remember()
+        self.sample = replace(self.sample, focus_stable=False)
+        self.focuser.remember(42, "ChatGPT.app")
+        self.assertIsNone(self.focuser.remembered_input)
+
+    def test_return_overtaking_departure_never_saves_new_default_input(self):
+        self.reader.frontmost = 42
+        self.focuser.remember(42, "ChatGPT.app")
+        self.assertIsNone(self.focuser.remembered_input)
+
+    def test_capture_rejects_changed_element_identity_and_unknown_structure(self):
+        from dataclasses import replace
+        for sample in (replace(self.sample, element_key=123), replace(self.sample, nodes=self.sample.nodes[:1])):
+            self.sample = sample
+            self.focuser.remember(42, "ChatGPT.app")
+            self.assertIsNone(self.focuser.remembered_input)
 
 if __name__ == "__main__":
     unittest.main()

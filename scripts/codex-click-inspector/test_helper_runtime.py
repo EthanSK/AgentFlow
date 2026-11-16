@@ -275,7 +275,9 @@ class LifecycleTests(unittest.TestCase):
         self.assertEqual([c.args[2] for c in workspace_center.addObserver_selector_name_object_.call_args_list],
                          [inspector.K.NSWorkspaceDidWakeNotification,
                           inspector.K.NSWorkspaceSessionDidBecomeActiveNotification,
-                          inspector.K.NSWorkspaceDidLaunchApplicationNotification])
+                         inspector.K.NSWorkspaceDidLaunchApplicationNotification,
+                         inspector.K.NSWorkspaceDidDeactivateApplicationNotification,
+                         inspector.K.NSWorkspaceDidActivateApplicationNotification])
 
     def test_hidden_results_update_state_without_rendering(self):
         owner = inspector.Inspector.alloc().init()
@@ -372,6 +374,50 @@ class LifecycleTests(unittest.TestCase):
             stable.symlink_to(target)
             self.assertEqual(configuration(stable, directory, directory)["ProgramArguments"][0], str(stable))
 
+
+
+class AppReturnTests(unittest.TestCase):
+    def owner(self):
+        owner = inspector.Inspector.alloc().init()
+        owner.sequence, owner.paused, owner.focus_inputs = 10, False, True
+        owner.focuser = Mock()
+        return owner
+
+    def test_departure_and_return_events_are_queued_on_existing_worker(self):
+        import queue
+        owner = self.owner()
+        owner.pending = queue.Queue(maxsize=2)
+        app = Mock()
+        app.bundleURL.return_value.path.return_value = "/Applications/ChatGPT.app"
+        app.processIdentifier.return_value = 42
+        note = Mock()
+        note.userInfo.return_value = {inspector.K.NSWorkspaceApplicationKey: app}
+        with patch.object(inspector.Inspector, "key_count", return_value=5):
+            for name in (inspector.K.NSWorkspaceDidDeactivateApplicationNotification,
+                         inspector.K.NSWorkspaceDidActivateApplicationNotification):
+                note.name.return_value = name
+                owner.workspaceChanged_(note)
+            departure, arrival = owner.pending.get_nowait(), owner.pending.get_nowait()
+            owner.process_request(departure)
+            owner.process_request(arrival)
+        owner.focuser.remember.assert_called_once_with(42, "ChatGPT.app")
+        owner.focuser.restore.assert_called_once()
+        self.assertEqual(arrival.sequence, 12)
+
+    def test_new_click_key_or_pause_cancels_return_without_click_processing(self):
+        for sequence, keys, paused in ((11, 5, False), (10, 6, False), (10, 5, True)):
+            owner = self.owner()
+            owner.sequence, owner.paused = sequence, paused
+            with patch.object(inspector.Inspector, "key_count", return_value=keys):
+                owner.process_request(inspector.AppFocusRequest(False, 42, "ChatGPT.app", 10, 5))
+            owner.focuser.restore.assert_not_called()
+
+    def test_paused_departure_forgets_memory_without_reading_accessibility(self):
+        owner = self.owner()
+        owner.paused = True
+        owner.process_request(inspector.AppFocusRequest(True, 42, "ChatGPT.app", 10, 5))
+        owner.focuser.remember.assert_not_called()
+        owner.focuser.forget.assert_called_once()
 
 if __name__ == "__main__":
     unittest.main()

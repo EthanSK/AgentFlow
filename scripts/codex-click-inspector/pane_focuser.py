@@ -10,7 +10,7 @@ from __future__ import annotations
 import ctypes as C
 import time
 from typing import Callable
-from pane_model import MAX_ANCESTORS, Rect
+from pane_model import MAX_ANCESTORS, Rect, measured_marker
 
 # Measured on ChatGPT.app 26.1013.31256 / 20586: both the main and side inputs
 # expose this structural label, so the pane comes from the Conversation region.
@@ -43,6 +43,84 @@ class PaneInputFocuser:
         for name in ("AXChildren", "AXNumberOfCharacters", "AXSelectedTextRange"):
             reader.keys.setdefault(name, reader.string(None, name.encode(), 0x08000100))
         self.arrays = []
+        self.remembered_input = None
+
+    def forget(self):
+        """Releases the one remembered native input; no drafts or text are stored."""
+        saved, self.remembered_input = self.remembered_input, None
+        if saved:
+            self.reader.release(saved[3])
+
+    def remember(self, pid: int, host: str):
+        """Remembers the actual app-owned composer at departure, including direct input clicks."""
+        self.forget()
+        r = self.reader
+        if r.frontmost_pid() == pid:
+            return  # A return already overtook this departure; do not save Codex's new default input.
+        sample = r.sample(0, 0, pid, focus=True, inactive_focus=True)
+        pane = measured_marker(sample.nodes, host, "")
+        region = next((n.frame for n in sample.nodes if n.conversation), None)
+        if (not sample.usable_path or sample.focus_stable is not True or not pane or not region
+                or not sample.nodes or sample.nodes[0].editable is not True or not sample.window_key):
+            return
+        r.deadline = time.monotonic() + 0.1
+        app = r.create_app(pid)
+        target = r.copy(app, "AXFocusedUIElement") if app else None
+        try:
+            if (target and r.hash(target) == sample.element_key and r.frontmost_pid() != pid
+                    and self.same_window(target, sample.window_key)
+                    and r.text(target, "AXRole") == "AXTextArea"
+                    and r.text(target, "AXDescription") == COMPOSER_DESCRIPTION):
+                self.remembered_input = (pid, sample.window_key, region, r.retain(target))
+        finally:
+            for value in (target, app):
+                if value:
+                    r.release(value)
+
+    def restore(self, pid: int, current: Callable[[], bool]):
+        """Restores the exact prior composer once, without moving its caret or selection."""
+        saved = self.remembered_input
+        if not saved or saved[0] != pid:
+            return
+        _, window_key, frame, target = saved
+        r = self.reader
+        r.deadline, r.errors = time.monotonic() + SEARCH_BUDGET_SECONDS, []
+        app = initial = region = None
+        try:
+            if not current() or r.frontmost_pid() != pid:
+                return
+            app = r.create_app(pid)
+            initial = r.copy(app, "AXFocusedUIElement") if app else None
+            if not initial or not self.same_window(initial, window_key) or not self.same_window(target, window_key):
+                return
+            role = r.text(initial, "AXRole")
+            composer = role == "AXTextArea" and r.text(initial, "AXDescription") == COMPOSER_DESCRIPTION
+            if not composer and not (r.text(initial, "AXSubrole") == "AXLandmarkRegion"
+                                       and r.text(initial, "AXDescription") == "Conversation"):
+                return  # Search, annotation, picker and other controls keep their own focus.
+            region = self.conversation(target, frame)
+            if (not region or r.text(target, "AXRole") != "AXTextArea"
+                    or r.text(target, "AXDescription") != COMPOSER_DESCRIPTION):
+                return  # A closed pane or rebuilt editor must not turn into a different target.
+            if (not current() or r.frontmost_pid() != pid or not self.target_focused(app, initial)
+                    or not self.same_window(target, window_key)):
+                return
+            if r.equal(initial, target):
+                return
+            error = self.set_focused(target)
+            if error:
+                return
+            until = time.monotonic() + VERIFY_SECONDS
+            while current() and r.frontmost_pid() == pid:
+                r.deadline = time.monotonic() + 0.05
+                if self.target_focused(app, target) or time.monotonic() >= until:
+                    return
+                time.sleep(VERIFY_INTERVAL_SECONDS)
+        finally:
+            for value in (region, initial, app):
+                if value:
+                    r.release(value)
+            self.forget()  # One return attempt only; a later app switch requires a fresh departure.
 
     def focus(self, pid: int, region_frame: Rect, pane: str,
               is_current: Callable[[], bool] | None = None, window_key: int = 0,

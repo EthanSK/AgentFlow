@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Click-triggered Codex helper with an optional inspector. No clicks, keys or text reads; the only writes
+"""Click/app-return Codex focus helper with an optional inspector. No clicks, keys or text reads; the only writes
 are the optional, on-by-default pane-input focus Ethan requested (see pane_focuser.py) and the
 Claude Prompt focus after a plain click in a Claude chat pane, plus the dormant one for when Agent Flow stops recording (see claude_prompt_focuser.py).
 
@@ -15,7 +15,7 @@ import json
 import os
 import threading
 import time
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import AppKit as K
@@ -40,6 +40,15 @@ TYPING_BOX_RETURN_ON = "com.ethansk.voiceink.typingBoxKeyboardReturnOn"  # Must 
 TYPING_BOX_RETURN_OFF = "com.ethansk.voiceink.typingBoxKeyboardReturnOff"  # Must match Agent Flow's RecorderTypingFocus.
 RECORDING_STARTED = "com.ethansk.voiceink.recordingStarted"  # Must match Agent Flow's RecordingActivityNotifier.
 RECORDING_STOPPED_PRESERVING_PLAYBACK = "com.ethansk.voiceink.recordingStoppedPreservingPlayback"  # Must match Agent Flow's RecordingActivityNotifier.
+
+
+@dataclass(frozen=True)
+class AppFocusRequest:
+    leaving: bool
+    pid: int
+    host: str
+    sequence: int
+    keys: int
 
 
 def control_object(demo=False):
@@ -192,7 +201,7 @@ class AXReader:
                 if v:
                     self.release(v)
 
-    def sample(self, x, y, expected_pid, focus=False):
+    def sample(self, x, y, expected_pid, focus=False, inactive_focus=False):
         started = time.monotonic()
         # Reserve the last 100ms for a fresh same-app focus/owner check even when
         # the ancestry hits its budget. A partial path must not hide changed focus.
@@ -200,7 +209,7 @@ class AXReader:
         self.deadline, self.errors = started + 0.75, []
         if not self.trusted():
             return Sample(expected_pid, 0, None, x, y, (), "Accessibility access needed")
-        if self.frontmost_pid() != expected_pid:
+        if (inactive_focus and not focus) or (not inactive_focus and self.frontmost_pid() != expected_pid):  # Departure may read only that app's own focus; click reads and every focus write still require the foreground owner.
             return Sample(expected_pid, 0, None, x, y, (), "Click owner changed")
         app_element = self.create_app(expected_pid) if focus else None
         element = C.c_void_p()
@@ -287,10 +296,11 @@ class AXReader:
                 if nodes and nodes[0].frame:
                     rect = nodes[0].frame
                     x, y = rect.x + rect.width / 2, rect.y + rect.height / 2
-            if self.frontmost_pid() != expected_pid:
+            if not inactive_focus and self.frontmost_pid() != expected_pid:
                 failure, focus_stable = "Click owner changed", False
             return Sample(expected_pid, window_key, window_rect, x, y, tuple(nodes), failure,
-                          end, round((time.monotonic() - started) * 1000), tuple(self.errors), focus_stable)
+                          end, round((time.monotonic() - started) * 1000), tuple(self.errors), focus_stable,
+                          self.hash(original))
         finally:
             self.release(current)
             self.release(original)
@@ -336,7 +346,7 @@ class Inspector(NSObject):
         self.claude_focuser = ClaudePromptFocuser(AXReader()) if self.reader and CLAUDE_FOCUS_ENABLED else None  # Off: no observer, checkbox greyed out.
         self.claude_click_focuser = ClaudePromptFocuser(self.reader) if self.reader else None  # Separate from the dormant stop trigger above (Ethan, 2026-11-08). Shares the Codex reader because both run only on the one click worker.
         self.focus_claude, self.claude_running = True, threading.Lock()  # Ethan approved on by default, 2026-10-19.
-        self.pending = queue.Queue(maxsize=1)
+        self.pending = queue.Queue(maxsize=2)  # A departure and return can arrive together; keep both on the existing AX worker.
         self.completed = LatestResult(lambda: self.performSelectorOnMainThread_withObject_waitUntilDone_(
             "refresh:", None, False))
         self.sequence, self.last, self.monitor, self.paused = 0, None, None, False
@@ -365,7 +375,8 @@ class Inspector(NSObject):
         if self.reader:
             workspace_center = K.NSWorkspace.sharedWorkspace().notificationCenter()
             for name in (K.NSWorkspaceDidWakeNotification, K.NSWorkspaceSessionDidBecomeActiveNotification,
-                         K.NSWorkspaceDidLaunchApplicationNotification):
+                         K.NSWorkspaceDidLaunchApplicationNotification,
+                         K.NSWorkspaceDidDeactivateApplicationNotification, K.NSWorkspaceDidActivateApplicationNotification):
                 workspace_center.addObserver_selector_name_object_(self, "workspaceChanged:", name, None)
             # Keep this tiny interactive observer responsive without preventing
             # system sleep. No destination or message is read by its health timer.
@@ -494,6 +505,15 @@ class Inspector(NSObject):
 
     def workspaceChanged_(self, notification):
         name = notification.name()
+        if name in (K.NSWorkspaceDidDeactivateApplicationNotification, K.NSWorkspaceDidActivateApplicationNotification):
+            app = (notification.userInfo() or {}).get(K.NSWorkspaceApplicationKey)
+            url = app.bundleURL() if app else None
+            host = Path(str(url.path())).name if url else ""
+            if host in ("Codex.app", "ChatGPT.app"):
+                self.sequence += 1  # Returning must not revive an old delayed click.
+                self.enqueue_click(AppFocusRequest(name == K.NSWorkspaceDidDeactivateApplicationNotification,
+                    app.processIdentifier(), host, self.sequence, self.key_count()))
+            return
         if name == K.NSWorkspaceDidLaunchApplicationNotification:
             app = (notification.userInfo() or {}).get(K.NSWorkspaceApplicationKey)
             if app and app.bundleIdentifier() == AGENT_FLOW_BUNDLE_ID:
@@ -795,6 +815,19 @@ class Inspector(NSObject):
 
     @objc.python_method
     def process_request(self, request):
+        if isinstance(request, AppFocusRequest):
+            current = lambda: (request.sequence == self.sequence and not self.paused and self.focus_inputs
+                               and request.keys == self.key_count())
+            if request.leaving:
+                if not self.paused and self.focus_inputs:
+                    self.focuser.remember(request.pid, request.host)  # Read the app-owned input after departure; never activate it.
+                else:
+                    self.focuser.forget()
+            elif current():
+                self.focuser.restore(request.pid, current)
+            else:
+                self.focuser.forget()  # A newer click or key already chose where the return should land.
+            return
         sequence, x, y, pid, captured, host, version, gesture, keys_at_click = request
         current = lambda: sequence == self.sequence and not self.paused and self.focus_inputs and self.key_count() == keys_at_click
         # A delayed queue must not attribute a newer screen to an old click.

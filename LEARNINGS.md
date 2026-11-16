@@ -1,3 +1,10 @@
+## 2026-11-16 — Codex remembers the last input across app switches
+
+- Ethan requested remembering the last focused main/side composer on leaving Codex, then restoring that same input on return. The separate `scripts/codex-click-inspector` helper previously observed clicks and wake/relaunch, with no activation/deactivation memory.
+- Reuse public NSWorkspace app-deactivation/app-activation events and the existing one AX worker. Capture app-owned `AXFocusedUIElement` after departure; the inactive editor may no longer report `AXFocused=true`, so require a stable repeated app-owned pointer, editable composer label and measured Conversation/pane structure instead. A disposable AppKit fixture verified stable exact-input identity after a real native deactivation event; that is not a live Codex acceptance test.
+- Retain one native input reference in memory only. Restore once into the same process/window/Conversation, leave caret and selection alone, and cancel for new clicks/keys, other controls, unknown structure or a closed pane. Never activate Codex, save draft text, add another AX worker or poll focus. If return overtakes departure, skip instead of capturing Codex's new default input.
+- Keep the established click/highlight waits, Agent Flow typing/recording state and delivery routes intact. Live Codex remains Ethan-only; validate model/adapter/lifecycle fixtures on the Mini and native event semantics with a disposable app. The Python 3.9 test runner needs deferred annotations in `test_capture_receipts.py`; Homebrew Python 3.13 on the Mini has no PyObjC and is not the native fixture runtime.
+
 # Learnings
 
 ## 2026-11-15 — Observe both Voice channels before a microphone toggle

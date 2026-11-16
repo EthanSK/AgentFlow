@@ -200,5 +200,23 @@ class AXReaderTests(unittest.TestCase):
         self.assert_released(reader)
 
 
+
+class InactiveAppFocusTests(unittest.TestCase):
+    def test_departure_snapshot_remains_app_owned_without_foreground_permission(self):
+        reader = FakeReader()
+        reader.owner = 99
+        result = reader.sample(0, 0, 42, focus=True, inactive_focus=True)
+        self.assertEqual(result.error, "")
+        self.assertEqual(result.element_key, 1)
+        self.assertTrue(result.focus_stable)
+        self.assertEqual([owner for owner, key in reader.reads if key == "AXFocusedUIElement"], [900, 900])
+        self.assertTrue(all(n == 0 for n in reader.refs.values()))
+
+    def test_ordinary_click_and_focus_still_require_foreground_owner(self):
+        for kwargs in ({}, {"focus": True}, {"inactive_focus": True}):
+            reader = FakeReader()
+            reader.owner = 99
+            self.assertEqual(reader.sample(0, 0, 42, **kwargs).error, "Click owner changed")
+
 if __name__ == "__main__":
     unittest.main()

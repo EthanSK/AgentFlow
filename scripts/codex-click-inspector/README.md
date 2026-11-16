@@ -73,13 +73,30 @@ forgets the pane and costs one cleared highlight. A keyboard-only move to
 the other composer is not visible to the helper. The flag also resets when Agent
 Flow launches, so a crash cannot leave it on.
 
-It never acts
-on learned regions, a remembered input or
+The click path never acts on learned regions, a remembered input or
 another app, re-checks focus and frontmost app right before the write, and
 reports `verified`, `not confirmed` or the skip reason. The input search is a
 bounded last-child-first walk (10 levels, 400 nodes, 0.5 s) inside the clicked
 region only. The window can be resized short; its whole content scrolls.
 It uses the existing Python/PyObjC runtime; no native app build is required.
+
+## Remember the input when leaving Codex
+
+Ethan's “remember the input that was last focussed before leaving” request
+(2026-11-16) uses macOS app-deactivation and app-activation notifications. The
+same worker reads Codex's own internally focused composer after departure,
+including when the last input was chosen directly rather than by this helper.
+It retains one native input reference in memory, with its process, window and
+measured Conversation. No text, draft, selection or focus history is saved to disk.
+
+On return, it restores that exact input once, without resetting its caret or
+selection. A newer click/key, another editor/control, another window, a closed
+pane or unreadable structure cancels the attempt. A return that overtakes the
+departure read skips remembering rather than saving Codex's newly chosen default.
+There is no new polling thread, focus loop, app activation or deliberate delay.
+The existing click/highlight timings and Agent Flow delivery routes stay intact.
+Fake-AX/lifecycle tests cover the behavior; live Codex acceptance remains Ethan's
+own check, as for the rest of this helper.
 
 ## Claude Prompt focus on click
 
