@@ -1223,6 +1223,7 @@ struct RecorderTypedInputTests {
             #expect(output.messages.count == (text.isEmpty ? 0 : 1))
             if raw { #expect(output.messages == (text.isEmpty ? [] : [text])) }
             #expect(output.keys == (text.isEmpty ? [] : [raw ? .none : .commandEnter]))
+            #expect(output.capturedAudioFlags == (text.isEmpty ? [] : [false]))
             #expect(output.routes.allSatisfy { $0 == .primaryCurrentInput })
             #expect(archivedPrompts.count == (text.isEmpty ? 0 : 1))
             if !text.isEmpty { #expect(archivedPrompts[0].contains(text)) }
@@ -1368,6 +1369,7 @@ struct RecorderTypedInputTests {
             onStateChange: { _ in }, shouldCancel: { false }, isDeliveryAuthorized: { true },
             onCancel: {}, onDismiss: {}, onTranscriptionFailure: { Issue.record("Unexpected failure: \($0)") })
         #expect(audio.transcriptionCalls == 1 && output.messages.count == 1)
+        #expect(output.capturedAudioFlags == [true])
         let archive = try #require(archivedPrompts.first)
         let ordered = [
             "<speech start_at=\"1800000000.000\" end_at=\"1800000003.000\" timing=\"approximate\">\n\nSpeech before typing and while typing\n\n</speech>",
@@ -3388,12 +3390,14 @@ struct RecorderTypedInputTests {
     var keys: [AutoSendKey] = []
     var outputModes: [ModeOutputMode] = []
     var skipFlags: [Bool] = []
+    var capturedAudioFlags: [Bool] = []
     func deliver(_ request: TranscriptionDelivery.Request, actions: TranscriptionDelivery.Actions) async {
         if let text = request.text { messages.append(text) }
         routes.append(request.pasteTarget.destination)
         keys.append(request.output.autoSendKey)
         outputModes.append(request.output.outputMode)
         skipFlags.append(request.skipPostProcessing)
+        capturedAudioFlags.append(request.hasCapturedAudio)
     }
 }
 

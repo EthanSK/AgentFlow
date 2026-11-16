@@ -1,5 +1,14 @@
 # Learnings
 
+## 2026-11-16 — Stop feedback belongs to the finished job's audio history
+
+Ethan wants typed Agent Flow sends silent and the finish sound kept for actual
+speech sessions. `hasCapturedAudio` already distinguishes keyboard-only work
+from speech/mixed sessions in the production pipeline. Forward that frozen fact
+to every delivery output and clipboard-only completion; the current microphone
+state may belong to a newer overlapping recording. Keep the existing sound
+preference, start/cancel/error feedback, paste and Send timing unchanged.
+
 ## 2026-11-15 — Claude local-file eligibility must come from its own Code pane
 
 Ethan asked for Codex-style full-prompt messages in local Claude Code while

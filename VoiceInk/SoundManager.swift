@@ -38,8 +38,10 @@ class SoundManager: ObservableObject {
         playbackEngine.playStartSound()
     }
 
-    func playStopSound() {
-        guard CustomSoundManager.shared.isSoundEnabled(for: .stop) else { return }
+    func playStopSound(hasCapturedAudio: Bool = true) {
+        // Ethan's "speech end sends" keep their feedback; a typing-only finish is
+        // silent. Use this finished job's capture history, never the next live mic.
+        guard hasCapturedAudio, CustomSoundManager.shared.isSoundEnabled(for: .stop) else { return }
         playbackEngine.playStopSound()
     }
 

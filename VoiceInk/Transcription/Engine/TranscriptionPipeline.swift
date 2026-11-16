@@ -975,7 +975,7 @@ class TranscriptionPipeline {
                 return
             }
             FocusLockService.shared.clearLock()
-            SoundManager.shared.playStopSound()
+            SoundManager.shared.playStopSound(hasCapturedAudio: hasCapturedAudio)
             // The compact copy is safe only after the complete archive exists.
             // On save/preview failure copy every original word instead of a broken
             // link or an empty clipboard; History always keeps the full result.
@@ -1216,7 +1216,8 @@ class TranscriptionPipeline {
                 // can make the raw-paste guarantee at the routing point itself (belt-and-
                 // braces on top of the already-forced .paste output above).
                 skipPostProcessing: skipPostProcessingNow,
-                recoversTypedDraft: recoversTypedDraft
+                recoversTypedDraft: recoversTypedDraft,
+                hasCapturedAudio: hasCapturedAudio
             ),
             actions: TranscriptionDelivery.Actions(
                 setState: onStateChange,
