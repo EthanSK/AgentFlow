@@ -101,6 +101,7 @@ class TranscriptionPipeline {
     private let delivery: any TranscriptionDelivering
     private let archivePrompt: @MainActor (String, UUID) async throws -> AgentFlowPromptArchive.SavedPrompt
     private let currentPromptRecipient: () -> AgentFlowPromptPreview.Recipient
+    private let localClaudePrompt: (AgentFlowPromptPreview.Recipient, RecordingPasteTarget) async -> Bool
     private let copyCompletedText: (String) -> Bool
     private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "TranscriptionPipeline")
     // VIPPDebug: see RecorderUIManager for the filter predicate. Used to log the exact
@@ -118,6 +119,8 @@ class TranscriptionPipeline {
             try await AgentFlowPromptArchive.save(text, recordID: id)
         },
         currentPromptRecipient: (() -> AgentFlowPromptPreview.Recipient)? = nil,
+        localClaudePrompt: @escaping (AgentFlowPromptPreview.Recipient, RecordingPasteTarget) async -> Bool =
+            ClaudePromptEnvironment.supportsLocalPrompt,
         copyCompletedText: @escaping (String) -> Bool = ClipboardManager.copyToClipboard
     ) {
         self.modelContext = modelContext
@@ -126,6 +129,7 @@ class TranscriptionPipeline {
         self.delivery = delivery ?? TranscriptionDelivery()
         self.archivePrompt = archivePrompt
         self.currentPromptRecipient = currentPromptRecipient ?? { .current() }
+        self.localClaudePrompt = localClaudePrompt
         self.copyCompletedText = copyCompletedText
     }
 
@@ -971,7 +975,7 @@ class TranscriptionPipeline {
                 return
             }
             FocusLockService.shared.clearLock()
-            SoundManager.shared.playStopSound()
+            SoundManager.shared.playStopSound(hasCapturedAudio: hasCapturedAudio)
             // The compact copy is safe only after the complete archive exists.
             // On save/preview failure copy every original word instead of a broken
             // link or an empty clipboard; History always keeps the full result.
@@ -1121,7 +1125,7 @@ class TranscriptionPipeline {
         // explicit remote-context recipients retain inline XML. Decide after the
         // queue wait: Primary uses the current app and Next its saved recipient,
         // never the source of a highlight or Primary's recording-start app.
-        // This filters TEXT CONTENT only: no AX capture, focus, app-specific
+        // This filters TEXT CONTENT only: no saved Primary input, focus, app-specific
         // paste, saved Primary destination or extra delivery. The immutable
         // archive retains the complete context; Won't paste is separate because
         // a later manual paste has no known recipient at completion time.
@@ -1135,9 +1139,17 @@ class TranscriptionPipeline {
             )
         let presentationRecipient = pasteTargetForDelivery.destination.usesBaseCurrentInputDelivery
             ? recipient.bundleID : pasteTargetForDelivery.focusedInput?.bundleIdentifier
+        // Claude Chat/Cloud/SSH cannot read this Mac's archive. The bounded worker
+        // reads only this pane's visible Environment card, never transcript text,
+        // and grants no insertion/Send authority. No startup scan or polling.
+        var claudeLocalCodeConfirmed = false
+        if includesSourceContext && !skipPostProcessingNow && !assistant.isFollowUp,
+           presentationRecipient == ClaudePromptEnvironment.bundleIdentifier {
+            claudeLocalCodeConfirmed = await localClaudePrompt(recipient, pasteTargetForDelivery)
+        }
         let usesCompactPrompt = includesSourceContext && !skipPostProcessingNow && !assistant.isFollowUp
             && AgentFlowPromptPreview.supportsLocalFilePrompt(bundleID: presentationRecipient,
-                bundleURL: recipient.bundleURL)
+                bundleURL: recipient.bundleURL, claudeLocalCodeConfirmed: claudeLocalCodeConfirmed)
         await attachLiveSelectionsToFinalText(
             includeSourceContext: includesSourceContext,
             presentation: contextPresentation,
@@ -1204,7 +1216,8 @@ class TranscriptionPipeline {
                 // can make the raw-paste guarantee at the routing point itself (belt-and-
                 // braces on top of the already-forced .paste output above).
                 skipPostProcessing: skipPostProcessingNow,
-                recoversTypedDraft: recoversTypedDraft
+                recoversTypedDraft: recoversTypedDraft,
+                hasCapturedAudio: hasCapturedAudio
             ),
             actions: TranscriptionDelivery.Actions(
                 setState: onStateChange,

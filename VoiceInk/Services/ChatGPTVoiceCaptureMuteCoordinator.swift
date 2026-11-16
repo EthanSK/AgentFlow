@@ -98,7 +98,10 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
             pairedFanOut: PairedVoiceMuteBroadcaster.shared,
             localPairedSourceID: PairedVoiceMuteBroadcaster.shared.sourceID,
             pairedActivity: .shared,
-            speaker: ChatGPTVoiceCaptureSpeaker(transport: transport)
+            // Ethan turned automatic Voice speaker mute/restore off on2026-11-16.
+            // Keep the service/quit accounting and microphone path unchanged;
+            // a saved manual speaker shortcut must not re-enable automation.
+            speaker: ChatGPTVoiceCaptureSpeaker(transport: transport, automaticControlEnabled: false)
         )
     }()
 
@@ -505,6 +508,9 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTV
     static let shortcutAccelerator = "Command+Control+Option+Shift+F20"
     static let speakerShortcutCommand = "realtimeVoice.toggleOutputMute"
     private static let shortcutPostLock = NSLock()
+    private static let controlReadLogger = Logger(
+        subsystem: "com.ethansk.VoiceInkPlusPlus", category: "ChatGPTVoiceControlReader"
+    )
 
     private let logger = Logger(
         subsystem: "com.ethansk.VoiceInkPlusPlus",
@@ -732,23 +738,50 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTV
         // requests no enhanced UI mode, activation, focus change or input.
         // The separately approved one-time exposure request runs at app launch
         // or activation, never inside this capture/restore read.
-        let deadline = ContinuousClock.now.advanced(by: .milliseconds(120))
+        let started = ContinuousClock.now
+        let deadline = started.advanced(by: .milliseconds(120))
+        var prepareRefused = false
+        func milliseconds(since start: ContinuousClock.Instant) -> Int {
+            let elapsed = start.duration(to: .now).components
+            return Int(Double(elapsed.seconds) * 1000 + Double(elapsed.attoseconds) / 1e15)
+        }
         func hasTime() -> Bool { ContinuousClock.now < deadline }
         func prepare(_ element: AXUIElement, cap: Double = 0.04) -> Bool {
             let remaining = ContinuousClock.now.duration(to: deadline).components
             let seconds = Double(remaining.seconds) + Double(remaining.attoseconds) / 1e18
-            guard seconds > 0 else { return false }
+            guard seconds > 0 else { prepareRefused = true; return false }
             AXUIElementSetMessagingTimeout(element, Float(min(cap, seconds)))
             return true
         }
         let application = AXUIElementCreateApplication(applicationPID)
         guard prepare(application) else { return .init(truncated: true) }
-        let windows = elementArrayAttribute(kAXWindowsAttribute, from: application)
-        return ChatGPTVoiceControlReader.read(
-            roots: (windows.isEmpty ? [application] : windows).map(ChatGPTVoiceAXNode.init),
+        let windowReadStarted = ContinuousClock.now
+        var windowValue: CFTypeRef?
+        let windowStatus = AXUIElementCopyAttributeValue(application, kAXWindowsAttribute as CFString, &windowValue)
+        let windows = windowStatus == .success ? windowValue as? [AXUIElement] : nil
+        let windowReadMilliseconds = milliseconds(since: windowReadStarted)
+        var rootRoles: [ChatGPTVoiceAXNode: String] = [:]
+        let windowRoots: [AXUIElement]
+        if let windows, !windows.isEmpty { windowRoots = windows }
+        else { windowRoots = [application] }
+        let roots = ChatGPTVoiceControlReader.prioritizingDialogs(
+            windowRoots.map(ChatGPTVoiceAXNode.init),
+            subrole: { node in
+                guard prepare(node.element) else { return nil }
+                var raw: CFArray?
+                let status = AXUIElementCopyMultipleAttributeValues(node.element,
+                    [kAXRoleAttribute, kAXSubroleAttribute] as CFArray,
+                    AXCopyMultipleAttributeOptions(rawValue: 0), &raw)
+                guard status == .success, let values = raw as? [Any], values.count == 2 else { return nil }
+                if let role = values[0] as? String { rootRoles[node] = role }
+                return values[1] as? String
+            })
+        var result = ChatGPTVoiceControlReader.read(
+            roots: roots,
             channel: channel,
             role: { node in
-                prepare(node.element) ? stringAttribute(kAXRoleAttribute, from: node.element) : nil
+                if let role = rootRoles[node] { return role }
+                return prepare(node.element) ? stringAttribute(kAXRoleAttribute, from: node.element) : nil
             },
             buttonAttributes: { node in
                 guard prepare(node.element) else { return nil }
@@ -776,11 +809,29 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTV
                     })
             },
             children: { node in
+                guard prepare(node.element) else { return [] }
+                let names = ["AXChildrenInNavigationOrder", kAXVisibleChildrenAttribute, kAXChildrenAttribute]
+                var raw: CFArray?
+                let status = AXUIElementCopyMultipleAttributeValues(node.element,
+                    names as CFArray, AXCopyMultipleAttributeOptions(rawValue: 0), &raw)
+                let groups: [[AXUIElement]]
+                if status == .success, let values = raw as? [Any], values.count == names.count {
+                    // One structural snapshot replaces three sequential IPCs.
+                    // Per-attribute AX errors stay unknown; only a malformed or
+                    // failed whole batch uses the original bounded accessors.
+                    groups = values.map { $0 as? [AXUIElement] ?? [] }
+                } else {
+                    var fallback: [[AXUIElement]] = []
+                    for name in names {
+                        guard prepare(node.element) else { break }
+                        fallback.append(elementArrayAttribute(name, from: node.element))
+                    }
+                    groups = fallback
+                }
                 var seen = Set<ChatGPTVoiceAXNode>()
                 var merged: [ChatGPTVoiceAXNode] = []
-                for attribute in ["AXChildrenInNavigationOrder", kAXVisibleChildrenAttribute, kAXChildrenAttribute] {
-                    guard prepare(node.element) else { break }
-                    for child in elementArrayAttribute(attribute, from: node.element).map(ChatGPTVoiceAXNode.init)
+                for group in groups {
+                    for child in group.map(ChatGPTVoiceAXNode.init)
                         where seen.insert(child).inserted { merged.append(child) }
                 }
                 return merged
@@ -798,6 +849,17 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTV
             },
             canContinue: hasTime
         )
+        // A readable control passed the reader's final deadline check. Crossing
+        // the clock boundary while preparing telemetry cannot turn that success
+        // into a claimed truncated read.
+        let expired = result.isMuted == nil && (prepareRefused || !hasTime())
+        result.truncated = result.truncated || expired
+        let channelName: String
+        switch channel { case .microphone: channelName = "microphone"; case .speaker: channelName = "speaker" }
+        // Counts, statuses and timings distinguish AXWindows failure from a
+        // truncated walk. Never log window titles, controls or chat contents.
+        controlReadLogger.notice("Voice control timing: channel=\(channelName, privacy: .public) elapsedMs=\(milliseconds(since: started), privacy: .public) windowReadMs=\(windowReadMilliseconds, privacy: .public) windowStatus=\(windowStatus.rawValue, privacy: .public) windows=\(windows?.count ?? 0, privacy: .public) windowsReadable=\(windows != nil, privacy: .public) nodes=\(result.visitedCount, privacy: .public) nativeSearches=\(result.nativeSearchCount, privacy: .public) deadlineExpired=\(expired, privacy: .public) truncated=\(result.truncated, privacy: .public)")
+        return result
     }
 
     static func speakerMuteState(accessibilityLabel: String) -> Bool? {

@@ -24,14 +24,19 @@ protocol ChatGPTVoiceSpeakerTransport: Sendable {
 
 actor ChatGPTVoiceCaptureSpeaker {
     private let transport: any ChatGPTVoiceSpeakerTransport
+    private let automaticControlEnabled: Bool
     private let logger = Logger(subsystem: "com.ethansk.VoiceInkPlusPlus", category: "ChatGPTVoiceCaptureSpeaker")
     private var ownedCall: ChatGPTVoiceCall?
 
-    init(transport: any ChatGPTVoiceSpeakerTransport) {
+    init(transport: any ChatGPTVoiceSpeakerTransport, automaticControlEnabled: Bool = true) {
         self.transport = transport
+        self.automaticControlEnabled = automaticControlEnabled
     }
 
     func silenceForCapture() async {
+        // Production is temporarily disabled at composition, independently of
+        // microphone muting. Do not even inspect Voice speakers while off.
+        guard automaticControlEnabled else { return }
         guard let call = await transport.activeSpeakerCall() else {
             return
         }
@@ -50,6 +55,7 @@ actor ChatGPTVoiceCaptureSpeaker {
     }
 
     func restoreAfterCapture() async {
+        guard automaticControlEnabled else { return }
         guard let call = ownedCall else { return }
         ownedCall = nil
         guard case .posted(let readable) = await transport.postSpeakerToggle(for: call, mute: false) else {

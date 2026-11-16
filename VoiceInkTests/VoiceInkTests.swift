@@ -2636,7 +2636,7 @@ struct VoiceInkTests {
             "copyCompletedText(clipboardText)"
         ))
         #expect(clipboardOnlyBranch.contains(
-            "SoundManager.shared.playStopSound()"
+            "SoundManager.shared.playStopSound(hasCapturedAudio: hasCapturedAudio)"
         ))
         #expect(!clipboardOnlyBranch.contains(
             "NotificationManager.shared.showNotification"

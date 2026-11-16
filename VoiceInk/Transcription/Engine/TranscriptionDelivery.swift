@@ -351,6 +351,9 @@ final class TranscriptionDelivery: TranscriptionDelivering {
         // Only an independently authored keyboard draft can cross a voice-failure
         // boundary. It stays a failed, retryable voice record and never submits.
         var recoversTypedDraft: Bool = false
+        // Frozen by the pipeline so overlapping typing/speech jobs cannot borrow
+        // another recording's feedback policy. Mixed voice/typing keeps the sound.
+        var hasCapturedAudio: Bool = true
 
         var allowsTypedRecoveryPaste: Bool {
             recoversTypedDraft && transcription.transcriptionStatus == TranscriptionStatus.failed.rawValue
@@ -384,6 +387,7 @@ final class TranscriptionDelivery: TranscriptionDelivering {
                 return
             }
             await paste(text, target: request.pasteTarget, output: request.output,
+                hasCapturedAudio: request.hasCapturedAudio,
                 resolveQueuedPrimaryAutoSend: { _ in .unchanged(.none) },
                 onQueuedPrimaryAutoSendIssued: {}, actions: actions)
             return
@@ -421,6 +425,7 @@ final class TranscriptionDelivery: TranscriptionDelivering {
                     text,
                     target: request.pasteTarget,
                     output: rawOutput,
+                    hasCapturedAudio: request.hasCapturedAudio,
                     resolveQueuedPrimaryAutoSend: request.resolveQueuedPrimaryAutoSend,
                     onQueuedPrimaryAutoSendIssued: request.onQueuedPrimaryAutoSendIssued,
                     actions: actions
@@ -471,6 +476,7 @@ final class TranscriptionDelivery: TranscriptionDelivering {
                 text,
                 target: request.pasteTarget,
                 output: request.output,
+                hasCapturedAudio: request.hasCapturedAudio,
                 resolveQueuedPrimaryAutoSend: request.resolveQueuedPrimaryAutoSend,
                 onQueuedPrimaryAutoSendIssued: request.onQueuedPrimaryAutoSendIssued,
                 actions: actions
@@ -481,7 +487,7 @@ final class TranscriptionDelivery: TranscriptionDelivering {
     }
 
     private func deliverFollowUp(_ item: Request, actions: Actions) async {
-        SoundManager.shared.playStopSound()
+        SoundManager.shared.playStopSound(hasCapturedAudio: item.hasCapturedAudio)
 
         guard let text = item.text?.trimmingCharacters(in: .whitespacesAndNewlines),
               !text.isEmpty else {
@@ -493,7 +499,7 @@ final class TranscriptionDelivery: TranscriptionDelivering {
     }
 
     private func deliverResponse(_ item: Request, actions: Actions) async {
-        SoundManager.shared.playStopSound()
+        SoundManager.shared.playStopSound(hasCapturedAudio: item.hasCapturedAudio)
 
         if let responseError = item.responseError {
             await actions.failResponse("Enhancement failed: \(responseError)")
@@ -508,7 +514,7 @@ final class TranscriptionDelivery: TranscriptionDelivering {
     private func deliverCustomCommand(_ item: Request, actions: Actions) async {
         guard let text = item.text else {
             notifyCustomCommandFailure(CustomCommandDeliveryError.noTextToDeliver)
-            SoundManager.shared.playStopSound()
+            SoundManager.shared.playStopSound(hasCapturedAudio: item.hasCapturedAudio)
             await actions.dismiss()
             return
         }
@@ -516,13 +522,13 @@ final class TranscriptionDelivery: TranscriptionDelivering {
         guard let customCommand = item.output.customCommand,
               let command = customCommand.trimmedCommand else {
             notifyCustomCommandFailure(CustomCommandDeliveryError.commandNotConfigured)
-            SoundManager.shared.playStopSound()
+            SoundManager.shared.playStopSound(hasCapturedAudio: item.hasCapturedAudio)
             await actions.dismiss()
             return
         }
 
         let commandText = text
-        SoundManager.shared.playStopSound()
+        SoundManager.shared.playStopSound(hasCapturedAudio: item.hasCapturedAudio)
         await actions.dismiss()
 
         Task {
@@ -581,6 +587,7 @@ final class TranscriptionDelivery: TranscriptionDelivering {
         _ text: String,
         target: RecordingPasteTarget,
         output: OutputRuntimeConfiguration,
+        hasCapturedAudio: Bool,
         resolveQueuedPrimaryAutoSend: @escaping (
             AutoSendKey
         ) -> PrimaryQueuedAutoSendResolution,
@@ -590,7 +597,7 @@ final class TranscriptionDelivery: TranscriptionDelivering {
         let appendSpace = UserDefaults.standard.bool(forKey: "AppendTrailingSpace")
         let pastedText = text + (appendSpace ? " " : "")
         vippLog.info("paste: BEGIN len=\(pastedText.count, privacy: .public) destination=\(String(describing: target.destination), privacy: .public) targetCaptured=\(target.focusedInput != nil, privacy: .public) exactInput=\(target.focusedInput?.hasExactInput ?? false, privacy: .public)")
-        SoundManager.shared.playStopSound()
+        SoundManager.shared.playStopSound(hasCapturedAudio: hasCapturedAudio)
         FocusLockService.shared.setStartInputIndicatorVisible(target.destination == .recordingStart)
         await actions.dismiss()
 

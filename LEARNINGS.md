@@ -7,6 +7,106 @@
 - Retain one native input reference in memory only. Restore once into the same process/window/Conversation, leave caret and selection alone, and cancel for new clicks/keys, other controls, unknown structure or a closed pane. Never activate Codex, save draft text, add another AX worker or poll focus. If return overtakes departure, skip instead of capturing Codex's new default input.
 - Keep the established click/highlight waits, Agent Flow typing/recording state and delivery routes intact. Live Codex remains Ethan-only; validate model/adapter/lifecycle fixtures on the Mini and native event semantics with a disposable app. The Python 3.9 test runner needs deferred annotations in `test_capture_receipts.py`; Homebrew Python 3.13 on the Mini has no PyObjC and is not the native fixture runtime.
 
+## 2026-11-16 — Automatic Voice speaker control is temporarily off; microphone control stays
+
+Ethan reports automatic speaker mute/unmute remains unreliable and explicitly
+asks to turn only that automation off while keeping microphone muting. Production
+now constructs the existing speaker service with automaticControlEnabled=false.
+Both speaker boundaries return before reading or posting anything. Keeping the
+service preserves existing capture/quit accounting, microphone ownership, media
+handling and manual speaker shortcuts. Do not re-enable this from a saved shortcut
+or a later repair without Ethan asking to revisit it. The former fresh-call
+speaker-repair acceptance check is superseded by this explicit off instruction.
+
+## 2026-11-16 — Stop feedback belongs to the finished job's audio history
+
+Ethan wants typed Agent Flow sends silent and the finish sound kept for actual
+speech sessions. `hasCapturedAudio` already distinguishes keyboard-only work
+from speech/mixed sessions in the production pipeline. Forward that frozen fact
+to every delivery output and clipboard-only completion; the current microphone
+state may belong to a newer overlapping recording. Keep the existing sound
+preference, start/cancel/error feedback, paste and Send timing unchanged.
+
+Build518 source887419d0 passed nine focused canonical Mini tests, including the
+typed/mixed production pipelines and Primary/Next/HUD-only guards. Compiling the
+exact SoundManager with silent playback ports separately proved five checks:
+typing silence, speech dispatch, overlapping-job isolation, the existing sound
+preference, and unchanged start/cancel dispatch. The signed ordinary universal
+Release518 was installed through an8.26-second warning and one cooperative quit;
+stable signing, microphone settings, keybindings and official VoiceInk verified.
+This is dispatch evidence, not a physical listening check. Public qualification
+remains held by the earlier fresh-Voice-call speaker acceptance.
+
+## 2026-11-15 — Claude local-file eligibility must come from its own Code pane
+
+Ethan asked for Codex-style full-prompt messages in local Claude Code while
+preserving remote use. The older blanket Claude-inline policy protected Chat,
+Cloud and SSH sessions that cannot read the sender's Mac files; it was not proof
+of a shared Codex Plain text setting. No equivalent Claude composer switch was
+verified. In Claude Desktop5.11492.5, a separate synthetic This computer session
+actually read an absolute prompt path outside its session directory and returned
+the exact requested token. Its user bubble displayed Markdown source literally.
+The manual test used two submitted messages, so this proves file access, not a
+single Agent Flow paste or physical recording acceptance.
+
+Native AX exposes that separate session's web area as `about:blank` even after it
+starts. The main Code URL uses `/epitaxy/local_`, but installed renderer evidence
+shows that prefix also covers SSH. Neither URL alone establishes local access.
+Native AX preserves unnamed group wrappers that Computer Use's readable tree
+omits. A first direct-sibling fixture passed unit tests but the real read returned
+false in5ms. Collapsing bounded single-child unnamed groups, while retaining named
+and branching containers, found the nearest Session tools + content shell and its
+own Session details → Environment → This computer label. The actual production
+reader returned local=true in14.13ms on that synthetic window without focus writes,
+keys, app activation, transcript reads or continuous scans.
+
+The presentation check runs once at finish on a worker, with an80ms actual-work
+deadline, per-attempt caches, explicit unknown fallback and fresh marker/window/
+focus checks. A collapsed session rail remains inline; never open it, change
+focus or infer locality from another pane to make classification pass. Local Code
+uses existing compact archive/preview assembly. Chat, Cloud, SSH, unknown panes,
+clipboard-only, raw/skip, ordinary app filtering and delivery ownership retain
+their existing routes. `ClaudePromptEnvironmentTests` covers native wrappers,
+popout/main URL distinctions, missing/ambiguous/unreadable cards, sibling local
+sessions and transcript exclusion. Verify the exact numbered installed binary
+separately; the native-window probe is not installation evidence.
+
+Qualification follow-up: the implementation at `6ee49585` passed all983 named
+tests in46 suites through canonical `xcodebuild test`, including the80 focused
+checks. Local build517 used the installed Developer ID requirement, Automation,
+audio-input entitlement and updater identity. Its event-driven installer waited
+for the app's own idle response, delivered the real five-second warning and made
+one normal quit request; the relaunched app was not hidden or foregrounded.
+Microphone preferences, keyboard bindings and the official VoiceInk executable
+were unchanged. The previous bundle was archived and its retired Trash path was
+unregistered, leaving no extra launchable staging copy. This local receipt does
+not qualify the separate outstanding first-recording Voice-speaker behavior or
+claim a new public download.
+
+## 2026-11-15 — A final empty child read can conceal an expired Voice deadline
+
+Ethan's natural515 recording at01:36:57 still skipped speaker dispatch. Both
+initial observations failed before any shortcut, disproving that post-mic
+ordering alone explains the missing controls. A later delegated read found the
+floating AXDialog's native button search returned its correctly labelled
+checkboxes in3ms. That observation does not prove the production window lookup
+completed within its budget; the proposed AXWindows timeout remains unmeasured.
+
+The reader advanced past its final queued root before children returned empty.
+If a child accessor then exhausted the deadline, index equalled queue.count and
+the result incorrectly said truncated=false. Recheck the budget after children
+and at loop exit. Record elapsed time, AXWindows status/count/read duration and
+deadline exhaustion without titles, labels or content. A complete empty tree and
+a timed-out tree are different evidence, neither proof that no Voice call exists.
+
+Within the unchanged120ms deadline and40ms ordinary IPC cap, prefer measured
+AXDialog roots and finish each window before another window's chat controls.
+One structural multiple-attribute read can replace three child IPCs, with the
+original bounded fallback only for whole-batch failure. Per-attribute errors
+remain unknown. These are search/diagnostic changes, not permission to add focus,
+polling, a blind speaker toggle or a larger budget. Real silence/restoration must
+still be established by the user's natural recording, not graph tests.
+
 ## 2026-11-15 — Observe both Voice channels before a microphone toggle
 
 Ethan's real 00:55 test on installed514 muted the microphone but left speakers

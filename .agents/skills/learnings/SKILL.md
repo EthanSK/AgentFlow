@@ -123,8 +123,16 @@ first filter automatic output by its actual recipient: ordinary apps such as
 Chrome, Safari, editors, terminals and unknown identities receive authored
 speech/typing only, without prompt links, XML, timestamps or math. Only Codex,
 Telegram and Claude Desktop have context overrides: local Codex hosts use compact
-file links; both Telegram identities and `com.anthropic.claudefordesktop` retain
-inline XML. Cloud ChatGPT, Slack, Discord and all other apps receive plain authored
+file links; both Telegram identities retain inline XML. Claude Desktop uses compact
+files only when its focused Code pane's visible Environment card proves **This computer**;
+Chat, Cloud, SSH and unknown or hidden environments keep complete inline XML.
+This is a bounded, off-main-thread presentation check at finish, never a focus or
+delivery change, startup scan or poll. Native AX retains unnamed wrappers omitted
+by Computer Use; standalone Code windows expose `about:blank`, while `local_`
+session URLs can also identify SSH. Require measured pane-local proof, not either
+URL alone. User-requested local Code change and remote preservation — 2026-11-15;
+see the corresponding native-window evidence in `LEARNINGS.md`.
+Cloud ChatGPT, Slack, Discord and all other apps receive plain authored
 speech/typing. Claude Code in an ordinary terminal/editor does not identify itself
 as Claude Desktop; do not broaden those hosts automatically. Share the local
 interpretation skill with Claude Code through a symlink to the existing Codex
@@ -760,7 +768,14 @@ actions, polling, notification consumers, global input mute or private app patch
 User correction — 2026-10-09; evidence: LEARNINGS.md, “State-unreadable mute refusal was not usable
 in the live Voice workflow”, and the refusal-only withdrawal in FAILED_APPROACHES.md.
 
-For the later recording-owned speaker integration, Ethan requested one reversible
+Automatic recording-triggered speaker mute/unmute is off for now at Ethan's
+request on2026-11-16 because it remains unreliable. "Just keep the mic muting":
+preserve the separate microphone coordinator and normal recording/media behavior.
+Do not re-enable speaker automation from a saved manual shortcut or a later update;
+revisit it only when Ethan explicitly asks. Keep the following historical speaker
+contract as reference for that future work, not as an enabled feature.
+
+For that earlier recording-owned speaker integration, Ethan requested one reversible
 attempt on an identified live call even when its state is unreadable. Microphone and
 speaker restoration must match that exact call, including when successive calls
 reuse the same app process. Readable manual state still takes precedence. Keep a

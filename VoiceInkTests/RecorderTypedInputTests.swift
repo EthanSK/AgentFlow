@@ -1223,6 +1223,7 @@ struct RecorderTypedInputTests {
             #expect(output.messages.count == (text.isEmpty ? 0 : 1))
             if raw { #expect(output.messages == (text.isEmpty ? [] : [text])) }
             #expect(output.keys == (text.isEmpty ? [] : [raw ? .none : .commandEnter]))
+            #expect(output.capturedAudioFlags == (text.isEmpty ? [] : [false]))
             #expect(output.routes.allSatisfy { $0 == .primaryCurrentInput })
             #expect(archivedPrompts.count == (text.isEmpty ? 0 : 1))
             if !text.isEmpty { #expect(archivedPrompts[0].contains(text)) }
@@ -1368,6 +1369,7 @@ struct RecorderTypedInputTests {
             onStateChange: { _ in }, shouldCancel: { false }, isDeliveryAuthorized: { true },
             onCancel: {}, onDismiss: {}, onTranscriptionFailure: { Issue.record("Unexpected failure: \($0)") })
         #expect(audio.transcriptionCalls == 1 && output.messages.count == 1)
+        #expect(output.capturedAudioFlags == [true])
         let archive = try #require(archivedPrompts.first)
         let ordered = [
             "<speech start_at=\"1800000000.000\" end_at=\"1800000003.000\" timing=\"approximate\">\n\nSpeech before typing and while typing\n\n</speech>",
@@ -1543,6 +1545,29 @@ struct RecorderTypedInputTests {
         #expect(raw.message == "Raw Claude words")
     }
 
+    @Test @MainActor func confirmedLocalClaudeCodeGetsTheSamePlainFullPromptHandoffAsCodex() async throws {
+        let host = AgentFlowPromptPreview.Recipient(bundleID: "com.anthropic.claudefordesktop",
+            bundleURL: URL(fileURLWithPath: "/Applications/Claude.app"))
+        for styled in [false, true] {
+            for typed in ["Short Claude prompt", String(repeating: "All Claude words survive. ", count: 100)] {
+                let result = try await clipboardPipelineFixture(clipboardOnly: false, typed: typed,
+                    speech: "Speech before selection and after it", styled: styled,
+                    recipientOverride: host, localClaudeCode: true)
+                #expect(result.message.hasPrefix("[↗]("))
+                #expect(result.message.contains(typed))
+                #expect(result.message.contains("`<selection>`") && result.message.contains("`<screenshot>`"))
+                #expect(result.message.hasSuffix(AgentFlowPromptPreview.fullPromptPointer(target: result.link)))
+                #expect(!result.message.contains("\\color{") && !result.message.contains("start_at="))
+                #expect(!result.message.contains("Selected exact content"))
+                #expect(result.archive.contains("Selected exact content &amp; metadata"))
+                #expect(result.archive.contains("<local_screenshot") && result.archive.contains(typed))
+            }
+        }
+        let raw = try await clipboardPipelineFixture(clipboardOnly: false, typed: "Raw Claude remains raw",
+            raw: true, recipientOverride: host, localClaudeCode: true)
+        #expect(raw.message == "Raw Claude remains raw")
+    }
+
     @Test @MainActor func clipboardOnlyArchiveFailureRawAndOtherRecipientsRetainFullText() async throws {
         let typed = "Keep every typed word\nand second line"
         let failed = try await clipboardPipelineFixture(typed: typed, speech: "spoken words", archiveFails: true)
@@ -1648,7 +1673,8 @@ struct RecorderTypedInputTests {
         clipboardOnly: Bool = true, typed: String, speech: String = "", styled: Bool = true,
         raw: Bool = false, recipient: String = "com.openai.codex", archiveFails: Bool = false,
         includeContext: Bool = true, outputMode: ModeOutputMode = .paste,
-        recipientOverride: AgentFlowPromptPreview.Recipient? = nil, lateShift: Bool = false,
+        recipientOverride: AgentFlowPromptPreview.Recipient? = nil, localClaudeCode: Bool = false,
+        lateShift: Bool = false,
         lateShiftStage: String = "beforePolicy", providerFails: Bool = false,
         canceled: Bool = false, authorized: Bool = true, emptyProvider: Bool = false,
         realRecoveryGate: Bool = false, hudRecovery: String = "", enhancementResult: String? = nil,
@@ -1694,6 +1720,9 @@ struct RecorderTypedInputTests {
             }, currentPromptRecipient: {
                 recipientReads += 1
                 return recipientOverride ?? .init(bundleID: recipient, bundleURL: URL(fileURLWithPath: "/Applications/Codex.app"))
+            }, localClaudePrompt: { _, target in
+                #expect(target.destination == .primaryCurrentInput && target.focusedInput == nil)
+                return localClaudeCode
             }, copyCompletedText: { text in
                 copies += 1
                 return ClipboardManager.setClipboard(text, transient: false, on: board)
@@ -3361,12 +3390,14 @@ struct RecorderTypedInputTests {
     var keys: [AutoSendKey] = []
     var outputModes: [ModeOutputMode] = []
     var skipFlags: [Bool] = []
+    var capturedAudioFlags: [Bool] = []
     func deliver(_ request: TranscriptionDelivery.Request, actions: TranscriptionDelivery.Actions) async {
         if let text = request.text { messages.append(text) }
         routes.append(request.pasteTarget.destination)
         keys.append(request.output.autoSendKey)
         outputModes.append(request.output.outputMode)
         skipFlags.append(request.skipPostProcessing)
+        capturedAudioFlags.append(request.hasCapturedAudio)
     }
 }
 
