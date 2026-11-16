@@ -15,12 +15,16 @@ private actor FakeVoiceSpeakerTransport: ChatGPTVoiceSpeakerTransport {
     private var current: State?
     private var posts: [Bool] = []
     private var postChangesState = true
+    private var callReads = 0
 
     init(_ snapshot: State?) {
         current = snapshot
     }
 
-    func activeSpeakerCall() -> ChatGPTVoiceCall? { current?.call }
+    func activeSpeakerCall() -> ChatGPTVoiceCall? {
+        callReads += 1
+        return current?.call
+    }
 
     func postSpeakerToggle(for call: ChatGPTVoiceCall, mute: Bool) -> ChatGPTVoiceSpeakerPost {
         guard let current, current.call == call, current.hasLiveControl,
@@ -36,10 +40,33 @@ private actor FakeVoiceSpeakerTransport: ChatGPTVoiceSpeakerTransport {
     func setCurrent(_ snapshot: State?) { current = snapshot }
     func ignorePostedShortcut() { postChangesState = false }
     func postedStates() -> [Bool] { posts }
+    func callReadCount() -> Int { callReads }
 }
 
 struct ChatGPTVoiceCaptureSpeakerTests {
     private let call = ChatGPTVoiceCall(applicationPID: 42, sessionID: UUID())
+
+    @Test func disabledAutomaticSpeakerControlNeverReadsOrPosts() async {
+        let transport = FakeVoiceSpeakerTransport(.init(call: call, isMuted: false))
+        let speaker = ChatGPTVoiceCaptureSpeaker(transport: transport, automaticControlEnabled: false)
+        for _ in 0..<3 {
+            await speaker.silenceForCapture()
+            await speaker.restoreAfterCapture()
+        }
+        #expect(await transport.callReadCount() == 0)
+        #expect(await transport.postedStates().isEmpty)
+    }
+
+    @Test func productionKeepsAutomaticSpeakerControlDisabled() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent(
+            "VoiceInk/Services/ChatGPTVoiceCaptureMuteCoordinator.swift"), encoding: .utf8)
+        let start = try #require(source.range(of: "static let shared:"))
+        let end = try #require(source.range(of: "    }()", range: start.upperBound..<source.endIndex))
+        let composition = source[start.lowerBound..<end.upperBound]
+        #expect(composition.contains("ChatGPTVoiceCaptureSpeaker(transport: transport, automaticControlEnabled: false)"))
+        #expect(composition.contains("transport: transport"))
+    }
 
     @Test func aSingleRecordingOwnsAndRestoresItsSpeakerChange() async {
         let transport = FakeVoiceSpeakerTransport(.init(call: call, isMuted: false))

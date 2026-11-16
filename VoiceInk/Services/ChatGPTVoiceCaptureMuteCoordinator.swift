@@ -98,7 +98,10 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
             pairedFanOut: PairedVoiceMuteBroadcaster.shared,
             localPairedSourceID: PairedVoiceMuteBroadcaster.shared.sourceID,
             pairedActivity: .shared,
-            speaker: ChatGPTVoiceCaptureSpeaker(transport: transport)
+            // Ethan turned automatic Voice speaker mute/restore off on2026-11-16.
+            // Keep the service/quit accounting and microphone path unchanged;
+            // a saved manual speaker shortcut must not re-enable automation.
+            speaker: ChatGPTVoiceCaptureSpeaker(transport: transport, automaticControlEnabled: false)
         )
     }()
 

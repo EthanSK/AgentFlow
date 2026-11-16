@@ -143,6 +143,20 @@ struct ChatGPTVoiceCaptureMuteCoordinatorTests {
               call: isInputRunning ? .init(applicationPID: pid, sessionID: sessionID) : nil)
     }
 
+    @Test func disabledSpeakersKeepMicrophoneMuteAndManualStateProtection() async {
+        for manuallyMuted in [false, true] {
+            let transport = RepaintingVoiceTransport(microphoneMuted: manuallyMuted)
+            let coordinator = ChatGPTVoiceCaptureMuteCoordinator(transport: transport,
+                speaker: ChatGPTVoiceCaptureSpeaker(transport: transport, automaticControlEnabled: false))
+            let lease = await coordinator.prepareForCapture()
+            #expect(await transport.postedCommands() == (manuallyMuted ? [] : ["mic mute"]))
+            await transport.revealControls()
+            await coordinator.releaseCapture(lease)
+            await coordinator.waitForPendingTransitionsForTesting()
+            #expect(await transport.postedCommands() == (manuallyMuted ? [] : ["mic mute", "mic restore"]))
+        }
+    }
+
     @Test func speakerChecksAndRestorationPrecedeTheMicrophoneRepaint() async {
         let transport = RepaintingVoiceTransport()
         let coordinator = ChatGPTVoiceCaptureMuteCoordinator(

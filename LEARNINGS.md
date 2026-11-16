@@ -1,5 +1,16 @@
 # Learnings
 
+## 2026-11-16 — Automatic Voice speaker control is temporarily off; microphone control stays
+
+Ethan reports automatic speaker mute/unmute remains unreliable and explicitly
+asks to turn only that automation off while keeping microphone muting. Production
+now constructs the existing speaker service with automaticControlEnabled=false.
+Both speaker boundaries return before reading or posting anything. Keeping the
+service preserves existing capture/quit accounting, microphone ownership, media
+handling and manual speaker shortcuts. Do not re-enable this from a saved shortcut
+or a later repair without Ethan asking to revisit it. The former fresh-call
+speaker-repair acceptance check is superseded by this explicit off instruction.
+
 ## 2026-11-16 — Stop feedback belongs to the finished job's audio history
 
 Ethan wants typed Agent Flow sends silent and the finish sound kept for actual

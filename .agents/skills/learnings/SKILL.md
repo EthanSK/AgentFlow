@@ -768,7 +768,14 @@ actions, polling, notification consumers, global input mute or private app patch
 User correction — 2026-10-09; evidence: LEARNINGS.md, “State-unreadable mute refusal was not usable
 in the live Voice workflow”, and the refusal-only withdrawal in FAILED_APPROACHES.md.
 
-For the later recording-owned speaker integration, Ethan requested one reversible
+Automatic recording-triggered speaker mute/unmute is off for now at Ethan's
+request on2026-11-16 because it remains unreliable. "Just keep the mic muting":
+preserve the separate microphone coordinator and normal recording/media behavior.
+Do not re-enable speaker automation from a saved manual shortcut or a later update;
+revisit it only when Ethan explicitly asks. Keep the following historical speaker
+contract as reference for that future work, not as an enabled feature.
+
+For that earlier recording-owned speaker integration, Ethan requested one reversible
 attempt on an identified live call even when its state is unreadable. Microphone and
 speaker restoration must match that exact call, including when successive calls
 reuse the same app process. Readable manual state still takes precedence. Keep a

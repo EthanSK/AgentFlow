@@ -1,5 +1,14 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-16 — Automatic speaker control remains withdrawn after ongoing unreliability
+
+Ethan reports recording-triggered speaker mute/unmute is still unreliable and
+explicitly asks to disable it for now while keeping microphone muting. Passing
+fixtures and earlier one-call observations do not overrule that withdrawal.
+Production speaker reads and commands must stay disabled; manual speaker keys,
+microphone suppression and recording/media handling remain intact. Reconsider
+speaker automation only on Ethan's explicit request, with new actual-call proof.
+
 ## 2026-11-15 — A flattened Claude tree is not the native AX shape
 
 The initial local Code classifier required Session tools and Session details as
