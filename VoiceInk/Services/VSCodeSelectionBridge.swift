@@ -59,6 +59,46 @@ enum VSCodeSelectionBridge {
         var surface: String? = nil
         var observedAt: Double? = nil
         var captureKind: String? = nil
+        var location: EditorLocation? = nil
+    }
+
+    struct EditorLocation: Codable, Equatable, Sendable {
+        enum DocumentKind: String, Codable, Sendable { case file, git, untitled, virtual }
+        let documentKind: DocumentKind
+        let filePath: String?
+        let documentName: String?
+        let gitRef: String?
+        var diffSide: DiffSide? = nil
+        enum DiffSide: String, Codable, Sendable { case original, modified }
+        let documentVersion: Int
+        let unsaved: Bool
+        let startLine: Int
+        let startColumn: Int
+        let endLine: Int
+        let endColumn: Int
+        let capturedEndLine: Int
+        let capturedEndColumn: Int
+
+        var isValid: Bool {
+            let start = (startLine, startColumn)
+            let end = (endLine, endColumn)
+            let capturedEnd = (capturedEndLine, capturedEndColumn)
+            guard documentVersion > 0, startLine > 0, startColumn > 0, endColumn > 0, capturedEndColumn > 0,
+                  start < capturedEnd, capturedEnd <= end else { return false }
+            switch documentKind {
+            case .file: return filePath?.hasPrefix("/") == true && gitRef == nil && documentName == nil
+            case .git: return filePath?.hasPrefix("/") == true && gitRef != nil && documentName == nil
+            case .untitled: return filePath == nil && gitRef == nil && documentName?.isEmpty == false
+            case .virtual: return filePath == nil && gitRef == nil && documentName == nil
+            }
+        }
+
+        var truncated: Bool { (capturedEndLine, capturedEndColumn) != (endLine, endColumn) }
+    }
+
+    struct Selection: Sendable {
+        let text: String
+        let location: EditorLocation?
     }
 
     static func supports(_ bundleID: String?) -> Bool {
@@ -101,9 +141,17 @@ enum VSCodeSelectionBridge {
         return response.text
     }
 
+    static func validatedSelection(_ response: Response, for request: Request, now: Double) -> Selection? {
+        guard let text = validatedText(response, for: request, now: now) else { return nil }
+        // Terminal snapshots and old companions remain text-only. An invalid
+        // optional range cannot re-label this capture or hide valid selected text.
+        let location = response.surface == "editor" && response.location?.isValid == true ? response.location : nil
+        return Selection(text: text, location: location)
+    }
+
     static func read(sourcePID: pid_t, gestureStartedAt: Date, inputKind: String? = nil,
                      inputDirection: String? = nil, context: FocusedContext? = nil,
-                     isInitialSelection: Bool = false) async -> String? {
+                     isInitialSelection: Bool = false) async -> Selection? {
         let request = Request(nonce: UUID().uuidString, sourcePID: sourcePID,
                               gestureStartedAt: gestureStartedAt.timeIntervalSince1970 * 1000,
                               requestedAt: Date().timeIntervalSince1970 * 1000,
@@ -119,7 +167,7 @@ enum VSCodeSelectionBridge {
             $0.hasPrefix("vscode-\(sourcePID)-") && $0.hasSuffix(".sock") && !$0.contains("/")
         }
         guard !namesForProcess.isEmpty, namesForProcess.count <= 16 else { return nil }
-        let result = await withTaskGroup(of: String?.self) { group in
+        let result = await withTaskGroup(of: Selection?.self) { group in
             for name in namesForProcess {
                 group.addTask {
                     guard !Task.isCancelled else { return nil }
@@ -130,8 +178,8 @@ enum VSCodeSelectionBridge {
                     }.value
                 }
             }
-            var matches: [String] = []
-            for await text in group { if let text { matches.append(text) } }
+            var matches: [Selection] = []
+            for await selection in group { if let selection { matches.append(selection) } }
             // Two focused extension hosts are ambiguous even if their text agrees.
             return !Task.isCancelled && matches.count == 1 ? matches[0] : nil
         }
@@ -255,7 +303,7 @@ enum VSCodeSelectionBridge {
             info.st_mode & mode_t(S_IFMT) == type && info.st_mode & 0o077 == 0
     }
 
-    private static func query(path: String, request: Request) -> String? {
+    private static func query(path: String, request: Request) -> Selection? {
         guard isPrivateOwnedPath(path, type: mode_t(S_IFSOCK)),
               let encoded = try? JSONEncoder().encode(request) else { return nil }
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
@@ -305,7 +353,7 @@ enum VSCodeSelectionBridge {
             incoming.append(contentsOf: buffer.prefix(count))
             if incoming.last == 10 {
                 guard let response = try? JSONDecoder().decode(Response.self, from: incoming) else { return nil }
-                return validatedText(response, for: request, now: Date().timeIntervalSince1970 * 1000)
+                return validatedSelection(response, for: request, now: Date().timeIntervalSince1970 * 1000)
             }
         }
         return nil

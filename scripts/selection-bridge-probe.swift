@@ -9,14 +9,16 @@ import AppKit
               let pid = Int32(CommandLine.arguments[1]),
               let started = Double(CommandLine.arguments[2]) else { exit(2) }
         let context = CommandLine.arguments.count >= 4 ? await VSCodeSelectionBridge.focusedContext(sourcePID: pid) : nil
-        let text = await VSCodeSelectionBridge.read(
+        let selection = await VSCodeSelectionBridge.read(
             sourcePID: pid, gestureStartedAt: Date(timeIntervalSince1970: started / 1000), context: context,
             isInitialSelection: CommandLine.arguments.last == "startup"
         )
         let bounds: [String: Double]? = context?.bounds.map {
             ["x": $0.minX, "y": $0.minY, "width": $0.width, "height": $0.height]
         }
-        let data = try! JSONSerialization.data(withJSONObject: ["text": text as Any? ?? NSNull(),
+        let location = selection?.location.flatMap { try? JSONSerialization.jsonObject(with: JSONEncoder().encode($0)) }
+        let data = try! JSONSerialization.data(withJSONObject: ["text": selection?.text as Any? ?? NSNull(),
+            "location": location ?? NSNull(),
             "surface": context?.surface as Any? ?? NSNull(), "bounds": bounds as Any? ?? NSNull(),
             "hostBundle": NSRunningApplication(processIdentifier: pid)?.bundleIdentifier as Any? ?? NSNull(),
             "hostLaunch": NSRunningApplication(processIdentifier: pid)?.launchDate?.timeIntervalSince1970 as Any? ?? NSNull()])

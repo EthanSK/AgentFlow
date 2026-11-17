@@ -95,6 +95,7 @@ struct LiveSelectionReference: Equatable, Sendable {
     private var codexThreadTitle: String?
     private var visibleCodexThreadIDs: [String] = []
     private var hasCodexScopeObservation = false
+    private var editorLocation: VSCodeSelectionBridge.EditorLocation?
     private var chromeContext: ChromeSelectionContextReader.Context?
     private var source: Source = .codex
     private(set) var captureID: UUID?
@@ -125,7 +126,7 @@ struct LiveSelectionReference: Equatable, Sendable {
         return preview
     }
 
-    init?(_ selectedText: String) {
+    init?(_ selectedText: String, editorLocation: VSCodeSelectionBridge.EditorLocation? = nil) {
         guard selectedText.contains(where: { !$0.isWhitespace }) else { return nil }
         let normalized = selectedText
             .split(whereSeparator: \.isWhitespace)
@@ -135,7 +136,8 @@ struct LiveSelectionReference: Equatable, Sendable {
         screenshotPath = nil
         self.selectedText = selectedText
         omittedMiddle = false
-        truncated = false
+        self.editorLocation = editorLocation
+        truncated = editorLocation?.truncated == true
         if normalized.count <= 96 {
             preview = "“\(normalized)”"
         } else {
@@ -673,6 +675,20 @@ struct LiveSelectionReference: Equatable, Sendable {
             attributes = "index=\"\(index)\" source=\"\(Self.xmlEscaped(name))\" characters=\"\(characterCount)\" middle_omitted=\"\(omittedMiddle)\" truncated=\"\(truncated)\""
             if let bundleID {
                 attributes += " bundle_id=\"\(Self.xmlEscaped(bundleID))\""
+            }
+            if let editorLocation, VSCodeSelectionBridge.supports(bundleID) {
+                attributes += " document_kind=\"\(editorLocation.documentKind.rawValue)\""
+                attributes += " document_version=\"\(editorLocation.documentVersion)\" unsaved=\"\(editorLocation.unsaved)\""
+                attributes += " start_line=\"\(editorLocation.startLine)\" start_column=\"\(editorLocation.startColumn)\""
+                attributes += " end_line=\"\(editorLocation.endLine)\" end_column=\"\(editorLocation.endColumn)\""
+                attributes += " column_encoding=\"utf16\" range_end=\"exclusive\""
+                if let path = editorLocation.filePath { attributes += " file_path=\"\(Self.xmlEscaped(path))\"" }
+                if let name = editorLocation.documentName { attributes += " document_name=\"\(Self.xmlEscaped(name))\"" }
+                if let ref = editorLocation.gitRef { attributes += " git_ref=\"\(Self.xmlEscaped(ref))\"" }
+                if let side = editorLocation.diffSide { attributes += " diff_side=\"\(side.rawValue)\"" }
+                if editorLocation.truncated {
+                    attributes += " captured_end_line=\"\(editorLocation.capturedEndLine)\" captured_end_column=\"\(editorLocation.capturedEndColumn)\""
+                }
             }
             if let chromeContext {
                 attributes += " page_url=\"\(Self.xmlEscaped(chromeContext.pageURL))\""
@@ -1679,6 +1695,7 @@ final class LiveSelectionCapture {
             let chromeContext = bundleID == "com.google.Chrome" && Self.isFrontmost(sourcePID)
                 ? await ChromeSelectionContextReader.capture() : nil
             let selectedText: String?
+            var editorLocation: VSCodeSelectionBridge.EditorLocation?
             var accessibility: LiveSelectionResolution?
             if let chromeContext {
                 selectedText = chromeContext.selectedText
@@ -1705,6 +1722,7 @@ final class LiveSelectionCapture {
                     }
                 )
                 selectedText = result.text
+                editorLocation = result.editorLocation
                 accessibility = result.resolution
             }
             readReturnedAt = DispatchTime.now().uptimeNanoseconds
@@ -1714,7 +1732,7 @@ final class LiveSelectionCapture {
                 return
             }
             let reference: LiveSelectionReference
-            if let text = selectedText, let textReference = LiveSelectionReference(text) {
+            if let text = selectedText, let textReference = LiveSelectionReference(text, editorLocation: editorLocation) {
                 reference = textReference
             } else if TelegramSelectionImageCapture.mayCapture(
                 enabled: UserDefaults.standard.bool(forKey: TelegramSelectionImageCapture.preferenceKey),
@@ -1851,7 +1869,7 @@ final class LiveSelectionCapture {
         isInitialSelection: Bool,
         startedAt: UInt64,
         onFirstEmptyRead: () -> Void
-    ) async -> (text: String?, resolution: LiveSelectionResolution?) {
+    ) async -> (text: String?, resolution: LiveSelectionResolution?, editorLocation: VSCodeSelectionBridge.EditorLocation?) {
         // VS Code's default Monaco editor intentionally exposes no AX text.
         // Better Git proves a matching mouse, keyboard-extension or Select All
         // selection in the focused editor. A stationary Shift-click's range
@@ -1867,16 +1885,16 @@ final class LiveSelectionCapture {
                gesture?.touchesWindow(ownedBy: sourcePID, in: LiveSelectionWindow.onScreen()) == true)) {
             for (attempt, delay) in LiveSelectionReadPolicy.accessibilityRetryDelays.enumerated() {
                 if delay > 0 { try? await Task.sleep(nanoseconds: delay) }
-                guard !Task.isCancelled, canRead(identity), isFrontmost(sourcePID) else { return (nil, nil) }
+                guard !Task.isCancelled, canRead(identity), isFrontmost(sourcePID) else { return (nil, nil, nil) }
                 // Previews and extension webviews retain the generic read-only
                 // AX path; they must never borrow an editor or terminal snapshot.
                 guard let context = await VSCodeSelectionBridge.focusedContext(sourcePID: sourcePID) else { break }
-                guard !Task.isCancelled, canRead(identity), isFrontmost(sourcePID) else { return (nil, nil) }
+                guard !Task.isCancelled, canRead(identity), isFrontmost(sourcePID) else { return (nil, nil, nil) }
                 // Terminal focus must never reuse the editor's recent selection.
                 // Require its own pane bounds, never the hidden caret rectangle.
                 if !isInitialSelection, context.surface == "terminal", let gesture,
-                   !gesture.coversBothEndpoints(context.bounds) { return (nil, nil) }
-                if let text = await VSCodeSelectionBridge.read(sourcePID: sourcePID,
+                   !gesture.coversBothEndpoints(context.bounds) { return (nil, nil, nil) }
+                if let selection = await VSCodeSelectionBridge.read(sourcePID: sourcePID,
                     gestureStartedAt: gestureStartedAt, inputKind: bridgeInputKind,
                     inputDirection: bridgeInputDirection, context: context,
                     isInitialSelection: isInitialSelection) {
@@ -1884,12 +1902,12 @@ final class LiveSelectionCapture {
                         tier: .vscodeBridge, source: nil, evidence: .atGesture, attempt: attempt + 1,
                         bundleID: bundleID, startedAt: startedAt
                     )
-                    return (text, nil)
+                    return (selection.text, nil, selection.location)
                 }
                 // Use the existing bounded settle re-read for terminal-tool
                 // registration. Editors retain the established AX fallback.
                 if context.surface != "terminal" { break }
-                if attempt == LiveSelectionReadPolicy.accessibilityRetryDelays.count - 1 { return (nil, nil) }
+                if attempt == LiveSelectionReadPolicy.accessibilityRetryDelays.count - 1 { return (nil, nil, nil) }
             }
         }
 
@@ -1900,7 +1918,7 @@ final class LiveSelectionCapture {
                 try? await Task.sleep(nanoseconds: delay)
             }
             guard !Task.isCancelled, canRead(identity) else {
-                return (nil, nil)
+                return (nil, nil, nil)
             }
             attempts += 1
             last = await LiveSelectionTextReader.resolveAccessibility(
@@ -1923,7 +1941,7 @@ final class LiveSelectionCapture {
                     callbackLagMilliseconds: gesture?.callbackLagMilliseconds,
                     formulaLookup: last.formulaLog
                 )
-                return (LiveSelectionFormulaText.cleaned(candidate.text, bundleID: bundleID), last)
+                return (LiveSelectionFormulaText.cleaned(candidate.text, bundleID: bundleID), last, nil)
             }
             // Later attempts keep running; only the keyboard moves back early.
             if attempts == 1 { onFirstEmptyRead() }
@@ -1932,7 +1950,7 @@ final class LiveSelectionCapture {
         }
 
         guard !Task.isCancelled, canRead(identity), isFrontmost(sourcePID) else {
-            return (nil, nil)
+            return (nil, nil, nil)
         }
         if LiveSelectionBrowserScriptReader.engine(for: bundleID) != nil,
            LiveSelectionBrowserScriptReader.mayReadForGesture(
@@ -1944,12 +1962,12 @@ final class LiveSelectionCapture {
                 tier: .browserScript, source: nil, evidence: nil, attempt: attempts,
                 bundleID: bundleID, startedAt: startedAt
             )
-            return (text, last)
+            return (text, last, nil)
         }
         LiveSelectionDiagnostics.unavailable(
             last, attempts: attempts, bundleID: bundleID, startedAt: startedAt
         )
-        return (nil, last)
+        return (nil, last, nil)
     }
 
     private static func isFrontmost(_ pid: pid_t) -> Bool {

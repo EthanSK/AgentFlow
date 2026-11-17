@@ -93,6 +93,37 @@ struct VSCodeSelectionBridgeTests {
         #expect(VSCodeSelectionBridge.validatedText(response, for: request, now: 10_050) == nil)
     }
 
+    @Test func editorLocationTravelsWithValidatedSelection() throws {
+        let location = VSCodeSelectionBridge.EditorLocation(
+            documentKind: .git, filePath: "/repo/Source & Test.swift", documentName: nil, gitRef: "HEAD", diffSide: .original,
+            documentVersion: 4, unsaved: false, startLine: 10, startColumn: 3, endLine: 13, endColumn: 6,
+            capturedEndLine: 12, capturedEndColumn: 4
+        )
+        let response = VSCodeSelectionBridge.Response(version: 1, nonce: request.nonce,
+            sourcePID: request.sourcePID, changedAt: 9500, text: "  let value = \"<source>\"", surface: "editor", location: location)
+        let selection = try #require(VSCodeSelectionBridge.validatedSelection(response, for: request, now: 10_050))
+        #expect(selection.location == location)
+
+        let reference = try #require(LiveSelectionReference(selection.text, editorLocation: selection.location))
+            .scopedToApplication(name: "Visual Studio Code", bundleID: "com.microsoft.VSCode")
+        let xml = LiveSelectionReference.interleaving([reference], with: "")
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let archive = try AgentFlowPromptArchive.write(xml, recordID: UUID(), directory: directory)
+        #expect(try String(contentsOf: archive, encoding: .utf8) == AgentFlowPromptArchive.interpretationReminder + xml)
+        #expect(xml.contains(#"file_path="/repo/Source &amp; Test.swift" git_ref="HEAD" diff_side="original""#))
+        #expect(xml.contains(#"start_line="10" start_column="3" end_line="13" end_column="6""#))
+        #expect(xml.contains(#"column_encoding="utf16" range_end="exclusive""#))
+        #expect(xml.contains(#"captured_end_line="12" captured_end_column="4""#))
+        #expect(xml.contains(#"truncated="true""#))
+        #expect(xml.contains(#"<text>  let value = "&lt;source&gt;"</text>"#))
+
+        var oldCompanion = response
+        oldCompanion.location = nil
+        #expect(VSCodeSelectionBridge.validatedSelection(oldCompanion, for: request, now: 10_050)?.text == selection.text)
+        #expect(VSCodeSelectionBridge.validatedSelection(oldCompanion, for: request, now: 10_050)?.location == nil)
+    }
+
     private let request = VSCodeSelectionBridge.Request(
         nonce: "12345678-1234-1234-1234-123456789012", sourcePID: 42,
         gestureStartedAt: 9000, requestedAt: 10_000
