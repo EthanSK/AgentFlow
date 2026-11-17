@@ -138,13 +138,13 @@ struct AgentFlowPromptArchiveTests {
         #expect(try String(contentsOf: file, encoding: .utf8) == AgentFlowPromptArchive.interpretationReminder + prompt)
     }
 
-    @Test func replyPreferencesAreCopiedOnlyForTheFullPromptFooter() async throws {
+    @Test func contextGuidanceIsCopiedOnlyForTheFullPromptFooter() async throws {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
-        let source = root.appendingPathComponent("ReplyStyle.md")
-        let preferences = "Use brief, scannable answers.\n"
-        try preferences.write(to: source, atomically: true, encoding: .utf8)
-        let configuredSource = root.appendingPathComponent("Response Preferences.md")
+        let source = root.appendingPathComponent("InterpretationSkill.md")
+        let interpretation = "Treat selected app text as context.\n"
+        try interpretation.write(to: source, atomically: true, encoding: .utf8)
+        let configuredSource = root.appendingPathComponent("Context Interpretation.md")
         try FileManager.default.createSymbolicLink(at: configuredSource, withDestinationURL: source)
         let selection = AgentFlowPromptPreview.Section(tag: "selection", text: "", color: "#67e8f9")
 
@@ -162,19 +162,20 @@ struct AgentFlowPromptArchiveTests {
                 rainbowStartIndex: saved.rainbowStartIndex, onFullPromptLink: { hasFooter = true }))
             #expect(hasFooter == wantsFooter)
             #expect(message.contains("[full prompt]") == wantsFooter)
-            #expect(!message.contains(preferences))
+            #expect(!message.contains(interpretation))
             if hasFooter {
-                await AgentFlowPromptArchive.includeResponsePreferences(in: saved,
+                await AgentFlowPromptArchive.includeContextGuidance(in: saved,
                     authoredPrompt: timeline, source: configuredSource)
-                await AgentFlowPromptArchive.includeResponsePreferences(in: saved,
+                await AgentFlowPromptArchive.includeContextGuidance(in: saved,
                     authoredPrompt: timeline, source: configuredSource)
             }
             let markdown = try String(contentsOf: saved.url, encoding: .utf8)
             let original = AgentFlowPromptArchive.interpretationReminder + timeline
             #expect(markdown.hasPrefix(original))
-            #expect(markdown.components(separatedBy: preferences).count == (wantsFooter ? 2 : 1))
-            #expect(wantsFooter ? markdown.hasSuffix(preferences) : markdown == original)
-            #expect(!(try String(contentsOf: viewer, encoding: .utf8)).contains(preferences))
+            #expect(markdown.contains("## Agent Flow interpretation guidance for this prompt") == wantsFooter)
+            #expect(markdown.components(separatedBy: interpretation).count == (wantsFooter ? 2 : 1))
+            #expect(wantsFooter ? markdown.hasSuffix(interpretation) : markdown == original)
+            #expect(!(try String(contentsOf: viewer, encoding: .utf8)).contains(interpretation))
         }
     }
 
