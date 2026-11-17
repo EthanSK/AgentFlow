@@ -297,7 +297,9 @@ struct ModeConfigFormView: View {
                         if draft.selectedAIModel == nil,
                            let provider = configuredSelectedAIProvider,
                            provider != .localCLI {
-                            draft.selectedAIModel = warmupSnapshot.selectedModel(for: provider)
+                            draft.selectedAIModel = provider == .openAI
+                                ? OpenAIEnhancementAPI.automaticModelID
+                                : warmupSnapshot.selectedModel(for: provider)
                         }
                         if draft.selectedPromptId == nil {
                             draft.selectedPromptId = warmupSnapshot.firstPromptId
@@ -336,6 +338,8 @@ struct ModeConfigFormView: View {
                     .onChange(of: draft.selectedAIProvider) { _, newValue in
                         if let provider = newValue.flatMap({ AIProvider(rawValue: $0) }) {
                             switch provider {
+                            case .openAI:
+                                draft.selectedAIModel = OpenAIEnhancementAPI.automaticModelID
                             case .localCLI:
                                 draft.selectedAIModel = nil
                             case .ollama:
@@ -381,7 +385,9 @@ struct ModeConfigFormView: View {
                 let modelBinding = Binding<String>(
                     get: {
                         if let model = draft.selectedAIModel, !model.isEmpty { return model }
-                        return warmupSnapshot.selectedModel(for: provider)
+                        return provider == .openAI
+                            ? OpenAIEnhancementAPI.automaticModelID
+                            : warmupSnapshot.selectedModel(for: provider)
                     },
                     set: { newModelValue in
                         draft.selectedAIModel = newModelValue
@@ -389,14 +395,21 @@ struct ModeConfigFormView: View {
                 )
 
                 Picker("AI Model", selection: modelBinding) {
+                    if provider == .openAI { Text("Default").tag(OpenAIEnhancementAPI.automaticModelID) }
                     ForEach(models, id: \.self) { model in
                         Text(model).tag(model)
                     }
                 }
 
-                if provider == .openRouter {
+                if provider == .openAI || provider == .openRouter {
                     Button("Refresh Models") {
-                        Task { await aiService.fetchOpenRouterModels() }
+                        Task {
+                            if provider == .openAI {
+                                await aiService.refreshOpenAIModels(force: true)
+                            } else {
+                                await aiService.fetchOpenRouterModels()
+                            }
+                        }
                     }
                     .help("Refresh models")
                 }
@@ -409,6 +422,7 @@ struct ModeConfigFormView: View {
 
         if let selectedModel = draft.selectedAIModel,
            !selectedModel.isEmpty,
+           !(provider == .openAI && selectedModel == OpenAIEnhancementAPI.automaticModelID),
            !models.contains(selectedModel) {
             models.insert(selectedModel, at: 0)
         }

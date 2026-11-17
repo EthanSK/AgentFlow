@@ -114,7 +114,9 @@ struct ModeConfigDraft {
             return
         }
 
-        selectedAIModel = snapshot.selectedModel(for: provider)
+        selectedAIModel = provider == .openAI
+            ? OpenAIEnhancementAPI.automaticModelID
+            : snapshot.selectedModel(for: provider)
     }
 
     mutating func inheritUsableTranscriptionModelSelection(from snapshot: ModeFormWarmupSnapshot) {

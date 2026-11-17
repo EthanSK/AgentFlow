@@ -229,6 +229,9 @@ class AIService: ObservableObject {
     private var apiKeyChangeObserver: NSObjectProtocol?
     
     @Published private var openRouterModels: [String] = []
+    @Published private var openAIModels: [String] = []
+    private var lastOpenAIModelRefresh: Date?
+    private var isRefreshingOpenAIModels = false
     @Published private(set) var isOllamaRefreshing = false
     
     var connectedProviders: [AIProvider] {
@@ -256,14 +259,35 @@ class AIService: ObservableObject {
            (selectedProvider == .ollama && !selectedModel.isEmpty) || availableModels.contains(selectedModel) {
             return selectedModel
         }
-        return selectedProvider.defaultModel
+        return defaultModel(for: selectedProvider)
     }
 
     func selectedModel(for provider: AIProvider) -> String {
         if let selectedModel = selectedModels[provider], !selectedModel.isEmpty {
             return selectedModel
         }
+        return defaultModel(for: provider)
+    }
+
+    func defaultModel(for provider: AIProvider) -> String {
+        if provider == .openAI, let latest = OpenAIEnhancementAPI.latestSol(in: openAIModels) {
+            return latest
+        }
         return provider.defaultModel
+    }
+
+    @MainActor
+    func refreshOpenAIModels(force: Bool = false) async {
+        guard !isRefreshingOpenAIModels,
+              force || lastOpenAIModelRefresh.map({ Date().timeIntervalSince($0) >= 900 }) ?? true,
+              let key = APIKeyManager.shared.getAPIKey(forProvider: AIProvider.openAI.rawValue),
+              !key.isEmpty else { return }
+        isRefreshingOpenAIModels = true
+        lastOpenAIModelRefresh = Date()
+        defer { isRefreshingOpenAIModels = false }
+        guard let models = try? await OpenAIEnhancementAPI.listModels(apiKey: key),
+              APIKeyManager.shared.getAPIKey(forProvider: AIProvider.openAI.rawValue) == key else { return }
+        openAIModels = models
     }
     
     var availableModels: [String] {
@@ -289,6 +313,9 @@ class AIService: ObservableObject {
             return openRouterModels
         } else if provider == .custom {
             return CustomAIProviderManager.shared.availableModelNames
+        }
+        if provider == .openAI {
+            return openAIModels + provider.availableModels.filter { !openAIModels.contains($0) }
         }
         return provider.availableModels
     }
@@ -316,6 +343,7 @@ class AIService: ObservableObject {
 
         loadSavedModelSelections()
         loadSavedOpenRouterModels()
+        Task { [weak self] in await self?.refreshOpenAIModels() }
 
         apiKeyChangeObserver = NotificationCenter.default.addObserver(
             forName: .aiProviderKeyChanged,
@@ -324,6 +352,7 @@ class AIService: ObservableObject {
         ) { [weak self] _ in
             DispatchQueue.main.async {
                 self?.reloadSelectedProviderConfiguration()
+                Task { [weak self] in await self?.refreshOpenAIModels(force: true) }
             }
         }
     }

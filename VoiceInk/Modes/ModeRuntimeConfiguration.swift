@@ -177,6 +177,9 @@ enum ModeRuntimeResolver {
             providerName: mode?.selectedAIProvider,
             aiService: aiService
         )
+        if mode?.isAIEnhancementEnabled == true, provider == .openAI {
+            Task { await aiService.refreshOpenAIModels() }
+        }
         let modelName = resolvedEnhancementModelName(
             provider: provider,
             configuredModelName: mode?.selectedAIModel,
@@ -278,6 +281,14 @@ enum ModeRuntimeResolver {
 
         if provider == .localCLI {
             return nil
+        }
+
+        if provider == .openAI {
+            if let configuredModelName, !configuredModelName.isEmpty,
+               configuredModelName != OpenAIEnhancementAPI.automaticModelID {
+                return configuredModelName
+            }
+            return aiService.defaultModel(for: provider)
         }
 
         let models = aiService.availableModels(for: provider)

@@ -231,6 +231,14 @@ class AIEnhancementService: ObservableObject {
         do {
             let result: String
             switch provider {
+            case .openAI:
+                result = try await OpenAIEnhancementAPI.complete(
+                    apiKey: try apiKey(for: provider, modelName: modelName),
+                    model: modelName,
+                    messages: [.user(formattedText)],
+                    systemPrompt: systemMessage,
+                    timeout: baseTimeout
+                )
             case .anthropic:
                 result = try await AnthropicLLMClient.chatCompletion(
                     apiKey: try apiKey(for: provider, modelName: modelName),

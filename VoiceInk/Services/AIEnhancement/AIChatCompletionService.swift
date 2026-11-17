@@ -13,6 +13,14 @@ extension AIService {
 
         let result: String
         switch provider {
+        case .openAI:
+            result = try await OpenAIEnhancementAPI.complete(
+                apiKey: try chatAPIKey(for: provider, modelName: resolvedModel),
+                model: resolvedModel,
+                messages: messages,
+                systemPrompt: systemPrompt,
+                timeout: timeout
+            )
         case .anthropic:
             result = try await AnthropicLLMClient.chatCompletion(
                 apiKey: try chatAPIKey(for: provider, modelName: resolvedModel),
