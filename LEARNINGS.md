@@ -7097,3 +7097,7 @@ A later read-only comparison found a complete older client on the Mini: 26.1027.
 ## VS Code selection locations
 
 The previous companion transferred text only, even though VS Code had the exact range. Carry one snapshot of the editor text and its location through the same startup or live gesture reply and into the archived XML. Compare against the captured end after the transport limit so an agent can tell when text stops before the full highlight. Old companions and Accessibility fallbacks still supply text without claiming a location. A Git document and a dirty working buffer must not be treated as the on-disk text at the same path.
+
+## 2026-11-17 — Embed interpretation guidance in linked prompt Markdown
+
+The optional guidance in a linked full prompt interprets the recorded conversation's speech, typing, selections and screenshots. Read the local Context Interpretation.md source through the existing bounded regular-file reader, retain the skill reminder if the source is unavailable, and leave the pasted inline message and HTML timeline alone. Append to the checked original archive only once so repeated delivery does not duplicate the guidance.

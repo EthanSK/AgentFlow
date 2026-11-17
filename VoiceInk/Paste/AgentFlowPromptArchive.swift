@@ -14,14 +14,14 @@ enum AgentFlowPromptArchive {
         let url: URL
         let rainbowStartIndex: Int
         let handoffTiming: HandoffTiming?
-        fileprivate let canIncludeResponsePreferences: Bool
+        fileprivate let canIncludeContextGuidance: Bool
 
         init(url: URL, rainbowStartIndex: Int, handoffTiming: HandoffTiming? = nil,
-             canIncludeResponsePreferences: Bool = false) {
+             canIncludeContextGuidance: Bool = false) {
             self.url = url
             self.rainbowStartIndex = rainbowStartIndex
             self.handoffTiming = handoffTiming
-            self.canIncludeResponsePreferences = canIncludeResponsePreferences
+            self.canIncludeContextGuidance = canIncludeContextGuidance
         }
     }
 
@@ -55,7 +55,7 @@ enum AgentFlowPromptArchive {
     // The canonical file is the agent's prompt, while its viewer shows only
     // user events. Keep this one-line skill reminder out of the event stream
     // so it cannot be mistaken for another authored request or rendered card.
-    static let interpretationReminder = "<!-- Agent Flow: Read the $interpret-agent-flow-context skill before interpreting this timeline. -->\n\n"
+    static let interpretationReminder = "<!-- Agent Flow: Use the embedded interpretation guidance when present. Otherwise use $interpret-agent-flow-context when needed. -->\n\n"
 
     static var directory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -99,23 +99,23 @@ enum AgentFlowPromptArchive {
             handoffTiming: HandoffTiming(submitted: submitted, workerStarted: result.2,
                 workFinished: result.3, returnReady: result.4, joined: joined,
                 workerWasMainThread: result.5, joinWasMainThread: Thread.isMainThread),
-            canIncludeResponsePreferences: true)
+            canIncludeContextGuidance: true)
     }
 
     /// Finish the newly created Markdown before publishing a “Read the full
-    /// prompt” link. The worker uses an explicit local preference source and
+    /// prompt” link. The worker uses an explicit local interpretation source and
     /// never adds its contents to the inline paste or the HTML timeline.
-    static func includeResponsePreferences(in prompt: SavedPrompt, authoredPrompt: String,
+    static func includeContextGuidance(in prompt: SavedPrompt, authoredPrompt: String,
                                            source: URL? = nil) async {
-        guard prompt.canIncludeResponsePreferences else { return }
-        let preferences = source ?? directory.deletingLastPathComponent()
-            .appendingPathComponent("Response Preferences.md")
+        guard prompt.canIncludeContextGuidance else { return }
+        let contextGuidance = source ?? directory.deletingLastPathComponent()
+            .appendingPathComponent("Context Interpretation.md")
         await Task.detached(priority: .userInitiated) {
-            try? appendResponsePreferences(to: prompt.url, authoredPrompt: authoredPrompt, from: preferences)
+            try? appendContextGuidance(to: prompt.url, authoredPrompt: authoredPrompt, from: contextGuidance)
         }.value
     }
 
-    private static func appendResponsePreferences(to file: URL, authoredPrompt: String, from source: URL) throws {
+    private static func appendContextGuidance(to file: URL, authoredPrompt: String, from source: URL) throws {
         // A local symlink can point at the live reference skill. Resolve it
         // first and read only a bounded regular file, never a pipe or device.
         let sourceFD = Darwin.open(source.resolvingSymlinksInPath().path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
@@ -127,8 +127,8 @@ enum AgentFlowPromptArchive {
               sourceStat.st_size > 0, sourceStat.st_size <= maximumBytes else { return }
         let input = FileHandle(fileDescriptor: sourceFD, closeOnDealloc: false)
         guard let bytes = try input.read(upToCount: maximumBytes + 1), bytes.count == sourceStat.st_size,
-              let preferences = String(data: bytes, encoding: .utf8),
-              preferences.contains(where: { !$0.isWhitespace }) else { return }
+              let interpretation = String(data: bytes, encoding: .utf8),
+              interpretation.contains(where: { !$0.isWhitespace }) else { return }
 
         let dir = Darwin.open(file.deletingLastPathComponent().path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
         guard dir >= 0 else { return }
@@ -148,13 +148,13 @@ enum AgentFlowPromptArchive {
         let guidance = """
 
 
-        ## Response preferences for this reply
+        ## Agent Flow interpretation guidance for this prompt
 
-        The reference skill is copied below for convenience. Apply its reply style to this response using this copy. Skip the skill's loading, rereading, setup, and maintenance instructions. The user's request is the prompt above.
+        Use this copy to interpret the speech, typing, selections, and screenshots in the prompt above. You already have the interpretation skill here, so skip loading it separately. Its setup and maintenance steps do not apply to this reply.
 
         """
         do {
-            try archive.write(contentsOf: Data((guidance + "\n" + preferences).utf8))
+            try archive.write(contentsOf: Data((guidance + "\n" + interpretation).utf8))
             try archive.synchronize()
         } catch {
             // Preserve a complete original prompt if the optional append fails.

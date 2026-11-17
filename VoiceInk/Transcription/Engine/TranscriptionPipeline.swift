@@ -327,7 +327,7 @@ class TranscriptionPipeline {
                     // Its explicit read instruction authorizes the cached copy;
                     // archive failure must still avoid claiming a valid file.
                     if showsFullPromptLink, let completePromptText {
-                        await AgentFlowPromptArchive.includeResponsePreferences(in: compactArchive,
+                        await AgentFlowPromptArchive.includeContextGuidance(in: compactArchive,
                             authoredPrompt: completePromptText)
                     }
                 }

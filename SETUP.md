@@ -58,10 +58,12 @@ message can still render the formatting. With rich-text editing enabled, Codex c
 the pasted Markdown instead. This is a Codex setting, separate from Agent Flow's Modes
 and transcription model.
 
-For optional reply guidance, put a UTF-8 Markdown file of up to 64 KiB at
-`~/Library/Application Support/AgentFlow/Response Preferences.md`. A symlink
-to an existing reference file works too. Agent Flow copies it into the linked
-Markdown when the paste includes **Read the full prompt**.
+For optional guidance on interpreting speech, selections, and screenshots,
+put a UTF-8 Markdown file of up to 64 KiB at
+`~/Library/Application Support/AgentFlow/Context Interpretation.md`. A symlink
+to the installed `interpret-agent-flow-context/SKILL.md` works too. Agent Flow
+copies it into the linked Markdown when the paste includes **Read the full
+prompt**. The receiving agent can use that copy without opening the skill again.
 
 ### Add optional extras after installing the download
 
