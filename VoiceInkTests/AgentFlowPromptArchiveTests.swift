@@ -45,17 +45,25 @@ struct AgentFlowPromptArchiveTests {
         #expect(timing.returnReady <= timing.joined)
         #expect(!timing.workerWasMainThread)
         #expect(saved.rainbowStartIndex == 0)
-        #expect(try String(contentsOf: saved.url, encoding: .utf8) == AgentFlowPromptArchive.interpretationReminder + text)
-        let viewer = try #require(AgentFlowPromptArchive.viewerURL(for: saved.url))
-        let html = try String(contentsOf: viewer, encoding: .utf8)
-        #expect(html.contains("color:#fa7070\">complete</span>"))
+        let source = try String(contentsOf: saved.url, encoding: .utf8)
+        #expect(saved.url.pathExtension == "md")
+        #expect(try FileManager.default.contentsOfDirectory(atPath: root.path) == [saved.url.lastPathComponent])
+        #expect(source.hasPrefix("<!-- Agent Flow rainbow start: 0 -->"))
+        #expect(source.contains(AgentFlowPromptArchive.responseReminder))
+        #expect(source.hasSuffix(text))
+        #expect(!source.contains("<!doctype html>"))
+        #expect(AgentFlowPromptArchive.viewerURL(for: saved.url) == nil)
+        let realArchive = AgentFlowPromptArchive.directory.appendingPathComponent(saved.url.lastPathComponent)
+        let viewer = try #require(AgentFlowPromptArchive.liveViewerURL(for: realArchive))
+        #expect(viewer.absoluteString == "http://127.0.0.1:59343/index.html?prompt=" + saved.url.lastPathComponent)
+        let paste = try #require(AgentFlowPromptPreview.make(authoredText: "Complete", sections: [],
+            fileURL: realArchive, viewerURL: viewer))
+        #expect(paste.hasSuffix(AgentFlowPromptPreview.fullPromptPointer(target: viewer.absoluteString)))
         let inline = AgentFlowPromptPreview.coloredInlineTimeline(text, rainbowStartIndex: saved.rainbowStartIndex)
         #expect(inline.contains("#fa7070"))
-        #expect(html == (try String(contentsOf: viewer, encoding: .utf8)))
         let next = try await AgentFlowPromptArchive.save("<typed_text>next</typed_text>", recordID: UUID(), directory: root, colorCursor: cursor)
         #expect(next.rainbowStartIndex == 3)
-        let nextViewer = try #require(AgentFlowPromptArchive.viewerURL(for: next.url))
-        #expect(try String(contentsOf: nextViewer, encoding: .utf8).contains("color:#fad870\">next</span>"))
+        #expect(try String(contentsOf: next.url, encoding: .utf8).hasPrefix("<!-- Agent Flow rainbow start: 3 -->"))
     }
 
     private func withoutRainbowSpans(_ html: String) -> String {
@@ -155,27 +163,25 @@ struct AgentFlowPromptArchiveTests {
                 + "</text></app_selection>", [selection], true)
         ] {
             let saved = try await AgentFlowPromptArchive.save(timeline, recordID: UUID(), directory: root)
-            let viewer = try #require(AgentFlowPromptArchive.viewerURL(for: saved.url))
             var hasFooter = false
             let message = try #require(AgentFlowPromptPreview.make(authoredText: "Short prompt",
-                sections: sections, fileURL: saved.url, viewerURL: viewer, completePromptText: timeline,
+                sections: sections, fileURL: saved.url, completePromptText: timeline,
                 rainbowStartIndex: saved.rainbowStartIndex, onFullPromptLink: { hasFooter = true }))
             #expect(hasFooter == wantsFooter)
             #expect(message.contains("[full prompt]") == wantsFooter)
             #expect(!message.contains(interpretation))
+            let beforeGuidance = try String(contentsOf: saved.url, encoding: .utf8)
+            #expect(!beforeGuidance.contains(interpretation))
+            #expect(beforeGuidance.contains(AgentFlowPromptArchive.responseReminder))
             if hasFooter {
-                await AgentFlowPromptArchive.includeContextGuidance(in: saved,
-                    authoredPrompt: timeline, source: configuredSource)
-                await AgentFlowPromptArchive.includeContextGuidance(in: saved,
-                    authoredPrompt: timeline, source: configuredSource)
+                await AgentFlowPromptArchive.includeContextGuidance(in: saved, source: configuredSource)
+                await AgentFlowPromptArchive.includeContextGuidance(in: saved, source: configuredSource)
             }
-            let markdown = try String(contentsOf: saved.url, encoding: .utf8)
-            let original = AgentFlowPromptArchive.interpretationReminder + timeline
-            #expect(markdown.hasPrefix(original))
-            #expect(markdown.contains("## Agent Flow interpretation guidance for this prompt") == wantsFooter)
-            #expect(markdown.components(separatedBy: interpretation).count == (wantsFooter ? 2 : 1))
-            #expect(wantsFooter ? markdown.hasSuffix(interpretation) : markdown == original)
-            #expect(!(try String(contentsOf: viewer, encoding: .utf8)).contains(interpretation))
+            let content = try String(contentsOf: saved.url, encoding: .utf8)
+            #expect(content.hasPrefix(beforeGuidance))
+            #expect(content.components(separatedBy: interpretation).count == 2)
+            #expect(content.components(separatedBy: AgentFlowPromptArchive.responseReminder).count == 2)
+            #expect(!content.contains("## Response preferences for this reply"))
         }
     }
 
@@ -304,7 +310,7 @@ struct AgentFlowPromptArchiveTests {
         let file = URL(fileURLWithPath: "/tmp/full (😀) prompt.md")
         let viewer = URL(fileURLWithPath: "/tmp/full (😀) prompt.html")
         let encoded = "/tmp/full%20%28%F0%9F%98%80%29%20prompt.html"
-        let expected = "[↗](\(encoded)) keep these words `<selection>`\n\n"
+        let expected = "keep these words `<selection>`\n\n"
             + AgentFlowPromptPreview.fullPromptPointer(target: encoded)
         let sections = [AgentFlowPromptPreview.Section(tag: "speech", text: "keep these words", color: "#f1f5f9"),
                         AgentFlowPromptPreview.Section(tag: "selection", text: "hidden", color: "#67e8f9")]
@@ -384,7 +390,7 @@ struct AgentFlowPromptArchiveTests {
             .init(tag: "speech", text: words, color: "#f1f5f9"),
             .init(tag: "selection", text: "hidden", color: "#67e8f9")
         ], fileURL: URL(fileURLWithPath: "/tmp/full.md"), completePromptText: canonical))
-        #expect(preview.hasPrefix("[↗](/tmp/full.md) " + words + " `<selection>`"))
+        #expect(preview.hasPrefix(words + " `<selection>`"))
         #expect(preview.hasSuffix(AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/full.md")))
         #expect(!preview.contains(canonical))
         #expect(preview.utf16.count < 5_000)
@@ -394,13 +400,13 @@ struct AgentFlowPromptArchiveTests {
         let file = URL(fileURLWithPath: "/tmp/full.md")
         let plain = try #require(AgentFlowPromptPreview.make(authoredText: "editable words", sections: [],
             fileURL: file, completePromptText: "<speech>editable words</speech>"))
-        #expect(plain == "[↗](/tmp/full.md) editable words\n\n" + AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/full.md"))
+        #expect(plain == "editable words\n\n" + AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/full.md"))
         for canonical in [nil, " \n\t", String(repeating: "large context ", count: 500)] {
             let result = try #require(AgentFlowPromptPreview.make(authoredText: "", sections: [
                 .init(tag: "unknown_context", text: "private", color: "#67e8f9"),
                 .init(tag: "speech", text: "keep every word", color: "#f1f5f9")
             ], fileURL: file, completePromptText: canonical))
-            #expect(result == "[↗](/tmp/full.md) `<unknown_context>` keep every word\n\n" + AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/full.md"))
+            #expect(result == "`<unknown_context>` keep every word\n\n" + AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/full.md"))
         }
     }
 
@@ -419,7 +425,7 @@ struct AgentFlowPromptArchiveTests {
         #expect(!preview.contains("captured") && !preview.contains("bundle") && !preview.contains("characters="))
         #expect(preview.hasSuffix(AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/full%20prompt.md")))
         #expect(!preview.contains("not just this preview"))
-        #expect(preview.hasPrefix("[↗](/tmp/full%20prompt.md) `<selection>`"))
+        #expect(preview.hasPrefix("`<selection>`"))
         #expect(!preview.contains("IMPORTANT:"))
     }
 
@@ -448,7 +454,7 @@ struct AgentFlowPromptArchiveTests {
             fileURL: URL(fileURLWithPath: "/tmp/full.md")))
         #expect(hugePreview.filter { $0 == "z" }.count == huge.count)
         #expect(!hugePreview.contains("…") && hugePreview.contains("before answering."))
-        #expect(hugePreview.hasPrefix("[↗](/tmp/full.md) "))
+        #expect(hugePreview.hasSuffix(AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/full.md")))
     }
 
     @Test func exactFullArchiveKeepsMetadataHiddenFromPreview() throws {
@@ -484,7 +490,7 @@ struct AgentFlowPromptArchiveTests {
         #expect(LiveSelectionReference.compactPromptSections([typed], with: "spoken").map(\.tag) == ["typed_text", "speech"])
         let preview = try #require(AgentFlowPromptPreview.make(authoredText: "typed", sections: [],
             fileURL: URL(fileURLWithPath: "/tmp/full.md")))
-        #expect(preview == "[↗](/tmp/full.md) typed\n\n" + AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/full.md"))
+        #expect(preview == "typed\n\n" + AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/full.md"))
         #expect(!preview.contains("start_at"))
     }
 
@@ -516,7 +522,7 @@ struct AgentFlowPromptArchiveTests {
             return "`<\(section.tag)>`"
         }
         let expected = expectedParts.joined(separator: " ")
-        #expect(paragraphs[0] == "[↗](/tmp/full.md) " + expected)
+        #expect(paragraphs[0] == expected)
         #expect(!paragraphs[0].contains("\n"))
         #expect(!preview.contains("request") && !preview.contains("quoted"))
     }
@@ -547,9 +553,9 @@ struct AgentFlowPromptArchiveTests {
         try AgentFlowPromptArchive.writeViewer(text, for: file)
         let viewer = try #require(AgentFlowPromptArchive.viewerURL(for: file))
         let preview = try #require(AgentFlowPromptPreview.make(authoredText: "my request", sections: [], fileURL: file, viewerURL: viewer))
-        #expect(preview.hasPrefix("[↗](\(viewer.path)) "))
-        #expect(preview.components(separatedBy: viewer.path).count == 3)
-        #expect(preview == "[↗](\(viewer.path)) my request\n\n" + AgentFlowPromptPreview.fullPromptPointer(target: viewer.path))
+        #expect(preview.hasPrefix("my request"))
+        #expect(preview.components(separatedBy: viewer.path).count == 2)
+        #expect(preview == "my request\n\n" + AgentFlowPromptPreview.fullPromptPointer(target: viewer.path))
         let html = try String(contentsOf: viewer, encoding: .utf8)
         #expect(html.contains("class=\"event authored\""))
         #expect(html.contains("class=\"rainbow-word\""))
@@ -753,7 +759,7 @@ struct AgentFlowPromptArchiveTests {
         let file = try AgentFlowPromptArchive.write(full, recordID: UUID(), directory: folder)
         let preview = try #require(AgentFlowPromptPreview.make(authoredText: "request", sections: [],
             fileURL: file))
-        let linkStart = try #require(preview.range(of: "[↗](")).upperBound
+        let linkStart = try #require(preview.range(of: "[full prompt](")).upperBound
         let linkEnd = try #require(preview[linkStart...].firstIndex(of: ")"))
         let target = String(preview[linkStart..<linkEnd])
         #expect(!target.contains(where: { $0.isWhitespace || "<>()[ ]`".contains($0) }))
@@ -761,15 +767,16 @@ struct AgentFlowPromptArchiveTests {
         let decoded = try #require(target.removingPercentEncoding)
         #expect(decoded == file.path)
         #expect(try String(contentsOfFile: decoded, encoding: .utf8) == AgentFlowPromptArchive.interpretationReminder + full)
-        #expect(preview == "[↗](\(target)) request\n\n" + AgentFlowPromptPreview.fullPromptPointer(target: target))
+        #expect(preview == "request\n\n" + AgentFlowPromptPreview.fullPromptPointer(target: target))
     }
 
-    @Test func queuedPreviewStartsWithClickableLinkOnSameLineAsWords() throws {
+    @Test func compactPreviewStartsWithAuthoredWordsAndHasOneLink() throws {
         let preview = try #require(AgentFlowPromptPreview.make(authoredText: "first words", sections: [],
             fileURL: URL(fileURLWithPath: "/tmp/prompt.md")))
         let firstLine = try #require(preview.split(separator: "\n").first)
-        #expect(firstLine.hasPrefix("[↗](/tmp/prompt.md) first words"))
-        #expect(preview == "[↗](/tmp/prompt.md) first words\n\n" + AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/prompt.md"))
+        #expect(firstLine == "first words")
+        #expect(preview.components(separatedBy: "](").count == 2)
+        #expect(preview == "first words\n\n" + AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/prompt.md"))
     }
 
     @Test func emptyPreviewKeepsOnlyFooterWithoutLeadingWhitespace() throws {
@@ -780,7 +787,7 @@ struct AgentFlowPromptArchiveTests {
         }
     }
 
-    @Test func fullPromptFooterContainsNoMathAndPreservesBothTargets() throws {
+    @Test func fullPromptFooterUsesOnePlainViewerLink() throws {
         let label = AgentFlowPromptPreview.fullPromptLinkLabel
         #expect(label == "full prompt")
         let preview = try #require(AgentFlowPromptPreview.make(authoredText: "", sections: [
@@ -788,9 +795,9 @@ struct AgentFlowPromptArchiveTests {
             .init(tag: "selection", text: "hidden reference", color: "#67e8f9")
         ],
             fileURL: URL(fileURLWithPath: "/tmp/full.md"), viewerURL: URL(fileURLWithPath: "/tmp/full.html")))
-        #expect(preview.components(separatedBy: "\n\n")[0] == "[↗](/tmp/full.html) editable words `<selection>`")
+        #expect(preview.components(separatedBy: "\n\n")[0] == "editable words `<selection>`")
         #expect(preview.hasSuffix(AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/full.html")))
-        #expect(preview.components(separatedBy: "/tmp/full.html").count == 3)
+        #expect(preview.components(separatedBy: "/tmp/full.html").count == 2)
         #expect(preview.hasSuffix("Read the [full prompt](/tmp/full.html) before answering."))
         #expect(!preview.contains("\\(") && !preview.contains("$$") && !preview.contains("\\color"))
     }
@@ -800,7 +807,7 @@ struct AgentFlowPromptArchiveTests {
             .init(tag: "speech", text: "Discuss <selection> and screenshots", color: "#f1f5f9"),
             .init(tag: "typed_text", text: "without attaching either", color: "#f4f4f5")
         ], fileURL: URL(fileURLWithPath: "/tmp/full.md"), viewerURL: URL(fileURLWithPath: "/tmp/full.html")))
-        #expect(preview == "[↗](/tmp/full.html) Discuss <selection> and screenshots without attaching either\n\n"
+        #expect(preview == "Discuss <selection> and screenshots without attaching either\n\n"
             + AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/full.html"))
     }
 

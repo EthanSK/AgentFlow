@@ -1228,8 +1228,8 @@ struct RecorderTypedInputTests {
             #expect(archivedPrompts.count == (text.isEmpty ? 0 : 1))
             if !text.isEmpty { #expect(archivedPrompts[0].contains(text)) }
             if !raw && !text.isEmpty {
-                #expect(output.messages[0].hasPrefix("[↗]("))
-                #expect(output.messages[0] == "[↗](/tmp/test-prompt.md) Submit typed words\n\n"
+                #expect(output.messages[0].contains("[full prompt]("))
+                #expect(output.messages[0] == "Submit typed words\n\n"
                     + AgentFlowPromptPreview.fullPromptPointer(target: "/tmp/test-prompt.md"))
                 #expect(output.messages[0].contains("[\(AgentFlowPromptPreview.fullPromptLinkLabel)]"))
                 #expect(!output.messages[0].contains("start_at"))
@@ -1395,7 +1395,7 @@ struct RecorderTypedInputTests {
         let typed = "Every typed word survives the late Shift choice"
         let speech = "Speech before selection and after it"
         let result = try await clipboardPipelineFixture(typed: typed, speech: speech, lateShift: true)
-        #expect(result.message.hasPrefix("[↗]("))
+        #expect(result.message.contains("[full prompt]("))
         #expect(result.message.contains("[\(AgentFlowPromptPreview.fullPromptLinkLabel)]"))
         #expect(result.message.contains(typed) && result.archive.contains(typed))
         #expect(result.archive.contains("Selected exact content &amp; metadata"))
@@ -1447,7 +1447,7 @@ struct RecorderTypedInputTests {
         let result = try await clipboardPipelineFixture(clipboardOnly: false,
             typed: "Editable typed words", speech: "Speech before selection and after it",
             styled: true, recipientOverride: host)
-        #expect(result.message.hasPrefix("[↗]("))
+        #expect(result.message.contains("[full prompt]("))
         let opening = result.message.components(separatedBy: "\n\n")[0]
         #expect(opening.contains("Editable typed words") && opening.contains("Speech before"))
         #expect(opening.contains("`<selection>`") && opening.contains("`<screenshot>`"))
@@ -1502,7 +1502,7 @@ struct RecorderTypedInputTests {
                 typed: typed, speech: speech, styled: true, recipientOverride: host)
             let compact = bundleID == "com.openai.codex"
             #expect(result.message.contains("[full prompt]") == compact)
-            #expect(result.message.hasPrefix("[↗](") == compact)
+            #expect(result.message.contains("[full prompt](") == compact)
             if compact {
                 let opening = result.message.components(separatedBy: "\n\n")[0]
                 #expect(opening.contains("Every typed word") && !opening.contains("<typed_text "))
@@ -1553,7 +1553,7 @@ struct RecorderTypedInputTests {
                 let result = try await clipboardPipelineFixture(clipboardOnly: false, typed: typed,
                     speech: "Speech before selection and after it", styled: styled,
                     recipientOverride: host, localClaudeCode: true)
-                #expect(result.message.hasPrefix("[↗]("))
+                #expect(result.message.contains("[full prompt]("))
                 #expect(result.message.contains(typed))
                 #expect(result.message.contains("`<selection>`") && result.message.contains("`<screenshot>`"))
                 #expect(result.message.hasSuffix(AgentFlowPromptPreview.fullPromptPointer(target: result.link)))
@@ -1956,7 +1956,7 @@ struct RecorderTypedInputTests {
                 #expect(result.archive.contains("with another line"))
                 #expect(!result.message.contains("Transcription Failed:"))
                 if !raw {
-                    #expect(result.message.hasPrefix("[↗]("))
+                    #expect(result.message.contains("[full prompt]("))
                     #expect(result.archive.contains("<typed_text start_at="))
                     #expect(result.archive.contains("Selected exact content &amp; metadata"))
                 }
@@ -2059,7 +2059,7 @@ struct RecorderTypedInputTests {
     @Test @MainActor func failedVoiceClipboardOnlyRetainsFormattedTypedPrompt() async throws {
         let result = try await clipboardPipelineFixture(typed: "Keep these keyboard words",
             providerFails: true)
-        #expect(result.message.hasPrefix("[↗]("))
+        #expect(result.message.contains("[full prompt]("))
         #expect(result.message.contains("Keep these keyboard words"))
         #expect(result.archive.contains("Keep these keyboard words"))
     }

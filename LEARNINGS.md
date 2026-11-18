@@ -1,5 +1,36 @@
 # Learnings
 
+## 2026-11-18 — Plain prompt archives and the shared viewer
+
+- Keep the one full-prompt footer. With the local shared viewer installed it opens
+  the Agent Flow timeline, and the reader resolves that same link straight to its
+  original Markdown archive even if the viewer is down. Without the shared viewer
+  the footer points directly to the archive. Older HTML links remain readable.
+- Include the short reminder to use the full Response Preferences skill and reread
+  it only when needed. Keep optional interpretation guidance separate from the
+  browser timeline. Render speech, typing, selections and image references on
+  demand from the original file without writing a second HTML archive.
+- The reader checks the local viewer route and archive basename before opening the
+  file. The shared viewer's Finder action reveals the same archive used by the agent.
+- Build 525 passed 171 native tests, but the first local Release launch trapped
+  in CloudKit. The separate Release command had omitted the `LOCAL_BUILD` flag
+  that the test and public build commands set. Build 524 was restored and verified.
+  The three crash reports had the same CloudKit setup trap. The unprivileged standalone
+  app was compiled to open the upstream iCloud store. Both app target configurations now
+  select local storage and standalone entitlements by default. Repeating the original
+  Release command on the Mini produced a binary without the upstream container identifier.
+- Build 526 used those Release settings and passed all 171 selected archive and
+  typed-input tests on the Mini. The Developer ID build was installed and replied
+  to the MacBook's update-readiness probe. Chrome checks verified the new
+  timeline, source preview and exact Finder selection.
+
+## 2026-11-18 — The linked full prompt is one document
+
+- Ethan asked for one “Read the full prompt” link at the bottom and his words at the start of the paste. The opening arrow was a duplicate destination and is superseded.
+- New archives store the browser timeline once in HTML. The canonical reader unwraps that same timeline into XML and skips screenshot pixels. It still validates and follows the matching Markdown sidecar for older archives.
+- At the full-prompt delivery boundary, append the configured interpretation and Response Preferences skill text once, after the timeline. Keep those local sources as symlinks to their editable originals and preserve exclusive archive creation and the same-file check before append.
+- The Mini-generated example round-tripped the authored request, selection and both skills from a single file. All 17 reader checks, 54 native archive tests and 117 native typed-input tests passed. Build 524 installed with the existing Developer ID requirement after the all-session idle check and restart notice.
+
 ## 2026-11-16 — Codex remembers the last input across app switches
 
 - Ethan requested remembering the last focused main/side composer on leaving Codex, then restoring that same input on return. The separate `scripts/codex-click-inspector` helper previously observed clicks and wake/relaunch, with no activation/deactivation memory.

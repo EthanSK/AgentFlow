@@ -1,4 +1,4 @@
-// Durable prompt archives, the offline HTML viewer, and the compact local-Codex
+// Durable prompt archives, legacy HTML rendering, and the compact local-Codex
 // paste preview plus its recipient classifier.
 import AppKit
 import CryptoKit
@@ -14,14 +14,32 @@ enum AgentFlowPromptArchive {
         let url: URL
         let rainbowStartIndex: Int
         let handoffTiming: HandoffTiming?
-        fileprivate let canIncludeContextGuidance: Bool
+        fileprivate let documentIdentity: DocumentIdentity?
 
         init(url: URL, rainbowStartIndex: Int, handoffTiming: HandoffTiming? = nil,
-             canIncludeContextGuidance: Bool = false) {
+             documentIdentity: DocumentIdentity? = nil) {
             self.url = url
             self.rainbowStartIndex = rainbowStartIndex
             self.handoffTiming = handoffTiming
-            self.canIncludeContextGuidance = canIncludeContextGuidance
+            self.documentIdentity = documentIdentity
+        }
+    }
+
+    /// Identify this exclusive-created document before an optional appendix.
+    /// Linked prompts can contain large previews, so do not reread them for this check.
+    struct DocumentIdentity: Equatable, Sendable {
+        let device: dev_t
+        let inode: ino_t
+        let size: off_t
+        let modifiedSeconds: Int
+        let modifiedNanoseconds: Int
+
+        init(_ info: stat) {
+            device = info.st_dev
+            inode = info.st_ino
+            size = info.st_size
+            modifiedSeconds = info.st_mtimespec.tv_sec
+            modifiedNanoseconds = info.st_mtimespec.tv_nsec
         }
     }
 
@@ -56,6 +74,7 @@ enum AgentFlowPromptArchive {
     // user events. Keep this one-line skill reminder out of the event stream
     // so it cannot be mistaken for another authored request or rendered card.
     static let interpretationReminder = "<!-- Agent Flow: Use the embedded interpretation guidance when present. Otherwise use $interpret-agent-flow-context when needed. -->\n\n"
+    static let responseReminder = "<!-- Agent Flow: Make sure you know the full $response-preferences skill and respond accordingly. Reread it only if you need to refresh your memory. -->\n\n"
 
     static var directory: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -68,6 +87,9 @@ enum AgentFlowPromptArchive {
         directory destinationOverride: URL? = nil,
         colorCursor: AuthoredTextRainbow.Cursor = AuthoredTextRainbow.cursor
     ) async throws -> SavedPrompt {
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw CocoaError(.fileWriteInvalidFileName)
+        }
         let destination = destinationOverride ?? directory
         // The user is waiting for a valid clickable prompt, not idle maintenance.
         let submitted = DispatchTime.now().uptimeNanoseconds
@@ -75,22 +97,17 @@ enum AgentFlowPromptArchive {
             let workerStarted = DispatchTime.now().uptimeNanoseconds
             let workerWasMainThread = Thread.isMainThread
             let started = Date()
-            let file = try write(text, recordID: recordID, directory: destination)
-            let canonicalFinished = Date()
             let prompt = AgentFlowPromptViewer.ParsedPrompt(text)
-            // Reserve once after the canonical prompt is durable. The archived
-            // viewer retains this start; reopen/copy never advances the cursor.
             let start = colorCursor.reserve(wordCount: prompt.authoredWordCount)
-            // A human-readable companion is optional. Its failure must never
-            // invalidate the complete durable prompt or stop a normal paste.
-            try? writeViewer(prompt, for: file, rainbowStartIndex: start)
-            let canonicalMs = canonicalFinished.timeIntervalSince(started) * 1_000
-            let viewerMs = Date().timeIntervalSince(canonicalFinished) * 1_000
+            let name = "prompt-\(recordID.uuidString.lowercased())-\(UUID().uuidString.lowercased()).md"
+            let header = "<!-- Agent Flow rainbow start: \(start) -->\n" + interpretationReminder + responseReminder
+            let written = try writeDocument(header + text, name: name, directory: destination)
+            let archiveMs = Date().timeIntervalSince(started) * 1_000
             let workFinished = DispatchTime.now().uptimeNanoseconds
             Logger(subsystem: "com.ethansk.VoiceInkPlusPlus", category: "VIPPDebug").info(
-                "prompt archive stages: canonicalMs=\(canonicalMs, privacy: .public) viewerMs=\(viewerMs, privacy: .public)")
+                "prompt archive stages: documentMs=\(archiveMs, privacy: .public)")
             let returnReady = DispatchTime.now().uptimeNanoseconds
-            return (file, start, workerStarted, workFinished, returnReady, workerWasMainThread)
+            return (written.url, start, workerStarted, workFinished, returnReady, workerWasMainThread, written.identity)
         }.value
         // No new task, timer, sleep or UI hop here: timestamp the existing await.
         // The caller's first instruction measures the separate main-actor hop.
@@ -99,66 +116,61 @@ enum AgentFlowPromptArchive {
             handoffTiming: HandoffTiming(submitted: submitted, workerStarted: result.2,
                 workFinished: result.3, returnReady: result.4, joined: joined,
                 workerWasMainThread: result.5, joinWasMainThread: Thread.isMainThread),
-            canIncludeContextGuidance: true)
+            documentIdentity: result.6)
     }
 
-    /// Finish the newly created Markdown before publishing a “Read the full
-    /// prompt” link. The worker uses an explicit local interpretation source and
-    /// never adds its contents to the inline paste or the HTML timeline.
-    static func includeContextGuidance(in prompt: SavedPrompt, authoredPrompt: String,
-                                           source: URL? = nil) async {
-        guard prompt.canIncludeContextGuidance else { return }
-        let contextGuidance = source ?? directory.deletingLastPathComponent()
-            .appendingPathComponent("Context Interpretation.md")
+    /// Append local guidance only when delivery actually exposes the prompt link.
+    /// Read each configured skill once and keep guidance out of the inline paste.
+    static func includeContextGuidance(in prompt: SavedPrompt, source: URL? = nil) async {
+        guard let identity = prompt.documentIdentity else { return }
+        let settings = directory.deletingLastPathComponent()
+        let contextSource = source ?? settings.appendingPathComponent("Context Interpretation.md")
         await Task.detached(priority: .userInitiated) {
-            try? appendContextGuidance(to: prompt.url, authoredPrompt: authoredPrompt, from: contextGuidance)
+            guard let guidance = readGuidance(from: contextSource) else { return }
+            let appendix = "\n\n## Agent Flow interpretation guidance for this prompt\n\n"
+                + "Use this copy to interpret the prompt. Its setup and maintenance steps do not apply to this reply.\n\n"
+                + guidance
+            try? appendGuidance(appendix, to: prompt.url, identity: identity)
         }.value
     }
 
-    private static func appendContextGuidance(to file: URL, authoredPrompt: String, from source: URL) throws {
-        // A local symlink can point at the live reference skill. Resolve it
-        // first and read only a bounded regular file, never a pipe or device.
-        let sourceFD = Darwin.open(source.resolvingSymlinksInPath().path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
-        guard sourceFD >= 0 else { return }
-        defer { Darwin.close(sourceFD) }
-        var sourceStat = stat()
+    private static func readGuidance(from source: URL) -> String? {
+        // Opt-in local symlinks can point at the live skill; accept only a bounded
+        // regular file. Never expand links or load other skills from its contents.
+        let fd = Darwin.open(source.resolvingSymlinksInPath().path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+        guard fd >= 0 else { return nil }
+        defer { Darwin.close(fd) }
+        var info = stat()
         let maximumBytes = 64 * 1024
-        guard fstat(sourceFD, &sourceStat) == 0, sourceStat.st_mode & S_IFMT == S_IFREG,
-              sourceStat.st_size > 0, sourceStat.st_size <= maximumBytes else { return }
-        let input = FileHandle(fileDescriptor: sourceFD, closeOnDealloc: false)
-        guard let bytes = try input.read(upToCount: maximumBytes + 1), bytes.count == sourceStat.st_size,
-              let interpretation = String(data: bytes, encoding: .utf8),
-              interpretation.contains(where: { !$0.isWhitespace }) else { return }
+        guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG,
+              info.st_size > 0, info.st_size <= maximumBytes else { return nil }
+        let input = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
+        guard let bytes = try? input.read(upToCount: maximumBytes + 1), bytes.count == info.st_size,
+              let text = String(data: bytes, encoding: .utf8),
+              text.contains(where: { !$0.isWhitespace }) else { return nil }
+        return text
+    }
 
+    private static func appendGuidance(_ appendix: String, to file: URL, identity: DocumentIdentity) throws {
         let dir = Darwin.open(file.deletingLastPathComponent().path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)
         guard dir >= 0 else { return }
         defer { Darwin.close(dir) }
         let fd = openat(dir, file.lastPathComponent, O_RDWR | O_NOFOLLOW | O_NONBLOCK)
         guard fd >= 0 else { return }
         defer { Darwin.close(fd) }
-        let original = Data((interpretationReminder + authoredPrompt).utf8)
-        var saved = stat()
-        // Only this save's original bytes may receive an appendix. That also
-        // makes repeated finalization a no-op and protects existing archives.
-        guard flock(fd, LOCK_EX | LOCK_NB) == 0, fstat(fd, &saved) == 0,
-              saved.st_mode & S_IFMT == S_IFREG, saved.st_uid == getuid(),
-              saved.st_nlink == 1, saved.st_size == original.count else { return }
+        var info = stat()
+        // A changed or already-finalized file cannot be appended again.
+        guard flock(fd, LOCK_EX | LOCK_NB) == 0, fstat(fd, &info) == 0,
+              info.st_mode & S_IFMT == S_IFREG, info.st_uid == getuid(), info.st_nlink == 1,
+              DocumentIdentity(info) == identity else { return }
         let archive = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
-        guard try archive.read(upToCount: original.count) == original else { return }
-        let guidance = """
-
-
-        ## Agent Flow interpretation guidance for this prompt
-
-        Use this copy to interpret the speech, typing, selections, and screenshots in the prompt above. You already have the interpretation skill here, so skip loading it separately. Its setup and maintenance steps do not apply to this reply.
-
-        """
         do {
-            try archive.write(contentsOf: Data((guidance + "\n" + interpretation).utf8))
+            _ = try archive.seekToEnd()
+            try archive.write(contentsOf: Data(appendix.utf8))
             try archive.synchronize()
         } catch {
-            // Preserve a complete original prompt if the optional append fails.
-            try? archive.truncate(atOffset: UInt64(original.count))
+            // The complete prompt remains readable if the optional skills fail to persist.
+            try? archive.truncate(atOffset: UInt64(identity.size))
             try? archive.synchronize()
         }
     }
@@ -183,6 +195,11 @@ enum AgentFlowPromptArchive {
     }
 
     static func viewerURL(for file: URL) -> URL? {
+        let service = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/LaunchAgents/com.ethansk.codex-live-viewer.plist")
+        if FileManager.default.isReadableFile(atPath: service.path), let live = liveViewerURL(for: file) {
+            return live
+        }
         let viewer = file.deletingPathExtension().appendingPathExtension("html")
         guard let values = try? viewer.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]),
               values.isRegularFile == true, values.isSymbolicLink != true,
@@ -190,7 +207,24 @@ enum AgentFlowPromptArchive {
         return viewer
     }
 
+    static func liveViewerURL(for file: URL) -> URL? {
+        guard file.pathExtension == "md",
+              file.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL else { return nil }
+        var link = URLComponents()
+        link.scheme = "http"
+        link.host = "127.0.0.1"
+        link.port = 59343
+        link.path = "/index.html"
+        link.queryItems = [URLQueryItem(name: "prompt", value: file.lastPathComponent)]
+        return link.url
+    }
+
     private static func writeFile(_ text: String, name: String, directory: URL) throws -> URL {
+        try writeDocument(text, name: name, directory: directory).url
+    }
+
+    private static func writeDocument(_ text: String, name: String, directory: URL) throws
+        -> (url: URL, identity: DocumentIdentity) {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw CocoaError(.fileWriteInvalidFileName)
         }
@@ -226,16 +260,18 @@ enum AgentFlowPromptArchive {
         // Sync the directory entry too. This is persistence, not a promise that
         // local storage survives drive loss; the user's backups remain essential.
         guard fsync(dir) == 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
+        var info = stat()
+        guard fstat(fd, &info) == 0 else { throw POSIXError(.init(rawValue: errno) ?? .EIO) }
         completed = true
-        return directory.appendingPathComponent(name)
+        return (directory.appendingPathComponent(name), DocumentIdentity(info))
     }
 }
 
 /// Offline timeline, parsed from the canonical XML. Payloads are always escaped
-/// as text; metadata remains available in disclosures. The complete canonical
-/// source lives once in the adjacent .md, linked here, not copied into HTML.
+/// as text; metadata remains available in disclosures. New linked prompts use
+/// that same timeline as their canonical source, which the reader unwraps.
 /// No prompt-supplied scripts, external entities, fonts or network fetches. Genuine screenshot
-/// events can embed a bounded, decoded raster preview. The .md is authoritative.
+/// events can embed a bounded, decoded raster preview.
 enum AgentFlowPromptViewer {
     // Ethan uses browser tab icons to identify the viewer type. Draw a folded
     // document that stays legible at 16 px and embed it for offline archives.
@@ -486,7 +522,7 @@ enum AgentFlowPromptViewer {
     }
 
     static func html(_ prompt: ParsedPrompt, sourceURL: URL? = nil, imageBudget: Int = 32 * 1024 * 1024,
-                     rainbowStartIndex: Int = 0) -> String {
+                     rainbowStartIndex: Int = 0, selfContained: Bool = false) -> String {
         var body = ""
         var rainbowIndex = rainbowStartIndex
         var eventIndex = 0
@@ -494,12 +530,13 @@ enum AgentFlowPromptViewer {
         // The bubble opens this viewer. Put the canonical plain-source path
         // before image bytes so agents can find the .md without consuming a
         // rendered timeline or a duplicate source copy in this HTML.
-        let sourcePath = sourceURL.flatMap { url -> String? in
+        let sourcePath = (selfContained ? nil : sourceURL).flatMap { url -> String? in
             guard url.isFileURL, url.path.hasPrefix("/"),
                   !url.path.contains(where: { $0.isNewline || $0 == "\0" }) else { return nil }
             return url.path
         }
-        let sourceMeta = sourcePath.map { "<meta name=\"agent-flow-source\" content=\"\(escape($0))\">" } ?? ""
+        let sourceMeta = selfContained ? "<meta name=\"agent-flow-document\" content=\"1\">" :
+            sourcePath.map { "<meta name=\"agent-flow-source\" content=\"\(escape($0))\">" } ?? ""
         let sourceLink = sourcePath.map {
             "<a class=\"source-link\" href=\"\(escape(URL(fileURLWithPath: $0).absoluteString))\">Source</a>"
         } ?? ""
@@ -553,7 +590,7 @@ enum AgentFlowPromptViewer {
                     content = "<a class=\"screenshot\" href=\"\(escape(URL(fileURLWithPath: path).absoluteString))\">\(escape(filename)) ↗</a>"
                     if remainingImageBytes > 0, let data = screenshotPreview(path: path), data.count <= remainingImageBytes {
                         remainingImageBytes -= data.count
-                        content += "<img class=\"screenshot-image\" src=\"data:image/jpeg;base64,\(data.base64EncodedString())\" alt=\"\(escape(filename))\" loading=\"lazy\" decoding=\"async\">"
+                        content += "\n<img class=\"screenshot-image\" src=\"data:image/jpeg;base64,\(data.base64EncodedString())\" alt=\"\(escape(filename))\" loading=\"lazy\" decoding=\"async\">\n"
                     } else {
                         // The original path and all XML remain intact even if
                         // pixels are missing, unsupported or over the viewer's
@@ -571,8 +608,12 @@ enum AgentFlowPromptViewer {
             }.joined()
             let details = rows.isEmpty ? "" : "<details class=\"metadata\"><summary>Details</summary><dl>\(rows)</dl></details>"
             let authoredClass = ["speech", "speech_segment", "typed_text", "potential_tts"].contains(event.tag) ? " authored" : ""
-            body += "<section class=\"event\(authoredClass)\" style=\"--event-color:\(color)\"><header><span class=\"index\">\(eventIndex)</span><h2>\(label)</h2>\(app)</header>\(content)\(details)</section>"
+            let kind = selfContained ? " data-agent-flow-kind=\"\(event.tag)\"" : ""
+            body += "<section\(kind) class=\"event\(authoredClass)\" style=\"--event-color:\(color)\"><header><span class=\"index\">\(eventIndex)</span><h2>\(label)</h2>\(app)</header>\(content)\(details)</section>"
         }
+        // HTML permits omitted closing body/html tags. Only linked delivery
+        // appends the optional guidance after this already complete timeline.
+        let closing = selfContained ? "" : "</body></html>"
         return """
         <!doctype html><html lang="en"><head><meta charset="utf-8">
         \(sourceMeta)
@@ -589,13 +630,22 @@ enum AgentFlowPromptViewer {
         .payload{white-space:pre-wrap;overflow-wrap:anywhere;color:var(--event-color,inherit)}.event .payload{margin:0}.metadata{margin-top:10px}summary{cursor:pointer;color:#94a3b8;font-size:13px;width:fit-content}summary:hover,a:hover{color:#f1f5f9}summary:focus-visible,a:focus-visible{outline:2px solid #67e8f9;outline-offset:5px}dl{display:grid;grid-template-columns:minmax(90px,auto) minmax(0,1fr);gap:6px 18px;font:12px/1.6 ui-monospace,Menlo,monospace;margin:12px 0 0;color:#94a3b8}dt{font-style:italic}dd{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
         .rainbow-word{color:inherit}
         .screenshot{color:#e879f9;text-decoration:none;overflow-wrap:anywhere}::selection{background:#554476}@media(max-width:520px){main{padding:24px 18px}.event{padding-left:14px;margin-left:2px}dl{grid-template-columns:1fr;gap:2px}dd{margin-bottom:8px}}
-        .screenshot-image{display:block;max-width:100%;height:auto;margin-top:12px;border:1px solid #303036;border-radius:8px}.image-unavailable,.source-link{color:#94a3b8;font-size:13px}.source-link{display:inline-block;margin-bottom:20px}
+        .screenshot-image{display:block;max-width:100%;height:auto;margin-top:12px;border:1px solid #303036;border-radius:8px}.image-unavailable,.source-link{color:#94a3b8;font-size:13px}.source-link{display:inline-block;margin-bottom:20px}.prompt-guidance{max-width:864px;margin:0 auto 24px;padding:0 24px}.prompt-guidance pre{white-space:pre-wrap;overflow-wrap:anywhere}
         </style></head><body><main><div class="title"><h1>Agent Flow</h1><span class="subtitle">Prompt</span><div class="close-actions"><button id="close-prompt" class="close-button" type="button">Close</button><p id="close-help" class="close-help" role="status" hidden>Use the tab’s close button.</p></div></div>
         \(sourceLink)
         \(body)
-        </main><script>\(closeScript)</script></body></html>
+        </main><script>\(closeScript)</script>\(closing)
         """
     }
+
+    static func guidanceHTML(_ skills: [(kind: String, label: String, text: String?)]) -> String {
+        skills.compactMap { skill in
+            guard let text = skill.text else { return nil }
+            return "\n<details class=\"prompt-guidance\"><summary>\(skill.label)</summary>" +
+                "<pre data-agent-flow-guidance=\"\(skill.kind)\">\(escape(text))</pre></details>\n"
+        }.joined()
+    }
+
 }
 
 /// Presentation only: a single paste, with no AX receipts, attachment
@@ -776,17 +826,18 @@ enum AgentFlowPromptPreview {
         let linkCharacters = CharacterSet.urlPathAllowed.subtracting(
             CharacterSet(charactersIn: "%()[]?#<>`\\\""))
         guard let linkPath = fileURL.path.addingPercentEncoding(withAllowedCharacters: linkCharacters) else { return nil }
-        // Keep the tiny opening link even though the footer points to the same
-        // viewer. Ethan reversed its removal because a queued Codex message only
-        // exposes its first line: the footer is not clickable until the turn runs.
-        // The opening link must share the first line with the words, not add a row.
+        // The editable opening begins with Ethan’s words. The one footer
+        // link is shared by the visual viewer and the agent's prompt reader.
         let viewerPath = viewerURL.flatMap { url -> String? in
+            if !url.isFileURL {
+                guard url == AgentFlowPromptArchive.liveViewerURL(for: fileURL) else { return nil }
+                return url.absoluteString
+            }
             guard url.isFileURL, url.path.hasPrefix("/"),
                   !url.path.contains(where: { "\n\r<>".contains($0) }) else { return nil }
             return url.path.addingPercentEncoding(withAllowedCharacters: linkCharacters)
         }
         let pointer = fullPromptPointer(target: viewerPath ?? linkPath)
-        let openingLink = "[↗](\(viewerPath ?? linkPath))"
         var parts: [String] = []
         let ordered = sections.isEmpty ? [Section(tag: "speech", text: authoredText, color: LiveSelectionStyledMath.speechColor)] : sections
         // Ethan explicitly wants all authored words, not an attachment-avoidance
@@ -816,12 +867,7 @@ enum AgentFlowPromptPreview {
         // The editable opening remains one paragraph. Captures keep their event
         // positions; only the appended timeline or footer gets a paragraph break.
         let body = parts.joined(separator: " ")
-        guard !body.isEmpty else {
-            onFullPromptLink()
-            return pointer
-        }
-        let result = openingLink + " " + body
         onFullPromptLink()
-        return result + "\n\n" + pointer
+        return body.isEmpty ? pointer : body + "\n\n" + pointer
     }
 }

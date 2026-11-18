@@ -87,8 +87,15 @@
               terminals. Codex presentation is unchanged, so the build 513 demo, promo
               video and captions stay accurate.
             -->
-            <p class="actions"><a class="button" href="https://github.com/EthanSK/AgentFlow/releases/download/v2.0.519/AgentFlow-v2.0.519-mac-universal.zip">Download for Mac <span aria-hidden="true">↓</span></a></p>
-            <p class="release-note">v2.0.519 · macOS 14.4+ · Apple silicon and Intel<br>Developer ID signed and Apple notarized.</p>
+            <!--
+              The official latest published GitHub release is the only source of the download
+              and its version. Without JavaScript, the button opens that release page and the
+              version stays hidden, so no number here can go stale. script.js swaps in the
+              signed ZIP and its tag only when the API lists that exact uploaded asset; it never
+              builds a URL from a guessed version.
+            -->
+            <p class="actions"><a class="button" href="https://github.com/EthanSK/AgentFlow/releases/latest" data-release-download>Download for Mac <span aria-hidden="true">↓</span></a></p>
+            <p class="release-note"><span data-release-version hidden></span>macOS 14.4+ · Apple silicon and Intel<br>Developer ID signed and Apple notarized.</p>
             <p class="source-link"><a href="#build">Build from source</a></p>
           </div>
         </div>
@@ -356,6 +363,6 @@ cd AgentFlow
     </div>
   </footer>
 
-  <script src="script.js?v=379-typing-line"></script>
+  <script src="script.js?v=latest-release-download"></script>
 </body>
 </html>

@@ -115,6 +115,11 @@ For an authorized local update, follow AGENTS.md’s local-first rule: review an
 ordinary Release artifact, preserve the installed Developer ID identity, update key and
 entitlements, and install through the guarded procedure below. Full tests and the public
 `RELEASING.md` pipeline follow local use; a release receipt is not a local-install prerequisite.
+The app target defaults to local storage in both Debug and Release, using the standalone
+entitlements and the `LOCAL_BUILD` Swift condition. Preserve those defaults when overriding
+build settings. The packaging recipe in `scripts/package-public-release.sh` supplies them
+explicitly. Build 525 passed signature checks but crashed at startup because its database
+expected the upstream iCloud container. Verify a newly launched app answers the readiness probe.
 Never replace this installation with `make local`’s ad-hoc output or the historical local
 certificate. If macOS actually rejects a correctly signed local candidate, report that exact
 trust failure rather than assuming all public-release checks are required first.

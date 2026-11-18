@@ -326,9 +326,8 @@ class TranscriptionPipeline {
                     // Every successful Codex preview now includes this footer.
                     // Its explicit read instruction authorizes the cached copy;
                     // archive failure must still avoid claiming a valid file.
-                    if showsFullPromptLink, let completePromptText {
-                        await AgentFlowPromptArchive.includeContextGuidance(in: compactArchive,
-                            authoredPrompt: completePromptText)
+                    if showsFullPromptLink {
+                        await AgentFlowPromptArchive.includeContextGuidance(in: compactArchive)
                     }
                 }
             }
@@ -908,7 +907,7 @@ class TranscriptionPipeline {
             let complete = responseConfig != nil && responseError == nil ? transcription.text : LiveSelectionReference.interleaving(references, with: current,
                 includeTiming: !skipPostProcessingNow, includeReadablePreview: false)
             await preservePrompt(complete)
-            // Includes the worker's one parse and durable canonical/viewer writes.
+            // Includes the worker's one parse and durable prompt write.
             stageTimings.add("archiveMs", since: archiveStarted)
         }
 

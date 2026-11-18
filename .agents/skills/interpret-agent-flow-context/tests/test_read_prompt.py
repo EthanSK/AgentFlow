@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 spec = importlib.util.spec_from_file_location('read_prompt', Path(__file__).parents[1]/'scripts/read-prompt.py')
 reader = importlib.util.module_from_spec(spec)
@@ -26,6 +27,65 @@ class ReadPromptTests(unittest.TestCase):
     def test_complete_canonical_text_is_preserved_not_viewer_body(self):
         viewer, source, text = self.pair()
         self.assertEqual(reader.read_prompts([str(viewer)]), [(source, text)])
+
+    def test_shared_viewer_link_reads_markdown_without_a_running_server(self):
+        folder = self.root / 'Library/Application Support/AgentFlow/Prompts'
+        folder.mkdir(parents=True)
+        name = 'prompt-00000000-0000-0000-0000-000000000000-11111111-1111-1111-1111-111111111111.md'
+        raw = 'A <literal> timeline.\r\n'
+        source = folder / name
+        source.write_bytes(raw.encode())
+        link = 'http://127.0.0.1:59343/index.html?prompt=' + name
+        with patch.object(reader.Path, 'home', return_value=self.root):
+            self.assertEqual(reader.read_prompts([link, str(source)]), [(source, raw)])
+            for invalid in (
+                link.replace('127.0.0.1', 'example.com'),
+                link + '&prompt=' + name,
+                link.replace(name, '%2e%2e%2fsecret.md'),
+            ):
+                with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                    reader.canonical_source(invalid)
+            source.unlink()
+            source.symlink_to(self.root / 'unrelated.md')
+            with self.assertRaises(ValueError):
+                reader.canonical_source(link)
+
+    def test_single_document_reads_visual_payload_once_and_trailing_skills(self):
+        viewer = self.root / 'one.html'
+        viewer.write_text(
+            '<meta name="agent-flow-document" content="1"><body><main>'
+            '<section data-agent-flow-kind="speech"><div class="payload">'
+            '<span class="rainbow-word">Ask</span> &amp; answer</div><details>'
+            '<dl><dt>start_at</dt><dd>1.000</dd></dl></details></section>'
+            '<section data-agent-flow-kind="codex_selection"><div class="payload">'
+            '  &lt;literal&gt; &amp;amp; 😀\n  second line</div></section>'
+            '<section data-agent-flow-kind="local_screenshot"><a>preview link</a>\n'
+            '<img class="screenshot-image" src="data:image/jpeg;base64,PIXELS">\n'
+            '<dl><dt>path</dt><dd>/local/Screenshot.png</dd></dl></section>'
+            '</main><pre data-agent-flow-guidance="context">Use timeline order.</pre>'
+            '<pre data-agent-flow-guidance="response">Use short cues.</pre>',
+            encoding='utf-8',
+        )
+        [(path, text)] = reader.read_prompts([str(viewer), viewer.as_uri()])
+        self.assertEqual(path, viewer)
+        self.assertFalse(viewer.with_suffix('.md').exists())
+        self.assertEqual(text.count('Ask &amp; answer'), 1)
+        self.assertIn('<speech start_at="1.000">\n\nAsk &amp; answer', text)
+        self.assertIn('  <text>  &lt;literal&gt; &amp;amp; 😀\n  second line</text>', text)
+        self.assertIn('<local_screenshot path="/local/Screenshot.png"/>', text)
+        self.assertNotIn('PIXELS', text)
+        self.assertLess(text.index('Screenshot.png'), text.index('Use timeline order.'))
+        self.assertLess(text.index('Use timeline order.'), text.index('Use short cues.'))
+
+    def test_incomplete_single_document_is_rejected(self):
+        viewer = self.root / 'one.html'
+        viewer.write_text(
+            '<meta name="agent-flow-document" content="1"><main>'
+            '<section data-agent-flow-kind="speech"><div class="payload">unfinished',
+            encoding='utf-8',
+        )
+        with self.assertRaisesRegex(ValueError, 'Incomplete'):
+            reader.read_prompts([str(viewer)])
 
     def test_multiple_prompts_preserve_order_and_full_text(self):
         a = self.pair('first', '<speech>first</speech>')

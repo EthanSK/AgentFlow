@@ -100,6 +100,38 @@
     }
   }
 
+  // Download button. The official latest published release (GitHub excludes drafts
+  // and prereleases from /releases/latest) is the single source of truth. The ZIP URL
+  // is taken from that release's own asset list, never built from the tag, so a
+  // release whose ZIP hasn't finished uploading keeps the release-page fallback.
+  // Any failure (offline, rate limit, unexpected shape) leaves the link and the
+  // hidden version label exactly as index.html ships them.
+  var downloadLink = document.querySelector("[data-release-download]");
+  var releaseVersion = document.querySelector("[data-release-version]");
+  if (downloadLink && releaseVersion && window.fetch) {
+    var repo = "https://github.com/EthanSK/AgentFlow";
+    window.fetch("https://api.github.com/repos/EthanSK/AgentFlow/releases/latest")
+      .then(function (response) {
+        return response.ok ? response.json() : null;
+      })
+      .then(function (release) {
+        if (!release || release.draft || release.prerelease) return;
+        var tag = release.tag_name;
+        if (typeof tag !== "string" || !/^v\d+\.\d+\.\d+$/.test(tag)) return;
+        var name = "AgentFlow-" + tag + "-mac-universal.zip";
+        var expected = repo + "/releases/download/" + tag + "/" + name;
+        var asset = (release.assets || []).filter(function (item) {
+          return item && item.name === name && item.state === "uploaded" &&
+            item.browser_download_url === expected;
+        })[0];
+        if (!asset) return;
+        downloadLink.href = expected;
+        releaseVersion.textContent = tag + " · ";
+        releaseVersion.hidden = false;
+      })
+      .catch(function () {});
+  }
+
   // Copy the build commands from the visible code block, not from a second copy.
   var copyButton = document.querySelector("[data-copy]");
   var copySource = document.querySelector("[data-copy-source]");

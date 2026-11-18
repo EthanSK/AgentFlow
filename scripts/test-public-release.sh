@@ -40,10 +40,18 @@ canonical_result=0
   test >"$canonical_log" 2>&1 || canonical_result=$?
 
 passed_log="$canonical_log"
-if ! grep -Eq '^✔ Test run with [1-9][0-9]* tests in [1-9][0-9]* suites passed' "$canonical_log"; then
+# XCTest and Swift Testing share the scheme. A passing Swift summary can coexist
+# with a failed XCTest or test-host exit. Never turn that into a release receipt.
+if grep -Eq '^✔ Test run with [1-9][0-9]* tests in [1-9][0-9]* suites passed' "$canonical_log"; then
+  if (( canonical_result != 0 )); then
+    echo "Xcode failed (exit $canonical_result) despite a passing Swift Testing summary." >&2
+    grep -E 'failed|error:|✘' "$canonical_log" >&2 || true
+    exit 1
+  fi
+else
   # TestManager has repeatedly stalled at zero named tests on this Mini. The direct runner is
   # allowed only for this full-suite release gate, against the already-built bundle.
-  if grep -Eq '^[◇✔✘] Test .+\(' "$canonical_log"; then
+  if grep -Eq '^[◇✔✘] Test .+\(|^Test Case .+ failed|^Test Suite .+ failed' "$canonical_log"; then
     echo 'Canonical Xcode runner executed tests but did not pass; refusing fallback.' >&2
     # The final test-log lines can contain only unrelated passing cases.
     # Keep the actual failures in the Fleet/GitHub log before its source is reclaimed.

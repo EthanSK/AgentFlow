@@ -15,6 +15,56 @@ BLOCK = PACKAGE[START:END]
 
 
 class SparkleSigningTests(unittest.TestCase):
+    def test_default_app_configs_match_standalone_signature(self):
+        import json
+        import plistlib
+        project = ROOT / "VoiceInk.xcodeproj/project.pbxproj"
+        data = json.loads(subprocess.check_output(
+            ["plutil", "-convert", "json", "-o", "-", str(project)]))["objects"]
+        app, = (obj for obj in data.values()
+                if obj.get("productType") == "com.apple.product-type.application")
+        configs = [data[key] for key in data[app["buildConfigurationList"]]["buildConfigurations"]]
+        self.assertEqual({cfg["name"] for cfg in configs}, {"Release", "Debug"})
+        for config in configs:
+            with self.subTest(configuration=config["name"]):
+                settings = config["buildSettings"]
+                self.assertIn("LOCAL_BUILD", settings["SWIFT_ACTIVE_COMPILATION_CONDITIONS"].split())
+                entitlements = plistlib.loads((ROOT / settings["CODE_SIGN_ENTITLEMENTS"]).read_bytes())
+                self.assertTrue(entitlements["com.apple.security.device.audio-input"])
+                self.assertNotIn("com.apple.developer.icloud-container-identifiers", entitlements)
+
+    def test_failed_xcode_run_cannot_pass_with_green_swift_testing_summary(self):
+        import shutil
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory) / "repo"
+            (repo / "scripts").mkdir(parents=True)
+            (repo / "VoiceInk.xcodeproj").mkdir()
+            gate = repo / "scripts/test-public-release.sh"
+            shutil.copy2(ROOT / "scripts/test-public-release.sh", gate)
+            shutil.copy2(ROOT / "VoiceInk.xcodeproj/project.pbxproj",
+                         repo / "VoiceInk.xcodeproj/project.pbxproj")
+            fake = repo / "xcodebuild"
+            fake.write_text("#!/bin/sh\n"
+                            "i=0; while [ $i -lt 365 ]; do\n"
+                            "  echo \"✔ Test fixture$i() passed after 0.01 seconds.\"\n"
+                            "  i=$((i + 1))\ndone\n"
+                            "echo '✔ Test run with 365 tests in 2 suites passed after 0.02 seconds.'\n"
+                            "exit \"$FIXTURE_XCODE_EXIT\"\n")
+            fake.chmod(0o755)
+            subprocess.run(["git", "init", "-q", str(repo)], check=True)
+            subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+            subprocess.run(["git", "-C", str(repo), "-c", "user.name=Fixture",
+                            "-c", "user.email=fixture@localhost", "commit", "-qm", "Fixture"], check=True)
+            for xcode_exit in (0, 65):
+                with self.subTest(xcode_exit=xcode_exit):
+                    result = subprocess.run(
+                        ["bash", str(gate), str(Path(directory) / f"out-{xcode_exit}")],
+                        env={**os.environ, "PATH": str(repo) + ":" + os.environ["PATH"],
+                             "FIXTURE_XCODE_EXIT": str(xcode_exit)}, capture_output=True, text=True)
+                    self.assertEqual(result.returncode == 0, xcode_exit == 0, result.stderr)
+                    if xcode_exit:
+                        self.assertIn("Xcode failed", result.stderr)
+
     def test_public_checksum_manifest_works_in_another_download_folder(self):
         line = next(line for line in PACKAGE.splitlines()
                     if line.startswith('(cd "$output" && shasum'))

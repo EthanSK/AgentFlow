@@ -33,6 +33,7 @@ grep -Fq 'Timestamp=' <<<"$signature"
 
 entitlements=$(codesign --display --entitlements :- "$app" 2>/dev/null | plutil -p -)
 grep -Fq '"com.apple.security.automation.apple-events" => true' <<<"$entitlements"
+grep -Fq '"com.apple.security.device.audio-input" => true' <<<"$entitlements"
 test "$(wc -l <"$app/Contents/Resources/COPYING" | tr -d ' ')" -ge 600
 
 whisper="$app/Contents/Frameworks/whisper.framework"

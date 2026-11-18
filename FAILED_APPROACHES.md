@@ -1,5 +1,14 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-18 — Using signature checks alone to accept a local Release build
+
+Build 525 passed signing checks and crashed on three launches in CloudKit setup before
+the app could answer a readiness request. The Xcode test command selected local storage
+while the separate Release command compiled in the upstream iCloud database. Match the
+store to the signed entitlements in the app target itself and verify the launched build
+answers its readiness probe. Only reconsider a CloudKit build with a provisioned
+container for that app and a successful cold launch of the actual signed artifact.
+
 ## 2026-11-16 — Automatic speaker control remains withdrawn after ongoing unreliability
 
 Ethan reports recording-triggered speaker mute/unmute is still unreliable and
