@@ -3,6 +3,25 @@ import Combine
 import SwiftUI
 import os
 
+enum RecordingStopDelay {
+    static let preferenceKey = "recordingStopDelayMilliseconds"
+    static let defaultMilliseconds = 0
+    static let maximumMilliseconds = 5_000
+
+    static func clampedMilliseconds(_ value: Int) -> Int {
+        min(max(value, 0), maximumMilliseconds)
+    }
+
+    static func duration(
+        milliseconds: Int,
+        state: RecordingState,
+        microphoneOff: Bool
+    ) -> Duration {
+        guard state == .recording, !microphoneOff else { return .zero }
+        return .milliseconds(clampedMilliseconds(milliseconds))
+    }
+}
+
 enum RecordingPasteDestination: Equatable {
     case recordingStart
     case primaryCurrentInput
@@ -255,6 +274,7 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     // Frozen birth intent distinguishes real keyboard-only startup from a late
     // Command edge while a voice-start hardware await may already be in flight.
     var beganMicrophoneOff = false
+    var pendingStopDelay: Task<Void, Error>?
     private var microphoneTransitionWaiters: [CheckedContinuation<Void, Never>] = []
     func finishMicrophoneTransition() {
         microphoneTransitionPending = false

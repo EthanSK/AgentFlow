@@ -310,7 +310,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
     func toggleSessionMicrophone(_ session: RecordingSession) async {
         guard activeRecordingSession === session, session.canTypeInHUD,
               session.liveRecordingState.isRecordingOrPaused,
-              !session.microphoneTransitionPending else { return }
+              !session.microphoneTransitionPending, session.pendingStopDelay == nil else { return }
         session.microphoneTransitionPending = true
         defer { session.finishMicrophoneTransition() }
         do {
@@ -717,7 +717,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
             return false
         }
 
-        guard !session.microphoneTransitionPending else { return false }
+        guard !session.microphoneTransitionPending, session.pendingStopDelay == nil else { return false }
         session.microphoneTransitionPending = true
         defer { session.finishMicrophoneTransition() }
         let previousState = session.liveRecordingState
@@ -940,7 +940,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
 
     // The single entry point for the record shortcut / record button. Behaviour:
     //   • A session is actively RECORDING → STOP it (move to .transcribing + enqueue its
-    //     pipeline on the serial queue, NON-blocking). Mic frees immediately.
+    //     pipeline on the serial queue, after any configured recording stop delay).
     //   • The active session is mid-START handshake (.starting) → cancel that not-yet-
     //     started session (re-press during the brief start window).
     //   • Otherwise (idle OR only background transcriptions running) → START a fresh
@@ -971,6 +971,27 @@ class VoiceInkEngine: NSObject, ObservableObject {
         }
 
         if let active = activeRecordingSession {
+            guard !active.shouldCancel, active.pendingStopDelay == nil else { return }
+            let stopDelay = RecordingStopDelay.duration(
+                milliseconds: UserDefaults.standard.integer(forKey: RecordingStopDelay.preferenceKey),
+                state: active.liveRecordingState,
+                microphoneOff: active.microphoneOff
+            )
+            if stopDelay > .zero, !active.microphoneTransitionPending {
+                // Keep the existing audio writer and realtime stream live through the delay.
+                // The first accepted Stop owns this session's finish and its delivery route.
+                let delay = Task { try await Task.sleep(for: stopDelay) }
+                active.pendingStopDelay = delay
+                defer { active.pendingStopDelay = nil }
+                do {
+                    try await delay.value
+                } catch {
+                    return
+                }
+                guard activeRecordingSession === active,
+                      !active.shouldCancel, !isResettingRecordingSession else { return }
+            }
+
             // A completed older normal Primary job may paste while this capture is live,
             // but its Return is suppressed so the two recordings remain one FIFO cohort.
             // Every other side effect remains blocked. Release capture ownership only
@@ -2393,6 +2414,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
         vippLog.info("cancelSession: \(session.id.uuidString, privacy: .public) phase=\(String(describing: session.phase), privacy: .public) liveState=\(String(describing: session.liveRecordingState), privacy: .public)")
 
         session.shouldCancel = true
+        session.pendingStopDelay?.cancel()
         session.endPendingPrimaryCompletionGesture()
         session.transcriptionSession?.cancel()
         // A pipeline waiting behind another active recording must wake immediately
@@ -2468,6 +2490,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
 
         for session in sessions {
             session.shouldCancel = true
+            session.pendingStopDelay?.cancel()
             session.transcriptionSession?.cancel()
             session.endLiveSelectionCapture()
             session.clearContext()

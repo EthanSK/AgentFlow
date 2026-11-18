@@ -9,6 +9,8 @@ struct AudioSetupView: View {
     // Read once per recording when its realtime session is created.
     @AppStorage(RealtimeSilenceSleepPolicy.userDefaultsKey)
     private var sleepsGPTLiveDuringSilence = RealtimeSilenceSleepPolicy.defaultEnabled
+    @AppStorage(RecordingStopDelay.preferenceKey)
+    private var recordingStopDelayMilliseconds = RecordingStopDelay.defaultMilliseconds
     @State private var microphoneSourceBeforePriorityOrder: MicrophoneSourceSelection = .systemDefault
     @State private var refreshIconRotation = 0.0
 
@@ -35,6 +37,23 @@ struct AudioSetupView: View {
             }
 
             Section {
+                LabeledContent("Recording Stop Delay") {
+                    HStack(spacing: 6) {
+                        TextField("Milliseconds", value: $recordingStopDelayMilliseconds,
+                                  format: .number.grouping(.never))
+                            .labelsHidden()
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 72)
+                        Text("ms")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .help("Keep recording for this long after pressing Stop. Enter 0 to stop immediately.")
+                .onChange(of: recordingStopDelayMilliseconds) { _, value in
+                    let clamped = RecordingStopDelay.clampedMilliseconds(value)
+                    if value != clamped { recordingStopDelayMilliseconds = clamped }
+                }
+
                 Toggle("Mute Audio While Recording", isOn: $mediaController.isSystemMuteEnabled)
 
                 Toggle("Pause Media While Recording", isOn: $playbackController.isPauseMediaEnabled)

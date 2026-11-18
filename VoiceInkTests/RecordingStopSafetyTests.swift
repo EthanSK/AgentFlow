@@ -12,6 +12,39 @@ import Combine
 /// shared Recorder, and a cooperative quit waits for a start that has no card yet.
 @Suite(.serialized)
 struct RecordingStopSafetyTests {
+    @Test func recordingStopDelayAppliesOnlyToLiveMicrophoneCapture() {
+        #expect(RecordingStopDelay.duration(milliseconds: 600, state: .recording, microphoneOff: false)
+                == .milliseconds(600))
+        #expect(RecordingStopDelay.duration(milliseconds: 600, state: .recording, microphoneOff: true)
+                == .zero)
+        #expect(RecordingStopDelay.duration(milliseconds: 600, state: .paused, microphoneOff: true)
+                == .zero)
+        #expect(RecordingStopDelay.duration(milliseconds: 0, state: .recording, microphoneOff: false)
+                == .zero)
+        #expect(RecordingStopDelay.clampedMilliseconds(-1) == 0)
+        #expect(RecordingStopDelay.clampedMilliseconds(Int.max) == RecordingStopDelay.maximumMilliseconds)
+    }
+
+    @Test func recordingStopDelayPrecedesStreamAndAudioFinalizationAndCanBeCanceled() throws {
+        let engine = try source("VoiceInk/Transcription/Engine/VoiceInkEngine.swift")
+        let toggle = try #require(engine.range(of: "    func toggleRecord("))
+        let stopBody = engine[toggle.upperBound...]
+        let duplicateGuard = try #require(stopBody.range(of: "active.pendingStopDelay == nil"))
+        let wait = try #require(stopBody.range(of: "try await delay.value"))
+        let sameSession = try #require(stopBody.range(of: "guard activeRecordingSession === active"))
+        let transcribing = try #require(stopBody.range(of: "active.phase = .transcribing"))
+        let releaseAudio = try #require(stopBody.range(of: "await recorder.stopRecording("))
+        #expect(duplicateGuard.lowerBound < wait.lowerBound)
+        #expect(wait.lowerBound < sameSession.lowerBound)
+        #expect(sameSession.lowerBound < transcribing.lowerBound)
+        #expect(transcribing.lowerBound < releaseAudio.lowerBound)
+
+        let cancel = try #require(engine.range(of: "    func cancelSession(_ session: RecordingSession)"))
+        let reset = try #require(engine.range(of: "    func resetRecordingSession()"))
+        #expect(engine[cancel.upperBound..<reset.lowerBound].contains("session.pendingStopDelay?.cancel()"))
+        #expect(engine[reset.upperBound...].contains("session.pendingStopDelay?.cancel()"))
+    }
+
     @MainActor private func nextMainTurn() async {
         await withCheckedContinuation { continuation in
             DispatchQueue.main.async { continuation.resume() }

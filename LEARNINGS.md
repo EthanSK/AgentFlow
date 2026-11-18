@@ -1,5 +1,45 @@
 # Learnings
 
+## 2026-11-18 — Keep the mic live for a configurable time after Stop
+
+- Ethan asked to keep recording after Stop so the end of speech has more time to
+  reach realtime transcription. Audio → Recording Behavior has a Recording Stop
+  Delay in milliseconds. New installs add zero delay. Ethan's build 529 was set
+  to 600 ms and the installed control showed 600.
+- Apply the delay after the stop gesture resolves and before ending mic, WAV or
+  realtime capture. The first accepted finish owns the delay on that recording.
+  Cancel and reset cancel it, and typing-only and already-paused sessions finish
+  without a delay. The existing Primary gesture decision still runs independently.
+- The added audio can protect a trailing word when Stop comes too quickly.
+  Transcription accuracy has not been measured against a shorter recording.
+
+## 2026-11-18 — Restore full response preferences to linked prompts
+
+- Ethan asked to restore the full Response Preferences skill after trying the
+  shorter reminder. Build 502 added the original feature on 11 November.
+  Retained prompt archives confirm inclusion on 11 and 18 November.
+- Append the current skill text through the configured local reference when a
+  full-prompt link is delivered. Interpretation guidance and response preferences
+  belong to the same archive and can be present independently. The shared viewer
+  excludes both appendices from the timeline while its Source view retains them.
+- Build 528 passed 172 focused native tests. On the installed build, a new
+  launcher resolved to a Markdown archive that ended in the exact current skill
+  bytes. The shared viewer kept the appendix out of the timeline.
+
+## 2026-11-18 — Codex plain messages need a local prompt link
+
+- A real build 526 capture kept the Markdown archive, but its HTTP viewer link
+  appeared as literal Markdown in the sent Codex bubble. The earlier absolute
+  local HTML path in the same chat appeared as a clickable file reference.
+- Keep the footer on the local-file path. The generated HTML launcher contains a
+  browser redirect and the existing same-name Markdown source marker. The
+  shared viewer and canonical reader continue to use the one Markdown prompt.
+  Keep the reader compatible with the HTTP links already sent by build 526.
+- Build 527 was Developer ID signed and verified live after installation. The
+  native footer regression passed in the 172-test focused run. The installed
+  reader resolved the local launcher and older HTTP URL to the same Markdown.
+  Browser automation could not open a local file URL to verify a new Codex click.
+
 ## 2026-11-18 — Plain prompt archives and the shared viewer
 
 - Keep the one full-prompt footer. With the local shared viewer installed it opens

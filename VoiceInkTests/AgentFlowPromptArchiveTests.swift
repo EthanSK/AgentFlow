@@ -49,21 +49,36 @@ struct AgentFlowPromptArchiveTests {
         #expect(saved.url.pathExtension == "md")
         #expect(try FileManager.default.contentsOfDirectory(atPath: root.path) == [saved.url.lastPathComponent])
         #expect(source.hasPrefix("<!-- Agent Flow rainbow start: 0 -->"))
-        #expect(source.contains(AgentFlowPromptArchive.responseReminder))
+        #expect(source.contains(AgentFlowPromptArchive.interpretationReminder))
         #expect(source.hasSuffix(text))
         #expect(!source.contains("<!doctype html>"))
         #expect(AgentFlowPromptArchive.viewerURL(for: saved.url) == nil)
-        let realArchive = AgentFlowPromptArchive.directory.appendingPathComponent(saved.url.lastPathComponent)
-        let viewer = try #require(AgentFlowPromptArchive.liveViewerURL(for: realArchive))
-        #expect(viewer.absoluteString == "http://127.0.0.1:59343/index.html?prompt=" + saved.url.lastPathComponent)
-        let paste = try #require(AgentFlowPromptPreview.make(authoredText: "Complete", sections: [],
-            fileURL: realArchive, viewerURL: viewer))
-        #expect(paste.hasSuffix(AgentFlowPromptPreview.fullPromptPointer(target: viewer.absoluteString)))
         let inline = AgentFlowPromptPreview.coloredInlineTimeline(text, rainbowStartIndex: saved.rainbowStartIndex)
         #expect(inline.contains("#fa7070"))
         let next = try await AgentFlowPromptArchive.save("<typed_text>next</typed_text>", recordID: UUID(), directory: root, colorCursor: cursor)
         #expect(next.rainbowStartIndex == 3)
         #expect(try String(contentsOf: next.url, encoding: .utf8).hasPrefix("<!-- Agent Flow rainbow start: 3 -->"))
+    }
+
+    @Test func plainCodexFooterUsesLocalLauncherAndKeepsMarkdownAsSource() throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let archive = try AgentFlowPromptArchive.write("Private prompt body", recordID: UUID(), directory: root)
+        try AgentFlowPromptArchive.writeViewerLauncher(for: archive)
+        let launcher = try #require(AgentFlowPromptArchive.viewerURL(for: archive))
+        #expect(launcher.isFileURL && launcher.pathExtension == "html")
+        let html = try String(contentsOf: launcher, encoding: .utf8)
+        let viewer = "http://127.0.0.1:59343/index.html?prompt=" + archive.lastPathComponent
+        #expect(html.contains("<meta name=\"agent-flow-source\" content=\"\(archive.path)\">"))
+        #expect(html.contains("<meta http-equiv=\"refresh\" content=\"0; url=\(viewer)\">"))
+        #expect(!html.contains("Private prompt body"))
+        let paste = try #require(AgentFlowPromptPreview.make(authoredText: "Complete", sections: [],
+            fileURL: archive, viewerURL: launcher))
+        #expect(paste.hasSuffix(AgentFlowPromptPreview.fullPromptPointer(target: launcher.path)))
+        #expect(!paste.contains("http://"))
+        let fallback = try #require(AgentFlowPromptPreview.make(authoredText: "Complete", sections: [],
+            fileURL: archive, viewerURL: URL(string: viewer)))
+        #expect(fallback.hasSuffix(AgentFlowPromptPreview.fullPromptPointer(target: archive.path)))
     }
 
     private func withoutRainbowSpans(_ html: String) -> String {
@@ -154,6 +169,9 @@ struct AgentFlowPromptArchiveTests {
         try interpretation.write(to: source, atomically: true, encoding: .utf8)
         let configuredSource = root.appendingPathComponent("Context Interpretation.md")
         try FileManager.default.createSymbolicLink(at: configuredSource, withDestinationURL: source)
+        let preferencesSource = root.appendingPathComponent("Response Preferences.md")
+        let preferences = "# Response Preferences\n\nPreserve exact wording and use short cues.\n"
+        try preferences.write(to: preferencesSource, atomically: true, encoding: .utf8)
         let selection = AgentFlowPromptPreview.Section(tag: "selection", text: "", color: "#67e8f9")
 
         for (timeline, sections, wantsFooter) in [
@@ -170,19 +188,30 @@ struct AgentFlowPromptArchiveTests {
             #expect(hasFooter == wantsFooter)
             #expect(message.contains("[full prompt]") == wantsFooter)
             #expect(!message.contains(interpretation))
+            #expect(!message.contains(preferences))
             let beforeGuidance = try String(contentsOf: saved.url, encoding: .utf8)
             #expect(!beforeGuidance.contains(interpretation))
-            #expect(beforeGuidance.contains(AgentFlowPromptArchive.responseReminder))
+            #expect(!beforeGuidance.contains(preferences))
             if hasFooter {
-                await AgentFlowPromptArchive.includeContextGuidance(in: saved, source: configuredSource)
-                await AgentFlowPromptArchive.includeContextGuidance(in: saved, source: configuredSource)
+                await AgentFlowPromptArchive.includeContextGuidance(in: saved, source: configuredSource,
+                    responsePreferences: preferencesSource)
+                await AgentFlowPromptArchive.includeContextGuidance(in: saved, source: configuredSource,
+                    responsePreferences: preferencesSource)
             }
             let content = try String(contentsOf: saved.url, encoding: .utf8)
             #expect(content.hasPrefix(beforeGuidance))
             #expect(content.components(separatedBy: interpretation).count == 2)
-            #expect(content.components(separatedBy: AgentFlowPromptArchive.responseReminder).count == 2)
-            #expect(!content.contains("## Response preferences for this reply"))
+            #expect(content.components(separatedBy: preferences).count == 2)
+            #expect(content.contains("## Response preferences for this reply"))
+            #expect(content.hasSuffix(preferences))
         }
+
+        let withoutInterpretation = try await AgentFlowPromptArchive.save("Question", recordID: UUID(), directory: root)
+        await AgentFlowPromptArchive.includeContextGuidance(in: withoutInterpretation,
+            source: root.appendingPathComponent("Missing interpretation.md"), responsePreferences: preferencesSource)
+        let preferencesOnly = try String(contentsOf: withoutInterpretation.url, encoding: .utf8)
+        #expect(!preferencesOnly.contains("## Agent Flow interpretation guidance for this prompt"))
+        #expect(preferencesOnly.hasSuffix(preferences))
     }
 
     private func temporaryDirectory() throws -> URL {

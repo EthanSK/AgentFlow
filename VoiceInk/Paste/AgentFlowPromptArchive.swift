@@ -100,8 +100,15 @@ enum AgentFlowPromptArchive {
             let prompt = AgentFlowPromptViewer.ParsedPrompt(text)
             let start = colorCursor.reserve(wordCount: prompt.authoredWordCount)
             let name = "prompt-\(recordID.uuidString.lowercased())-\(UUID().uuidString.lowercased()).md"
-            let header = "<!-- Agent Flow rainbow start: \(start) -->\n" + interpretationReminder + responseReminder
+            let header = "<!-- Agent Flow rainbow start: \(start) -->\n" + interpretationReminder
             let written = try writeDocument(header + text, name: name, directory: destination)
+            let viewerService = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/LaunchAgents/com.ethansk.codex-live-viewer.plist")
+            if destination.standardizedFileURL.path == directory.standardizedFileURL.path,
+               FileManager.default.isReadableFile(atPath: viewerService.path) {
+                // A failed launcher write still leaves the original Markdown available.
+                try? writeViewerLauncher(for: written.url)
+            }
             let archiveMs = Date().timeIntervalSince(started) * 1_000
             let workFinished = DispatchTime.now().uptimeNanoseconds
             Logger(subsystem: "com.ethansk.VoiceInkPlusPlus", category: "VIPPDebug").info(
@@ -121,16 +128,24 @@ enum AgentFlowPromptArchive {
 
     /// Append local guidance only when delivery actually exposes the prompt link.
     /// Read each configured skill once and keep guidance out of the inline paste.
-    static func includeContextGuidance(in prompt: SavedPrompt, source: URL? = nil) async {
+    static func includeContextGuidance(in prompt: SavedPrompt, source: URL? = nil,
+                                       responsePreferences: URL? = nil) async {
         guard let identity = prompt.documentIdentity else { return }
         let settings = directory.deletingLastPathComponent()
         let contextSource = source ?? settings.appendingPathComponent("Context Interpretation.md")
+        let responseSource = responsePreferences ?? settings.appendingPathComponent("Response Preferences.md")
         await Task.detached(priority: .userInitiated) {
-            guard let guidance = readGuidance(from: contextSource) else { return }
-            let appendix = "\n\n## Agent Flow interpretation guidance for this prompt\n\n"
+            let interpretation = readGuidance(from: contextSource).map {
+                "\n\n## Agent Flow interpretation guidance for this prompt\n\n"
                 + "Use this copy to interpret the prompt. Its setup and maintenance steps do not apply to this reply.\n\n"
-                + guidance
-            try? appendGuidance(appendix, to: prompt.url, identity: identity)
+                + $0
+            } ?? ""
+            let preferences = readGuidance(from: responseSource).map {
+                "Apply these supplied response preferences. Use this copy for the skill’s instructions.\n\n"
+                + $0
+            } ?? responseReminder
+            let responseSection = "\n\n## Response preferences for this reply\n\n" + preferences
+            try? appendGuidance(interpretation + responseSection, to: prompt.url, identity: identity)
         }.value
     }
 
@@ -195,11 +210,6 @@ enum AgentFlowPromptArchive {
     }
 
     static func viewerURL(for file: URL) -> URL? {
-        let service = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/LaunchAgents/com.ethansk.codex-live-viewer.plist")
-        if FileManager.default.isReadableFile(atPath: service.path), let live = liveViewerURL(for: file) {
-            return live
-        }
         let viewer = file.deletingPathExtension().appendingPathExtension("html")
         guard let values = try? viewer.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]),
               values.isRegularFile == true, values.isSymbolicLink != true,
@@ -207,16 +217,28 @@ enum AgentFlowPromptArchive {
         return viewer
     }
 
-    static func liveViewerURL(for file: URL) -> URL? {
-        guard file.pathExtension == "md",
-              file.deletingLastPathComponent().standardizedFileURL == directory.standardizedFileURL else { return nil }
+    static func writeViewerLauncher(for file: URL) throws {
         var link = URLComponents()
         link.scheme = "http"
         link.host = "127.0.0.1"
         link.port = 59343
         link.path = "/index.html"
         link.queryItems = [URLQueryItem(name: "prompt", value: file.lastPathComponent)]
-        return link.url
+        guard let target = link.string else { throw CocoaError(.fileWriteInvalidFileName) }
+        let source = AgentFlowPromptViewer.escape(file.path)
+        let viewer = AgentFlowPromptViewer.escape(target)
+        let sourceLink = AgentFlowPromptViewer.escape(file.absoluteString)
+        // Codex's plain-message file scanner links local paths. This launcher
+        // hands the browser to the shared viewer and the reader to the same .md.
+        let html = """
+        <!doctype html><html lang="en"><head><meta charset="utf-8">
+        <meta name="agent-flow-source" content="\(source)">
+        <meta http-equiv="refresh" content="0; url=\(viewer)">
+        <title>Agent Flow prompt</title></head>
+        <body><a href="\(viewer)">Open in Agent Flow viewer</a> · <a href="\(sourceLink)">Open Markdown</a></body></html>
+        """
+        let filename = file.deletingPathExtension().appendingPathExtension("html").lastPathComponent
+        _ = try writeFile(html, name: filename, directory: file.deletingLastPathComponent())
     }
 
     private static func writeFile(_ text: String, name: String, directory: URL) throws -> URL {
@@ -438,7 +460,7 @@ enum AgentFlowPromptViewer {
         }
     }
 
-    private static func escape(_ text: String) -> String {
+    fileprivate static func escape(_ text: String) -> String {
         text.replacingOccurrences(of: "&", with: "&amp;")
             .replacingOccurrences(of: "<", with: "&lt;")
             .replacingOccurrences(of: ">", with: "&gt;")
@@ -829,10 +851,6 @@ enum AgentFlowPromptPreview {
         // The editable opening begins with Ethan’s words. The one footer
         // link is shared by the visual viewer and the agent's prompt reader.
         let viewerPath = viewerURL.flatMap { url -> String? in
-            if !url.isFileURL {
-                guard url == AgentFlowPromptArchive.liveViewerURL(for: fileURL) else { return nil }
-                return url.absoluteString
-            }
             guard url.isFileURL, url.path.hasPrefix("/"),
                   !url.path.contains(where: { "\n\r<>".contains($0) }) else { return nil }
             return url.path.addingPercentEncoding(withAllowedCharacters: linkCharacters)
