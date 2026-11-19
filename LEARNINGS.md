@@ -1,5 +1,21 @@
 # Learnings
 
+## Recording-start Codex chat and waveform updates
+
+The installed Codex 0.169.1 can enqueue text for an existing local chat by UUID.
+A separate CLI producer and a private-stdio owner shared the queue in an isolated
+two-chat test. A brand-new chat without a saved first turn was rejected. The owning
+process polls external submissions about every ten seconds. Never resume a second
+writer or replay an uncertain send through the currently focused UI.
+
+The measured desktop logs use a host-wide activity event, including background chats.
+An activity event alone cannot identify a destination. Resolve the recording-start
+window and pane once, corroborate a uniquely named, saved local main chat against
+its own activity, and use only a typed side-chat tab ID for a side pane. Keep lookup
+and queueing away from audio capture and transcript updates. A display timer on the
+main queue coalesces missed meter ticks instead of replaying stale frames.
+
+
 ## 2026-11-19 — An empty GPT Live result can hold up later recordings
 
 One build 529 recording received a clean empty live final 0.655 seconds after

@@ -465,6 +465,34 @@ enum CodexConversationContextReader {
         }
     }
 
+    /// Current desktop builds publish owner activity in the host log, including
+    /// background chats. It may corroborate an exact local window/pane match,
+    /// but never choose a chat by recency.
+    nonisolated static func wasActiveLocalChat(_ id: UUID, pid: pid_t, at date: Date) -> Bool {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let cutoff = formatter.string(from: date)
+        let needle = Data((" conversationId=" + id.uuidString.lowercased() + " resumeState=").utf8)
+        let urls = codexLogURLs(processIdentifier: pid, fileManager: .default)
+            .filter { $0.lastPathComponent.contains("-\(pid)-t0-") }
+        for url in urls.prefix(4) {
+            guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return false }
+            var upper = data.endIndex
+            while let hit = data.range(of: needle, options: .backwards, in: 0..<upper) {
+                upper = hit.lowerBound
+                let start = data[..<upper].lastIndex(of: 10).map { $0 + 1 } ?? 0
+                guard upper - start < 180 else { continue }
+                let prefix = String(decoding: data[start..<upper], as: UTF8.self)
+                guard let space = prefix.firstIndex(of: " "), prefix[..<space].count == 24,
+                      prefix[..<space] <= cutoff[...] else { continue }
+                let event = prefix[space...]
+                if event == " info [host-app-server-manager] thread_stream_view_activity_changed active=false" { return false }
+                if event == " info [host-app-server-manager] thread_stream_view_activity_changed active=true" { return true }
+            }
+        }
+        return false
+    }
+
     nonisolated private static func codexLogURLs(
         processIdentifier: pid_t,
         fileManager: FileManager,

@@ -248,6 +248,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
     private struct PreparedRecordingStart {
         let requestID: UUID
         let activationTime: Date
+        let codexCapture: CodexRecordingCapture?
         let activationUptime: TimeInterval
         let focusedInput: FocusLockService.Target?
     }
@@ -913,6 +914,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
         preparedRecordingStart = PreparedRecordingStart(
             requestID: requestID,
             activationTime: activationTime,
+            codexCapture: CodexRecordingCapture.atStart(),
             activationUptime: captureStartedAt,
             focusedInput: focusedInput
         )
@@ -1239,6 +1241,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
                         await self.startNewSession(
                             startRequestID: startRequestID,
                             activationTime: activationTime,
+                            codexCapture: preparedRecordingStart.codexCapture,
                             modeId: modeId,
                             useCase: useCase,
                             recordingStartFocusedInput:
@@ -1265,6 +1268,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
     private func startNewSession(
         startRequestID: UUID,
         activationTime: Date,
+        codexCapture: CodexRecordingCapture?,
         modeId: UUID?,
         useCase: RecordingSession.UseCase,
         recordingStartFocusedInput: FocusLockService.Target?,
@@ -1323,6 +1327,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
             startID: startID,
             recordingStartFocusedInput: recordingStartFocusedInput
         )
+        if !useCase.isAssistantFollowUp { session.bindCodexCapture(codexCapture) }
         guard activeRecordingDeliveryBarrier.transferCapture(
             from: startRequestID,
             to: session.id
@@ -2181,6 +2186,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
                 }
                 return await session.resolvePasteTargetForDelivery()
             },
+            codexRoute: { [weak session] in await session?.resolvedCodexRoute() },
             outputConfiguration: { [weak session] in
                 let resolved = ModeRuntimeResolver.pasteTargetOutputConfiguration(
                     mode: session?.postProcessingMode

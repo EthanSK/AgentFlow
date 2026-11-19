@@ -1,8 +1,46 @@
 import Foundation
 import Testing
+import SQLite3
 @testable import VoiceInkPlusPlus
 
 struct CodexConversationContextTests {
+    @Test func duplicateTitlesAndUnknownSidePanelsHaveNoSendTarget() throws {
+        let id = UUID()
+        #expect(CodexRecordingCapture.sidePane(identifier: "app-shell-tab-panel-sidechat:" + id.uuidString) == .side(id))
+        #expect(CodexRecordingCapture.sidePane(identifier: "app-shell-tab-panel-app-shell-tab:5") == .unknown)
+        let db = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: db) }
+        var handle: OpaquePointer?
+        #expect(sqlite3_open(db.path, &handle) == SQLITE_OK)
+        defer { sqlite3_close(handle) }
+        #expect(sqlite3_exec(handle, "CREATE TABLE threads (id TEXT, archived INT, name TEXT, title TEXT)", nil, nil, nil) == SQLITE_OK)
+        #expect(sqlite3_exec(handle, "INSERT INTO threads VALUES ('\(id.uuidString)',0,'Chat A','Old name')", nil, nil, nil) == SQLITE_OK)
+        #expect(CodexRecordingCapture.uniqueLocalID(named: "Old name", databaseURL: db) == nil)
+        #expect(CodexRecordingCapture.uniqueLocalID(named: "Chat A", databaseURL: db) == id)
+        #expect(sqlite3_exec(handle, "INSERT INTO threads VALUES ('\(UUID().uuidString)',0,'Chat A','')", nil, nil, nil) == SQLITE_OK)
+        #expect(CodexRecordingCapture.uniqueLocalID(named: "Chat A", databaseURL: db) == nil)
+    }
+
+    @Test @MainActor func recordingChatSurvivesStopAndYieldsToExplicitDeliveryChoices() async throws {
+        let target = CodexRecordingTarget(id: UUID(), name: "Chat A", executable: URL(fileURLWithPath: "/unused"))
+        let mode = ModeConfig(name: "Codex", isAIEnhancementEnabled: false, autoSendKey: .enter)
+        let session = RecordingSession(phase: .recording)
+        session.bindCodexCapture(.init(mode: mode, lookup: Task { target }))
+        while session.codexRoute == .detecting { await Task.yield() }
+        #expect(session.codexBanner == "Chat detected · Chat A")
+        session.phase = .transcribing
+        session.liveRecordingState = .transcribing
+        session.pasteTarget = .init(destination: .primaryCurrentInput, focusedInput: nil)
+        #expect(session.codexBanner == "Will send to Chat A")
+        #expect(await session.resolvedCodexRoute() == .chat(target))
+        session.autoSendDisposition = .suppressOnce
+        #expect(session.codexBanner == nil)
+        #expect(await session.resolvedCodexRoute() == nil)
+        session.autoSendDisposition = .configured
+        session.pasteTarget = .init(destination: .focusedDuringTranscription, focusedInput: nil)
+        #expect(await session.resolvedCodexRoute() == nil)
+    }
+
     @Test @MainActor func codexHostRecognitionAcceptsBothBundledCLILayouts() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

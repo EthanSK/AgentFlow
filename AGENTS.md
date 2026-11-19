@@ -61,6 +61,8 @@ The modifier-only Primary shortcut must not dismiss a context menu or disturb th
 
 ## Primary isolation is a hard architectural boundary
 
+The opt-in Codex queue is the explicit exception requested on 2026-11-19. When the recording starts in local Codex with auto-send configured, its frozen chat owns the programmatic send and recorder label. An unresolved chat stays in History. Clipboard-only, paste-only and explicit Next retarget choices retain their own behavior. The generic Primary keyboard-paste implementation still owns no AX target.
+
 - **2026-11-09 timing restored, requested by Ethan:** remove the experimental 50 ms Send and conditional retry. Preserve the previous single 400 ms paste-to-Send allowance. Paste-only Modes do not wait for Send.
 - Primary/toggle behaves like base VoiceInk whether Exact Saved-Input Delivery is on or off: ordinary system-focused Command-V followed once by the current Mode's generic auto-send key after the approved allowance, with no app classifier, saved AX wrapper, internal focus, exact insertion, semantic Send, read-back, retry, or verification.
 - At Primary stop, create only `primaryCurrentInput` with `focusedInput=nil` and no destination-owned Mode. Never capture a stop-time input. A tentative recording-start capture may exist solely because a later **Next while recording** needs it; Primary stop must structurally discard it.

@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 protocol RecorderStateProvider: AnyObject {
     var recordingState: RecordingState { get }
+    var codexBanner: String? { get }
     var partialTranscript: String { get }
     var completionDisposition: RecordingCompletionDisposition { get }
     var liveSelectionReferences: [LiveSelectionReference] { get }
@@ -50,6 +51,7 @@ protocol RecorderStateProvider: AnyObject {
 }
 
 extension RecorderStateProvider {
+    var codexBanner: String? { nil }
     // The editor disappears at finish. Do not measure its now-hidden transcript
     // while showing the loading card; all mirrored layouts use this same gate.
     var showsLiveContext: Bool {

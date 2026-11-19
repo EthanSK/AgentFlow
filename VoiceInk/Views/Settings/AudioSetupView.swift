@@ -11,6 +11,7 @@ struct AudioSetupView: View {
     private var sleepsGPTLiveDuringSilence = RealtimeSilenceSleepPolicy.defaultEnabled
     @AppStorage(RecordingStopDelay.preferenceKey)
     private var recordingStopDelayMilliseconds = RecordingStopDelay.defaultMilliseconds
+    @AppStorage(CodexRecordingTarget.preferenceKey) private var queueToCodexChat = false
     @State private var microphoneSourceBeforePriorityOrder: MicrophoneSourceSelection = .systemDefault
     @State private var refreshIconRotation = 0.0
 
@@ -37,6 +38,9 @@ struct AudioSetupView: View {
             }
 
             Section {
+                Toggle("Send to the Codex chat open when recording starts", isOn: $queueToCodexChat)
+                    .help("In Codex, a Mode with auto-send queues the finished prompt in the detected chat. If the chat is unclear, find the prompt in History.")
+
                 LabeledContent("Recording Stop Delay") {
                     HStack(spacing: 6) {
                         TextField("Milliseconds", value: $recordingStopDelayMilliseconds,

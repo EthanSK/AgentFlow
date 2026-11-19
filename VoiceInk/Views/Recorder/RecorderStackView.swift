@@ -440,6 +440,7 @@ struct TranscribingChip: View {
     let onCancel: () -> Void
 
     private var label: String {
+        if let banner = session.codexBanner { return banner }
         switch session.liveRecordingState {
         case .enhancing: return String(localized: "Enhancing…")
         default:         return String(localized: "Transcribing…")
@@ -464,7 +465,7 @@ struct TranscribingChip: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
-        .frame(width: style == .mini ? 158 : 174)
+        .frame(width: session.codexBanner != nil ? 300 : (style == .mini ? 158 : 174))
         .background(Color.black.opacity(style == .mini ? 1.0 : 0.92))
         .clipShape(RoundedRectangle(cornerRadius: style == .mini ? 16 : 12, style: .continuous))
         .overlay(

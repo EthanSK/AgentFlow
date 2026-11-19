@@ -828,8 +828,45 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     /// different: like base VoiceInk, it follows whichever Mode is current while the
     /// result is processed and delivered. An explicit trigger-word Mode remains the
     /// intentional higher-priority override for either policy.
+    private var codexCapture: CodexRecordingCapture?
+    @Published private(set) var codexRoute: CodexRecordingRoute?
+
+    func bindCodexCapture(_ capture: CodexRecordingCapture?) {
+        guard let capture else { return }
+        codexCapture = capture
+        codexRoute = .detecting
+        Task { [weak self] in
+            let target = await capture.lookup.value
+            self?.codexRoute = target.map(CodexRecordingRoute.chat) ?? .unavailable
+        }
+    }
+
+    private var usesRecordingStartChat: Bool {
+        pasteTarget.destination != .focusedDuringTranscription
+            && completionDisposition == .normalDelivery && !skipPostProcessing
+            && autoSendDisposition != .suppressOnce
+    }
+
+    var codexBanner: String? {
+        guard codexRoute != nil, usesRecordingStartChat, let mode = postProcessingMode,
+              mode.outputMode == .paste, mode.autoSendKey != .none else { return nil }
+        switch codexRoute {
+        case .chat(let target):
+            return recordingState.isProcessing ? "Will send to " + target.name : "Chat detected · " + target.name
+        case .detecting: return "Detecting Codex chat…"
+        case .unavailable: return "Chat unclear · saving in History"
+        case nil: return nil
+        }
+    }
+
+    func resolvedCodexRoute() async -> CodexRecordingRoute? {
+        guard usesRecordingStartChat, let capture = codexCapture else { return nil }
+        return await capture.lookup.value.map(CodexRecordingRoute.chat) ?? .unavailable
+    }
+
     var postProcessingMode: ModeConfig? {
-        Self.resolvePostProcessingMode(
+        if usesRecordingStartChat, let capture = codexCapture { return triggerWordModeOverride ?? capture.mode }
+        return Self.resolvePostProcessingMode(
             triggerWordModeOverride: triggerWordModeOverride,
             destination: pasteTarget.destination,
             currentMode: ModeManager.shared.currentEffectiveConfiguration,

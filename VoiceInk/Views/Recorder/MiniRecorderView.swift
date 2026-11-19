@@ -26,6 +26,7 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     private var capsuleWidth: CGFloat {
         if hasAssistantResponse { return assistantWidth }
         if hasLiveTranscript { return expandedWidth }
+        if stateProvider.codexBanner != nil { return min(500, liveTranscriptWidth) }
         // Leave room for Pause/Play and the current app. Ethan removed the secondary
         // app icon because its unused destination warning was mostly visual noise.
         if stateProvider.recordingState.isRecordingOrPaused { return 324 }
@@ -144,6 +145,10 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                     realtimeStreamSleeping: stateProvider.showsRealtimeStreamSleepingBadge
                 )
                 .background(RecorderPanelDragSurface())
+                if let banner = stateProvider.codexBanner {
+                    Text(banner).font(.caption).foregroundStyle(.white)
+                        .lineLimit(1).truncationMode(.middle).help(banner)
+                }
             }
 
             Spacer(minLength: 0)

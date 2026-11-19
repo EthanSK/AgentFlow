@@ -156,6 +156,7 @@ class TranscriptionPipeline {
         recordingContextSnapshot: @escaping () async -> RecordingContextSnapshot? = { nil },
         liveSelectionReferences: @escaping () -> [LiveSelectionReference] = { [] },
         pasteTarget resolvePasteTarget: @escaping () async -> RecordingPasteTarget,
+        codexRoute: @escaping () async -> CodexRecordingRoute? = { nil },
         outputConfiguration: @escaping () -> OutputRuntimeConfiguration,
         // ── VIPP (skip-mode-processing feature) — EXPLICIT bypass flag ──
         // Resolved at pipeline-run time from the owning RecordingSession's one-shot
@@ -1129,8 +1130,14 @@ class TranscriptionPipeline {
         // archive retains the complete context; Won't paste is separate because
         // a later manual paste has no known recipient at completion time.
         let presentationStarted = ContinuousClock.now
+        // Resolve only after the session's cancellation, retarget, and no-send
+        // choices have settled. The Codex queue owns the final delivery exclusively.
+        let directCodex = !skipPostProcessingNow && !assistant.isFollowUp && !recoversTypedDraft
+            && outputForPasteTarget.outputMode == .paste && outputForPasteTarget.autoSendKey != .none
+            && pasteTargetForDelivery.destination != .focusedDuringTranscription
+            ? await codexRoute() : nil
         let recipient = currentPromptRecipient()
-        let includesSourceContext = outputForPasteTarget.outputMode == .paste
+        let includesSourceContext = directCodex != nil || outputForPasteTarget.outputMode == .paste
             && LiveContextPastePolicy.includesSourceContext(
                 destination: pasteTargetForDelivery.destination,
                 currentApplicationBundleIdentifier: recipient.bundleID,
@@ -1142,11 +1149,11 @@ class TranscriptionPipeline {
         // reads only this pane's visible Environment card, never transcript text,
         // and grants no insertion/Send authority. No startup scan or polling.
         var claudeLocalCodeConfirmed = false
-        if includesSourceContext && !skipPostProcessingNow && !assistant.isFollowUp,
+        if directCodex == nil && includesSourceContext && !skipPostProcessingNow && !assistant.isFollowUp,
            presentationRecipient == ClaudePromptEnvironment.bundleIdentifier {
             claudeLocalCodeConfirmed = await localClaudePrompt(recipient, pasteTargetForDelivery)
         }
-        let usesCompactPrompt = includesSourceContext && !skipPostProcessingNow && !assistant.isFollowUp
+        let usesCompactPrompt = directCodex != nil || includesSourceContext && !skipPostProcessingNow && !assistant.isFollowUp
             && AgentFlowPromptPreview.supportsLocalFilePrompt(bundleID: presentationRecipient,
                 bundleURL: recipient.bundleURL, claudeLocalCodeConfirmed: claudeLocalCodeConfirmed)
         await attachLiveSelectionsToFinalText(
@@ -1183,6 +1190,29 @@ class TranscriptionPipeline {
             NotificationManager.shared.showNotification(
                 title: "Couldn’t save the prompt file — full text saved in History",
                 type: .error, copyText: completePromptText ?? completedText)
+            return
+        }
+        if let directCodex {
+            // Keep the canonical result. Never retry an uncertain queue receipt
+            // or fall through to the keyboard-focused app after a chat switch.
+            guard isDeliveryAuthorized(), !shouldCancel() else {
+                await finishCanceledTranscription(recoveredText: finalText)
+                return
+            }
+            let queued: Bool
+            if case let .chat(target) = directCodex, let compactPromptText {
+                queued = await target.enqueue(compactPromptText)
+            } else {
+                queued = false
+            }
+            if !queued {
+                transcription.preservesOriginalAudioForRecovery = true
+                NotificationManager.shared.showNotification(
+                    title: "Couldn’t queue the Codex message · prompt saved in History",
+                    type: .error, copyText: completePromptText ?? completedText)
+            }
+            saveTranscriptionAndPostCompletion()
+            await onDismiss()
             return
         }
         if let providerFinishedAt {

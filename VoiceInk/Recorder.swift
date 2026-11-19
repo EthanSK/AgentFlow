@@ -51,7 +51,6 @@ class Recorder: NSObject, ObservableObject {
     private let playbackController = PlaybackController.shared
     @Published var audioMeter = AudioMeter(averagePower: 0, peakPower: 0)
     private var audioMeterUpdateTimer: DispatchSourceTimer?
-    private let audioMeterQueue = DispatchQueue(label: "com.prakashjoshipax.voiceink.audiometer", qos: .userInteractive)
     /// Idle preparation stays below UI work; Start/first enable/Resume explicitly
     /// request interactive scheduling on this same FIFO hardware queue.
     private let audioSetupQueue = DispatchQueue(label: "com.prakashjoshipax.voiceink.audioSetup", qos: RecorderWorkPriority.idleHardware)
@@ -62,7 +61,6 @@ class Recorder: NSObject, ObservableObject {
     private var chatGPTVoiceMuteLease: ChatGPTVoiceCaptureMuteLease?
     private var recordingActivityStarted = false
     private var keyboardStartAwaitingCapture = false
-    private let smoothedValuesLock = NSLock()
     private var smoothedAverage: Float = 0
     private var smoothedPeak: Float = 0
 
@@ -606,7 +604,7 @@ class Recorder: NSObject, ObservableObject {
 
     private func startAudioMeterTimer() {
         audioMeterUpdateTimer?.cancel()
-        let timer = DispatchSource.makeTimerSource(queue: audioMeterQueue)
+        let timer = DispatchSource.makeTimerSource(queue: .main)
         // Thirty frames per second is visually smooth for a 15-bar meter and keeps
         // three mirrored SwiftUI panels from consuming a main-thread update every
         // 17 ms. The visualizer intentionally uses this as its sole animation clock.
@@ -624,10 +622,8 @@ class Recorder: NSObject, ObservableObject {
     }
 
     private func resetAudioMeter() {
-        smoothedValuesLock.lock()
         smoothedAverage = 0
         smoothedPeak = 0
-        smoothedValuesLock.unlock()
         audioMeter = AudioMeter(averagePower: 0, peakPower: 0)
     }
 
@@ -710,18 +706,14 @@ class Recorder: NSObject, ObservableObject {
             normalizedPeak = (peakPower - minVisibleDb) / (maxVisibleDb - minVisibleDb)
         }
 
-        // Apply EMA smoothing with thread-safe access
-        smoothedValuesLock.lock()
+        // Smoothing and reset share the main queue.
         smoothedAverage = smoothedAverage * 0.6 + normalizedAverage * 0.4
         smoothedPeak = smoothedPeak * 0.6 + normalizedPeak * 0.4
         let newAudioMeter = AudioMeter(averagePower: Double(smoothedAverage), peakPower: Double(smoothedPeak))
-        smoothedValuesLock.unlock()
 
-        // Dispatch to main queue for UI updates (more efficient than Task)
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.audioMeter = newAudioMeter
-        }
+        // Sample on the display queue itself: a dispatch timer coalesces missed
+        // ticks, so old waveform frames cannot pile up behind transcript layout.
+        audioMeter = newAudioMeter
     }
     
     // MARK: - Cleanup
