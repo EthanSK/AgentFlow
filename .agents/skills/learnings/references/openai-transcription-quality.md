@@ -296,3 +296,5 @@ Track word errors, exact-name hits, unspoken keyword insertions, first-word omis
 empty finals, fallback frequency, first delta, and stop-to-final latency. A substantial
 billable replay needs specific authorization; ordinary new recordings can supply
 observational feedback but cannot by themselves establish a controlled improvement.
+
+For build 533 and later, check **Send Vocabulary words to OpenAI** independently of **Send recent context (OpenAI)**. Turning off Vocabulary omits the keyword field for realtime and completed audio, including future words. Preserve the stored words and per-term exclusions. The realtime acknowledgement reports only counts when the server returns the nested transcription configuration. A keyword in a saved list cannot establish why a model emitted an individual word.

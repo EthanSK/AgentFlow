@@ -20,11 +20,8 @@ enum RecentTranscriptContextSettings {
 /// participate automatically. Do not use a shorter alphabetical prefix: it can silently
 /// lose the tail without regard to which spelling Ethan needs help with.
 enum OpenAIKeywordSelection {
+    static let enabledKey = "VIPPOpenAITranscriptionVocabularyEnabled"
     static let excludedWordsKey = "VIPPExcludedOpenAIKeywords"
-
-    static var excludedWords: Set<String> {
-        excludedWords(in: .standard)
-    }
 
     static func excludedWords(in defaults: UserDefaults) -> Set<String> {
         Set((defaults.stringArray(forKey: excludedWordsKey) ?? []).map(normalizedKey))
@@ -34,8 +31,11 @@ enum OpenAIKeywordSelection {
         vocabulary.filter { !excluded.contains(normalizedKey($0)) }
     }
 
-    static func selected(from vocabulary: [String]) -> [String] {
-        selected(from: vocabulary, excluding: excludedWords)
+    /// Turning off the dictation “dictionary” also covers words added later.
+    /// Retain the shortlist so re-enabling it restores the user's chosen spellings.
+    static func selected(from vocabulary: @autoclosure () -> [String], defaults: UserDefaults = .standard) -> [String] {
+        guard defaults.object(forKey: enabledKey) as? Bool ?? true else { return [] }
+        return selected(from: vocabulary(), excluding: excludedWords(in: defaults))
     }
 
     private static func normalizedKey(_ value: String) -> String {

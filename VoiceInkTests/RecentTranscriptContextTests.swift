@@ -528,6 +528,30 @@ struct RecentTranscriptContextTests {
         #expect(stored.count == 4) // Selection never deletes or mutates Vocabulary.
     }
 
+    @Test func disablingOpenAIVocabularyOmitsHintsFromLiveAndFallbackIncludingNewWords() throws {
+        let suite = "VoiceInk.KeywordSwitch.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(["exclude me"], forKey: OpenAIKeywordSelection.excludedWordsKey)
+        let words = ["Keep this spelling", "Exclude me", "Added later"]
+        #expect(OpenAIKeywordSelection.selected(from: words, defaults: defaults) == ["Keep this spelling", "Added later"])
+        defaults.set(false, forKey: OpenAIKeywordSelection.enabledKey)
+        var fetches = 0
+        func fetchWords() -> [String] { fetches += 1; return words }
+        let hints = OpenAIKeywordSelection.selected(from: fetchWords(), defaults: defaults)
+        #expect(fetches == 0 && hints.isEmpty)
+        let live = OpenAITranscriptionConfiguration.realtimeSessionUpdate(language: "en", prompt: " ", customVocabulary: hints)
+        let session = try #require(live["session"] as? [String: Any])
+        let audio = try #require(session["audio"] as? [String: Any])
+        let input = try #require(audio["input"] as? [String: Any])
+        let config = try #require(input["transcription"] as? [String: Any])
+        #expect(config["keywords"] == nil && config["prompt"] == nil)
+        let fallback = OpenAITranscriptionConfiguration.completedAudioFields(language: "en", prompt: " ", customVocabulary: hints)
+        #expect(!fallback.contains { $0.name == "keywords[]" || $0.name == "prompt" })
+        defaults.set(true, forKey: OpenAIKeywordSelection.enabledKey)
+        #expect(OpenAIKeywordSelection.selected(from: words, defaults: defaults) == ["Keep this spelling", "Added later"])
+    }
+
     @Test @MainActor func openAIShortlistIsFrozenForLiveAndFallback() throws {
         let context = try makeStoreContext(named: "OpenAIShortlistFreezeTest")
         context.insert(VocabularyWord(word: "Kept Name"))
@@ -812,7 +836,8 @@ struct RecentTranscriptContextTests {
         #expect(source.contains("short message excerpts"))
         #expect(source.contains("Codex's final replies"))
         #expect(source.contains("never progress updates"))
-        #expect(source.contains("Vocabulary is sent separately; context never replaces it"))
+        #expect(source.contains("Send Vocabulary words to OpenAI"))
+        #expect(source.contains("OpenAIKeywordSelection.enabledKey"))
         #expect(source.contains("History is never sent"))
         #expect(source.contains("CodexConversationContextPolicy.maximumMessages"))
         #expect(!source.contains("RecentTranscriptContextPolicy.maximumEntries"))

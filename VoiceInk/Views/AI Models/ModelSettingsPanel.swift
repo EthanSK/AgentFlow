@@ -146,13 +146,14 @@ private struct EnhancementModelSettingsView: View {
 private struct RecentDictationContextSection: View {
     @EnvironmentObject private var transcriptionModelManager: TranscriptionModelManager
     @AppStorage(RecentTranscriptContextSettings.enabledKey) private var isRecentContextEnabled = false
+    @AppStorage(OpenAIKeywordSelection.enabledKey) private var sendsVocabulary = true
 
     private var hasUsableOpenAIModel: Bool {
         transcriptionModelManager.usableModels.contains { $0.provider == .openAI }
     }
 
     private var informationMessage: String {
-        String(localized: "Only your messages and Codex's final replies are sent, never progress updates, tool output, or unsent drafts. History is never sent, and no chat context is sent when the exact task can't be identified. Vocabulary is sent separately; context never replaces it.")
+        String(localized: "Only your messages and Codex's final replies are sent, never progress updates, tool output, or unsent drafts. History is never sent, and no chat context is sent when the exact task can't be identified.")
     }
 
     private var visibleSummary: String {
@@ -177,8 +178,12 @@ private struct RecentDictationContextSection: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            Toggle("Send Vocabulary words to OpenAI", isOn: $sendsVocabulary)
+                .toggleStyle(.switch)
+                .disabled(!hasUsableOpenAIModel)
+                .help("Use selected words from your Dictionary as spelling hints during transcription.")
         } header: {
-            Text("Recent Transcription Context")
+            Text("Transcription Context")
         } footer: {
             if !hasUsableOpenAIModel {
                 Text("Requires a configured OpenAI transcription model.")

@@ -296,6 +296,16 @@ final class OpenAIStreamingProvider: ContextualStreamingTranscriptionProvider, @
 
                     switch json["type"] as? String {
                     case "session.updated":
+                        // Counts from the server's acknowledgement can verify which hints
+                        // reached transcription. Never log the prompt or vocabulary itself.
+                        if let session = json["session"] as? [String: Any],
+                           let audio = session["audio"] as? [String: Any],
+                           let input = audio["input"] as? [String: Any],
+                           let config = input["transcription"] as? [String: Any] {
+                            let keywords = config["keywords"] as? [String] ?? []
+                            let prompt = config["prompt"] as? String ?? ""
+                            self.logger.notice("OpenAI transcription settings acknowledged keywords=\(keywords.count, privacy: .public) promptChars=\(prompt.count, privacy: .public)")
+                        }
                         return
                     case "error":
                         throw StreamingTranscriptionError.serverError(self.errorMessage(from: json))
