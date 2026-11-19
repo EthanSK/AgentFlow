@@ -234,15 +234,23 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
 
         let showsRealtimeTranscript = baseSession?.showsLiveContext == true
 
+        let scale = CGFloat(RecorderHUDScaleStore.shared.scale)
+        let width = MiniRecorderLayoutMetrics.contextWidth(screenWidth: screen.visibleFrame.width, scale: scale)
+        let cardWidth = showsAssistant ? min(width, MiniRecorderLayoutMetrics.assistantPanelWidth) : width
+        let controlsHeight = baseSession?.codexBanner.map { RecorderChatBannerLayout($0, availableWidth: cardWidth).height }
+            ?? MiniRecorderLayoutMetrics.controlBarHeight
+        let contextLimit = MiniRecorderLayoutMetrics.contextHeightLimit(
+            screenHeight: screen.visibleFrame.height, scale: scale, controlsHeight: controlsHeight)
+        let extraStackHeight = engine.sessions.filter { $0.id != baseSession?.id }.reduce(CGFloat.zero) {
+            $0 + RecorderChatBannerLayout.chipExtraHeight($1.codexBanner, availableWidth: width)
+        }
         let transcriptHeight: CGFloat
         if let baseSession, showsRealtimeTranscript {
             transcriptHeight = MiniRecorderLayoutMetrics.contextHeight(
                 parts: baseSession.liveContextPreviewParts,
                 typedText: baseSession.canTypeInHUD ? baseSession.typedInput : nil,
-                width: MiniRecorderLayoutMetrics.contextWidth(
-                    screenWidth: screen.visibleFrame.width, scale: CGFloat(RecorderHUDScaleStore.shared.scale)),
-                maxHeight: MiniRecorderLayoutMetrics.contextHeightLimit(
-                    screenHeight: screen.visibleFrame.height, scale: CGFloat(RecorderHUDScaleStore.shared.scale))
+                width: width,
+                maxHeight: contextLimit
             )
         } else {
             transcriptHeight = MiniRecorderLayoutMetrics.liveTranscriptHeight
@@ -253,10 +261,10 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
             showsRealtimeTranscript: showsRealtimeTranscript,
             sessionCount: engine.sessions.count,
             realtimeTranscriptHeight: transcriptHeight,
-            assistantHeight: min(MiniRecorderLayoutMetrics.assistantPanelHeight,
-                MiniRecorderLayoutMetrics.contextHeightLimit(screenHeight: screen.visibleFrame.height,
-                    scale: CGFloat(RecorderHUDScaleStore.shared.scale))),
-            scale: CGFloat(RecorderHUDScaleStore.shared.scale),
+            assistantHeight: min(MiniRecorderLayoutMetrics.assistantPanelHeight, contextLimit),
+            controlsHeight: controlsHeight,
+            extraStackHeight: extraStackHeight,
+            scale: scale,
             screenBottomInset: screen.visibleFrame.minY - screen.frame.minY
         )
     }

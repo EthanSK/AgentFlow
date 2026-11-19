@@ -19,14 +19,18 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
 
     private let compactWidth: CGFloat = 228
     private var expandedWidth: CGFloat { liveTranscriptWidth }
-    private let assistantWidth: CGFloat = 520
+    private var assistantWidth: CGFloat { min(liveTranscriptWidth, MiniRecorderLayoutMetrics.assistantPanelWidth) }
     private let compactCornerRadius: CGFloat = 20
     private let expandedCornerRadius: CGFloat = 14
+
+    private var chatBanner: RecorderChatBannerLayout? {
+        stateProvider.codexBanner.map { RecorderChatBannerLayout($0, availableWidth: hasAssistantResponse ? assistantWidth : liveTranscriptWidth) }
+    }
 
     private var capsuleWidth: CGFloat {
         if hasAssistantResponse { return assistantWidth }
         if hasLiveTranscript { return expandedWidth }
-        if stateProvider.codexBanner != nil { return min(500, liveTranscriptWidth) }
+        if let chatBanner { return chatBanner.cardWidth }
         // Leave room for Pause/Play and the current app. Ethan removed the secondary
         // app icon because its unused destination warning was mostly visual noise.
         if stateProvider.recordingState.isRecordingOrPaused { return 324 }
@@ -145,9 +149,8 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                     realtimeStreamSleeping: stateProvider.showsRealtimeStreamSleepingBadge
                 )
                 .background(RecorderPanelDragSurface())
-                if let banner = stateProvider.codexBanner {
-                    Text(banner).font(.caption).foregroundStyle(.white)
-                        .lineLimit(1).truncationMode(.middle).help(banner)
+                if let chatBanner, !chatBanner.separateRow {
+                    RecorderChatBanner(layout: chatBanner)
                 }
             }
 
@@ -161,7 +164,7 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
             )
             .padding(.trailing, 12)
         }
-        .frame(height: MiniRecorderLayoutMetrics.controlBarHeight)
+        .frame(height: chatBanner.flatMap { $0.separateRow ? nil : $0.height } ?? MiniRecorderLayoutMetrics.controlBarHeight)
     }
 
     private var transcriptSection: some View {
@@ -203,6 +206,12 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                 Divider().background(Color.white.opacity(0.15))
             } else {
                 transcriptSection
+            }
+            if let chatBanner, chatBanner.separateRow {
+                RecorderChatBanner(layout: chatBanner)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.top, 6)
             }
             controlBar
         }

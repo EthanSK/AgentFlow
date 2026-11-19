@@ -39,7 +39,7 @@ struct AudioSetupView: View {
 
             Section {
                 Toggle("Send to the Codex chat open when recording starts", isOn: $queueToCodexChat)
-                    .help("In Codex, a Mode with auto-send queues the finished prompt in the detected chat. If the chat is unclear, find the prompt in History.")
+                    .help("Copies the prompt and queues it in the original chat. A busy chat may send it later. Turn this off to paste in the current chat instead.")
 
                 LabeledContent("Recording Stop Delay") {
                     HStack(spacing: 6) {

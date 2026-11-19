@@ -34,6 +34,7 @@ enum MiniRecorderLayoutMetrics {
     }()
     static var typedInputHeight: CGFloat { singleLineHeight }
     static let separatorHeight: CGFloat = 1
+    static let assistantPanelWidth: CGFloat = 520
     static let assistantPanelHeight: CGFloat = 320
     static let stackedCardSpacing: CGFloat = 46
 
@@ -129,19 +130,21 @@ enum MiniRecorderLayoutMetrics {
         sessionCount: Int,
         realtimeTranscriptHeight: CGFloat = liveTranscriptHeight,
         assistantHeight: CGFloat = assistantPanelHeight,
+        controlsHeight: CGFloat = controlBarHeight,
+        extraStackHeight: CGFloat = 0,
         scale: CGFloat = 1,
         screenBottomInset: CGFloat = 0
     ) -> CGFloat {
         let baseHeight: CGFloat
         if showsAssistant {
-            baseHeight = assistantHeight + separatorHeight + controlBarHeight
+            baseHeight = assistantHeight + separatorHeight + controlsHeight
         } else if showsRealtimeTranscript {
-            baseHeight = realtimeTranscriptHeight + separatorHeight + controlBarHeight
+            baseHeight = realtimeTranscriptHeight + separatorHeight + controlsHeight
         } else {
-            baseHeight = controlBarHeight
+            baseHeight = controlsHeight
         }
 
-        let stackedHeight = CGFloat(max(0, sessionCount - 1)) * stackedCardSpacing
+        let stackedHeight = CGFloat(max(0, sessionCount - 1)) * stackedCardSpacing + extraStackHeight
         // Notifications use visibleFrame coordinates, while the HUD now starts
         // at frame.minY. Convert once so a bottom Dock isn't reserved twice.
         return max(0, bottomPadding + (baseHeight + stackedHeight) * scale - screenBottomInset)

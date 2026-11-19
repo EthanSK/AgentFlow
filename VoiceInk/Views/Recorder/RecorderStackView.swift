@@ -134,7 +134,8 @@ struct MiniRecorderStackView: View {
     }
 
     private var maximumContextHeight: CGFloat {
-        MiniRecorderLayoutMetrics.contextHeightLimit(screenHeight: screenHeight, scale: CGFloat(hudScale.scale))
+        MiniRecorderLayoutMetrics.contextHeightLimit(screenHeight: screenHeight, scale: CGFloat(hudScale.scale),
+                                                     controlsHeight: controlsHeight)
     }
 
     private var liveTranscriptHeight: CGFloat {
@@ -150,14 +151,24 @@ struct MiniRecorderStackView: View {
         )
     }
 
+    private var controlsHeight: CGFloat {
+        let width = assistantSession.isVisible ? min(liveTranscriptWidth, MiniRecorderLayoutMetrics.assistantPanelWidth) : liveTranscriptWidth
+        return baseSession?.codexBanner.map { RecorderChatBannerLayout($0, availableWidth: width).height }
+            ?? MiniRecorderLayoutMetrics.controlBarHeight
+    }
+
+    private func extraChipHeight(_ session: RecordingSession) -> CGFloat {
+        RecorderChatBannerLayout.chipExtraHeight(session.codexBanner, availableWidth: liveTranscriptWidth)
+    }
+
     private var baseCardHeight: CGFloat {
         if assistantSession.isVisible {
-            return min(MiniRecorderLayoutMetrics.assistantPanelHeight, maximumContextHeight) + 41
+            return min(MiniRecorderLayoutMetrics.assistantPanelHeight, maximumContextHeight) + controlsHeight + MiniRecorderLayoutMetrics.separatorHeight
         }
         if let baseSession, baseSession.showsLiveContext {
-            return liveTranscriptHeight + 41
+            return liveTranscriptHeight + controlsHeight + MiniRecorderLayoutMetrics.separatorHeight
         }
-        return MiniRecorderLayoutMetrics.controlBarHeight
+        return controlsHeight
     }
 
     private var stackedChipCount: Int {
@@ -215,7 +226,8 @@ struct MiniRecorderStackView: View {
             layoutTick &+= 1
         }
         .background(RecorderPanelHeightSync(
-            desiredHeight: max(120, baseCardHeight + CGFloat(stackedChipCount) * 46 + 12),
+            desiredHeight: max(120, baseCardHeight + CGFloat(stackedChipCount) * MiniRecorderLayoutMetrics.stackedCardSpacing
+                + ordered.filter { $0.id != baseSession?.id }.reduce(0) { $0 + extraChipHeight($1) } + 12),
             edge: .bottom,
             scale: CGFloat(hudScale.scale)
         ))
@@ -224,8 +236,12 @@ struct MiniRecorderStackView: View {
     private func cardOffset(for session: RecordingSession) -> CGFloat {
         let distance = indexFromBottom(of: session)
         guard distance > 0 else { return 0 }
-        return -(baseCardHeight + 6 + CGFloat(distance - 1)
-                 * MiniRecorderLayoutMetrics.stackedCardSpacing)
+        let between = ordered.filter { other in
+            let position = indexFromBottom(of: other)
+            return position > 0 && position < distance
+        }
+        return -(baseCardHeight + 6 + CGFloat(distance - 1) * MiniRecorderLayoutMetrics.stackedCardSpacing
+                 + between.reduce(0) { $0 + extraChipHeight($1) })
     }
 
     // Distance of a session from the base, in card units. Base = 0, next-older = 1, etc.
@@ -270,6 +286,8 @@ struct MiniRecorderStackView: View {
             TranscribingChip(
                 session: session,
                 style: .mini,
+                availableWidth: liveTranscriptWidth,
+                onHeightChange: { layoutTick &+= 1 },
                 onCancel: { onCancelSession(session.id) }
             )
         }
@@ -352,7 +370,10 @@ struct NotchRecorderStackView: View {
         } else {
             pill = notchHeight + 6
         }
-        return max(120, pill + CGFloat(backgroundSessions.count) * 46 + 12)
+        return max(120, pill + backgroundSessions.reduce(CGFloat.zero) { height, session in
+            height + MiniRecorderLayoutMetrics.stackedCardSpacing
+                + RecorderChatBannerLayout.chipExtraHeight(session.codexBanner, availableWidth: liveTranscriptWidth)
+        } + 12)
     }
 
     var body: some View {
@@ -407,6 +428,8 @@ struct NotchRecorderStackView: View {
                 TranscribingChip(
                     session: session,
                     style: .notch,
+                    availableWidth: liveTranscriptWidth,
+                    onHeightChange: { layoutTick &+= 1 },
                     onCancel: { onCancelSession(session.id) }
                 )
                 .transition(.move(edge: .top).combined(with: .opacity))
@@ -437,10 +460,11 @@ struct TranscribingChip: View {
 
     @ObservedObject var session: RecordingSession
     let style: Style
+    var availableWidth = MiniRecorderLayoutMetrics.liveTranscriptWidth
+    var onHeightChange: () -> Void = {}
     let onCancel: () -> Void
 
     private var label: String {
-        if let banner = session.codexBanner { return banner }
         switch session.liveRecordingState {
         case .enhancing: return String(localized: "Enhancing…")
         default:         return String(localized: "Transcribing…")
@@ -448,15 +472,20 @@ struct TranscribingChip: View {
     }
 
     var body: some View {
+        let banner = session.codexBanner.map { RecorderChatBannerLayout($0, availableWidth: availableWidth, placement: .chip) }
         HStack(spacing: 8) {
             // Reuse the existing spinning processing indicator for visual consistency.
             ProcessingIndicator(color: .white.opacity(0.86))
                 .frame(width: 14, height: 14)
 
-            Text(label)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.white.opacity(0.82))
-                .lineLimit(1)
+            if let banner {
+                RecorderChatBanner(layout: banner)
+            } else {
+                Text(label)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.white.opacity(0.82))
+                    .lineLimit(1)
+            }
 
             // Pending cards omit the same secondary app/warning icon as the main bar.
             // Per-card cancel — stops THIS session's delivery only; recovery stays local.
@@ -465,7 +494,8 @@ struct TranscribingChip: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
-        .frame(width: session.codexBanner != nil ? 300 : (style == .mini ? 158 : 174))
+        .frame(width: banner?.cardWidth ?? (style == .mini ? 158 : 174), height: banner?.height)
+        .onChange(of: banner?.height) { _, _ in onHeightChange() }
         .background(Color.black.opacity(style == .mini ? 1.0 : 0.92))
         .clipShape(RoundedRectangle(cornerRadius: style == .mini ? 16 : 12, style: .continuous))
         .overlay(
