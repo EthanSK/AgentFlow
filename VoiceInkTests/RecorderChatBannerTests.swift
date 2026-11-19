@@ -20,10 +20,20 @@ struct RecorderChatBannerTests {
             #expect(layout.cardWidth <= width)
             let label = NSHostingView(rootView: RecorderChatBanner(layout: layout))
             #expect(label.fittingSize.height <= layout.height - (narrow ? MiniRecorderLayoutMetrics.controlBarHeight : 0))
-            let card = MiniRecorderView(stateProvider: session, liveTranscriptHeight: 0,
-                liveTranscriptWidth: width, recorder: recorder, assistantSession: assistant,
-                onRecordButtonTapped: {}, onCloseTapped: {}, onCancelTapped: {}, onAssistantFollowUp: { _ in })
-                .frame(width: layout.cardWidth, height: layout.height)
+            // A recording can show the live editor above its controls. Give the
+            // rendered card the same space as RecorderStackView's on-screen host.
+            let contextLimit = MiniRecorderLayoutMetrics.contextHeightLimit(
+                screenHeight: 900, scale: 1, controlsHeight: layout.height)
+            let contextHeight = session.showsLiveContext ? MiniRecorderLayoutMetrics.contextHeight(
+                parts: session.liveContextPreviewParts, typedText: session.canTypeInHUD ? session.typedInput : nil,
+                width: width, maxHeight: contextLimit) : 0
+            let height = layout.height + (session.showsLiveContext
+                ? contextHeight + MiniRecorderLayoutMetrics.separatorHeight : 0)
+            let card = MiniRecorderView(stateProvider: session, liveTranscriptHeight: contextHeight,
+                liveTranscriptWidth: width, maximumContextHeight: contextLimit,
+                recorder: recorder, assistantSession: assistant, onRecordButtonTapped: {},
+                onCloseTapped: {}, onCancelTapped: {}, onAssistantFollowUp: { _ in })
+                .frame(width: session.showsLiveContext ? width : layout.cardWidth, height: height)
             try attach(card, filename: filename)
         }
 
