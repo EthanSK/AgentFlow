@@ -6378,7 +6378,7 @@ struct VoiceInkTests {
         )
 
         let eagerStart = try #require(engineSource.range(
-            of: "job.transcriptionSession?.beginFinalization(audioURL: audioURL)"
+            of: "job.transcriptionSession?.beginFinalization(audioURL: audioURL, hasCapturedContext: hasCapturedContext)"
         ))
         let serialEnqueue = try #require(engineSource.range(
             of: "transcriptionJobQueue.enqueue(",

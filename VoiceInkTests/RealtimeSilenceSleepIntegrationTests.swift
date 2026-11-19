@@ -12,12 +12,14 @@ private final class SilenceSleepTestProvider: StreamingTranscriptionProvider, @u
     private var chunks: [Data] = []
     private var commits = 0
     private let errorOnCommit: Bool
+    private let committedText: String
 
-    init(errorOnCommit: Bool = false) {
+    init(errorOnCommit: Bool = false, committedText: String = "alpha beta") {
         let pair = AsyncStream.makeStream(of: StreamingTranscriptionEvent.self)
         transcriptionEvents = pair.stream
         continuation = pair.continuation
         self.errorOnCommit = errorOnCommit
+        self.committedText = committedText
     }
 
     var sent: [Data] { lock.withLock { chunks } }
@@ -30,7 +32,7 @@ private final class SilenceSleepTestProvider: StreamingTranscriptionProvider, @u
     func commit() async throws {
         lock.withLock { commits += 1 }
         if errorOnCommit { emit(.error(StreamingTranscriptionError.serverError("Synthetic failure"))) }
-        emit(.committed(text: "alpha beta"))
+        emit(.committed(text: committedText))
     }
     func disconnect() async { continuation.finish() }
 }
@@ -86,6 +88,45 @@ struct RealtimeSilenceSleepIntegrationTests {
             silenceSleepConfiguration: enabled ? shortConfiguration : nil,
             onSilenceSleepChange: { sleeping, _ in states.append(sleeping) },
             providerFactory: { _ in provider }), container)
+    }
+
+    @Test(arguments: [false, true], [false, true])
+    @MainActor func emptyRealtimeFinalIsCleanOnlyWithoutPartialsOrErrors(
+        sendsPartial: Bool, sendsError: Bool
+    ) async throws {
+        let provider = SilenceSleepTestProvider(errorOnCommit: sendsError, committedText: "")
+        // Even with silence sleep disabled, a synthetic empty event emitted by a
+        // provider error must not be mistaken for a successful empty final.
+        let run = try harness(provider: provider, enabled: false)
+        try await run.service.startStreaming(model: model(), context: .init(language: "en", prompt: nil))
+        run.service.sendAudioChunk(pcm(0))
+        if sendsPartial { provider.emit(.partial(text: "earlier words")) }
+        let result = try await run.service.stopAndGetFinalText()
+        #expect(result.isEmpty)
+        #expect(run.service.completedEmptyWithoutPartials == (!sendsPartial && !sendsError))
+    }
+
+    @Test @MainActor func emptyRealtimeFallbackKeepsAQuickRecovery() async throws {
+        let result = try await StreamingTranscriptionSession.finishEmptyRealtimeFallback {
+            "missed speech recovered"
+        }
+        #expect(result == "missed speech recovered")
+    }
+
+    @Test @MainActor func stalledEmptyRealtimeFallbackCancelsTheUpload() async {
+        let startsAndCancels = SilenceSleepTestStates()
+        do {
+            _ = try await StreamingTranscriptionSession.finishEmptyRealtimeFallback(limit: .milliseconds(40)) {
+                startsAndCancels.append(true)
+                defer { startsAndCancels.append(Task.isCancelled) }
+                try await Task.sleep(for: .seconds(30))
+                return "too late"
+            }
+            Issue.record("The stalled fallback must throw a timeout.")
+        } catch {
+            #expect((error as? URLError)?.code == .timedOut)
+        }
+        #expect(startsAndCancels.snapshot == [true, true])
     }
 
     @Test @MainActor func sleepingAtStopFlushesTheQueueAndReturnsOneCompleteRealtimeFinal() async throws {

@@ -221,6 +221,8 @@ class StreamingTranscriptionService {
     private var stopStartedAt: Date?
     private var firstPartialLogged = false
     private var firstCommitLogged = false
+    private var sawProviderError = false
+    private(set) var completedEmptyWithoutPartials = false
 
     init(
         modelContext: ModelContext,
@@ -285,6 +287,8 @@ class StreamingTranscriptionService {
         // reject an otherwise intact realtime stream on every ordinary startup replay.
         firstPartialLogged = false
         firstCommitLogged = false
+        sawProviderError = false
+        completedEmptyWithoutPartials = false
 
         let provider = createProvider(for: model)
         self.provider = provider
@@ -403,7 +407,8 @@ class StreamingTranscriptionService {
         }
 
         // Wait for the server to acknowledge our commit (or timeout)
-        let finalText = await waitForFinalCommit(signalStream: signalStream)
+        let receivedFinal = await waitForFinalCommit(signalStream: signalStream)
+        let finalText = committedSegments.joined(separator: " ")
         // A socket error may arrive after the pre-commit drain check. Never accept a
         // later plausible final after that error; the complete WAV remains available.
         guard metrics.snapshot().isComplete else {
@@ -411,6 +416,10 @@ class StreamingTranscriptionService {
             await cleanupStreaming()
             throw StreamingTranscriptionError.incompleteAudio
         }
+        // Provider errors can also emit an empty event to wake Stop. A timeout,
+        // an error, and a stream with earlier words need the regular fallback.
+        completedEmptyWithoutPartials = receivedFinal && finalText.isEmpty
+            && !firstPartialLogged && !sawProviderError
         if let stopStartedAt {
             logger.notice("Streaming stop completed elapsed=\(Date().timeIntervalSince(stopStartedAt), format: .fixed(precision: 3), privacy: .public)s finalChars=\(finalText.count, privacy: .public)")
         }
@@ -617,6 +626,7 @@ class StreamingTranscriptionService {
                     break
                 case .error(let error):
                     await MainActor.run {
+                        self.sawProviderError = true
                         self.logger.error("Streaming event error: \(error, privacy: .public)")
                         // Gated sessions only (other providers keep their existing
                         // behavior): a provider error or socket failure before the final
@@ -638,7 +648,7 @@ class StreamingTranscriptionService {
     }
 
     /// Waits for the server to acknowledge our explicit commit, with a 10-second timeout.
-    private func waitForFinalCommit(signalStream: AsyncStream<Void>) async -> String {
+    private func waitForFinalCommit(signalStream: AsyncStream<Void>) async -> Bool {
         // Race: wait for commit acknowledgment vs timeout
         let receivedInTime = await withTaskGroup(of: Bool.self) { group in
             group.addTask { @MainActor in
@@ -667,7 +677,7 @@ class StreamingTranscriptionService {
             logger.warning("No transcript received from streaming")
         }
 
-        return committedSegments.isEmpty ? "" : committedSegments.joined(separator: " ")
+        return receivedInTime
     }
 
     private func cleanupStreaming() async {

@@ -11,7 +11,7 @@ protocol TranscriptionSession: AnyObject {
     /// its serial post-processing/delivery turn. File/local sessions deliberately
     /// remain serialized; a realtime cloud session may close its own socket now
     /// while the immutable job identity preserves FIFO delivery later.
-    func beginFinalization(audioURL: URL)
+    func beginFinalization(audioURL: URL, hasCapturedContext: Bool)
 
     /// Called after recording stops. Returns the final transcribed text.
     func transcribe(audioURL: URL) async throws -> String
@@ -27,7 +27,7 @@ protocol TranscriptionSession: AnyObject {
 }
 
 extension TranscriptionSession {
-    func beginFinalization(audioURL _: URL) {}
+    func beginFinalization(audioURL _: URL, hasCapturedContext _: Bool) {}
     func noteSessionActivity() {}
 }
 
@@ -215,13 +215,13 @@ final class StreamingTranscriptionSession: TranscriptionSession {
         return callback
     }
 
-    func beginFinalization(audioURL: URL) {
+    func beginFinalization(audioURL: URL, hasCapturedContext: Bool) {
         guard eagerlyFinalizesAfterStop else { return }
         let didBegin = finalization.begin(audioURL: audioURL) { [weak self] boundAudioURL in
             guard let self else {
                 throw VoiceInkEngineError.transcriptionFailed
             }
-            return try await self.performTranscription(audioURL: boundAudioURL)
+            return try await self.performTranscription(audioURL: boundAudioURL, hasCapturedContext: hasCapturedContext)
         }
         if didBegin {
             logger.notice("Streaming finalization started at recording stop file=\(audioURL.lastPathComponent, privacy: .public)")
@@ -233,11 +233,11 @@ final class StreamingTranscriptionSession: TranscriptionSession {
             guard let self else {
                 throw VoiceInkEngineError.transcriptionFailed
             }
-            return try await self.performTranscription(audioURL: boundAudioURL)
+            return try await self.performTranscription(audioURL: boundAudioURL, hasCapturedContext: true)
         }
     }
 
-    private func performTranscription(audioURL: URL) async throws -> String {
+    private func performTranscription(audioURL: URL, hasCapturedContext: Bool) async throws -> String {
         guard let model = model else {
             throw VoiceInkEngineError.transcriptionFailed
         }
@@ -251,6 +251,7 @@ final class StreamingTranscriptionSession: TranscriptionSession {
         }
         try Task.checkCancellation()
 
+        var useShortEmptyFallback = false
         if !streamingFailed {
             do {
                 let start = Date()
@@ -267,6 +268,9 @@ final class StreamingTranscriptionSession: TranscriptionSession {
                     // Realtime partials are HUD preview only. An empty commit must
                     // not become a blank paste or skip the user's configured Return;
                     // finish the same audio through the normal provider first.
+                    useShortEmptyFallback = model.provider == .openAI
+                        && model.name == OpenAITranscriptionConfiguration.liveModelName
+                        && streamingService.completedEmptyWithoutPartials && !hasCapturedContext
                     logger.warning("Streaming finalized without usable text; falling back to completed-file transcription")
                 }
             } catch is CancellationError {
@@ -286,10 +290,36 @@ final class StreamingTranscriptionSession: TranscriptionSession {
         // evaluation: .agents/skills/learnings/references/openai-transcription-quality.md.
         let fallbackStart = Date()
         logger.notice("Using batch fallback for \(model.displayName, privacy: .public) file=\(audioURL.lastPathComponent, privacy: .public)")
-        let text = try await fallbackService.transcribe(audioURL: audioURL, model: model, context: context)
+        let text: String
+        if useShortEmptyFallback {
+            // Give a clean empty dictation one chance to recover missed speech.
+            // The OpenAI upload cooperates with task cancellation. A deadline
+            // releases the queue and takes the existing History/retry error path.
+            text = try await Self.finishEmptyRealtimeFallback {
+                try await self.fallbackService.transcribe(audioURL: audioURL, model: model, context: self.context)
+            }
+        } else {
+            text = try await fallbackService.transcribe(audioURL: audioURL, model: model, context: context)
+        }
         try Task.checkCancellation()
         logger.notice("Batch fallback completed elapsed=\(Date().timeIntervalSince(fallbackStart), format: .fixed(precision: 3), privacy: .public)s chars=\(text.count, privacy: .public)")
         return text
+    }
+
+    static func finishEmptyRealtimeFallback(
+        limit: Duration = .seconds(10),
+        operation: @escaping @MainActor @Sendable () async throws -> String
+    ) async throws -> String {
+        try await withThrowingTaskGroup(of: String.self) { group in
+            group.addTask { try await operation() }
+            group.addTask {
+                try await Task.sleep(for: limit)
+                throw URLError(.timedOut)
+            }
+            defer { group.cancelAll() }
+            guard let result = try await group.next() else { throw CancellationError() }
+            return result
+        }
     }
 
     func cancel() {

@@ -1,5 +1,21 @@
 # Learnings
 
+## 2026-11-19 — An empty GPT Live result can hold up later recordings
+
+One build 529 recording received a clean empty live final 0.655 seconds after
+Stop, then waited another 49.433 seconds for an also-empty completed-WAV
+response. A later recording had already finalized but its paste waited behind
+that job. The retained WAV had substantial peak and RMS levels, so signal level
+was not evidence of speech. Both model results reported zero words.
+
+For a fresh GPT Live dictation with no captured context, a clean empty final
+with no partials can spend up to 10 seconds on its existing completed-WAV
+fallback. A good result within the budget still wins. A timeout cancels the
+upload, frees the queue and uses the existing failed-recording History retry
+with the original WAV. Keep the ordinary fallback when the stream was
+incomplete, errored, had earlier partials or the user captured text or images.
+Do not assume all empty live responses mean acoustic silence.
+
 ## 2026-11-18 — Keep the mic live for a configurable time after Stop
 
 - Ethan asked to keep recording after Stop so the end of speech has more time to
