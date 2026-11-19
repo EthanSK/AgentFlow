@@ -901,7 +901,12 @@ struct AgentFlowPromptArchiveTests {
         let pipeline = try String(contentsOf: root.appendingPathComponent("VoiceInk/Transcription/Engine/TranscriptionPipeline.swift"), encoding: .utf8)
         #expect(pipeline.contains("pasteTargetForDelivery.destination == .primaryCurrentInput"))
         #expect(pipeline.contains("includesSourceContext && !skipPostProcessingNow && !assistant.isFollowUp"))
-        #expect(pipeline.contains("copyText: completePromptText ?? completedText"))
+        let missingArchive = try #require(pipeline.range(of: "if usesCompactPrompt && compactPromptText == nil {"))
+        let queue = try #require(pipeline.range(of: "if let directCodex, let compactPromptText {", range: missingArchive.upperBound..<pipeline.endIndex))
+        let recovery = pipeline[missingArchive.upperBound..<queue.lowerBound]
+        #expect(recovery.contains("let fullText = completePromptText ?? completedText"))
+        #expect(recovery.contains("copyCompletedText(fullText)") && recovery.contains("copyText: fullText"))
+        #expect(recovery.contains("return"))
         #expect(pipeline.contains("includeTiming: !skipPostProcessingNow, includeReadablePreview: false"))
     }
 
