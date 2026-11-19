@@ -362,6 +362,19 @@ struct LiveSelectionReference: Equatable, Sendable {
     /// exact captured excerpts still come from interleaving() into the archive.
     /// Reuse its cumulative speech anchors, never infer order from wall clocks.
     static func compactPromptSections(_ references: [Self], with transcript: String) -> [AgentFlowPromptPreview.Section] {
+        // Continuous dictation often has just its opening timing marker. Its
+        // preview is one speech section: no word offsets need to be rebuilt
+        // for every growing realtime partial or for the final compact prompt.
+        if references.allSatisfy({ $0.speechBoundary && !$0.followsAllSpeech && $0.spokenWordCount == 0 }) {
+            let whitespace = CharacterSet.whitespacesAndNewlines
+            guard let first = transcript.unicodeScalars.first, let last = transcript.unicodeScalars.last else { return [] }
+            let text = whitespace.contains(first) || whitespace.contains(last)
+                ? transcript.trimmingCharacters(in: whitespace) : transcript
+            guard !text.isEmpty else { return [] }
+            let flagged = references.last?.potentialTTS == true
+            return [.init(tag: flagged ? "potential_tts" : "speech", text: text,
+                          color: flagged ? LiveSelectionStyledMath.potentialTTSColor : LiveSelectionStyledMath.speechColor)]
+        }
         let wordEnds = wordEndIndices(in: transcript)
         let speechTimings = references.filter(\.speechBoundary)
         var lastWordCount = 0

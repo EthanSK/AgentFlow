@@ -468,15 +468,23 @@ enum CodexConversationContextReader {
     /// Current desktop builds publish owner activity in the host log, including
     /// background chats. It may corroborate an exact local window/pane match,
     /// but never choose a chat by recency.
-    nonisolated static func wasActiveLocalChat(_ id: UUID, pid: pid_t, at date: Date) -> Bool {
+    nonisolated static func localChatActivity(_ id: UUID, pid: pid_t, launchedAt: Date?, at date: Date) -> Bool? {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let cutoff = formatter.string(from: date)
         let needle = Data((" conversationId=" + id.uuidString.lowercased() + " resumeState=").utf8)
         let urls = codexLogURLs(processIdentifier: pid, fileManager: .default)
             .filter { $0.lastPathComponent.contains("-\(pid)-t0-") }
+        var coversLaunch = false
         for url in urls.prefix(4) {
-            guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return false }
+            guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
+            // A dormant chat with the same title has no activity at all. Only
+            // treat absence as inactive when this is the unrotated launch log.
+            if urls.count == 1, url.lastPathComponent.hasSuffix("-0.log"), let launchedAt,
+               let first = formatter.date(from: String(decoding: data.prefix(24), as: UTF8.self)),
+               abs(first.timeIntervalSince(launchedAt)) < 30 {
+                coversLaunch = true
+            }
             var upper = data.endIndex
             while let hit = data.range(of: needle, options: .backwards, in: 0..<upper) {
                 upper = hit.lowerBound
@@ -490,7 +498,7 @@ enum CodexConversationContextReader {
                 if event == " info [host-app-server-manager] thread_stream_view_activity_changed active=true" { return true }
             }
         }
-        return false
+        return coversLaunch ? false : nil
     }
 
     nonisolated private static func codexLogURLs(

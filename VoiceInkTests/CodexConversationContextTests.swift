@@ -15,10 +15,14 @@ struct CodexConversationContextTests {
         defer { sqlite3_close(handle) }
         #expect(sqlite3_exec(handle, "CREATE TABLE threads (id TEXT, archived INT, name TEXT, title TEXT)", nil, nil, nil) == SQLITE_OK)
         #expect(sqlite3_exec(handle, "INSERT INTO threads VALUES ('\(id.uuidString)',0,'Chat A','Old name')", nil, nil, nil) == SQLITE_OK)
-        #expect(CodexRecordingCapture.uniqueLocalID(named: "Old name", databaseURL: db) == nil)
-        #expect(CodexRecordingCapture.uniqueLocalID(named: "Chat A", databaseURL: db) == id)
+        #expect(CodexRecordingCapture.localIDs(named: "Old name", databaseURL: db).isEmpty)
+        #expect(CodexRecordingCapture.localIDs(named: "Chat A", databaseURL: db) == [id])
         #expect(sqlite3_exec(handle, "INSERT INTO threads VALUES ('\(UUID().uuidString)',0,'Chat A','')", nil, nil, nil) == SQLITE_OK)
-        #expect(CodexRecordingCapture.uniqueLocalID(named: "Chat A", databaseURL: db) == nil)
+        let candidates = CodexRecordingCapture.localIDs(named: "Chat A", databaseURL: db)
+        #expect(candidates.count == 2)
+        #expect(CodexRecordingCapture.singleActiveChat(candidates) { $0 == id } == id)
+        #expect(CodexRecordingCapture.singleActiveChat(candidates) { _ in true } == nil)
+        #expect(CodexRecordingCapture.singleActiveChat(candidates) { $0 == id ? true : nil } == nil)
     }
 
     @Test @MainActor func recordingChatSurvivesStopAndYieldsToExplicitDeliveryChoices() async throws {

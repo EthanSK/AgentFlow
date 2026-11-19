@@ -411,6 +411,19 @@ struct LiveSelectionFallbackTests {
         ])
     }
 
+    @Test func uninterruptedLongSpeechKeepsItsFullPreviewAndTimingColour() {
+        let words = String(repeating: "twenty thousand words ", count: 7_000) + "finished"
+        let start = Date()
+        let marker = LiveSelectionReference.speechTiming(after: "", startedAt: start, endedAt: start)
+        #expect(LiveSelectionReference.previewParts([], with: words) == [.speech(words)])
+        #expect(LiveSelectionReference.previewParts([marker], with: "\n" + words + "  ") == [.speech(words)])
+        #expect(LiveSelectionReference.previewParts([marker], with: "\n ") == [])
+        let flagged = LiveSelectionReference.annotatingSpeech([marker],
+            overlaps: [DateInterval(start: start.addingTimeInterval(-1), end: start.addingTimeInterval(1))],
+            sessionStartedAt: start, captureEndedAt: start)
+        #expect(LiveSelectionReference.previewParts(flagged, with: words) == [.potentialTTS(words)])
+    }
+
     @Test func longTimelineAnchorReadsAvoidRescanningCumulativeSpeech() throws {
         let original = try #require(LiveSelectionReference("selection"))
         let prefixes = (1...100).map { String(repeating: "spoken word ", count: $0 * 10) }

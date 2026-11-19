@@ -47,6 +47,7 @@ struct CodexRecordingCapture {
               let mode = ModeRuntimeResolver.modeSnapshot(forPasteTargetBundleIdentifier: app.bundleIdentifier),
               mode.isEnabled, mode.outputMode == .paste, mode.autoSendKey != .none else { return nil }
         let pid = app.processIdentifier
+        let launchedAt = app.launchDate
         let application = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(application, 0.15)
         let window = element(application, kAXFocusedWindowAttribute)
@@ -59,17 +60,20 @@ struct CodexRecordingCapture {
             let chatName: String
             switch conversation(in: window, focused: focused) {
             case .main:
-                guard let mainID = uniqueLocalID(named: name) else { return nil }
+                let candidates = localIDs(named: name)
+                guard let mainID = singleActiveChat(candidates, activity: {
+                    CodexConversationContextReader.localChatActivity($0, pid: pid, launchedAt: launchedAt, at: instant)
+                }) else { return nil }
                 id = mainID
                 chatName = name
             case .side(let sideID):
-                guard let sideName = CodexSelectionThreadTitleReader.title(for: sideID.uuidString.lowercased()) else { return nil }
+                guard CodexConversationContextReader.localChatActivity(sideID, pid: pid, launchedAt: launchedAt, at: instant) == true,
+                      let sideName = CodexSelectionThreadTitleReader.title(for: sideID.uuidString.lowercased()) else { return nil }
                 id = sideID
                 chatName = sideName
             case .unknown: return nil
             }
-            guard CodexConversationContextReader.wasActiveLocalChat(id, pid: pid, at: instant),
-                  value(window, kAXTitleAttribute) as? String == name else { return nil }
+            guard value(window, kAXTitleAttribute) as? String == name else { return nil }
             let resources = bundleURL.appendingPathComponent("Contents/Resources")
             guard let cli = ["codex-cli/CodexCLI.app/Contents/MacOS/codex", "codex"]
                 .map({ resources.appendingPathComponent($0) })
@@ -145,23 +149,41 @@ struct CodexRecordingCapture {
         return found ? .main : .unknown
     }
 
-    static func uniqueLocalID(named title: String, databaseURL: URL = FileManager.default
-        .homeDirectoryForCurrentUser.appendingPathComponent(".codex/state_5.sqlite")) -> UUID? {
+    static func singleActiveChat(_ candidates: [UUID], activity: (UUID) -> Bool?) -> UUID? {
+        var match: UUID?
+        for id in candidates {
+            guard let active = activity(id) else { return nil }
+            if active {
+                guard match == nil else { return nil }
+                match = id
+            }
+        }
+        return match
+    }
+
+    static func localIDs(named title: String, databaseURL: URL = FileManager.default
+        .homeDirectoryForCurrentUser.appendingPathComponent(".codex/state_5.sqlite")) -> [UUID] {
         var database: OpaquePointer?
         guard sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
             sqlite3_close(database)
-            return nil
+            return []
         }
         defer { sqlite3_close(database) }
         var statement: OpaquePointer?
-        let sql = "SELECT id FROM threads WHERE archived = 0 AND COALESCE(NULLIF(name,''), title) = ?1 LIMIT 2"
-        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return nil }
+        let sql = "SELECT id FROM threads WHERE archived = 0 AND COALESCE(NULLIF(name,''), title) = ?1 LIMIT 9"
+        guard sqlite3_prepare_v2(database, sql, -1, &statement, nil) == SQLITE_OK else { return [] }
         defer { sqlite3_finalize(statement) }
         return title.withCString { pointer in
-            guard sqlite3_bind_text(statement, 1, pointer, -1, nil) == SQLITE_OK,
-                  sqlite3_step(statement) == SQLITE_ROW, let raw = sqlite3_column_text(statement, 0) else { return nil }
-            let id = UUID(uuidString: String(cString: raw))
-            return sqlite3_step(statement) == SQLITE_DONE ? id : nil
+            guard sqlite3_bind_text(statement, 1, pointer, -1, nil) == SQLITE_OK else { return [] }
+            var ids: [UUID] = []
+            var status = sqlite3_step(statement)
+            while status == SQLITE_ROW {
+                guard ids.count < 8, let raw = sqlite3_column_text(statement, 0),
+                      let id = UUID(uuidString: String(cString: raw)) else { return [] }
+                ids.append(id)
+                status = sqlite3_step(statement)
+            }
+            return status == SQLITE_DONE ? ids : []
         }
     }
 }

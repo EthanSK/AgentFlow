@@ -10,10 +10,11 @@ writer or replay an uncertain send through the currently focused UI.
 
 The measured desktop logs use a host-wide activity event, including background chats.
 An activity event alone cannot identify a destination. Resolve the recording-start
-window and pane once, corroborate a uniquely named, saved local main chat against
-its own activity, and use only a typed side-chat tab ID for a side pane. Keep lookup
+window and pane once, corroborate the window name against one active, saved local main chat, and use only a typed side-chat tab ID for a side pane. Keep lookup
 and queueing away from audio capture and transcript updates. A display timer on the
 main queue coalesces missed meter ticks instead of replaying stale frames.
+Uninterrupted speech with only opening timing markers is a single preview section.
+Building a word-offset array on every partial adds work proportional to dictation length.
 
 
 ## 2026-11-19 — An empty GPT Live result can hold up later recordings
