@@ -854,7 +854,7 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         case .chat(let target):
             return recordingState.isProcessing ? "Will send to " + target.name : "Chat detected · " + target.name
         case .detecting: return "Detecting Codex chat…"
-        case .unavailable: return "Chat unclear · saving in History"
+        case .unavailable: return "Chat unclear · will copy prompt"
         case nil: return nil
         }
     }

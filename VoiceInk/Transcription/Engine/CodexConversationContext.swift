@@ -475,16 +475,29 @@ enum CodexConversationContextReader {
         let needle = Data((" conversationId=" + id.uuidString.lowercased() + " resumeState=").utf8)
         let urls = codexLogURLs(processIdentifier: pid, fileManager: .default)
             .filter { $0.lastPathComponent.contains("-\(pid)-t0-") }
+        return activity(for: needle, through: cutoff, in: urls, launchedAt: launchedAt, formatter: formatter)
+    }
+
+    /// Codex rotates the same process log at 10 MiB. Missing activity proves a
+    /// chat dormant only with continuous records all the way back to this launch.
+    nonisolated static func activity(for needle: Data, through cutoff: String, in urls: [URL],
+                                     launchedAt: Date?, formatter: ISO8601DateFormatter) -> Bool? {
+        guard let newest = urls.first?.deletingPathExtension().lastPathComponent,
+              let dash = newest.lastIndex(of: "-") else { return nil }
+        let stem = String(newest[...dash])
+        let rotations = urls.compactMap { url -> (Int, URL)? in
+            let name = url.deletingPathExtension().lastPathComponent
+            guard name.hasPrefix(stem), let number = Int(name.dropFirst(stem.count)) else { return nil }
+            return (number, url)
+        }.sorted { $0.0 > $1.0 }
+        var expected = rotations.first?.0
         var coversLaunch = false
-        for url in urls.prefix(4) {
-            guard let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
-            // A dormant chat with the same title has no activity at all. Only
-            // treat absence as inactive when this is the unrotated launch log.
-            if urls.count == 1, url.lastPathComponent.hasSuffix("-0.log"), let launchedAt,
+        for (number, url) in rotations {
+            guard number == expected, let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
+            expected = number - 1
+            if number == 0, let launchedAt,
                let first = formatter.date(from: String(decoding: data.prefix(24), as: UTF8.self)),
-               abs(first.timeIntervalSince(launchedAt)) < 30 {
-                coversLaunch = true
-            }
+               abs(first.timeIntervalSince(launchedAt)) < 30 { coversLaunch = true }
             var upper = data.endIndex
             while let hit = data.range(of: needle, options: .backwards, in: 0..<upper) {
                 upper = hit.lowerBound

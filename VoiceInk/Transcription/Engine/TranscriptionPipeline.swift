@@ -1183,33 +1183,33 @@ class TranscriptionPipeline {
             return
         }
         if usesCompactPrompt && compactPromptText == nil {
-            // A missing archive must never produce a broken link, truncated
-            // "success", attachment retry, or Return. Keep the entire result.
+            let fullText = completePromptText ?? completedText
+            let copied = directCodex != nil && copyCompletedText(fullText)
             saveTranscriptionAndPostCompletion()
             await onDismiss()
             NotificationManager.shared.showNotification(
-                title: "Couldn’t save the prompt file — full text saved in History",
-                type: .error, copyText: completePromptText ?? completedText)
+                title: copied ? "Couldn’t save the prompt file · full text copied" : "Couldn’t save the prompt file — full text saved in History",
+                type: .error, copyText: fullText)
             return
         }
-        if let directCodex {
-            // Keep the canonical result. Never retry an uncertain queue receipt
-            // or fall through to the keyboard-focused app after a chat switch.
+        if let directCodex, let compactPromptText {
             guard isDeliveryAuthorized(), !shouldCancel() else {
                 await finishCanceledTranscription(recoveredText: finalText)
                 return
             }
-            let queued: Bool
-            if case let .chat(target) = directCodex, let compactPromptText {
-                queued = await target.enqueue(compactPromptText)
-            } else {
-                queued = false
-            }
-            if !queued {
+            let result = await directCodex.deliver(compactPromptText, copy: copyCompletedText)
+            let identified: Bool
+            if case .chat = directCodex { identified = true } else { identified = false }
+            vippLog.info("Codex delivery identified=\(identified, privacy: .public) queued=\(result.queued, privacy: .public) copied=\(result.copied, privacy: .public) \(jobIdentity.logDescription, privacy: .public)")
+            if !result.queued {
                 transcription.preservesOriginalAudioForRecovery = true
+                let reason = identified ? "Couldn’t send to the Codex chat" : "Couldn’t identify the Codex chat"
                 NotificationManager.shared.showNotification(
-                    title: "Couldn’t queue the Codex message · prompt saved in History",
-                    type: .error, copyText: completePromptText ?? completedText)
+                    title: reason + (result.copied ? " · prompt copied" : " · prompt saved in History"),
+                    type: .error, copyText: compactPromptText)
+            } else if !result.copied {
+                NotificationManager.shared.showNotification(title: "Queued in Codex · couldn’t copy the prompt",
+                                                           type: .error, copyText: compactPromptText)
             }
             saveTranscriptionAndPostCompletion()
             await onDismiss()

@@ -7205,3 +7205,9 @@ The previous companion transferred text only, even though VS Code had the exact 
 ## 2026-11-17 — Embed interpretation guidance in linked prompt Markdown
 
 The optional guidance in a linked full prompt interprets the recorded conversation's speech, typing, selections and screenshots. Read the local Context Interpretation.md source through the existing bounded regular-file reader, retain the skill reminder if the source is unavailable, and leave the pasted inline message and HTML timeline alone. Append to the checked original archive only once so repeated delivery does not duplicate the guidance.
+
+## Codex queue recovery and recorder-start identity
+
+Build 531 returned before copying its final Codex prompt. A copy action on an error notification did not place it on the clipboard. Keep the exact queued preview and archive link on the clipboard before enqueue, including a destination lookup failure. Distinguish chat identification from a rejected queue command in the notification.
+
+On the installed Codex desktop, the focused ProseMirror composer is in a ComposerLayoutBody sibling of the Conversation scroll region. A genuine main composer can remain focused with another panel open. The host's first active event for an opened chat was recorded several seconds after dictation began, and the 10 MiB log rotated during use. Verify retained contiguous rotations and confirm only the original, unique candidate when the activity report is late.

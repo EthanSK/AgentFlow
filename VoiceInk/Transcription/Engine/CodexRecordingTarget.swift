@@ -33,6 +33,16 @@ struct CodexRecordingTarget: Equatable, Sendable {
 enum CodexRecordingRoute: Equatable {
     case detecting, unavailable
     case chat(CodexRecordingTarget)
+
+    /// Codex mode keeps the same finished prompt on the clipboard for manual paste.
+    /// Copy once, before waiting on the queue, including when detection was inconclusive.
+    @MainActor func deliver(_ prompt: String, copy: (String) -> Bool,
+                            enqueue: (CodexRecordingTarget, String) async -> Bool = { await $0.enqueue($1) })
+        async -> (copied: Bool, queued: Bool) {
+        let copied = copy(prompt)
+        guard case .chat(let target) = self else { return (copied, false) }
+        return (copied, await enqueue(target, prompt))
+    }
 }
 
 struct CodexRecordingCapture {
@@ -58,13 +68,37 @@ struct CodexRecordingCapture {
             guard let window, let name, !name.isEmpty else { return nil }
             let id: UUID
             let chatName: String
-            switch conversation(in: window, focused: focused) {
+            let pane = conversation(in: window, focused: focused)
+            guard value(window, kAXTitleAttribute) as? String == name else { return nil }
+            switch pane {
             case .main:
                 let candidates = localIDs(named: name)
-                guard let mainID = singleActiveChat(candidates, activity: {
-                    CodexConversationContextReader.localChatActivity($0, pid: pid, launchedAt: launchedAt, at: instant)
-                }) else { return nil }
-                id = mainID
+                func activeChat(at date: Date) -> UUID? {
+                    singleActiveChat(candidates, activity: {
+                        CodexConversationContextReader.localChatActivity($0, pid: pid, launchedAt: launchedAt, at: date)
+                    })
+                }
+                if let match = activeChat(at: instant) {
+                    id = match
+                } else {
+                    // Codex can report the newly opened chat several seconds after its
+                    // composer is visible. Only confirm the single original candidate,
+                    // while its original title and pane still agree. Never retarget.
+                    guard candidates.count == 1 else { return nil }
+                    var confirmed: UUID?
+                    for delay in [1, 2, 3] {
+                        try? await Task.sleep(for: .seconds(delay))
+                        guard !Task.isCancelled,
+                              value(window, kAXTitleAttribute) as? String == name else { return nil }
+                        if let match = activeChat(at: Date()), conversation(in: window, focused: element(application, kAXFocusedUIElementAttribute)) == .main,
+                           value(window, kAXTitleAttribute) as? String == name {
+                            confirmed = match
+                            break
+                        }
+                    }
+                    guard let confirmed else { return nil }
+                    id = confirmed
+                }
                 chatName = name
             case .side(let sideID):
                 guard CodexConversationContextReader.localChatActivity(sideID, pid: pid, launchedAt: launchedAt, at: instant) == true,
@@ -73,7 +107,6 @@ struct CodexRecordingCapture {
                 chatName = sideName
             case .unknown: return nil
             }
-            guard value(window, kAXTitleAttribute) as? String == name else { return nil }
             let resources = bundleURL.appendingPathComponent("Contents/Resources")
             guard let cli = ["codex-cli/CodexCLI.app/Contents/MacOS/codex", "codex"]
                 .map({ resources.appendingPathComponent($0) })
@@ -114,12 +147,20 @@ struct CodexRecordingCapture {
         var node = focused
         var inConversation = false
         var pane = Pane.unknown
+        let editor = focused.flatMap { value($0, "AXDOMClassList") as? [String] }?.contains("ProseMirror") == true
+        var inComposer = false
         for _ in 0..<60 {
             guard let current = node else { break }
-            if CFEqual(current, window) { if inConversation && pane != .unknown { return pane }; break }
+            if CFEqual(current, window) { if (inConversation || inComposer) && pane != .unknown { return pane }; break }
+            if editor && !inComposer {
+                // The desktop composer is a sibling of the Conversation region.
+                inComposer = (value(current, "AXDOMClassList") as? [String])?.contains {
+                    $0.hasPrefix("ComposerLayoutBody-")
+                } == true
+            }
             let subrole = value(current, kAXSubroleAttribute) as? String
             if subrole == "AXTabPanel" || value(current, kAXRoleAttribute) as? String == "AXTabPanel" {
-                guard inConversation else { return .unknown }
+                guard inConversation || inComposer else { return .unknown }
                 pane = sidePane(identifier: value(current, "AXDOMIdentifier") as? String)
                 guard pane != .unknown else { return .unknown }
             }

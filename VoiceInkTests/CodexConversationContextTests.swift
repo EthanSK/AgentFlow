@@ -4,6 +4,52 @@ import SQLite3
 @testable import VoiceInkPlusPlus
 
 struct CodexConversationContextTests {
+    @Test @MainActor func codexDeliveryCopiesTheExactPromptOnSuccessAndFailure() async {
+        let prompt = "Two lines\nRead the [full prompt](/tmp/prompt.html)"
+        let target = CodexRecordingTarget(id: UUID(), name: "A", executable: URL(fileURLWithPath: "/unused"))
+        for route in [CodexRecordingRoute.chat(target), .unavailable] {
+            for queueSucceeds in [true, false] {
+                var clipboard: [String] = []
+                var sends = 0
+                let result = await route.deliver(prompt, copy: { clipboard.append($0); return true }) { actual, message in
+                    #expect(actual == target && clipboard == [message])
+                    sends += 1
+                    return queueSucceeds
+                }
+                #expect(clipboard == [prompt])
+                #expect(result.copied)
+                #expect(sends == (route == .chat(target) ? 1 : 0))
+                #expect(result.queued == (route == .chat(target) && queueSucceeds))
+            }
+        }
+    }
+
+    @Test func contiguousLogRotationsDistinguishAnInactiveChatFromMissingEvidence() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let fmt = ISO8601DateFormatter()
+        fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let start = "2026-11-19T12:54:54.000Z"
+        let launch = try #require(fmt.date(from: start))
+        let id = UUID().uuidString.lowercased()
+        let needle = Data((" conversationId=" + id + " resumeState=").utf8)
+        func file(_ index: Int, _ text: String) throws -> URL {
+            let path = root.appendingPathComponent("desktop-321-t0-i1-125454-\(index).log")
+            try Data(text.utf8).write(to: path)
+            return path
+        }
+        let first = try file(0, start + " info launched\n")
+        let middle = try file(1, "2026-11-19T16:00:00.000Z info unrelated\n")
+        let last = try file(2, "2026-11-19T17:18:36.390Z info [host-app-server-manager] thread_stream_view_activity_changed active=true conversationId=" + id + " resumeState=resumed\n")
+        func activity(_ files: [URL], _ at: String) -> Bool? {
+            CodexConversationContextReader.activity(for: needle, through: at, in: files, launchedAt: launch, formatter: fmt)
+        }
+        #expect(activity([last, middle, first], "2026-11-19T17:18:32.000Z") == false)
+        #expect(activity([last, middle, first], "2026-11-19T17:18:37.000Z") == true)
+        #expect(activity([last, first], "2026-11-19T17:18:32.000Z") == nil)
+    }
+
     @Test func duplicateTitlesAndUnknownSidePanelsHaveNoSendTarget() throws {
         let id = UUID()
         #expect(CodexRecordingCapture.sidePane(identifier: "app-shell-tab-panel-sidechat:" + id.uuidString) == .side(id))
