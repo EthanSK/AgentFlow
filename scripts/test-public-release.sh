@@ -94,9 +94,29 @@ ordinary=$(grep -E '^✔ Test .* passed after' "$passed_log" | grep -v '^✔ Tes
 parameterized=$(awk '/✔ Test .+ with [0-9]+ test cases passed after/ { n++ } END { print n+0 }' "$passed_log")
 named=$((ordinary + parameterized))
 test "$count" -ge 365
-test "$named" = "$count" || {
-  echo "Test summary names $count tests but output contains $named named passes." >&2
-  exit 1
-}
+if test "$named" != "$count"; then
+  # Unified logging sometimes splits a named Swift Testing pass in the middle of
+  # its name. Only the successful canonical Xcode action has independent, named
+  # case results. A direct fallback still needs every name in its own output.
+  if [[ "$passed_log" != "$canonical_log" ]] || (( canonical_result != 0 )); then
+    echo "Test summary names $count tests but output contains $named named passes." >&2
+    exit 1
+  fi
+  xcrun xcresulttool get test-results tests --path "$output/FullTests.xcresult" --compact \
+    | /usr/bin/python3 -c '
+import json, sys
+expected = int(sys.argv[1])
+roots = json.load(sys.stdin)["testNodes"]
+def nodes(items):
+    for item in items:
+        yield item
+        yield from nodes(item.get("children", []))
+cases = [node for node in nodes(roots) if node.get("nodeType") == "Test Case"]
+names = {case.get("nodeIdentifier") for case in cases}
+if not (len(cases) == len(names) == expected and all(names)
+        and all(case.get("result") == "Passed" for case in cases)):
+    sys.exit("The Xcode result bundle did not confirm every named passing test.")
+' "$count"
+fi
 printf 'Full release suite passed: %s named tests, %s suites; source %s, build %s.\n' \
   "$count" "${BASH_REMATCH[2]}" "$(git -C "$root" rev-parse HEAD)" "$app_build"
