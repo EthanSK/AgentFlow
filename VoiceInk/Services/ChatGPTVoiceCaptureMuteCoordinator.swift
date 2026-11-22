@@ -98,10 +98,10 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
             pairedFanOut: PairedVoiceMuteBroadcaster.shared,
             localPairedSourceID: PairedVoiceMuteBroadcaster.shared.sourceID,
             pairedActivity: .shared,
-            // Ethan turned automatic Voice speaker mute/restore off on2026-11-16.
-            // Keep the service/quit accounting and microphone path unchanged;
-            // a saved manual speaker shortcut must not re-enable automation.
-            speaker: ChatGPTVoiceCaptureSpeaker(transport: transport, automaticControlEnabled: false)
+            // Ethan explicitly asked to turn automatic speaker mute/restore back on
+            // on 2026-11-22. Reuse the recording-owned same-call service and its
+            // manual-state checks. A dispatched shortcut is still only an attempt.
+            speaker: ChatGPTVoiceCaptureSpeaker(transport: transport, automaticControlEnabled: true)
         )
     }()
 
@@ -555,7 +555,7 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTV
                 logger.error("Could not post the targeted ChatGPT Voice microphone shortcut pid=\(call.applicationPID, privacy: .public)")
                 return false
             }
-            logger.notice("Posted one ChatGPT Voice microphone shortcut toward \(String(describing: target), privacy: .public) pid=\(call.applicationPID, privacy: .public)")
+            logger.notice("Posted one ChatGPT Voice microphone shortcut toward \(String(describing: target), privacy: .public) pid=\(call.applicationPID, privacy: .public) call=\(call.sessionID.uuidString, privacy: .public)")
             return true
         }.value
     }
@@ -599,6 +599,7 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTV
             guard Self.voiceCall(for: application) == call,
                   Self.postTargetedShortcut(shortcut, applicationPID: call.applicationPID)
             else { return .skipped }
+            logger.notice("Posted one Codex Voice speaker shortcut toward muted=\(mute, privacy: .public) call=\(call.sessionID.uuidString, privacy: .public) pid=\(call.applicationPID, privacy: .public); applied state is unverified")
             return .posted(priorStateReadable: controls.isMuted != nil)
         }.value
     }

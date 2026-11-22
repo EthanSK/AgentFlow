@@ -57,14 +57,14 @@ struct ChatGPTVoiceCaptureSpeakerTests {
         #expect(await transport.postedStates().isEmpty)
     }
 
-    @Test func productionKeepsAutomaticSpeakerControlDisabled() throws {
+    @Test func productionEnablesRecordingOwnedAutomaticSpeakerControl() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         let source = try String(contentsOf: root.appendingPathComponent(
             "VoiceInk/Services/ChatGPTVoiceCaptureMuteCoordinator.swift"), encoding: .utf8)
         let start = try #require(source.range(of: "static let shared:"))
         let end = try #require(source.range(of: "    }()", range: start.upperBound..<source.endIndex))
         let composition = source[start.lowerBound..<end.upperBound]
-        #expect(composition.contains("ChatGPTVoiceCaptureSpeaker(transport: transport, automaticControlEnabled: false)"))
+        #expect(composition.contains("ChatGPTVoiceCaptureSpeaker(transport: transport, automaticControlEnabled: true)"))
         #expect(composition.contains("transport: transport"))
     }
 

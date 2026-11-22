@@ -316,7 +316,7 @@ final class CoreAudioRecorder: @unchecked Sendable {
                 logger.error("Capture start received no PCM within 2 seconds; discarding unusable AUHAL")
                 throw CoreAudioRecorderError.noAudioReceived
             }
-            logger.notice("Capture start confirmed first PCM buffer")
+            logger.notice("Capture start confirmed first PCM buffer file=\(url.lastPathComponent, privacy: .public)")
         } catch {
             // Close the callback gate and stop AUHAL before closing the WAV. A late callback
             // after the confirmation deadline must never write into a disposed file.
@@ -342,6 +342,7 @@ final class CoreAudioRecorder: @unchecked Sendable {
             acceptsInputBuffers.store(true, ordering: .releasing)
             throw CoreAudioRecorderError.failedToStop(status: status)
         }
+        logger.notice("Hardware capture paused file=\(self.recordingURL?.lastPathComponent ?? "unknown", privacy: .public)")
         resetMeters()
     }
 
@@ -369,6 +370,7 @@ final class CoreAudioRecorder: @unchecked Sendable {
             }
             needsFirstCaptureConfirmation = false
         }
+        logger.notice("Hardware capture resumed file=\(self.recordingURL?.lastPathComponent ?? "unknown", privacy: .public)")
     }
 
     /// Stops the current recording
@@ -383,6 +385,7 @@ final class CoreAudioRecorder: @unchecked Sendable {
         isRecording = false
         isPaused = false
         acceptsInputBuffers.store(false, ordering: .releasing)
+        logger.notice("Capture input gate closed file=\(self.recordingURL?.lastPathComponent ?? "unknown", privacy: .public) wasCapturing=\(wasRecording && !wasPaused, privacy: .public)")
 
         if wasRecording, let unit = audioUnit {
             if !wasPaused {

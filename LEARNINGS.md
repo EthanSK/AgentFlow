@@ -7217,3 +7217,30 @@ The bundled Codex queue command already submits through `thread/queue/add`. The 
 The Codex recorder label needs to size the mini panel and stacked cards as well as the text itself. A fixed caption width truncated the beginning and emoji of the chat name. Measure the whole status and title at the same font used to draw them, keep room beside the waveform and allow a separate wrapped row on narrow screens.
 
 The recent-chat setting and the OpenAI spelling keyword list are independent. Turning off chat excerpts can leave keyword bias active. To investigate a suspected inserted word, compare the raw live draft, final transcript, enabled replacements and AI enhancement fields. Verify the effective keyword selection and static prompt separately. A matching keyword is evidence of a possible influence, not proof of the recognizer's reason. The OpenAI Vocabulary switch omits the live and completed-audio keyword fields together, including future additions. The live session acknowledgement logs counts only when its transcription configuration is present.
+
+## 2026-11-22 — Re-enable capture-owned Voice speakers only after explicit consent
+
+Ethan explicitly asked to turn automatic speaker muting back on during Agent Flow
+recording. Build 533 still composed the speaker service with
+`automaticControlEnabled=false`, from his 16 November instruction. Restore that
+existing service at composition, preserving exact-call ownership, manual-state
+checks, paired microphone owners and Recorder's actual hardware boundaries.
+
+The same live call showed a separate microphone issue. On 22 November, build 533
+PID 809 verified mute at 20:37:33 and 20:37:53, and restoration at 20:37:57. At
+20:41:04, 20:44:04 and 20:44:29, it posted the configured shortcut to desktop PID
+767 but the existing post-read still showed listening. No replacement build or
+settings change had been installed during those failures. This proves the
+observed unsuccessful transitions, not whether a later state change or a desktop
+command-routing failure caused them. Never answer an observed listening state
+with a blind retry or claim that enabling speakers repairs microphone dispatch.
+The two native shortcut logs now include the exact call ID for correlation.
+Capture start confirmation, pause, resume and gate closure also log the WAV
+basename at the native hardware boundary. The OS timestamps these observations;
+they are local evidence and do not prove delivery into the live Voice frontend.
+
+The stable CLI schema includes `thread/realtime/appendText`, but that alone does
+not attach an external client to the desktop-owned live Voice session. A
+separate server, ordinary agent-turn message or durable queue cannot establish
+that the speaking frontend received a capture event. Preserve the live call and
+keep original-chat queuing disabled while identifying a supported shared path.
