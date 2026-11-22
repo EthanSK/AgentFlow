@@ -297,20 +297,27 @@ class Recorder: NSObject, ObservableObject {
                 },
                 startHardware: {
                     // Offload hardware start to avoid shortcut lag.
-                    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                        audioSetupQueue.async(qos: RecorderWorkPriority.captureInteraction, flags: RecorderWorkPriority.interactionFlags) {
-                            do {
-                                // Install this recording's callback only after every prior queued
-                                // stop has closed its input gate. MainActor assignment earlier can
-                                // otherwise send the old recording's tail into the new session.
-                                coreAudioRecorder.onAudioChunk = callbackForThisStart
-                                try coreAudioRecorder.startRecording(toOutputFile: url, deviceID: deviceID)
-                                continuation.resume()
-                            } catch {
-                                continuation.resume(throwing: error)
+                    let startedAt: Date
+                    do {
+                        startedAt = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Date, Error>) in
+                            audioSetupQueue.async(qos: RecorderWorkPriority.captureInteraction, flags: RecorderWorkPriority.interactionFlags) {
+                                do {
+                                    // Install this recording's callback only after every prior queued
+                                    // stop has closed its input gate. MainActor assignment earlier can
+                                    // otherwise send the old recording's tail into the new session.
+                                    coreAudioRecorder.onAudioChunk = callbackForThisStart
+                                    try coreAudioRecorder.startRecording(toOutputFile: url, deviceID: deviceID)
+                                    continuation.resume(returning: Date())
+                                } catch {
+                                    continuation.resume(throwing: error)
+                                }
                             }
                         }
+                    } catch {
+                        await ChatGPTVoiceCaptureMuteCoordinator.shared.captureAborted(muteLease)
+                        throw error
                     }
+                    await ChatGPTVoiceCaptureMuteCoordinator.shared.captureStarted(muteLease, at: startedAt)
                 }
             )
 
@@ -378,13 +385,14 @@ class Recorder: NSObject, ObservableObject {
         pendingMediaPause?.cancel()
         stopAudioMeter()
 
+        let stoppedAt: Date
         do {
-            try await withCheckedThrowingContinuation {
-                (continuation: CheckedContinuation<Void, Error>) in
+            stoppedAt = try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<Date, Error>) in
                 audioSetupQueue.async {
                     do {
                         try currentRecorder.pauseRecording()
-                        continuation.resume()
+                        continuation.resume(returning: Date())
                     } catch {
                         continuation.resume(throwing: error)
                     }
@@ -413,6 +421,7 @@ class Recorder: NSObject, ObservableObject {
         resetAudioMeter()
         if let muteLease = chatGPTVoiceMuteLease {
             chatGPTVoiceMuteLease = nil
+            await ChatGPTVoiceCaptureMuteCoordinator.shared.captureStopped(muteLease, at: stoppedAt, reason: "paused")
             await ChatGPTVoiceCaptureMuteCoordinator.shared.releaseCapture(muteLease)
         }
         audioRestorationTask?.cancel()
@@ -435,13 +444,14 @@ class Recorder: NSObject, ObservableObject {
         }
         let muteLease = await ChatGPTVoiceCaptureMuteCoordinator.shared.prepareForCapture()
         chatGPTVoiceMuteLease = muteLease
+        let startedAt: Date
         do {
-            try await withCheckedThrowingContinuation {
-                (continuation: CheckedContinuation<Void, Error>) in
+            startedAt = try await withCheckedThrowingContinuation {
+                (continuation: CheckedContinuation<Date, Error>) in
                 audioSetupQueue.async(qos: RecorderWorkPriority.captureInteraction, flags: RecorderWorkPriority.interactionFlags) {
                     do {
                         try currentRecorder.resumeRecording()
-                        continuation.resume()
+                        continuation.resume(returning: Date())
                     } catch {
                         continuation.resume(throwing: error)
                     }
@@ -451,10 +461,12 @@ class Recorder: NSObject, ObservableObject {
             if chatGPTVoiceMuteLease == muteLease {
                 chatGPTVoiceMuteLease = nil
             }
+            await ChatGPTVoiceCaptureMuteCoordinator.shared.captureAborted(muteLease)
             await ChatGPTVoiceCaptureMuteCoordinator.shared.releaseCapture(muteLease)
             throw error
         }
 
+        await ChatGPTVoiceCaptureMuteCoordinator.shared.captureStarted(muteLease, at: startedAt)
         startAudioMeterTimer()
         muteSystemAudio()
         logger.info("Recording capture resumed into the existing WAV/realtime session; playback is unchanged")
@@ -485,9 +497,10 @@ class Recorder: NSObject, ObservableObject {
         let callbackGenerationAtStop = audioChunkGeneration
         activeHardwareStopCount += 1
 
-        await withCheckedContinuation { continuation in
+        let stoppedAt = await withCheckedContinuation { continuation in
             audioSetupQueue.async {
                 currentRecorder?.stopRecording()
+                let stoppedAt = Date()
                 if let currentRecorder,
                    currentRecorder.hasInvalidatedPreparedInputFormat,
                    currentRecorder.currentDevice != 0 {
@@ -502,7 +515,7 @@ class Recorder: NSObject, ObservableObject {
                     }
                 }
                 currentRecorder?.onAudioChunk = nil
-                continuation.resume()
+                continuation.resume(returning: stoppedAt)
             }
         }
 
@@ -527,6 +540,7 @@ class Recorder: NSObject, ObservableObject {
 
         resetAudioMeter()
         if let muteLease {
+            await ChatGPTVoiceCaptureMuteCoordinator.shared.captureStopped(muteLease, at: stoppedAt, reason: "stopped")
             await ChatGPTVoiceCaptureMuteCoordinator.shared.releaseCapture(muteLease)
         }
 

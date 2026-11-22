@@ -74,10 +74,10 @@ private actor PairedFakeVoiceTransport: ChatGPTVoiceMuteTransport {
         from before: ChatGPTVoiceInputSnapshot,
         toward target: ChatGPTVoiceMicrophoneState,
         using authority: ChatGPTVoiceShortcutAuthority
-    ) async -> Bool {
-        guard let call = before.call else { return false }
+    ) async -> Date? {
+        guard let call = before.call else { return nil }
         authorities.append(authority)
-        guard authority != refusedAuthority else { return false }
+        guard authority != refusedAuthority else { return nil }
         posts.append(call.applicationPID)
         if posts.count == 2, holdRestoration {
             await withCheckedContinuation { restorationContinuation = $0 }
@@ -92,7 +92,7 @@ private actor PairedFakeVoiceTransport: ChatGPTVoiceMuteTransport {
                 call: call
             )
         }
-        return true
+        return Date()
     }
 
     func microphoneStateAfterToggle(for call: ChatGPTVoiceCall) async -> ChatGPTVoiceMicrophoneState? {

@@ -6,11 +6,12 @@ import os
 struct ChatGPTVoiceCall: Equatable, Sendable {
     let applicationPID: pid_t
     let sessionID: UUID
+    var threadID: UUID? = nil
 }
 
 enum ChatGPTVoiceSpeakerPost: Equatable, Sendable {
     case skipped
-    case posted(priorStateReadable: Bool)
+    case posted(priorStateReadable: Bool, attemptedAt: Date = .now)
 }
 
 protocol ChatGPTVoiceSpeakerTransport: Sendable {
@@ -33,36 +34,41 @@ actor ChatGPTVoiceCaptureSpeaker {
         self.automaticControlEnabled = automaticControlEnabled
     }
 
-    func silenceForCapture() async {
-        // Production is temporarily disabled at composition, independently of
+    @discardableResult
+    func silenceForCapture() async -> ChatGPTVoiceSpeakerPost {
+        // The explicit off composition remains available independently of
         // microphone muting. Do not even inspect Voice speakers while off.
-        guard automaticControlEnabled else { return }
+        guard automaticControlEnabled else { return .skipped }
         guard let call = await transport.activeSpeakerCall() else {
-            return
+            return .skipped
         }
         // Preserve manual unsilence and avoid another toggle after a rapid
         // successor takes over the same still-owned call.
-        if ownedCall == call { return }
+        if ownedCall == call { return .skipped }
         ownedCall = nil
         // Ethan wants one attempt even if Voice hides its speaker control.
         // Own only our own dispatch to a proven call. Unknown state is never
         // evidence that the toggle applied in the intended direction.
-        guard case .posted(let readable) = await transport.postSpeakerToggle(for: call, mute: true)
-        else { return }
+        let posted = await transport.postSpeakerToggle(for: call, mute: true)
+        guard case .posted(let readable, _) = posted else { return .skipped }
 
         ownedCall = call
         logger.notice("Posted one Codex Voice speaker silence attempt; prior state readable=\(readable, privacy: .public)")
+        return posted
     }
 
-    func restoreAfterCapture() async {
-        guard automaticControlEnabled else { return }
-        guard let call = ownedCall else { return }
+    @discardableResult
+    func restoreAfterCapture() async -> ChatGPTVoiceSpeakerPost {
+        guard automaticControlEnabled else { return .skipped }
+        guard let call = ownedCall else { return .skipped }
         ownedCall = nil
-        guard case .posted(let readable) = await transport.postSpeakerToggle(for: call, mute: false) else {
+        let posted = await transport.postSpeakerToggle(for: call, mute: false)
+        guard case .posted(let readable, _) = posted else {
             logger.notice("Codex Voice speaker restore skipped; call changed, output already on, or shortcut unavailable")
-            return
+            return .skipped
         }
         logger.notice("Posted one Codex Voice speaker restore attempt; prior state readable=\(readable, privacy: .public)")
+        return posted
     }
 }
 
@@ -75,6 +81,19 @@ enum ChatGPTVoiceSessionBoundaryReader {
         databaseURL: URL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".codex/sqlite/codex.db")
     ) -> UUID? {
+        uniqueActiveCall(since: launchDate, databaseURL: databaseURL)?.sessionID
+    }
+
+    struct Identity {
+        let sessionID: UUID
+        let threadID: String
+    }
+
+    static func uniqueActiveCall(
+        since launchDate: Date,
+        databaseURL: URL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/sqlite/codex.db")
+    ) -> Identity? {
         var database: OpaquePointer?
         guard sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK,
               let database
@@ -86,7 +105,7 @@ enum ChatGPTVoiceSessionBoundaryReader {
 
         let query = """
             SELECT json_extract(payload_json, '$.sessionId'),
-                   json_extract(payload_json, '$.type')
+                   json_extract(payload_json, '$.type'), thread_id
             FROM thread_timeline_ledger
             WHERE host_id = 'local' AND json_valid(payload_json)
               AND json_extract(payload_json, '$.type') IN ('session-started', 'session-ended')
@@ -102,20 +121,26 @@ enum ChatGPTVoiceSessionBoundaryReader {
         guard sqlite3_bind_double(statement, 1, launchDate.timeIntervalSince1970 * 1000) == SQLITE_OK
         else { return nil }
 
-        var active = Set<UUID>()
+        var active: [UUID: String] = [:]
         var count = 0
         while count < 2000 {
             switch sqlite3_step(statement) {
             case SQLITE_DONE:
-                return active.count == 1 ? active.first : nil
+                return active.count == 1 ? active.first.map { Identity(sessionID: $0.key, threadID: $0.value) } : nil
             case SQLITE_ROW:
                 guard let rawID = sqlite3_column_text(statement, 0),
                       let id = UUID(uuidString: String(cString: rawID)),
-                      let rawEvent = sqlite3_column_text(statement, 1)
+                      let rawEvent = sqlite3_column_text(statement, 1),
+                      let rawThreadID = sqlite3_column_text(statement, 2)
                 else { return nil }
                 switch String(cString: rawEvent) {
-                case "session-started": active.insert(id)
-                case "session-ended": active.remove(id)
+                case "session-started":
+                    let threadID = String(cString: rawThreadID)
+                    guard active[id] == nil || active[id] == threadID else { return nil }
+                    active[id] = threadID
+                case "session-ended":
+                    guard active[id] == nil || active[id] == String(cString: rawThreadID) else { return nil }
+                    active.removeValue(forKey: id)
                 default: return nil
                 }
                 count += 1

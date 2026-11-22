@@ -37,10 +37,10 @@ private actor FakeChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport {
         from before: ChatGPTVoiceInputSnapshot,
         toward target: ChatGPTVoiceMicrophoneState,
         using authority: ChatGPTVoiceShortcutAuthority
-    ) async -> Bool {
-        guard let call = before.call else { return false }
+    ) async -> Date? {
+        guard let call = before.call else { return nil }
         postPIDs.append(call.applicationPID)
-        guard allowsPost, currentSnapshot?.call == call else { return false }
+        guard allowsPost, currentSnapshot?.call == call else { return nil }
         if changesStateOnPost,
            let currentSnapshot {
             self.currentSnapshot = ChatGPTVoiceInputSnapshot(
@@ -52,7 +52,7 @@ private actor FakeChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport {
                 call: call
             )
         }
-        return true
+        return Date()
     }
 
     func microphoneStateAfterToggle(for call: ChatGPTVoiceCall) async -> ChatGPTVoiceMicrophoneState? {
@@ -100,12 +100,12 @@ private actor RepaintingVoiceTransport: ChatGPTVoiceMuteTransport, ChatGPTVoiceS
     func postMicrophoneToggle(
         from before: ChatGPTVoiceInputSnapshot, toward target: ChatGPTVoiceMicrophoneState,
         using authority: ChatGPTVoiceShortcutAuthority
-    ) -> Bool {
-        guard before.call == call else { return false }
+    ) -> Date? {
+        guard before.call == call else { return nil }
         commands.append(target == .muted ? "mic mute" : "mic restore")
         microphoneMuted.toggle()
         controlsReadable = false
-        return true
+        return Date()
     }
 
     func microphoneStateAfterToggle(for call: ChatGPTVoiceCall) -> ChatGPTVoiceMicrophoneState? {
@@ -131,6 +131,12 @@ private actor RepaintingVoiceTransport: ChatGPTVoiceMuteTransport, ChatGPTVoiceS
     func postedCommands() -> [String] { commands }
 }
 
+private actor CapturingVoiceEventSender: CodexVoiceCaptureEventSending {
+    private var events: [CodexVoiceCaptureEvent] = []
+    func record(_ event: CodexVoiceCaptureEvent) { events.append(event) }
+    func recorded() -> [CodexVoiceCaptureEvent] { events }
+}
+
 struct ChatGPTVoiceCaptureMuteCoordinatorTests {
     private let pid: pid_t = 4_242
     private let sessionID = UUID()
@@ -141,6 +147,117 @@ struct ChatGPTVoiceCaptureMuteCoordinatorTests {
     ) -> ChatGPTVoiceInputSnapshot {
         .init(applicationPID: pid, isInputRunning: isInputRunning, microphoneState: state,
               call: isInputRunning ? .init(applicationPID: pid, sessionID: sessionID) : nil)
+    }
+
+    @Test func failedHardwareStartupDoesNotInventARecordingEvent() async {
+        let events = CapturingVoiceEventSender()
+        let coordinator = ChatGPTVoiceCaptureMuteCoordinator(
+            transport: FakeChatGPTVoiceMuteTransport(snapshot: voice(.listening)), events: events)
+        let lease = await coordinator.prepareForCapture()
+        #expect(await events.recorded().isEmpty)
+        await coordinator.captureAborted(lease)
+        await coordinator.releaseCapture(lease)
+        await coordinator.waitForPendingTransitionsForTesting()
+        #expect(await events.recorded().isEmpty)
+    }
+
+    @Test func hardwareStopBeforeStartContinuationStillReportsOneOrderedSegment() async throws {
+        let events = CapturingVoiceEventSender()
+        let coordinator = ChatGPTVoiceCaptureMuteCoordinator(
+            transport: FakeChatGPTVoiceMuteTransport(snapshot: voice(.listening)), events: events)
+        let lease = await coordinator.prepareForCapture()
+        await coordinator.captureStopped(lease, at: Date(timeIntervalSince1970: 2), reason: "stopped")
+        await coordinator.releaseCapture(lease)
+        await coordinator.waitForPendingTransitionsForTesting()
+        #expect(await events.recorded().isEmpty)
+        await coordinator.captureStarted(lease, at: Date(timeIntervalSince1970: 1))
+        let result = await events.recorded()
+        #expect(result.map(\.phase) == ["started", "stopped"])
+        #expect(result.map(\.occurredAt) == [Date(timeIntervalSince1970: 1), Date(timeIntervalSince1970: 2)])
+    }
+
+    @Test func actualCaptureEventsKeepExactTimesAndFrozenOwningVoiceChat() async throws {
+        let call = ChatGPTVoiceCall(applicationPID: pid, sessionID: sessionID, threadID: UUID())
+        let transport = FakeChatGPTVoiceMuteTransport(snapshot: .init(
+            applicationPID: pid, isInputRunning: true, microphoneState: .listening, call: call))
+        let events = CapturingVoiceEventSender()
+        let coordinator = ChatGPTVoiceCaptureMuteCoordinator(transport: transport, events: events)
+        let lease = await coordinator.prepareForCapture()
+        let start = Date(timeIntervalSince1970: 123.456)
+        let stop = Date(timeIntervalSince1970: 125.678)
+        await coordinator.captureStarted(lease, at: start)
+        await coordinator.captureStopped(lease, at: stop, reason: "stopped")
+        await coordinator.releaseCapture(lease)
+        await coordinator.waitForPendingTransitionsForTesting()
+        let result = await events.recorded()
+        #expect(result.count == 2)
+        let began = try #require(result.first)
+        let ended = try #require(result.last)
+        #expect(began.id == ended.id)
+        #expect(began.call == call && ended.call == call)
+        #expect(began.occurredAt == start && ended.occurredAt == stop)
+        #expect(ended.startedAt == start)
+        #expect(began.microphoneResult == "mutedVerified")
+        #expect(ended.microphoneResult == "restoredVerified")
+        #expect(began.microphoneAttemptedAt != nil && ended.microphoneAttemptedAt != nil)
+    }
+
+    @Test func staleCaptureEventCannotRetargetOrRestoreTheReplacementVoiceCall() async throws {
+        let old = ChatGPTVoiceCall(applicationPID: pid, sessionID: sessionID, threadID: UUID())
+        let new = ChatGPTVoiceCall(applicationPID: pid, sessionID: UUID(), threadID: UUID())
+        let transport = FakeChatGPTVoiceMuteTransport(snapshot: .init(
+            applicationPID: pid, isInputRunning: true, microphoneState: .listening, call: old))
+        let events = CapturingVoiceEventSender()
+        let coordinator = ChatGPTVoiceCaptureMuteCoordinator(transport: transport, events: events)
+        let a = await coordinator.prepareForCapture()
+        await coordinator.captureStarted(a, at: Date(timeIntervalSince1970: 1))
+        await transport.setSnapshot(.init(applicationPID: pid, isInputRunning: true,
+                                          microphoneState: .listening, call: new))
+        let b = await coordinator.prepareForCapture()
+        await coordinator.captureStarted(b, at: Date(timeIntervalSince1970: 2))
+        await coordinator.captureStopped(a, at: Date(timeIntervalSince1970: 3), reason: "stopped")
+        await coordinator.releaseCapture(a)
+        #expect(await transport.postedPIDs().count == 2)
+        await coordinator.captureStopped(b, at: Date(timeIntervalSince1970: 4), reason: "stopped")
+        await coordinator.releaseCapture(b)
+        await coordinator.waitForPendingTransitionsForTesting()
+        let result = await events.recorded()
+        #expect(result.map(\.call) == [old, new, old, new])
+        #expect(result[2].microphoneResult == "heldByOtherCapture")
+        #expect(result[2].microphoneAttemptedAt == nil)
+        #expect(result[3].microphoneResult == "restoredVerified")
+    }
+
+    @Test func pausedAndResumedCaptureEventsAreDistinctHardwareSegments() async throws {
+        let events = CapturingVoiceEventSender()
+        let coordinator = ChatGPTVoiceCaptureMuteCoordinator(
+            transport: FakeChatGPTVoiceMuteTransport(snapshot: voice(.listening)), events: events)
+        for reason in ["paused", "stopped"] {
+            let lease = await coordinator.prepareForCapture()
+            await coordinator.captureStarted(lease, at: Date(timeIntervalSince1970: 10))
+            await coordinator.captureStopped(lease, at: Date(timeIntervalSince1970: 11), reason: reason)
+            await coordinator.releaseCapture(lease)
+            await coordinator.waitForPendingTransitionsForTesting()
+        }
+        let result = await events.recorded()
+        #expect(result.map(\.phase) == ["started", "paused", "started", "stopped"])
+        #expect(result[0].id == result[1].id && result[2].id == result[3].id)
+        #expect(result[0].id != result[2].id)
+    }
+
+    @Test func alreadyMutedCaptureEventsDoNotClaimAnOwnedMuteOrUnmute() async throws {
+        let events = CapturingVoiceEventSender()
+        let transport = FakeChatGPTVoiceMuteTransport(snapshot: voice(.muted))
+        let coordinator = ChatGPTVoiceCaptureMuteCoordinator(transport: transport, events: events)
+        let lease = await coordinator.prepareForCapture()
+        await coordinator.captureStarted(lease, at: Date())
+        await coordinator.captureStopped(lease, at: Date(), reason: "stopped")
+        await coordinator.releaseCapture(lease)
+        await coordinator.waitForPendingTransitionsForTesting()
+        let result = await events.recorded()
+        #expect(result.map(\.microphoneResult) == ["alreadyMuted", "notOwned"])
+        #expect(result.allSatisfy { $0.microphoneAttemptedAt == nil })
+        #expect(await transport.postedPIDs().isEmpty)
     }
 
     @Test func disabledSpeakersKeepMicrophoneMuteAndManualStateProtection() async {

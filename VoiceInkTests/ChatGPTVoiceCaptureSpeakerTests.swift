@@ -183,6 +183,7 @@ struct ChatGPTVoiceCaptureSpeakerTests {
         #expect(ChatGPTVoiceSessionBoundaryReader.uniqueActiveSession(since: launch, databaseURL: url) == nil)
         try insert(call.sessionID, "session-started", 3000, 2)
         #expect(ChatGPTVoiceSessionBoundaryReader.uniqueActiveSession(since: launch, databaseURL: url) == call.sessionID)
+        #expect(ChatGPTVoiceSessionBoundaryReader.uniqueActiveCall(since: launch, databaseURL: url)?.threadID == "thread")
         try insert(newer, "session-started", 4000, 3)
         #expect(ChatGPTVoiceSessionBoundaryReader.uniqueActiveSession(since: launch, databaseURL: url) == nil)
         try insert(call.sessionID, "session-ended", 5000, 4)

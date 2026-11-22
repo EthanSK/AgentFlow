@@ -10,6 +10,15 @@ struct CodexRecordingTarget: Equatable, Sendable {
     let name: String
     let executable: URL
 
+    /// Extraction of CodexRecordingCapture.atStart's existing CLI lookup, shared by
+    /// dictation and event metadata without changing either route's authority. — GPT-6.1 Sol
+    static func executable(in bundleURL: URL) -> URL? {
+        let resources = bundleURL.appendingPathComponent("Contents/Resources")
+        return ["codex-cli/CodexCLI.app/Contents/MacOS/codex", "codex"]
+            .map { resources.appendingPathComponent($0) }
+            .first { FileManager.default.isExecutableFile(atPath: $0.path) }
+    }
+
     /// A short-lived CLI producer writes to the owning chat's queue. Never resume a
     /// second writer. A failure or indeterminate receipt must never trigger a paste.
     func enqueue(_ message: String) async -> Bool {
@@ -107,10 +116,7 @@ struct CodexRecordingCapture {
                 chatName = sideName
             case .unknown: return nil
             }
-            let resources = bundleURL.appendingPathComponent("Contents/Resources")
-            guard let cli = ["codex-cli/CodexCLI.app/Contents/MacOS/codex", "codex"]
-                .map({ resources.appendingPathComponent($0) })
-                .first(where: { FileManager.default.isExecutableFile(atPath: $0.path) }) else { return nil }
+            guard let cli = CodexRecordingTarget.executable(in: bundleURL) else { return nil }
             return CodexRecordingTarget(id: id, name: chatName, executable: cli)
         })
     }
