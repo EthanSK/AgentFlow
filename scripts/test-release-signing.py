@@ -45,8 +45,11 @@ class SparkleSigningTests(unittest.TestCase):
                          repo / "VoiceInk.xcodeproj/project.pbxproj")
             fake = repo / "xcodebuild"
             fake.write_text("#!/bin/sh\n"
-                            "i=0; while [ $i -lt 365 ]; do\n"
+                            "i=0; while [ $i -lt 357 ]; do\n"
                             "  echo \"✔ Test fixture$i() passed after 0.01 seconds.\"\n"
+                            "  i=$((i + 1))\ndone\n"
+                            "i=0; while [ $i -lt 8 ]; do\n"
+                            "  printf '%s✔ Test parameter%s() with 2 test cases passed after 0.01 seconds.\\n' \"$FIXTURE_PARAMETER_PREFIX\" \"$i\"\n"
                             "  i=$((i + 1))\ndone\n"
                             "echo '✔ Test run with 365 tests in 2 suites passed after 0.02 seconds.'\n"
                             "exit \"$FIXTURE_XCODE_EXIT\"\n")
@@ -55,12 +58,13 @@ class SparkleSigningTests(unittest.TestCase):
             subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
             subprocess.run(["git", "-C", str(repo), "-c", "user.name=Fixture",
                             "-c", "user.email=fixture@localhost", "commit", "-qm", "Fixture"], check=True)
-            for xcode_exit in (0, 65):
-                with self.subTest(xcode_exit=xcode_exit):
+            for xcode_exit, prefix in ((0, ""), (0, "\u2063"), (65, ""), (65, "\u2063")):
+                with self.subTest(xcode_exit=xcode_exit, parameter_prefix=prefix):
                     result = subprocess.run(
                         ["bash", str(gate), str(Path(directory) / f"out-{xcode_exit}")],
                         env={**os.environ, "PATH": str(repo) + ":" + os.environ["PATH"],
-                             "FIXTURE_XCODE_EXIT": str(xcode_exit)}, capture_output=True, text=True)
+                             "FIXTURE_XCODE_EXIT": str(xcode_exit),
+                             "FIXTURE_PARAMETER_PREFIX": prefix}, capture_output=True, text=True)
                     self.assertEqual(result.returncode == 0, xcode_exit == 0, result.stderr)
                     if xcode_exit:
                         self.assertIn("Xcode failed", result.stderr)

@@ -87,9 +87,10 @@ summary=$(grep -E '^✔ Test run with [1-9][0-9]* tests in [1-9][0-9]* suites pa
   exit 1
 }
 count=${BASH_REMATCH[1]}
-ordinary=$(grep -E '^✔ Test .* passed after' "$passed_log" | grep -v '^✔ Test run' | wc -l | tr -d ' ')
-# Swift Testing prefixes parameterized summaries with an invisible separator and
-# reports their individual cases as starts, not separate passed-test lines.
+ordinary=$(grep -E '^✔ Test .* passed after' "$passed_log" | grep -v -E '^✔ Test run| with [0-9]+ test cases passed after' | wc -l | tr -d ' ')
+# Swift Testing can prefix parameterized summaries with an invisible separator.
+# Count each function once with either output form; exclude it from ordinary passes.
+# Their individual cases are starts, not separate passed-test lines. — GPT-6.1 Sol
 # Count each passing named parameterized function once, matching the run summary.
 parameterized=$(awk '/✔ Test .+ with [0-9]+ test cases passed after/ { n++ } END { print n+0 }' "$passed_log")
 named=$((ordinary + parameterized))
