@@ -44,10 +44,14 @@ clipboard recovery and batching/dedup fixtures passed. This is not proof of live
 A later natural 536 interval correctly froze a newly active Voice call/chat, produced
 one completed queue item and confirmed acceptance in184ms. Microphone controls read
 muted then listening; the speaker read unmuted after the restore attempt. The owning
-backend was still active at the receipt check, so actual input arrival/recap remained
-pending. Producer acceptance and queue presence are not backend receipt. The separate
-intermittent microphone report is not proven eliminated; posted shortcuts and control
-readbacks are not exact acoustic boundaries.
+backend was still active at the first check. The notice later entered the exact chat
+about six minutes after enqueue, just after that call ended. The recipient read the
+receipt and the speech timeline, then used the required written fallback: the saved
+transcript did not establish a specific missed line or exact playback timing. It did
+not treat historical speaker observations as current audibility. Producer acceptance,
+queue presence, actual input receipt and a spoken live recap are distinct evidence.
+A live spoken recap remains unverified. The separate intermittent microphone report
+is not proven eliminated; control readbacks are not exact acoustic boundaries.
 
 ## 2026-11-22 — Count parameterized release summaries only once
 
