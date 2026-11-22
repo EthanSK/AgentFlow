@@ -15,6 +15,13 @@ duplicate retries. Direct steering remains unverified and cannot be simulated by
 special launcher or another server. Clear backlog only through supported exact-item controls;
 never remove unrelated user messages or mutate private desktop databases to force it.
 
+## 2026-11-22 — Overlapping ordinary and parameterized test counts
+
+A successful 1,018-test direct suite was rejected as 1,026 named passes when eight
+parameterized summaries were counted in both categories. Their invisible prefix
+is optional. Keep the two match sets disjoint and test both output forms; never
+ignore a genuine failed test or failed canonical action to repair a count mismatch.
+
 ## 2026-11-18 — Using signature checks alone to accept a local Release build
 
 Build 525 passed signing checks and crashed on three launches in CloudKit setup before

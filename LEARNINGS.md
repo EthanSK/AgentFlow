@@ -35,6 +35,27 @@ external entry to that existing Desktop-owned live Voice session. Direct Voice-s
 delivery remains unavailable. Queue summary delivery is separately authorized; no direct probe was sent without
 an actual route, and the already-submitted OpenAI integration feedback was not duplicated.
 
+
+Build 536 implements this completed-interval route and was installed safely, then
+published as notarized `v2.0.536` from `f2d91217`. Its exact-source full gate passed
+1,018 named native tests in 49 suites. Native control/ownership, frozen-call routing,
+clipboard recovery and batching/dedup fixtures passed. This is not proof of live
+536 notice receipt, current speaker audibility or a completed missed-speech recap:
+no natural capture in a live recorded Voice session occurred after installation.
+The separate intermittent microphone-restoration report remains unconfirmed; posted
+shortcuts and early control readbacks are not an acoustic acknowledgment.
+
+## 2026-11-22 — Count parameterized release summaries only once
+
+The direct full-suite runner passed 1,018 tests, but the release counter reported
+1,026 named passes because eight parameterized summaries matched both categories.
+Swift Testing can emit those lines with or without an invisible leading separator.
+`test-public-release.sh` now excludes parameterized summaries from ordinary passes;
+its release-signing fixture covers both forms and preserves rejection of a failed
+Xcode action even when its Swift Testing summary is green. A stalled zero-test
+Xcode launch still permits the existing direct full-suite fallback; any executed
+failed case forbids it. An interrupted empty `.xcresult` is not a named-test result.
+
 ## 2026-11-22 — Speaker automation was explicitly re-enabled; AX can lag audio
 
 Ethan explicitly requested re-enabling automatic speaker mute/restore. Build 534
