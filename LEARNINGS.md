@@ -40,10 +40,14 @@ Build 536 implements this completed-interval route and was installed safely, the
 published as notarized `v2.0.536` from `f2d91217`. Its exact-source full gate passed
 1,018 named native tests in 49 suites. Native control/ownership, frozen-call routing,
 clipboard recovery and batching/dedup fixtures passed. This is not proof of live
-536 notice receipt, current speaker audibility or a completed missed-speech recap:
-no natural capture in a live recorded Voice session occurred after installation.
-The separate intermittent microphone-restoration report remains unconfirmed; posted
-shortcuts and early control readbacks are not an acoustic acknowledgment.
+536 notice receipt, current speaker audibility or a completed missed-speech recap.
+A later natural 536 interval correctly froze a newly active Voice call/chat, produced
+one completed queue item and confirmed acceptance in184ms. Microphone controls read
+muted then listening; the speaker read unmuted after the restore attempt. The owning
+backend was still active at the receipt check, so actual input arrival/recap remained
+pending. Producer acceptance and queue presence are not backend receipt. The separate
+intermittent microphone report is not proven eliminated; posted shortcuts and control
+readbacks are not exact acoustic boundaries.
 
 ## 2026-11-22 — Count parameterized release summaries only once
 
