@@ -3,15 +3,23 @@ import Foundation
 import SQLite3
 import os
 
-struct ChatGPTVoiceCall: Equatable, Sendable {
+struct ChatGPTVoiceCall: Equatable, Sendable, Codable {
     let applicationPID: pid_t
     let sessionID: UUID
     var threadID: UUID? = nil
 }
 
-enum ChatGPTVoiceSpeakerPost: Equatable, Sendable {
+struct ChatGPTVoiceSpeakerObservation: Equatable, Sendable, Codable {
+    let call: ChatGPTVoiceCall
+    let isMuted: Bool
+    let observedAt: Date
+}
+
+enum ChatGPTVoiceSpeakerPost: Equatable, Sendable, Codable {
     case skipped
-    case posted(priorStateReadable: Bool, attemptedAt: Date = .now)
+    case observed(ChatGPTVoiceSpeakerObservation)
+    case posted(priorStateReadable: Bool, attemptedAt: Date = .now,
+                observation: ChatGPTVoiceSpeakerObservation? = nil)
 }
 
 protocol ChatGPTVoiceSpeakerTransport: Sendable {
@@ -50,7 +58,7 @@ actor ChatGPTVoiceCaptureSpeaker {
         // Own only our own dispatch to a proven call. Unknown state is never
         // evidence that the toggle applied in the intended direction.
         let posted = await transport.postSpeakerToggle(for: call, mute: true)
-        guard case .posted(let readable, _) = posted else { return .skipped }
+        guard case .posted(let readable, _, _) = posted else { return posted }
 
         ownedCall = call
         logger.notice("Posted one Codex Voice speaker silence attempt; prior state readable=\(readable, privacy: .public)")
@@ -63,9 +71,9 @@ actor ChatGPTVoiceCaptureSpeaker {
         guard let call = ownedCall else { return .skipped }
         ownedCall = nil
         let posted = await transport.postSpeakerToggle(for: call, mute: false)
-        guard case .posted(let readable, _) = posted else {
+        guard case .posted(let readable, _, _) = posted else {
             logger.notice("Codex Voice speaker restore skipped; call changed, output already on, or shortcut unavailable")
-            return .skipped
+            return posted
         }
         logger.notice("Posted one Codex Voice speaker restore attempt; prior state readable=\(readable, privacy: .public)")
         return posted

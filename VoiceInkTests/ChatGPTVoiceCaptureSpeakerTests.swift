@@ -46,6 +46,26 @@ private actor FakeVoiceSpeakerTransport: ChatGPTVoiceSpeakerTransport {
 struct ChatGPTVoiceCaptureSpeakerTests {
     private let call = ChatGPTVoiceCall(applicationPID: 42, sessionID: UUID())
 
+    @Test func readableManualSpeakerStateIsReportedWithoutAcquiringRestoreOwnership() async {
+        actor ObservedTransport: ChatGPTVoiceSpeakerTransport {
+            let observation: ChatGPTVoiceSpeakerObservation
+            private var calls = 0
+            init(_ observation: ChatGPTVoiceSpeakerObservation) { self.observation = observation }
+            func activeSpeakerCall() -> ChatGPTVoiceCall? { observation.call }
+            func postSpeakerToggle(for call: ChatGPTVoiceCall, mute: Bool) -> ChatGPTVoiceSpeakerPost {
+                calls += 1
+                return .observed(observation)
+            }
+            func count() -> Int { calls }
+        }
+        let observation = ChatGPTVoiceSpeakerObservation(call: call, isMuted: true, observedAt: Date())
+        let transport = ObservedTransport(observation)
+        let speaker = ChatGPTVoiceCaptureSpeaker(transport: transport)
+        #expect(await speaker.silenceForCapture() == .observed(observation))
+        #expect(await speaker.restoreAfterCapture() == .skipped)
+        #expect(await transport.count() == 1)
+    }
+
     @Test func disabledAutomaticSpeakerControlNeverReadsOrPosts() async {
         let transport = FakeVoiceSpeakerTransport(.init(call: call, isMuted: false))
         let speaker = ChatGPTVoiceCaptureSpeaker(transport: transport, automaticControlEnabled: false)

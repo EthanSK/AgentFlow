@@ -649,12 +649,17 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTV
                   mute || Self.voiceCall(for: application) == call
             else { return .skipped }
             let controls = Self.readVoiceControls(applicationPID: call.applicationPID, channel: .speaker)
+            let observedAt = Date()
             logger.notice("Speaker control read: mic=\(controls.microphoneFound, privacy: .public) end=\(controls.endFound, privacy: .public) speaker=\(controls.speakerFound, privacy: .public) disabledSpeaker=\(controls.disabledSpeakerFound, privacy: .public) readable=\(controls.isMuted != nil, privacy: .public) nodes=\(controls.visitedCount, privacy: .public) nativeSearches=\(controls.nativeSearchCount, privacy: .public) truncated=\(controls.truncated, privacy: .public) hostHidden=\(application.isHidden, privacy: .public)")
             // A saved call alone is insufficient. For hidden speaker state,
             // require independent evidence from a live native Voice control.
+            guard Self.voiceCall(for: application) == call else { return .skipped }
+            let observation = controls.isMuted.map {
+                ChatGPTVoiceSpeakerObservation(call: call, isMuted: $0, observedAt: observedAt)
+            }
             guard controls.voiceControlFound, controls.isMuted != mute else {
                 logger.notice("Speaker shortcut skipped: liveControl=\(controls.voiceControlFound, privacy: .public) matchingState=\(controls.isMuted == mute, privacy: .public) nodes=\(controls.visitedCount, privacy: .public) nativeSearches=\(controls.nativeSearchCount, privacy: .public) truncated=\(controls.truncated, privacy: .public)")
-                return .skipped
+                return observation.map(ChatGPTVoiceSpeakerPost.observed) ?? .skipped
             }
             // Check session identity again after the AX read. A new Voice call
             // can appear in the same desktop process.
@@ -663,7 +668,20 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTV
                   Self.postTargetedShortcut(shortcut, applicationPID: call.applicationPID)
             else { return .skipped }
             logger.notice("Posted one Codex Voice speaker shortcut toward muted=\(mute, privacy: .public) call=\(call.sessionID.uuidString, privacy: .public) pid=\(call.applicationPID, privacy: .public); applied state is unverified")
-            return .posted(priorStateReadable: controls.isMuted != nil, attemptedAt: attemptedAt)
+            return .posted(priorStateReadable: controls.isMuted != nil, attemptedAt: attemptedAt,
+                           observation: observation)
+        }.value
+    }
+
+    /// Reuses the existing bounded reader; observes only this same call and posts nothing. — GPT-6.1 Sol
+    func speakerObservation(for call: ChatGPTVoiceCall) async -> ChatGPTVoiceSpeakerObservation? {
+        await Task.detached(priority: .utility) { () -> ChatGPTVoiceSpeakerObservation? in
+            guard let application = Self.expectedApplication(), application.processIdentifier == call.applicationPID,
+                  Self.voiceCall(for: application) == call else { return nil }
+            let read = Self.readVoiceControls(applicationPID: call.applicationPID, channel: .speaker)
+            let observedAt = Date()
+            guard Self.voiceCall(for: application) == call, let muted = read.isMuted else { return nil }
+            return ChatGPTVoiceSpeakerObservation(call: call, isMuted: muted, observedAt: observedAt)
         }.value
     }
 

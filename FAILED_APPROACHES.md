@@ -1,5 +1,20 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-22 — CLI acceptance is not active-turn event delivery
+
+Build 535's ordinary CLI queue delivered real recording metadata at idle boundaries,
+but later per-edge notices accumulated behind manual Steer controls. Generic identical
+first lines made those cards hard to distinguish. This was the chosen queue route's
+observed behavior, not evidence of an independently confirmed Codex defect.
+
+Ethan initially rejected queueing, then explicitly accepted the normal route for ONE
+completed timestamped recap notice after observing a successful one-off test. That later
+decision supersedes the categorical no-queue instruction for event summaries only.
+Do not restore per-edge cards, ambiguous generic titles, dictated-text auto-send or
+duplicate retries. Direct steering remains unverified and cannot be simulated by a
+special launcher or another server. Clear backlog only through supported exact-item controls;
+never remove unrelated user messages or mutate private desktop databases to force it.
+
 ## 2026-11-18 — Using signature checks alone to accept a local Release build
 
 Build 525 passed signing checks and crashed on three launches in CloudKit setup before
@@ -10,6 +25,9 @@ answers its readiness probe. Only reconsider a CloudKit build with a provisioned
 container for that app and a successful cold launch of the actual signed artifact.
 
 ## 2026-11-16 — Automatic speaker control remains withdrawn after ongoing unreliability
+
+Superseded by Ethan's explicit 2026-11-22 re-enable request and build-534 natural-call
+evidence. Preserve the failure history and same-call restoration contract below.
 
 Ethan reports recording-triggered speaker mute/unmute is still unreliable and
 explicitly asks to disable it for now while keeping microphone muting. Passing

@@ -1,5 +1,52 @@
 # Learnings
 
+## 2026-11-22 — One timestamped Voice recap notice, using normal Desktop queue delivery
+
+Build 535 (`8f7cae74`) produced actual start/stop metadata in the exact owning Voice
+chat, including across restarted calls. CLI producer acceptance did not establish
+timely delivery: active-chat notices accumulated as queued cards with manual Steer
+controls. One item per lifecycle edge also created a backlog, and the generic first
+line hid the difference between start and stop. An initial no-queue correction led to
+a safe rollback to 534; no existing queue items or unrelated messages were removed.
+Ethan then accepted a one-off normal queue test (producer accepted in 0.128 seconds,
+arrival about 3.85 seconds after the request) because original timestamps are preserved:
+"that's fine for what we need. Let's just go with that then". He explicitly requested
+restoring 535's automatic notices immediately while the one-summary work continued.
+
+The accepted route is ONE completed capture/mute notice to the frozen Voice chat,
+not separate start/stop cards. Include original event/control-observation times and
+separate queue-request/acceptance observations. A private event-only receipt is created
+exclusively before queueing, then updated with the producer confirmation; the same ID
+cannot automatically enqueue twice even after failure or uncertainty. Receipt metadata
+never includes dictated text. The separate original dictated-text queue stays disabled.
+Recap instructions compare event/send/receipt times with assistant speech evidence,
+prefer actual audio mute boundaries, disclose approximate transcript-frame timing, and
+require current same-call speaker evidence before claiming audibility. Historical UI
+state alone is insufficient; unknown/muted output means written recap or deferred speech.
+
+Normal Desktop installation/launch remains required. The shared-server proposal was
+removed. The installed Desktop's actual Voice frontend calls `thread/realtime/appendText`
+through its own manager with `threadId`, `role` and `text`. This proves a real internal
+RPC, not a standalone CLI command or external API. The inspected server is private
+stdio, the control socket is absent, and exposed app tools offer no append-text entry.
+The app-tools socket requires genuine agent caller/turn provenance and must not be
+impersonated by a background event. The missing capability is a supported authenticated
+external entry to that existing Desktop-owned live Voice session. Direct Voice-session
+delivery remains unavailable. Queue summary delivery is separately authorized; no direct probe was sent without
+an actual route, and the already-submitted OpenAI integration feedback was not duplicated.
+
+## 2026-11-22 — Speaker automation was explicitly re-enabled; AX can lag audio
+
+Ethan explicitly requested re-enabling automatic speaker mute/restore. Build 534
+(`a5d79d29`) enabled the existing call-owned service without replacing microphone
+leases or Primary/Next delivery. Natural captures in a restarted call posted both
+speaker directions and observed microphone restoration; Ethan reported successful
+mute/unmute while the floating controls lagged. Earlier still-listening/readback
+results alone do not prove that the microphone command failed acoustically.
+Preserve confirmed versus unverified transitions and do not add inverse toggles
+or retries solely to reconcile a stale UI. This supersedes the November 16 speaker
+withdrawal, while retaining its restoration/ownership failure evidence.
+
 ## Recording-start Codex chat and waveform updates
 
 The installed Codex 0.169.1 can enqueue text for an existing local chat by UUID.

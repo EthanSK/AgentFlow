@@ -1,118 +1,148 @@
-// Exercises metadata routing and exact-turn guards without connecting to a live Voice chat.
+// Exercises local recording receipts without connecting to a live Voice chat.
 import Foundation
 import Testing
 @testable import VoiceInkPlusPlus
 
-private final class VoiceEventRPCFixture: CodexVoiceCaptureRPC {
-    let threadID: UUID
-    var status = "active"
-    var directInput = true
-    var turnStatus = "inProgress"
-    var rejectDelivery = false
-    let turnID = UUID().uuidString.lowercased()
-    var requests: [(String, [String: Any])] = []
-    var notifications: [String] = []
-
-    init(threadID: UUID) { self.threadID = threadID }
-    func notify(_ method: String) { notifications.append(method) }
-    func request(_ method: String, _ params: [String: Any]) throws -> [String: Any] {
-        requests.append((method, params))
-        switch method {
-        case "initialize": return [:]
-        case "thread/read": return ["thread": ["id": threadID.uuidString.lowercased(),
-            "canAcceptDirectInput": directInput, "status": ["type": status]]]
-        case "thread/turns/list": return ["data": [["id": turnID, "status": turnStatus]]]
-        default:
-            if rejectDelivery { throw CodexVoiceCaptureDeliveryError.rejected }
-            return method == "turn/steer" ? ["turnId": turnID] : ["turn": ["id": turnID]]
-        }
+private actor CapturedVoiceSummaryQueue {
+    private var messages: [(UUID, String)] = []
+    let accepts: Bool
+    init(accepts: Bool = true) { self.accepts = accepts }
+    func enqueue(_ target: CodexRecordingTarget, _ message: String) -> Bool {
+        messages.append((target.id, message))
+        return accepts
     }
+    func captured() -> [(UUID, String)] { messages }
 }
 
 struct CodexVoiceCaptureEventsTests {
-    private func event(phase: String = "started", id: UUID = UUID()) -> CodexVoiceCaptureEvent {
-        .init(id: id, phase: phase, call: .init(applicationPID: 42, sessionID: UUID(), threadID: UUID()),
-              startedAt: Date(timeIntervalSince1970: 1_700_000_000.123),
-              occurredAt: Date(timeIntervalSince1970: 1_700_000_001.456),
-              microphoneResult: "mutedVerified", microphoneAttemptedAt: nil,
-              checkedAt: Date(timeIntervalSince1970: 1_700_000_000), speakerPost: .skipped)
-    }
-
-    @Test func activeVoiceEventsUseExactTurnSteeringWithoutReadingItems() throws {
-        let event = event()
-        let rpc = VoiceEventRPCFixture(threadID: try #require(event.call.threadID))
-        #expect(try CodexVoiceCaptureAppServer.send(event, through: rpc) == "steerAccepted")
-        #expect(rpc.requests.map(\.0) == ["initialize", "thread/read", "thread/turns/list", "turn/steer"])
-        #expect(rpc.notifications == ["initialized"])
-        #expect(rpc.requests[1].1["includeTurns"] as? Bool == false)
-        #expect(rpc.requests[2].1["itemsView"] as? String == "notLoaded")
-        #expect(rpc.requests[3].1["expectedTurnId"] as? String == rpc.turnID)
-        #expect(rpc.requests[3].1["threadId"] as? String == event.call.threadID?.uuidString.lowercased())
-        #expect(rpc.requests[3].1["clientUserMessageId"] as? String == "agent-flow-\(event.id.uuidString.lowercased())-started")
-    }
-
-    @Test func idleVoiceEventPreservesChatSettingsAndSegmentPhasesHaveDistinctIDs() throws {
+    private func notice() -> CodexVoiceCaptureNotice {
         let id = UUID()
-        var clientIDs: [String] = []
-        for phase in ["started", "stopped"] {
-            let event = event(phase: phase, id: id)
-            let rpc = VoiceEventRPCFixture(threadID: try #require(event.call.threadID))
-            rpc.status = "idle"
-            #expect(try CodexVoiceCaptureAppServer.send(event, through: rpc) == "startAccepted")
-            #expect(rpc.requests.map(\.0) == ["initialize", "thread/read", "turn/start"])
-            let params = rpc.requests[2].1
-            #expect(Set(params.keys) == ["threadId", "clientUserMessageId", "input", "turnTrigger"])
-            clientIDs.append(try #require(params["clientUserMessageId"] as? String))
-        }
-        #expect(Set(clientIDs).count == 2)
-    }
-
-    @Test func unloadedOrAmbiguousVoiceChatNeverResumesStartsOrRetargets() throws {
-        for (status, direct, matching) in [("notLoaded", true, true), ("active", false, true), ("active", true, false)] {
-            let event = event()
-            let rpc = VoiceEventRPCFixture(threadID: matching ? try #require(event.call.threadID) : UUID())
-            rpc.directInput = direct
-            rpc.status = status
-            #expect(throws: CodexVoiceCaptureDeliveryError.self) {
-                try CodexVoiceCaptureAppServer.send(event, through: rpc)
-            }
-            #expect(rpc.requests.map(\.0) == ["initialize", "thread/read"])
-        }
-    }
-
-    @Test func activeTurnRaceAndUncertainReceiptNeverFallBackToStartOrQueue() throws {
-        for reject in [true, false] {
-            let event = event()
-            let rpc = VoiceEventRPCFixture(threadID: try #require(event.call.threadID))
-            rpc.rejectDelivery = reject
-            rpc.turnStatus = reject ? "inProgress" : "completed"
-            #expect(throws: CodexVoiceCaptureDeliveryError.self) {
-                try CodexVoiceCaptureAppServer.send(event, through: rpc)
-            }
-            #expect(!rpc.requests.contains { $0.0 == "turn/start" || $0.0 == "thread/resume" })
-            #expect(rpc.requests.filter { $0.0 == "turn/steer" }.count == (reject ? 1 : 0))
-        }
+        let call = ChatGPTVoiceCall(applicationPID: 42, sessionID: UUID(), threadID: UUID())
+        let start = Date(timeIntervalSince1970: 1_700_000_000.123)
+        let end = Date(timeIntervalSince1970: 1_700_000_001.456)
+        return .init(
+            started: .init(id: id, phase: "started", call: call, startedAt: start,
+                occurredAt: start, microphoneResult: "mutedUnverified", microphoneAttemptedAt: nil,
+                checkedAt: start, speakerPost: .skipped),
+            ended: .init(id: id, phase: "stopped", call: call, startedAt: start,
+                occurredAt: end, microphoneResult: "restoredVerified", microphoneAttemptedAt: nil,
+                checkedAt: end, speakerPost: .skipped))
     }
 
     @Test func recordingMetadataPreservesOriginalTimesAndSeparatesAttemptsFromReadback() {
-        let event = event()
+        let event = notice().ended
         #expect(event.message.contains("recording_started_at=\"2023-11-14T22:13:20.123Z\""))
         #expect(event.message.contains("occurred_at=\"2023-11-14T22:13:21.456Z\""))
         #expect(event.message.contains("voice_chat_id=\"\(event.call.threadID!.uuidString.lowercased())\""))
         #expect(event.message.contains("microphone_attempted_at=\"unavailable\""))
-        #expect(event.message.contains("Speaker requests are unverified"))
+        #expect(event.message.contains("Shortcut requests are attempts, not confirmation"))
         #expect(event.message.contains("controls can lag the audio"))
     }
 
-    @Test func unverifiedDesktopCannotLaunchTheDirectMessageProxy() async {
-        let original = event()
-        let event = CodexVoiceCaptureEvent(id: original.id, phase: original.phase,
-            call: .init(applicationPID: Int32.max, sessionID: original.call.sessionID, threadID: original.call.threadID),
-            startedAt: original.startedAt, occurredAt: original.occurredAt,
-            microphoneResult: original.microphoneResult, microphoneAttemptedAt: nil,
-            checkedAt: original.checkedAt, speakerPost: .skipped)
-        let result = await CodexVoiceCaptureAppServer.deliver(event,
-            executable: URL(fileURLWithPath: "/nonexistent-codex-event-test"))
-        #expect(result == "sharedDesktopNotConfigured")
+    @Test func noticeBeginsWithActionAndOriginalTimeAndContainsTheWholeInterval() {
+        let notice = notice()
+        #expect(notice.message.hasPrefix("Recording stopped at 22:13:21.456 UTC.\n"))
+        #expect(notice.message.contains("Started at 22:13:20.123 UTC."))
+        #expect(notice.message.contains("mute requested, not confirmed; then listening in controls"))
+        #expect(notice.message.components(separatedBy: "<agent_flow_capture_event ").count == 3)
+        #expect(!notice.message.contains("Agent Flow recording update"))
+    }
+
+    @Test func speakerObservationDoesNotClaimACommandOrAnAudioMuteBoundary() {
+        let end = notice().ended
+        let observation = ChatGPTVoiceSpeakerObservation(call: end.call, isMuted: false, observedAt: end.occurredAt)
+        let event = CodexVoiceCaptureEvent(id: end.id, phase: end.phase, call: end.call,
+            startedAt: end.startedAt, occurredAt: end.occurredAt, microphoneResult: end.microphoneResult,
+            microphoneAttemptedAt: nil, checkedAt: end.checkedAt, speakerPost: .observed(observation))
+        #expect(event.metadata.contains("speaker_result=\"controlReadbackOnly\""))
+        #expect(event.metadata.contains("speaker_attempted_at=\"unavailable\""))
+        #expect(event.metadata.contains("speaker_control_readback_muted=\"false\""))
+        #expect(event.metadata.contains("speaker_observed_at=\"2023-11-14T22:13:21.456Z\""))
+    }
+
+    @Test func oneCompletedIntervalReplacesPerEdgeMessagesAndDeduplicatesBothPhases() {
+        let notice = notice()
+        var batcher = CodexVoiceCaptureNoticeBatcher()
+        #expect(batcher.record(notice.started, enabled: true) == nil)
+        #expect(batcher.record(notice.started, enabled: true) == nil)
+        #expect(batcher.record(notice.ended, enabled: true)?.message == notice.message)
+        #expect(batcher.record(notice.ended, enabled: true) == nil)
+    }
+
+    @Test func disabledOrUnmatchedIntervalsNeverReplayOnEnable() {
+        let notice = notice()
+        var batcher = CodexVoiceCaptureNoticeBatcher()
+        #expect(batcher.record(notice.started, enabled: false) == nil)
+        #expect(batcher.record(notice.ended, enabled: true) == nil)
+        #expect(batcher.record(notice.started, enabled: true) == nil)
+        #expect(batcher.record(notice.ended, enabled: true) == nil)
+    }
+
+    @Test func replacementCallCannotCompleteAnotherCallsInterval() {
+        let notice = notice()
+        let end = notice.ended
+        let replacement = CodexVoiceCaptureEvent(id: end.id, phase: end.phase,
+            call: .init(applicationPID: 42, sessionID: UUID(), threadID: UUID()),
+            startedAt: end.startedAt, occurredAt: end.occurredAt,
+            microphoneResult: end.microphoneResult, microphoneAttemptedAt: nil,
+            checkedAt: end.checkedAt, speakerPost: .skipped)
+        var batcher = CodexVoiceCaptureNoticeBatcher()
+        #expect(batcher.record(notice.started, enabled: true) == nil)
+        #expect(batcher.record(replacement, enabled: true) == nil)
+    }
+
+    @Test func eventQueueHasNoNewTurnResumeOrClipboardFallback() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        for file in ["CodexVoiceCaptureEvents.swift", "CodexVoiceCaptureQueueDelivery.swift"] {
+            let source = try String(contentsOf: root.appendingPathComponent("VoiceInk/Services/\(file)"))
+            for forbidden in ["\"turn/start\"", "\"thread/resume\"", "\"--resume\"", "NSPasteboard"] {
+                #expect(!source.contains(forbidden))
+            }
+        }
+    }
+
+    @Test func completedNoticeQueuesOnceWithSeparateEnqueueReceiptAndFrozenChat() async throws {
+        let notice = notice()
+        let queue = CapturedVoiceSummaryQueue()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let observe: @Sendable (ChatGPTVoiceCall) async -> ChatGPTVoiceSpeakerObservation? = {
+            .init(call: $0, isMuted: false, observedAt: Date())
+        }
+        let result = await CodexVoiceCaptureQueueDelivery.enqueue(notice, directory: directory,
+            executable: URL(fileURLWithPath: "/test-codex"), observe: observe,
+            queue: { await queue.enqueue($0, $1) })
+        #expect(result == "queued")
+        let duplicate = await CodexVoiceCaptureQueueDelivery.enqueue(notice, directory: directory,
+            executable: URL(fileURLWithPath: "/test-codex"), observe: observe,
+            queue: { await queue.enqueue($0, $1) })
+        #expect(duplicate == "alreadyAttempted")
+        let messages = await queue.captured()
+        #expect(messages.count == 1)
+        #expect(messages[0].0 == notice.ended.call.threadID)
+        #expect(messages[0].1.hasPrefix("Recording stopped at 22:13:21.456 UTC. — Agent Flow"))
+        #expect(messages[0].1.contains("Enqueue requested at"))
+        #expect(messages[0].1.contains("Check the CURRENT speaker state"))
+        #expect(messages[0].1.contains("written recap"))
+        let file = directory.appendingPathComponent("\(notice.ended.id.uuidString.lowercased()).json")
+        let receipt = try #require(try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any])
+        #expect(receipt["queueAccepted"] as? Bool == true)
+        #expect(receipt["enqueueRequestedAt"] as? String != nil)
+        #expect(receipt["queueAcceptanceObservedAt"] as? String != nil)
+        #expect((receipt["speakerObservedAtEnqueue"] as? [String: Any])?["isMuted"] as? Bool == false)
+    }
+
+    @Test func failedOrUncertainQueueResultIsNeverAutomaticallyResubmitted() async {
+        let notice = notice()
+        let queue = CapturedVoiceSummaryQueue(accepts: false)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        for expected in ["notConfirmed", "alreadyAttempted"] {
+            let result = await CodexVoiceCaptureQueueDelivery.enqueue(notice, directory: directory,
+                executable: URL(fileURLWithPath: "/test-codex"), observe: { _ in nil },
+                queue: { await queue.enqueue($0, $1) })
+            #expect(result == expected)
+        }
+        #expect(await queue.captured().count == 1)
     }
 }

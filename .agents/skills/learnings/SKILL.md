@@ -768,12 +768,13 @@ actions, polling, notification consumers, global input mute or private app patch
 User correction — 2026-10-09; evidence: LEARNINGS.md, “State-unreadable mute refusal was not usable
 in the live Voice workflow”, and the refusal-only withdrawal in FAILED_APPROACHES.md.
 
-Automatic recording-triggered speaker mute/unmute is off for now at Ethan's
-request on2026-11-16 because it remains unreliable. "Just keep the mic muting":
-preserve the separate microphone coordinator and normal recording/media behavior.
-Do not re-enable speaker automation from a saved manual shortcut or a later update;
-revisit it only when Ethan explicitly asks. Keep the following historical speaker
-contract as reference for that future work, not as an enabled feature.
+Ethan explicitly requested automatic speaker muting again on 2026-11-22. Build 534
+re-enabled the existing recording-owned same-call service, and he reported natural
+mute/unmute success. This supersedes his 2026-11-16 withdrawal; it does not authorize
+blind retries, another mute mechanism or changes to microphone/media behavior.
+Treat lagging AX control values as readbacks, not independent proof of audible state.
+Keep actual command rejection distinct from an unreadable or stale control.
+User-requested — 2026-11-22; see the dated Voice evidence in `LEARNINGS.md`.
 
 For that earlier recording-owned speaker integration, Ethan requested one reversible
 attempt on an identified live call even when its state is unreadable. Microphone and
@@ -783,6 +784,23 @@ posted shortcut distinct from an observed mute, and discard a failed restore rat
 than letting a later recording inherit it. See the 2026-11-13 and 2026-11-14 Voice
 entries in `LEARNINGS.md`. Self-improved — 2026-11-14: the newer call-scoped
 integration and regression fixtures supersede the earlier speaker-extension gate.
+
+For recording-summary notices only, Ethan accepted the normal Codex queue route on
+2026-11-22 after a timestamped test arrived: "that's fine for what we need. Let's just
+go with that then". This supersedes his earlier "It should never queue" direction for
+these notices; the separate dictated-text queue stays off. Send ONE readable completed
+capture/mute interval to its frozen Voice chat, with stable ID, original times, separately
+recorded enqueue/acceptance times, and honest observed versus attempted states. Never
+resend an uncertain enqueue or send a per-edge burst. The recap instruction must compare
+those times with assistant speech evidence and verify the CURRENT same-call speaker state
+before claiming audibility; stale UI/historical events are insufficient. Use a written
+recap or defer speech when current restoration is unknown. Never invent missed speech.
+
+The feature must work with normal Desktop launch for other users too; no shared daemon,
+special launcher, plugin changes or competing server. Direct steering remains a separate
+desired capability. The experimental append-text RPC is used inside the current frontend,
+but no supported external entry was found. Do not impersonate its caller or duplicate the
+already-submitted OpenAI integration feedback. User-requested — 2026-11-22.
 
 Before changing Codex Voice control exposure or diagnosing alternating speaker
 Start/Stop reads, read [references/codex-voice-accessibility.md](references/codex-voice-accessibility.md).
