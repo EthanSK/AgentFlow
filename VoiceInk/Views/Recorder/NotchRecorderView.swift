@@ -18,7 +18,7 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     let onAssistantFollowUp: (String) -> Void
 
     // Settings -> Interface -> Recording Outline. A missing value means on, and an
-    // explicit false stays off; see RecorderCaptureOutlinePreference.
+    // explicit false stays off; see RecorderCaptureOutlinePreference. — Claude Opus 5.5
     @AppStorage(RecorderCaptureOutlinePreference.preferenceKey)
     private var captureOutlineEnabled = RecorderCaptureOutlinePreference.defaultValue
 
@@ -99,7 +99,7 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     }
 
     // One silhouette for the clip and the Recording Outline, so the neon tube
-    // follows every display-state corner and size spring exactly.
+    // follows every display-state corner and size spring exactly. — Claude Opus 5.5
     private var pillShape: NotchShape {
         NotchShape(
             topCornerRadius: displayState == .liveText ? 12 : 8,
@@ -177,7 +177,7 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
         // every control and transcript line, bounded by the clip, and never a saved
         // or Next destination marker. The pill hangs from the display's top edge, so
         // the border keeps an open top, without a line along the menu bar or a
-        // fade into the black interior.
+        // fade into the black interior. — GPT-6.1 Sol
         .background {
             if captureOutlineEnabled && stateProvider.showsLiveCaptureOutline {
                 RecorderCaptureOutline(shape: pillShape, omitsTopEdge: true)

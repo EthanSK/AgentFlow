@@ -16,7 +16,7 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     let onAssistantFollowUp: (String) -> Void
 
     // Settings -> Interface -> Recording Outline. A missing value means on, and an
-    // explicit false stays off; see RecorderCaptureOutlinePreference.
+    // explicit false stays off; see RecorderCaptureOutlinePreference. — Claude Opus 5.5
     @AppStorage(RecorderCaptureOutlinePreference.preferenceKey)
     private var captureOutlineEnabled = RecorderCaptureOutlinePreference.defaultValue
 
@@ -29,7 +29,7 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     private let expandedCornerRadius: CGFloat = 14
 
     // One silhouette for the clip and the Recording Outline, so the neon tube
-    // follows every compact/expanded corner and width change exactly.
+    // follows every compact/expanded corner and width change exactly. — Claude Opus 5.5
     private var cardShape: RoundedRectangle {
         RoundedRectangle(
             cornerRadius: hasLiveTranscript || hasAssistantResponse ? expandedCornerRadius : compactCornerRadius,

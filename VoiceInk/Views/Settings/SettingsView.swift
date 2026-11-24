@@ -21,7 +21,7 @@ struct SettingsView: View {
     @AppStorage(CodexSelectionImageCapture.preferenceKey) private var codexHighlightImages = false
     @AppStorage(PasteMethod.userDefaultsKey) private var pasteMethodRawValue = PasteMethod.standard.rawValue
     @AppStorage(NewChatRecordingHarness.preferenceKey) private var newChatApp = NewChatRecordingHarness.codex.rawValue
-    // On unless Ethan turns it off (requested 2026-11-24); the recorder cards read the same key.
+    // On unless Ethan turns it off (requested 2026-11-24); the recorder cards read the same key. — Claude Opus 5.5
     @AppStorage(RecorderCaptureOutlinePreference.preferenceKey)
     private var recordingOutlineEnabled = RecorderCaptureOutlinePreference.defaultValue
     @State private var showResetOnboardingAlert = false

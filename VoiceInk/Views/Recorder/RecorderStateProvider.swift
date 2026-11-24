@@ -71,7 +71,7 @@ extension RecorderStateProvider {
     /// not capture: keep the outline lit during its gesture window and the approved
     /// real microphone stop tail. GPT Live sleeping also keeps it lit. Presentation
     /// only: no capture, playback or Primary/Next delivery path reads it.
-    /// — Claude Opus 5.5; capture-boundary correction by GPT-6.1 Sol
+    /// Original design by Claude Opus 5.5. Found and fixed by GPT-6.1 Sol.
     var showsLiveCaptureOutline: Bool {
         recordingState == .recording && !microphoneOff
     }

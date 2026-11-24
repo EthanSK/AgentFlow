@@ -2,7 +2,7 @@
 // Mini and Notch recorder card. His 2026-11-24 refinement explicitly removes
 // blur and colour bleeding into the black panel. MiniRecorderView and NotchRecorderView
 // draw it from `RecorderStateProvider.showsLiveCaptureOutline`; Settings ->
-// Interface -> Recording Outline turns it off.
+// Interface -> Recording Outline turns it off. — GPT-6.1 Sol
 import SwiftUI
 
 /// One sharp stroke follows the recorder's silhouette while its microphone is live.
@@ -14,15 +14,17 @@ import SwiftUI
 /// surface, scroll view or keyboard focus. This is capture state only. It never
 /// marks a saved destination, a Next route or the current-focus icon.
 /// Original design by Claude Opus 5.5; border-only refinement by GPT-6.1 Sol.
+/// — GPT-6.1 Sol
 struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
     var shape: OutlineShape
     /// Formerly `topEdgeFade`: the Notch keeps its open top with a sharp clip,
-    /// without an opacity gradient into the black surface. Mini stays a closed ring.
+    /// without an opacity gradient into the black surface. Mini stays a closed ring. — GPT-6.1 Sol
     var omitsTopEdge = false
 
     // macOS exposes Reduce Motion as a read-only environment value. Hosted
     // appearance previews can exercise its static branch without changing the
     // user's system accessibility preference; real panels leave this nil.
+    // Found and fixed by GPT-6.1 Sol.
     var reduceMotionForPreview: Bool? = nil
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     private var reduceMotion: Bool { reduceMotionForPreview ?? systemReduceMotion }
@@ -42,7 +44,7 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
         // outline is lit (callers remove the view otherwise), caps at 30 Hz and is
         // paused under Reduce Motion. Earlier recorder lag came from an independent
         // 60 Hz clock plus broad card invalidation (LEARNINGS, 2026-07-31), so this
-        // never observes the session, the audio meter or the transcript.
+        // never observes the session, the audio meter or the transcript. — Claude Opus 5.5
         TimelineView(.animation(
             minimumInterval: RecorderCaptureOutlineStyle.frameInterval,
             paused: reduceMotion
@@ -61,7 +63,7 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
         .accessibilityHidden(true)
     }
 
-    // Former `drawNeonTube`: one stroke replaces its bloom and pale core.
+    // Former `drawNeonTube`: one stroke replaces its bloom and pale core. — GPT-6.1 Sol
     private func drawBorder(in context: GraphicsContext, size: CGSize, phase: Double,
                             pixels: RecorderCaptureOutlinePixels) {
         let style = RecorderCaptureOutlineStyle.self
@@ -190,7 +192,7 @@ enum RecorderNeonSpectrum {
         Components(red: 1.00, green: 0.40, blue: 0.18)  // tube orange
     ]
 
-    /// The colour at a cyclic position, where 0 and 1 are the same point.
+    /// The colour at a cyclic position, where 0 and 1 are the same point. — GPT-6.1 Sol
     static func components(at position: Double) -> Components {
         let wrapped = position - position.rounded(.down)
         let scaled = wrapped * Double(anchors.count)
@@ -223,9 +225,9 @@ enum RecorderNeonSpectrum {
 /// frames. — Claude Opus 5.5
 final class RecorderCaptureOutlineTrace {
     struct Sample: Equatable {
-        /// Conic gradient location: the clockwise angle from the centre, 0..<1.
+        /// Conic gradient location: the clockwise angle from the centre, 0..<1. — Claude Opus 5.5
         let angularLocation: Double
-        /// Distance along the tube, as a fraction of its length, measured clockwise.
+        /// Distance along the tube, as a fraction of its length, measured clockwise. — Claude Opus 5.5
         let clockwiseFraction: Double
     }
 

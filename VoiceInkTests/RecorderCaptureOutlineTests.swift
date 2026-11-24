@@ -1,6 +1,6 @@
 // Proves the Recording Outline's live-capture gate, saved-switch default, even
 // colour sampling and rendered neon edge with synthetic sessions only. Nothing here
-// starts microphone capture, playback, shortcuts or Primary/Next delivery.
+// starts microphone capture, playback, shortcuts or Primary/Next delivery. — Claude Opus 5.5
 import AppKit
 import Foundation
 import SwiftUI
@@ -79,7 +79,7 @@ struct RecorderCaptureOutlineTests {
     }
 
     // Former neonSpectrumIsCyclicVividAndKeepsItsHueInTheHotCore: the hot core
-    // was removed at Ethan's request; the single border keeps the same spectrum.
+    // was removed at Ethan's request; the single border keeps the same spectrum. — GPT-6.1 Sol
     @Test func rainbowSpectrumRemainsVividAndCyclic() {
         func channels(_ value: RecorderNeonSpectrum.Components) -> [Double] {
             [value.red, value.green, value.blue]
