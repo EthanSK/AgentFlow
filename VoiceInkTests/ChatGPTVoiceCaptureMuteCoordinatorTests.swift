@@ -496,7 +496,11 @@ struct ChatGPTVoiceCaptureMuteCoordinatorTests {
 
         let firstLease = await coordinator.prepareForCapture()
         await coordinator.releaseCapture(firstLease)
-        _ = await coordinator.prepareForCapture()
+        // A completed pause restores before resume. A queued overlapping Start
+        // instead inherits mute (covered by the controllable-gap tests), so do
+        // not make this expectation depend on actor scheduling. — GPT-6.1 Sol
+        await coordinator.waitForPendingTransitionsForTesting()
+        let resumedLease = await coordinator.prepareForCapture()
 
         let state = await coordinator.stateForTesting()
         let postPIDs = await transport.postedPIDs()
@@ -506,6 +510,14 @@ struct ChatGPTVoiceCaptureMuteCoordinatorTests {
         #expect(postPIDs == [pid, pid, pid])
         #expect(snapshot?.isInputRunning == true)
         #expect(snapshot?.microphoneState == .muted)
+
+        await coordinator.releaseCapture(resumedLease)
+        await coordinator.waitForPendingTransitionsForTesting()
+        let finalState = await coordinator.stateForTesting()
+        #expect(!finalState.captureActive)
+        #expect(finalState.ownedMutedApplicationPID == nil)
+        #expect(await transport.postedPIDs() == [pid, pid, pid, pid])
+        #expect(await transport.snapshot()?.microphoneState == .listening)
     }
 
     @Test func staleReleaseCannotUnmuteANewerCaptureLease() async {
