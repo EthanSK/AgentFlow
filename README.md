@@ -28,6 +28,8 @@ Highlight text with your mouse in an app that exposes its selection to macOS, or
 
 You can also click **Click to type** in the black recorder and write part or all of your message. The panel grows to its display limit, then scrolls. Enter commits the typed section into the timeline; Shift+Enter adds a line break. Typed words stay local and are not sent to the speech-recognition model. Voice-only recording does not take the caret away from your target app. Once you explicitly start typing in the recorder, accepted highlights and screenshots can return focus there.
 
+The recording waveform shows the last 1.5 seconds of measured microphone loudness, with new sound at the right and quiet input shown as dim dots. A thin, flowing rainbow outline marks live capture in both recorder styles. It is on by default; turn off **Settings → Interface → Recording Outline** to disable it. Reduce Motion keeps the outline colours still and steps the waveform instead of sliding it.
+
 ```text
 Rename this function
 

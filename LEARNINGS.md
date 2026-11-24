@@ -1,5 +1,52 @@
 # Learnings
 
+## 2026-11-24 — Represent microphone sound without a decorative waveform clock
+
+Ethan described the old waveform as "just like a random animation". Its bars
+multiplied one smoothed level by a clock-driven sine ripple and centre bump. The
+requested Opus first pass replaced it with one shared, fixed 1.5-second history:
+15 completed 100ms slices and one current slice, newest at the right. Every captured
+buffer contributes RMS energy and actual frame duration through the existing lock;
+RMS is computed after unlocking. One coalescing 33ms meter tick publishes changed
+snapshots only, and one Canvas per small status subtree draws the bars. The old
+unused per-buffer meter/smoothing path was removed. No callback allocation,
+logging, dispatch, extra audio capture or provider work was added.
+
+Keep the fixed −54/−12dBFS display scale, no invented ripple or adaptive boost,
+flat digital silence and stepped Reduce Motion. Real room noise above the floor
+remains visible. Capture start/resume clears history; pending energy resets when
+hardware closes. An older stop/pause finishing media work must not clear a newer
+active timer's waveform. Long coalesced reads retain their fractional audio-time
+phase while processing only one history's worth of slices.
+
+Native source f8244762, build544, passed all54 selected canonical Mini cases,
+including22 waveform checks, real Mini/Notch renders at50/85/100%, the outline and
+mandatory capture/delivery/media guards. A finite offline replay used496 measured
+windows from an existing saved input recording; no new microphone capture,
+playback or API transcription was started. Independent static Opus performance
+review found no confirmed defect and identified measurement gaps rather than
+proven regressions. The duplicate dominant-channel scan predates this change.
+
+The opt-in RecorderPerformanceMeasurementTests diagnostic then measured three real
+cards in an optimized test host. Exact source a13d76ee passed six180-tick scenarios:
+waveform CPU was about1.5 percentage points of one core above the7.55% test-host
+baseline across all three cards. Waveform plus outline used24.47% of one core.
+With a75,210-character growing transcript, baseline34.35%, waveform35.54% and both
+37.51% showed that the long-text cost also exists without these visuals. Its
+observed update gaps were under100ms in this finite run. Three-card outline path
+and gradient construction during resizing peaked at0.63ms across50/100% HUD scales
+with Retina geometry. These are native synthetic-level measurements, not a GPU,
+WindowServer, battery or physical multi-display capture profile; do not overclaim.
+No visual retuning was warranted by the evidence. Keep the current look Ethan likes.
+
+The signed universal544 was installed through the five-second warning, ordinary
+all-session Quit veto and verified atomic replacement. Readiness, Developer ID,
+audio/Automation entitlements, Sparkle key and protected settings were checked;
+Scarlett input, real600ms tail, disabled transcript autoqueue, Voice ownership,
+YouTube ordering, Primary/Next/clipboard and HUD-only partials remain unchanged.
+The official VoiceInk app was untouched. Public qualification is a separate gate.
+
+
 ## 2026-11-24 — Keep the recording rainbow thin and even after HUD scaling
 
 Ethan's "rainbow thing" is a live microphone signal on every Mini and Notch card,

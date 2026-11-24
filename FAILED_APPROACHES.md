@@ -1,5 +1,17 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-24 — Serializing the typing suite did not repair its scroll fixture
+
+The combined Mini suite's synthetic scroll forwarding assertion still failed after
+adding Suite.serialized to RecorderTypedInputTests. All121 cases executed on
+569620ad; the same half/default-size scroll assertion failed. The trial was reverted
+in a6ddc333. Together with earlier reverted pointer-window, coordinate and yielding
+wait experiments, this does not establish an AppKit defect or justify changing
+production scroll behavior. The focused selection still passed. Preserve the real
+assertion and use exact-source full release results; do not repeat serialization
+as a proven fix or silently skip the guard.
+
+
 ## 2026-11-24 — Hold YouTube behind unrelated Voice restoration checks
 
 Build 536 posted the YouTube stop notification only after awaiting Voice's
