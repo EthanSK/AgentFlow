@@ -58,8 +58,10 @@ struct RecorderVersionLabel: View {
             .foregroundStyle(Color.white.opacity(0.48))
             .lineLimit(1)
             .multilineTextAlignment(.center)
-            .fixedSize(horizontal: true, vertical: true)
             .frame(minWidth: 28, alignment: .center)
+            // Reserve the full one-line identifier, not a 28pt frame that lets
+            // the text paint underneath Stop in the compact recorder.
+            .fixedSize(horizontal: true, vertical: true)
             .help(Self.presentation.accessibilityLabel)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text(Self.presentation.accessibilityLabel))
