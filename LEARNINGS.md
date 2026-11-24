@@ -1,5 +1,46 @@
 # Learnings
 
+## 2026-11-24 — Keep the recording rainbow thin and even after HUD scaling
+
+Ethan's "rainbow thing" is a live microphone signal on every Mini and Notch card,
+controlled by Interface → Recording Outline and on for a missing preference. An
+explicit saved false survives restart and backup restore; an older backup omitting
+the field preserves the current choice. Won't paste changes delivery, so its real
+capture/gesture window and approved microphone tail remain lit. Starting, Pause,
+microphone-off typing and processing stay unlit. Streaming text remains HUD-only.
+
+The requested Opus first pass supplied the perimeter colour flow and leaf-only
+30 Hz schedule. Ethan subsequently requested a thinner border with no blur or
+colour fading into the black panel. Keep one sharp stroke, a static Reduce Motion
+branch and the shared card silhouettes; do not restore the original bloom/core.
+
+A logical 1pt stroke alone is insufficient at the default 85% HUD scale: screenshot
+pixels showed solid horizontal rows and fainter split side columns. Align the
+Canvas origin and bounds to final backing pixels, account for HUD/display scaling,
+and align the stroke path too. Moving only the path left a fractional Canvas layer
+softened during compositing. Omit the Notch's explicit closing top segment instead
+of masking that line: resampling leaked a faint full-width row through the mask.
+
+Native source `fb669a4c38491774272947f23e6529c480015d47`, build 543, passed all 23
+selected canonical Mini tests, including real Mini/Notch appearance, 50%/85%/100%
+scaled coverage with fractional placement, standard/Retina geometry, motion and
+Reduce Motion, saved preference compatibility and the Primary/Next/HUD-only/YouTube
+ordering guards. Visual inspection confirmed a clean open Notch and even Mini edges.
+A signed universal 543 was installed through the five-second warning and cooperative
+all-session quit; actual readiness, signature, entitlements and unchanged saved
+Scarlett/600ms tail/autoqueue-off settings were checked. No synthetic recording,
+Voice control or media playback was started. These checks do not prove new physical
+recording or every Retina display's live appearance.
+
+The broader Mini suite still has an unresolved pre-existing synthetic scroll-check
+failure: the full 542 run executed 1,023 cases and failed only
+`transcriptDragMovesPanelWithoutBreakingClickOrScroll`. It passes in the focused
+selection but fails within the entire typing suite too. Pointer-window hints,
+receiver-coordinate changes and a yielding bounded scroll wait did not resolve it;
+all speculative fixture changes were reverted. Do not claim a full-suite pass or
+change production scroll behavior from this evidence alone.
+
+
 ## 2026-11-24 — Spoken backspace edits speech before final delivery
 
 Ethan's “backspace, backspace” means remove one preceding dictated word per

@@ -2824,3 +2824,20 @@ Register admitted paired requests, active recipient ownership and pending outbou
 **Observed result:** Agent Flow remained alive; the Background NSWorkspace inventory omitted it, while the same read-only update-readiness request from the GUI domain identified the idle app. The corrected GUI-domain one-shot installer completed normal quit and relaunched the verified build. No forced app exit or repeated vetoed Quit was used.
 
 **Reconsider only if:** The exact remote execution context can identify the intended desktop instance and authoritative readiness, and actual process exit/relaunch are verified. Prefer the verified logged-in GUI domain for the one bounded installer, retain all-session vetoes and a real warning, and remove its completed transient job afterward.
+
+## 2026-11-24 — Treating synthetic wheel hints or a longer wait as a verified scroll-test fix
+
+The recorder's native scroll assertion passes alone/focused but fails at scaled
+sizes within the complete typing/full suite on the Mini. The event is built with
+`CGEvent(scrollWheelEvent2Source:)` and wrapped as `NSEvent`; diagnostics observed
+`windowNumber=0`, deltaY=80 and unchanged clip offset 200. Setting the public
+window-under-pointer fields did not bind `NSEvent.windowNumber`. Explicit global
+or receiver locations and a main-actor-yielding one-second completion deadline
+also failed. Those speculative test edits were reverted; production scrolling was
+not changed. The exact root cause remains unknown.
+
+Reconsider a fixture change only after a supported window/event route or a measured
+AppKit/view-lifecycle cause proves the same actual scroll position changes under the
+failing suite. Preserve the assertion, canonical runner and physical-input boundary;
+do not hide the failure, use private event fields or claim a public release gate
+passed from the smaller selection.
