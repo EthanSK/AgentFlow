@@ -47,6 +47,33 @@ YouTube ordering, Primary/Next/clipboard and HUD-only partials remain unchanged.
 The official VoiceInk app was untouched. Public qualification is a separate gate.
 
 
+## 2026-11-24 — Native interaction fixtures must await their own completed actions
+
+The hosted build 544 gate executed 1,048 functions but reported 12 issues in six
+older scroll, shortcut and focus functions. Fixed 20–120 ms sleeps let assertions
+race actual main-actor handoffs under that load. Preserve all state, route, count
+and cancellation assertions; await the positive postcondition with a bounded
+deadline instead. The pending-transcription fixture uses the same injected decision
+continuation as `pendingPrimaryReservationUsesOriginalStartDeadline`, rather than
+assuming a real timer fires within 50 ms. These are test-only changes, not added
+product delays or a change to the Primary decision windows.
+
+The wheel fixture also needs a real window-associated event and AppKit dispatch
+context. The public `NSEvent.mouseEvent` factory supplies the owning window; its
+public CG event can carry wheel fields. Window identity alone still failed at
+50%/85%; direct `NSApp.sendEvent` still failed at 50%. Posting this owned wheel,
+dequeueing it through `nextEvent` and asserting that it is `NSApp.currentEvent`
+before dispatch passed the real scroll-offset assertion at 50%/85%/100%. This
+follows the event-queue pattern already used by the native History Copy fixture in
+`MainWindowPresentationTests`; no private field or production scroll change was
+used. The event factory is new fixture code, not proof of a physical wheel test.
+
+Exact source `41de5ec14c397474c06d1db87b98f6a7af12a38b` passed all 122 selected
+canonical Xcode cases: the entire 121-function recorder typing/interaction suite
+and both arguments of the pending-transcription test. All six previously failing
+functions passed. This diagnostic does not replace the exact-source full public
+release gate or establish which prior native event state caused the old failure.
+
 ## 2026-11-24 — Keep the recording rainbow thin and even after HUD scaling
 
 Ethan's "rainbow thing" is a live microphone signal on every Mini and Notch card,

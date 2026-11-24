@@ -2853,3 +2853,13 @@ AppKit/view-lifecycle cause proves the same actual scroll position changes under
 failing suite. Preserve the assertion, canonical runner and physical-input boundary;
 do not hide the failure, use private event fields or claim a public release gate
 passed from the smaller selection.
+
+**Later bounded evidence:** The public AppKit mouse factory followed by its public
+CG-event bridge did preserve the exact window number, but source `adb5f352` still
+failed actual scrolling at 50%/85% inside 122 selected cases. Direct AppKit dispatch
+in `9150a8a3` still failed at 50%. Treating either window association or direct
+dispatch alone as sufficient is therefore rejected. Source `41de5ec1` additionally
+posts/dequeues the owned wheel through AppKit's event queue, verifies the actual
+current event, and passed all 122 cases, including unchanged scroll-position,
+click, drag and nonactivation assertions at all three scales. This is native
+fixture evidence, not physical input acceptance or full release qualification.
