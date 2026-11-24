@@ -135,6 +135,14 @@ struct MicrophoneWaveformTests {
         #expect(history.meter.levels.count == MicrophoneLevelHistory.completedSliceCount + 1)
     }
 
+    @Test func aCoalescedReadKeepsTheCapturedFractionalSlicePhase() {
+        var history = MicrophoneLevelHistory()
+        history.append(window(-20, seconds: 0.037))
+        history.append(window(-20, seconds: 3_600.041))
+        #expect(abs(history.meter.currentSliceProgress - 0.78) < 1e-7)
+        #expect(history.completedLevels.count == MicrophoneLevelHistory.completedSliceCount)
+    }
+
     // MARK: Loudness scale and audio-thread accumulation
 
     @Test func scaleIsLinearInDecibelsWithAFlatQuietFloor() {
@@ -180,7 +188,38 @@ struct MicrophoneWaveformTests {
         accumulator.addBuffer(squareSum: -1, frameCount: 480, sampleRate: 48_000)
         accumulator.addBuffer(squareSum: 1, frameCount: 0, sampleRate: 48_000)
         accumulator.addBuffer(squareSum: 1, frameCount: 480, sampleRate: 0)
+        accumulator.addBuffer(squareSum: 1, frameCount: 480, sampleRate: .infinity)
+        accumulator.addBuffer(squareSum: 1, frameCount: 480, sampleRate: .leastNonzeroMagnitude)
         #expect(accumulator.window == valid)
+    }
+
+    @Test func levelWindowReplayKeepsTimeAndRelativeHeights() throws {
+        let reference = try replayReference()
+        var history = MicrophoneLevelHistory()
+        var minimum: Float = 1
+        var maximum: Float = 0
+        for (index, sample) in reference.samples.enumerated() {
+            let end = index + 1 < reference.samples.count ? reference.samples[index + 1].at : reference.seconds
+            let duration = end - sample.at
+            #expect(duration > 0 && duration.isFinite)
+            history.append(window(sample.rmsDb, seconds: duration))
+            let expected = MicrophoneLevelScale.displayLevel(forDecibels: sample.rmsDb)
+            minimum = min(minimum, expected)
+            maximum = max(maximum, expected)
+            // A read can finish a slice. Its sound must remain in the current or
+            // immediately preceding slot, never disappear at that boundary. — GPT-6.1 Sol
+            #expect((history.meter.levels.suffix(2).max() ?? 0) + 1e-6 >= expected)
+            #expect(history.meter.levels.count == MicrophoneLevelHistory.completedSliceCount + 1)
+            #expect(history.meter.levels.allSatisfy { $0.isFinite && $0 >= 0 && $0 <= 1 })
+        }
+        #expect(maximum - minimum > 0.3)
+        let phase = reference.seconds.truncatingRemainder(dividingBy: MicrophoneLevelHistory.sliceDuration)
+            / MicrophoneLevelHistory.sliceDuration
+        let error = abs(history.meter.currentSliceProgress - phase)
+        #expect(min(error, abs(error - 1)) < 1e-5)
+        if ProcessInfo.processInfo.environment["VIPP_WAVEFORM_REPLAY_FILE"] != nil {
+            print("Measured input envelope replay passed: \(reference.samples.count) windows, \(reference.seconds) seconds")
+        }
     }
 
     // MARK: Drawing
@@ -279,6 +318,13 @@ struct MicrophoneWaveformTests {
         let resume = try #require(timer.range(of: "timer.resume()"))
         #expect(reset.lowerBound < resume.lowerBound)
         #expect(timer.contains("repeating: .milliseconds(33)"))
+        let stopOldClock = try #require(timer.range(of: "stopAudioMeter()"))
+        #expect(stopOldClock.lowerBound < reset.lowerBound)
+        let resetBody = try body(of: "    private func resetAudioMeter() {", in: recorder,
+                             until: "    private func scheduleCaptureRefresh(")
+        let successorGuard = try #require(resetBody.range(of: "guard audioMeterUpdateTimer == nil else { return }"))
+        let historyClear = try #require(resetBody.range(of: "levelHistory = MicrophoneLevelHistory()"))
+        #expect(successorGuard.lowerBound < historyClear.lowerBound)
 
         // Pause closes the waveform before the hardware gate and clears it after; paused
         // audio is neither drawn nor joined to the resumed run.
@@ -294,6 +340,7 @@ struct MicrophoneWaveformTests {
                                    until: "        let currentDeviceID = deviceManager.getCurrentDevice()")
         #expect(typingStart.contains("return nil"))
         #expect(!typingStart.contains("startAudioMeterTimer()"))
+        #expect(typingStart.contains("stopAudioMeter()") && typingStart.contains("resetAudioMeter()"))
     }
 
     @Test func audioThreadOnlyAddsScalarsUnderTheExistingMeterLock() throws {
@@ -437,6 +484,21 @@ struct MicrophoneWaveformTests {
                 let newest = try await render("newest", meter(loudAges: [0, 1, 2, 3]))
                 let earlier = try await render("earlier", meter(loudAges: [6, 7, 8]))
                 let silentAgain = try await render("silent-again", .silent)
+                // Optional private envelope data is transported only for this finite
+                // native diagnostic. Public CI uses the synthetic cases above; no
+                // recording content or private input trace enters the repository.
+                // — GPT-6.1 Sol
+                if ProcessInfo.processInfo.environment["VIPP_WAVEFORM_REPLAY_FILE"] != nil {
+                    let reference = try replayReference()
+                    let indices = Set([reference.samples.count / 4, reference.samples.count / 2,
+                                       reference.samples.count * 3 / 4, reference.samples.count - 1])
+                    var replay = MicrophoneLevelHistory()
+                    for (index, sample) in reference.samples.enumerated() {
+                        let end = index + 1 < reference.samples.count ? reference.samples[index + 1].at : reference.seconds
+                        replay.append(window(sample.rmsDb, seconds: end - sample.at))
+                        if indices.contains(index) { _ = try await render("reference-\(index)", replay.meter) }
+                    }
+                }
                 let label = "\(style) scale=\(scale)"
 
                 // After loud sound, silence redraws exactly the original quiet card: no
@@ -463,6 +525,27 @@ struct MicrophoneWaveformTests {
     }
 
     // MARK: Helpers
+
+    /// Uses an optional measured, content-free envelope for the private Mini replay;
+    /// ordinary public tests exercise the same path with explicit synthetic levels.
+    /// The supplied file is bounded and never copied into a public fixture. — GPT-6.1 Sol
+    private func replayReference() throws -> WaveformReplayReference {
+        if let file = ProcessInfo.processInfo.environment["VIPP_WAVEFORM_REPLAY_FILE"] {
+            let url = URL(fileURLWithPath: file)
+            let attributes = try FileManager.default.attributesOfItem(atPath: file)
+            let bytes = try #require((attributes[.size] as? NSNumber)?.intValue)
+            #expect(bytes > 0 && bytes < 512_000)
+            let reference = try JSONDecoder().decode(WaveformReplayReference.self, from: Data(contentsOf: url))
+            #expect(reference.samples.count > 3 && reference.samples.count < 10_000)
+            return reference
+        }
+        let samples = (0..<80).map { index in
+            WaveformReplayReference.Sample(at: Double(index) * 0.03,
+                rmsDb: index % 20 < 8 ? -70 : (index % 20 < 14 ? -34 : -15))
+        }
+        return WaveformReplayReference(seconds: 2.4, samples: samples)
+    }
+
 
     private func window(_ decibels: Float, seconds: TimeInterval) -> MicrophoneLevelWindow {
         MicrophoneLevelWindow(duration: seconds, rmsDecibels: decibels)
@@ -578,4 +661,14 @@ private struct PixelRegion {
     var skipPostProcessing = false
     let pasteDestinationIndicatorTarget: FocusLockService.Target? = nil
     let iconActionPulse: RecorderIconActionPulse? = nil
+}
+
+/// Numeric input levels only; no audio or dictated words. — GPT-6.1 Sol
+private struct WaveformReplayReference: Decodable {
+    struct Sample: Decodable {
+        let at: TimeInterval
+        let rmsDb: Float
+    }
+    let seconds: TimeInterval
+    let samples: [Sample]
 }

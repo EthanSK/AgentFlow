@@ -20,10 +20,9 @@ struct AudioMeter: Equatable, Sendable {
     /// — Claude Opus 5.5
     let currentSliceProgress: Double
 
-    /// A fresh recording, a quiet room, Pause and microphone-off typing all draw this
-    /// flat state. Silence carries no slide progress, so consecutive silent ticks compare
-    /// equal and Recorder skips republishing identical pixels to every panel.
-    /// — Claude Opus 5.5
+    /// Fresh capture, input at/below the quiet floor and microphone-off typing use this
+    /// flat state. Silence carries no slide progress, so equal quiet ticks do not redraw
+    /// every panel. Actual room noise above the floor remains visible. — GPT-6.1 Sol
     static let silent = AudioMeter(
         levels: Array(repeating: 0, count: MicrophoneLevelHistory.completedSliceCount + 1),
         currentSliceProgress: 0
@@ -64,7 +63,12 @@ struct MicrophoneLevelHistory: Equatable, Sendable {
         // detail finer than the window was never measured, so none is invented. Anything
         // older than one full history would scroll away anyway, which also bounds this
         // loop for an arbitrarily long window. — Claude Opus 5.5
-        var remaining = min(window.duration, Self.sliceDuration * Double(Self.completedSliceCount + 1))
+        // Keep the fractional slice phase when discarding old full slices after a
+        // coalesced read. Simply clamping the duration loses real captured-audio time.
+        // Found and fixed by GPT-6.1 Sol.
+        let retainedDuration = Self.sliceDuration * Double(Self.completedSliceCount + 1)
+        var remaining = min(window.duration, retainedDuration
+            + window.duration.truncatingRemainder(dividingBy: Self.sliceDuration))
         while remaining > Self.durationTolerance {
             let used = min(remaining, Self.sliceDuration - currentDuration)
             currentLevel = max(currentLevel, level)
@@ -150,10 +154,13 @@ struct MicrophoneLevelAccumulator: Sendable {
     /// channel CoreAudioRecorder writes to the WAV. A malformed buffer adds neither energy
     /// nor time. — Claude Opus 5.5
     mutating func addBuffer(squareSum bufferSquareSum: Double, frameCount bufferFrameCount: Int, sampleRate: Double) {
-        guard bufferFrameCount > 0, sampleRate > 0, bufferSquareSum.isFinite, bufferSquareSum >= 0 else { return }
+        guard bufferFrameCount > 0, sampleRate.isFinite, sampleRate > 0,
+              bufferSquareSum.isFinite, bufferSquareSum >= 0 else { return }
+        let bufferDuration = Double(bufferFrameCount) / sampleRate
+        guard bufferDuration.isFinite, bufferDuration > 0 else { return }
         squareSum += bufferSquareSum
         frameCount += bufferFrameCount
-        duration += Double(bufferFrameCount) / sampleRate
+        duration += bufferDuration
     }
 
     /// Energy-weighted RMS over every added frame. Uses the same −120 dBFS digital-silence

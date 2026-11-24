@@ -1,3 +1,5 @@
+// Coordinates microphone capture, pause/resume and recording-owned media work.
+// The HUD reads one bounded audio meter; delivery stays with VoiceInkEngine. — GPT-6.1 Sol
 import Foundation
 import AVFoundation
 import CoreAudio
@@ -219,6 +221,8 @@ class Recorder: NSObject, ObservableObject {
         deviceManager.isRecordingActive = true
 
         if initiallyPaused {
+            stopAudioMeter()
+            resetAudioMeter()
             let core = recorder ?? makeCoreAudioRecorder()
             recorder = core
             let deviceID = deviceManager.getCurrentDevice()
@@ -626,7 +630,7 @@ class Recorder: NSObject, ObservableObject {
     }
 
     private func startAudioMeterTimer() {
-        audioMeterUpdateTimer?.cancel()
+        stopAudioMeter()
         // Each capture run (start, resume, or a failed pause that keeps capturing) begins
         // with an empty history, so the bars never join sound across a pause gap or show a
         // previous recording whose stop is still finishing. Audio captured since the
@@ -652,6 +656,11 @@ class Recorder: NSObject, ObservableObject {
     }
 
     private func resetAudioMeter() {
+        // A's stop/pause can finish its media await after B has started its meter.
+        // An active timer owns B's display; A must not erase its measured history.
+        // startAudioMeterTimer first clears the old timer, so its own reset still runs.
+        // Found by Claude Opus 5.5. Fixed by GPT-6.1 Sol.
+        guard audioMeterUpdateTimer == nil else { return }
         levelHistory = MicrophoneLevelHistory()
         audioMeter = .silent
     }

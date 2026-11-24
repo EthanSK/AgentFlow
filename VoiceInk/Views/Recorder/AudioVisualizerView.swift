@@ -1,3 +1,5 @@
+// Draws microphone history and the recorder's idle/processing indicators in one
+// stable control-row slot. Active bars use measured audio, not a clock. — GPT-6.1 Sol
 import SwiftUI
 
 /// The recorder's live microphone waveform: one bar per 100 ms of recently captured

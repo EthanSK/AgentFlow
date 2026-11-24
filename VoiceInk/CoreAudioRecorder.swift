@@ -1,3 +1,5 @@
+// Owns the AUHAL input, real PCM sinks and thread-safe measurements used by Recorder.
+// Capture gates and the serial hardware queue protect recording boundaries. — GPT-6.1 Sol
 import Foundation
 import CoreAudio
 import AudioToolbox
@@ -211,14 +213,14 @@ final class CoreAudioRecorder: @unchecked Sendable {
     }
 
     /// Returns and clears everything captured since the previous call. Recorder's
-    /// main-queue meter tick is the only caller; this is one short lock and never
-    /// touches the audio thread's work. — Claude Opus 5.5
+    /// main-queue meter tick is the only caller. Copy the three scalars while locked,
+    /// then calculate RMS after unlocking so the input callback can continue. — GPT-6.1 Sol
     func drainMeterWindow() -> MicrophoneLevelWindow {
         meterLock.lock()
-        defer { meterLock.unlock() }
-        let window = pendingMeterEnergy.window
+        let captured = pendingMeterEnergy
         pendingMeterEnergy = MicrophoneLevelAccumulator()
-        return window
+        meterLock.unlock()
+        return captured.window
     }
 
     // Pre-allocated render buffer (to avoid malloc in real-time callback)
