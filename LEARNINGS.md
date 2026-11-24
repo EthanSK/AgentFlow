@@ -1,5 +1,40 @@
 # Learnings
 
+## 2026-11-24 — Space Voice commands and keep the chosen microphone reader dormant
+
+Ethan explicitly chose a 300 ms gap between paired speaker/microphone shortcuts at
+Start and Stop, and left microphone/UI-state reading OFF. The missing/false
+`VIPPVoiceMicrophoneStateReadsEnabled` preference gates the production AX entry,
+150 ms post-toggle readback wait, and launch/activation exposure observers. Keep
+the parser dormant for a future explicit enable. This does not change H Chat's
+separate explicit controls, add a settings UI or re-enable recording recap messages.
+
+Record a posted speaker command with a monotonic clock and wait only the remaining
+gap before the microphone command. Each command's down/up pair remains immediate.
+The existing 400 ms Primary paste-to-Return allowance is separate and unchanged.
+Recheck local and pending paired ownership after the new suspension: a queued Start
+inherits the existing mute, and cancellation before a replacement applies must
+settle inherited speaker ownership only when no local request remains. Validate
+the exact call again at dispatch; never restore onto a replacement call or retry
+an unverified toggle. Cooperatively deferred Quit still waits for restoration.
+
+Natural build 544 diagnostics showed sequential speaker/mic posts rather than an
+intentional inter-command gap. Some post-reads reported listening, which caused
+the old coordinator to acquire no inverse ownership. A stale UI read does not
+prove the audio remained listening. Direct toggles also cannot establish a manually
+muted starting state or native acceptance; the requested spacing is not by itself
+proof that the live reliability symptom is resolved.
+
+Integrated source `cbfd0984fecdc46c0a2b4ded2b720456dd7564d3`, build 545, passed all
+112 selected canonical Xcode functions, including all 13 new virtual-time cases,
+existing speaker/microphone/reader/preparation/paired ownership and neighboring
+Primary/Next/HUD-only/YouTube guards. An older rapid-cycle fixture now explicitly
+settles a completed pause, retains its exact three-post assertion, and proves one
+final inverse with four posts and listening/unowned state. Dedicated controlled-gap
+cases separately cover overlapping intent. No product wait was added for the test.
+No live Voice control, recording or recap probe was generated. Safe installation
+and a later natural recording's audible acceptance are separate verification steps.
+
 ## 2026-11-24 — Represent microphone sound without a decorative waveform clock
 
 Ethan described the old waveform as "just like a random animation". Its bars

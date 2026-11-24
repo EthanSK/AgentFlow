@@ -39,13 +39,19 @@ Recorder start/resume ─► ChatGPTVoiceCaptureMuteCoordinator.prepareForCaptur
 
 - **One mechanism.** The recipient's own running Agent Flow applies the request through its
   existing `ChatGPTVoiceCaptureMuteCoordinator`: the same snapshot, the same PID-targeted
-  `realtimeVoice.toggleMicrophoneMute` command, the same read-only state checks and the same
+  `realtimeVoice.toggleMicrophoneMute` command, the same exact-call checks and the same
   Accessibility permission. No helper, shell interpreter or new permission owner runs on the
   recipient. The one difference is which key posts that command: the recipient uses the binding
   it already has for it (see [Setup](#setup)), and a mute's inverse always uses the binding that
   posted the mute. Both boundaries require the same exact local Voice call for a mute and its
   inverse. If the call changes or cannot be identified, the old suppression is never restored
-  onto a replacement call. A readable muted control belongs to the user.
+  onto a replacement call. From build 545 the optional microphone UI reader is off
+  by default (`VIPPVoiceMicrophoneStateReadsEnabled` is false when absent), so normal
+  capture pairs direct toggles without a control read or readback wait. A manually
+  muted starting state or manual change during capture can therefore be inverted.
+  Only an explicitly enabled reader can protect a readable manual state. Local
+  speaker-to-microphone pairs are spaced by 300 ms; a pending local/paired owner
+  inherits suppression instead of receiving an intermediate inverse.
 - **Owners, not toggles.** A paired capture is one more owner of the recipient's suppression.
   Suppression is attempted when an owner begins (no-op if already owned) and restoration runs
   only when the last owner ends. A paired release therefore never unmutes ChatGPT under the

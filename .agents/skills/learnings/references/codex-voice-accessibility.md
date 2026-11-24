@@ -1,5 +1,21 @@
 # Codex Voice controls and exposure
 
+## Current recording policy
+
+On 2026-11-24 Ethan explicitly chose to leave Agent Flow's microphone/UI-state
+reader OFF. `VIPPVoiceMicrophoneStateReadsEnabled` is false when absent. Gate both
+AX entrypoints, the post-toggle readback wait and launch/activation exposure
+observers. Keep the parser dormant for a future explicit enable; do not restore
+read-first behavior from the older investigation below. No settings UI is added.
+
+Normal capture pairs direct speaker/microphone toggles on the same call, with the
+requested 300 ms speaker-to-microphone gap. Recheck pending local/paired ownership
+after that suspension. No duplicate toggles or blind retries. Direct dispatch
+cannot identify a manually muted starting state or prove native audio acceptance.
+This Agent Flow policy does not change H Chat's independent explicit controls.
+
+## Earlier exposure investigation
+
 Ethan approved one scoped `AXManualAccessibility=true` request for the exact
 configured Codex Voice host on 2026-11-14. This does not broaden the separate
 VS Code selection-capture exception. Keep it ahead of capture, off the main
@@ -33,5 +49,6 @@ owns one paired toggle on the same call. Preserve the recording lease and stop
 ownership after the restore attempt. The start/stop dispatch uses no speaker
 control scan, mute-state check, focus change or retry.
 
-The microphone keeps its own snapshot and manual-state protection. Keep a
-speaker shortcut post distinct from observed mute state and audible behavior.
+The microphone keeps exact-call metadata and ownership. Manual-state protection
+through a readable control is available only when the dormant reader is explicitly
+enabled. Keep shortcut posts distinct from observed mute state and audible behavior.
