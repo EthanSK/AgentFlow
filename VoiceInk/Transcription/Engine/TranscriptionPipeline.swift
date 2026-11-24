@@ -222,6 +222,12 @@ class TranscriptionPipeline {
         var responseError: String?
         var recoversTypedDraft = false
         var failureCopyText: String?
+        var spokenEdits: SpokenBackspace.Result?
+        func referencesForEditedSpeech() -> [LiveSelectionReference] {
+            let references = liveSelectionReferences()
+            guard let spokenEdits else { return references }
+            return references.map { $0.reanchored(after: spokenEdits) }
+        }
         func reportTranscriptionFailure(_ title: String) {
             // The engine defers its retry offer until this failed record is saved
             // and its queue identity has retired. Other callers retain the ordinary
@@ -291,7 +297,7 @@ class TranscriptionPipeline {
             guard responseConfig == nil || responseError != nil else { return }
             // Typed words are authored input, not optional source context. Raw
             // mode excludes highlights/screenshots but must retain keyboard prose.
-            let references = liveSelectionReferences().filter {
+            let references = referencesForEditedSpeech().filter {
                 (includeSourceContext && !skipPostProcessingNow) || $0.isTypedText
             }
             // Reuse the archive's one reservation. Codex inline output, Claude
@@ -404,13 +410,13 @@ class TranscriptionPipeline {
             ].map { candidate -> String? in
                 guard let candidate else { return nil }
                 return finalContextAttached ? candidate : LiveSelectionReference.interleaving(
-                    liveSelectionReferences(), with: candidate
+                    referencesForEditedSpeech(), with: candidate
                 )
             }
             // A failed/empty provider may produce no candidate at all. Keyboard
             // prose is independently authored: retain it even without a HUD snapshot.
             let typedOnlyRecovery = LiveSelectionReference.interleaving(
-                liveSelectionReferences().filter(\.isTypedText), with: ""
+                referencesForEditedSpeech().filter(\.isTypedText), with: ""
             )
             let recovery = TranscriptionCancellationRecovery.resolve(
                 completedCandidates + [recoverablePartialTranscriptNow, typedOnlyRecovery]
@@ -562,6 +568,18 @@ class TranscriptionPipeline {
                 vippLog.info("pipeline: personal-note prefix → raw paste without auto-send")
             }
 
+            // Spoken backspace is local dictation editing, before triggers or AI
+            // can reinterpret the command. Never inspect a destination or delete
+            // an existing app word; raw/skip and typed context remain verbatim.
+            if hasCapturedAudio, !assistant.isFollowUp, !skipPostProcessingNow {
+                let edits = SpokenBackspace.apply(text)
+                spokenEdits = edits
+                text = edits.text
+                if edits.commandCount > 0 {
+                    vippLog.info("pipeline: spoken backspace commands=\(edits.commandCount, privacy: .public) remainingChars=\(text.count, privacy: .public)")
+                }
+            }
+
             // ── VIPP (skip-mode-processing feature) — trigger-word bypass ──
             // Trigger-word mode-selection can REWRITE the text (strip the trigger word) and
             // SWITCH the active mode as a side effect (selectTriggerWordModeIfNeeded). For a
@@ -695,7 +713,7 @@ class TranscriptionPipeline {
                 // already returns nil on skip, but gating here too makes the bypass independent
                 // of that and keeps both bypass points readable in one place.)
                 let textForAI = shouldRespondInRecorder
-                    ? LiveSelectionReference.interleaving(liveSelectionReferences(), with: text,
+                    ? LiveSelectionReference.interleaving(referencesForEditedSpeech(), with: text,
                         includeTiming: false, includeReadablePreview: false)
                     : text
                 if (hasCapturedAudio || shouldRespondInRecorder),
@@ -770,10 +788,10 @@ class TranscriptionPipeline {
                 (error as? URLError)?.code == .cancelled
             vippLog.error("pipeline: transcribe FAILED isCancelled=\(isCancelled, privacy: .public) \(jobIdentity.logDescription, privacy: .public)")
 
-            let typedReferences = liveSelectionReferences().filter(\.isTypedText)
+            let typedReferences = referencesForEditedSpeech().filter(\.isTypedText)
             let typedRecovery = LiveSelectionReference.interleaving(typedReferences, with: "")
             failureCopyText = TranscriptionCancellationRecovery.resolve([
-                liveSelectionReferences().contains(where: \.isTypedText) ? typedRecovery : nil,
+                referencesForEditedSpeech().contains(where: \.isTypedText) ? typedRecovery : nil,
                 transcription.recoverableRealtimeDraftText, recoverablePartialTranscriptNow
             ]).text
             recoversTypedDraft = !assistant.isFollowUp && !isCancelled && !shouldCancel()
@@ -904,7 +922,7 @@ class TranscriptionPipeline {
             // preview, not a second copy in the saved file or its viewer. Raw
             // mode keeps its explicit no-optional-context contract.
             let archiveStarted = ContinuousClock.now
-            let references = liveSelectionReferences().filter { !skipPostProcessingNow || $0.isTypedText }
+            let references = referencesForEditedSpeech().filter { !skipPostProcessingNow || $0.isTypedText }
             let complete = responseConfig != nil && responseError == nil ? transcription.text : LiveSelectionReference.interleaving(references, with: current,
                 includeTiming: !skipPostProcessingNow, includeReadablePreview: false)
             await preservePrompt(complete)

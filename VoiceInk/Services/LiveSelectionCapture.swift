@@ -278,6 +278,14 @@ struct LiveSelectionReference: Equatable, Sendable {
         anchoredWordCount
     }
 
+    /// Preserve captured content and identity while placing it among surviving
+    /// speech words. Capture-end typing still follows all final speech. — GPT-6.1 Sol
+    func reanchored(after edits: SpokenBackspace.Result) -> Self {
+        var copy = self
+        copy.anchoredWordCount = edits.wordCount(before: anchoredWordCount)
+        return copy
+    }
+
     /// Timeline position among `totalWords` final words. Capture-end prose
     /// follows all of them; every other reference uses its observed anchor.
     private func placementWordCount(totalWords: Int) -> Int {
