@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # A public binary needs a full, named test pass from its exact source/build.
-# Run on the dedicated Mac Mini, in a clean checkout; do not copy the test host into a release.
+# Run in a clean release checkout on the selected build host; never package the test host.
 root=$(cd "$(dirname "$0")/.." && pwd)
 output=${1:?Pass a fresh, task-scoped output directory}
 mkdir -p "$output"

@@ -9,8 +9,9 @@ User-corrected — 2026-11-14.
 
 The release scripts publish the version read from the app source. Keep the public
 download, setup guide and website version aligned after the artifact passes the
-gates below. Build/test happens on the dedicated Mini; Developer ID signing and
-notarization may happen separately on the MacBook without replacing its installed app.
+gates below. Automated public builds, full tests, Developer ID signing and notarization
+all run on a disposable GitHub-hosted Mac. Local installation keeps its separate
+Mini-based flow and does not determine public-release readiness.
 Use a fresh `.noindex` output directory and set `AGENTFLOW_PACKAGES_DIR` to an existing
 reviewed Swift package cache if needed. Never substitute a local self-signed ZIP for
 the notarized public artifact. `SHA256SUMS` contains only downloadable filenames, so
@@ -19,33 +20,27 @@ the documented `shasum -a 256 -c SHA256SUMS` works from a clean download directo
 ## Automatic signed updates
 
 Trusted native/release changes pushed to `main`, or a manual dispatch, start
-`.github/workflows/release.yml`. The repository-scoped signing runner invokes
-`scripts/build-public-on-fleet.py` to reserve the Mini through The Fleet. It fetches
-the exact commit, runs the complete named test gate and builds a separate universal
-Release app. The signing Mac accepts only its matching source/build/hash receipt.
+`.github/workflows/release.yml` on a GitHub-hosted Apple Silicon Mac. It builds the
+pinned speech dependency, runs the complete named test gate and builds a separate
+universal Release app. No Fleet worker, personal Mac or saved GitHub CLI login is
+part of this automated release.
 
-The final app and nested code use the existing Developer ID identity. Notarisation,
-stapling and the extracted-download checks precede publication. Sparkle's final ZIP
-signature and `appcast.xml` use Keychain account `com.ethansk.AgentFlow`; only its
-public key belongs in the app's top-level `SUPublicEDKey`. Set `SPARKLE_TOOLS` to
-the verified Sparkle tools when packaging manually. Never export the signing key.
+The final app and nested code use the existing Developer ID identity. Notarization,
+stapling and extracted-download checks precede publication. Sparkle's final ZIP
+signature and `appcast.xml` preserve the key for account `com.ethansk.AgentFlow`;
+only its public key belongs in the app's top-level `SUPublicEDKey`.
 
-The job publishes all four immutable assets as a draft before making the release
-latest, then downloads them again and checks their hashes. The app reads the latest
-`appcast.xml` and shows Sparkle's standard update dialog. Its relaunch waits for the
-existing all-session quit guard; `UPDATING.md` owns the attended bootstrap install.
+The job imports the signing material from encrypted repository Actions secrets
+into a temporary Keychain, using the explicit job-local `ReleaseCI` notary profile.
+It downloads checksum-verified Sparkle tools into the job's temporary directory.
+It publishes immutable assets through the scoped GitHub job token, makes the draft
+latest, then downloads the public assets and checks their hashes. Existing tags
+and releases are never overwritten. Temporary signing material is removed even
+on failure, and the hosted Mac is discarded after the job.
 
-The runners use a space-free work-path alias to verified scratch storage and the
-logged-in user's Keychain session (`SessionCreate=false`). They accept trusted main
-and manual jobs, not fork pull requests. Private keys stay in Keychain. Keep both
-the signing Mac and Mini awake and connected while a release runs; configured files
-alone are not evidence of a completed release.
-
-Only publication removes the job-token environment overrides and uses the signing
-Mac's existing EthanSK GitHub CLI login from Keychain, with `repo` and `workflow`
-scopes. It checks that account without printing or exporting its credential. This
-retains the exact verified source when another workflow edit moves main during a
-build; GitHub's limited job token cannot publish that older workflow tree.
+The app reads the latest `appcast.xml` and shows Sparkle's standard update dialog.
+Its relaunch waits for the existing all-session quit guard; `UPDATING.md` owns the
+attended bootstrap install. This workflow does not replace the running local app.
 
 [v2.0.365](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.365) separates
 different context section types with one blank line, keeps matching types compact,
@@ -80,67 +75,61 @@ is only a local build, even when `codesign --verify --deep --strict` succeeds.
 1. Work from a clean `main` commit. Increment both main-app `CURRENT_PROJECT_VERSION` settings;
    never reuse an installed or published build number. Preserve the unrelated dirty VoiceInk
    checkout and the official `/Applications/VoiceInk.app`.
-2. Build and run the full named unit suite on Ethan's Mac Mini. `scripts/test-public-release.sh`
-   uses Xcode's normal test action first. Only when TestManager executes zero named tests does
-   it use the already-built full-suite `xcrun xctest` fallback. The summary and individual
-   named passes must agree, with at least the current 365-test floor. Include the
-   cross-app selection fallback, privacy, and fresh-setup model guards in the
-   exact source being signed.
-3. On the Mini run `scripts/package-public-release.sh /private/tmp/<fresh-task-output> --build-only`.
-   It checks the pinned universal `whisper.cpp` dependency, runs the exact full suite, builds
-   a separate universal Release app, embeds GPLv3, and writes a bundle-preserving prebuilt ZIP,
-   `build-receipt.json` and `test-summary.txt`. Keep the detailed test logs on the Mini.
-4. Transfer those three files to a fresh directory on the signing Mac, not raw recursive `scp`
-   of the `.app`. With the exact same clean source commit and the dedicated Keychain profile
-   below, run `scripts/package-public-release.sh <transferred-output> --sign-prebuilt`.
-   It checks the source/build and file hashes before extraction, signs nested code and the
-   outer app with Developer ID and hardened runtime, retains Automation, submits to Apple,
-   staples, and produces the public ZIP, SHA-256 file and source-bound `release.json`.
-   Sparkle's bare `Autoupdate` executable must be signed before its framework, using
-   `Versions/Current/Autoupdate`, not a hard-coded version-A path. Sparkle 2 packages version B;
-   signing only the enclosing framework can pass local checks but fail Apple's notarization.
-   The MacBook does not build or run native tests. The optional default `--complete` mode runs
-   both stages on the Mini only when its own signing identity and isolated profile are usable.
-   Then run `scripts/publish-public-release.sh <transferred-output>`.
-   It verifies the notarized extracted app again, checks the exact source commit exists on
-   GitHub, creates a draft, checks its four assets, then publishes the release. It refuses
-   to overwrite an existing tag's release.
+2. The GitHub-hosted Mac runs the full named unit suite. `scripts/test-public-release.sh`
+   uses Xcode's normal test action first. Only when TestManager executes zero named
+   tests does it use the already-built full-suite `xcrun xctest` fallback. The summary
+   and individual named passes must agree, with at least the current 365-test floor.
+   Include the cross-app selection fallback, privacy and fresh-setup model guards in
+   the exact source being signed. GUI/session-dependent tests must actually pass on
+   the hosted Mac; do not skip them or delegate them to a personal machine.
+3. The job runs `scripts/package-public-release.sh <fresh-output> --complete` with
+   the hosted machine selected as `AGENTFLOW_BUILD_HOST`. It checks the pinned
+   universal `whisper.cpp` dependency, runs the full suite, then builds a separate
+   universal Release app and embeds GPLv3. Detailed test logs remain with the job's
+   output, rather than being transferred from a Mini.
+4. The same job signs nested code and the outer app with Developer ID and hardened
+   runtime, retains Automation, submits to Apple, staples, and produces the public
+   ZIP, SHA-256 file and source-bound `release.json`. Sparkle's bare `Autoupdate`
+   executable must be signed before its framework using `Versions/Current/Autoupdate`,
+   not a hard-coded version-A path. Then `scripts/publish-public-release.sh` verifies
+   the extracted app, checks the exact source on GitHub and publishes through a
+   draft without overwriting existing release bytes. The `--build-only` and
+   `--sign-prebuilt` modes remain for explicitly requested local packaging; they
+   are not a personal-machine fallback for the automated release.
 5. Only after the public ZIP works, update README, setup/build guidance and the Pages site to
    point to the verified download. A source change to the native app also needs the separate
    five-second warned local install/restart and live PID, CDHash, signature, entitlement and
    rollback checks in `AGENTS.md`.
 
-## Isolated Agent Flow notarization credential
+## Hosted signing credentials
 
-Create a new Apple app-specific password named **Agent Flow notarization** at
-[account.apple.com](https://account.apple.com/) under **Sign-In and Security → App-Specific
-Passwords**. Do not reuse another project's password. On the signing Mac, run this in an interactive
-Terminal session under the signing user's account, substituting only the Apple Account email:
+Provision these encrypted repository Actions secrets before enabling the hosted
+release workflow:
 
-```sh
-xcrun notarytool store-credentials AgentFlowRelease \
-  --apple-id '<your Apple Account email>' --team-id T34G959ZG8
-xcrun notarytool history --keychain-profile AgentFlowRelease --output-format json
-```
+- `APPLE_CERTIFICATE_P12_BASE64`: the Developer ID Application certificate and its
+  matching private key exported as password-protected PKCS#12, then base64-encoded.
+- `APPLE_CERTIFICATE_PASSWORD`: the password protecting that export.
+- `APPLE_ID` and `APPLE_TEAM_ID`: the Apple account and team used for notarization.
+- `APPLE_APP_SPECIFIC_PASSWORD`: a separately labelled Agent Flow notarization
+  password created at [account.apple.com](https://account.apple.com/).
+- `SPARKLE_ED25519_PRIVATE_KEY`: the existing Sparkle key matching `SUPublicEDKey`.
 
-Let `notarytool` prompt for the new app-specific password. Do not add `--password` to the command,
-paste the password into chat, or put it in an environment variable, shell history, repository file,
-CI secret, release asset, or log. Omit `--sync` so this profile remains local to that Mac. The
-packaging script uses only this fixed profile name and validates it before signing. A separately
-named password can be revoked independently in the Apple Account, but it is **not** an Apple
-per-app permission boundary; treat the signing Mac and its Keychain access as sensitive.
+Base64 is encoding, not encryption. Never commit or print these values, include
+private keys in release artifacts, or rotate the updater key merely to migrate
+runners. The Apple app-specific password authorizes notarization; it does not sign
+the executable or replace the Sparkle key. Its label permits separate revocation,
+not a per-app restriction enforced by Apple. Reuse the credential for future
+releases; changing the main Apple Account password revokes all app-specific passwords.
 
-Create and validate the profile in the signing Mac's logged-in user session. A non-interactive SSH
-`keychainLocked` error does not establish that the profile is absent or invalid. Do not work
-around it by placing the macOS login password in automation; any release runner must prove it
-can access the intended Keychain profile in its actual execution session before it is enabled.
+The hosted setup creates and unlocks a randomly passworded temporary Keychain,
+imports the signing identity and existing Sparkle key, stores the `ReleaseCI` profile
+there and uses that explicit Keychain for every notarization command. It validates
+credential access before the expensive build. Do not use Ethan's login Keychain,
+copy the Mac login password into automation, or install a personal runner.
 
-Apple also supports a **team** App Store Connect API key for `notarytool`, but team keys apply
-across all apps; individual API keys cannot authenticate `notarytool`. A Developer ID
-certificate alone does not complete notarization. See Apple's
-[app-specific-password instructions](https://support.apple.com/en-gb/102654) and
-[`notarytool` Keychain guidance](https://developer.apple.com/documentation/technotes/tn3147-migrating-to-the-latest-notarization-tool).
-
-The public release process must never silently fall back to self-signing or skip Apple
-notarization. Require the actual release job, final published download and installed
-updater checks to pass before reporting the complete system operational.
+See [GitHub's signing-secret and temporary-Keychain procedure](https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications),
+[Apple's app-specific-password instructions](https://support.apple.com/en-gb/102654)
+and [Apple's notarization authentication guidance](https://developer.apple.com/documentation/technotes/tn3147-migrating-to-the-latest-notarization-tool).
+A missing secret or failed hosted test blocks publication. Require the actual
+release job, published download and installed updater checks before reporting the
+complete system operational.
