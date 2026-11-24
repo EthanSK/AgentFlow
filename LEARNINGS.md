@@ -22,7 +22,9 @@ fixtures, the full production pipeline across all three routes and raw mode, the
 HUD revision/cache case, and existing Primary/Next/HUD-only/YouTube ordering guards.
 The Developer ID build was installed through the five-second warning and cooperative
 all-session idle quit, preserving the 600 ms tail, media preference, Scarlett input
-and disabled dictated-text queue. Actual spoken user acceptance remains unverified.
+and disabled dictated-text queue. Ethan subsequently reported that the feature
+seemed to work in normal use; basic spoken acceptance is now recorded. This does
+not add instrumented evidence for every recognition variant or delivery surface.
 Public binary qualification is pending the independently owned hosted-signing
 migration; do not silently start the superseded personal-Mac release workflow.
 
