@@ -90,7 +90,7 @@ struct RecorderPerformanceMeasurementTests {
         }
         let folder = URL(fileURLWithPath: directory, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let data = try JSONSerialization.data(withJSONObject: ["configuration": "Debug native test host",
+        let data = try JSONSerialization.data(withJSONObject: ["configuration": ProcessInfo.processInfo.environment["VIPP_RECORDER_PERFORMANCE_CONFIGURATION"] ?? "Debug native test host",
             "limits": "Synthetic microphone levels, three real hosted cards; no hardware capture, API/provider or physical playback timing. CPU includes the test host's other work. No fixed performance gate on a shared runner.",
             "scenarios": reports], options: [.prettyPrinted, .sortedKeys])
         try data.write(to: folder.appendingPathComponent("recorder-performance.json"))
