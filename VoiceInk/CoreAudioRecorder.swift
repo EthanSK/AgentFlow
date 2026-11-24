@@ -192,25 +192,13 @@ final class CoreAudioRecorder: @unchecked Sendable {
     private var conversionBuffer: UnsafeMutablePointer<Int16>?
     private var conversionBufferSize: UInt32 = 0
 
-    // Audio metering (thread-safe)
+    // One energy measurement shared by all panels. The superseded averagePower /
+    // peakPower getters had no remaining consumers; RMS now runs off the audio thread
+    // when the meter window is drained. — GPT-6.1 Sol
     private let meterLock = NSLock()
-    private var _averagePower: Float = -160.0
-    private var _peakPower: Float = -160.0
     /// Energy captured since the recorder HUD last drained it, guarded by `meterLock`.
     /// See `MicrophoneLevelAccumulator` for why every buffer counts. — Claude Opus 5.5
     private var pendingMeterEnergy = MicrophoneLevelAccumulator()
-
-    var averagePower: Float {
-        meterLock.lock()
-        defer { meterLock.unlock() }
-        return _averagePower
-    }
-
-    var peakPower: Float {
-        meterLock.lock()
-        defer { meterLock.unlock() }
-        return _peakPower
-    }
 
     /// Returns and clears everything captured since the previous call. Recorder's
     /// main-queue meter tick is the only caller. Copy the three scalars while locked,
@@ -1065,8 +1053,6 @@ final class CoreAudioRecorder: @unchecked Sendable {
 
     private func resetMeters() {
         meterLock.lock()
-        _averagePower = -160.0
-        _peakPower = -160.0
         // Pause and stop close the input gate first, so no paused or post-stop sound can
         // reach the next capture run's waveform. — Claude Opus 5.5
         pendingMeterEnergy = MicrophoneLevelAccumulator()
@@ -1170,27 +1156,18 @@ final class CoreAudioRecorder: @unchecked Sendable {
         )
 
         var sum: Float = 0.0
-        var peak: Float = 0.0
 
         for frame in 0..<Int(frameCount) {
             let sample = abs(samples[frame * channelCount + dominantChannel])
             sum += sample * sample
-            if sample > peak {
-                peak = sample
-            }
         }
 
-        let rms = sqrt(sum / Float(frameCount))
-        let avgDb = 20.0 * log10(max(rms, 0.000001))
-        let peakDb = 20.0 * log10(max(peak, 0.000001))
         // The waveform's time base is captured frames at the callback rate, the same rate
         // convertAndWriteToFile resamples from. A stalled device adds no time and so draws
         // no motion. — Claude Opus 5.5
         let sampleRate = deviceFormat.mSampleRate
 
         meterLock.lock()
-        _averagePower = avgDb
-        _peakPower = peakDb
         pendingMeterEnergy.addBuffer(squareSum: Double(sum), frameCount: Int(frameCount), sampleRate: sampleRate)
         meterLock.unlock()
     }
