@@ -492,10 +492,10 @@ struct LiveTranscriptView: View {
                 // RecorderContextColor mirrors this cyan and the screenshot purple
                 // below for the Recording Outline's acceptance lap. — Claude Opus 5.5
                 part = Text("\(String(localized: "Selected Text")): \(preview)")
-                    .foregroundColor(dimsContextUntilSpeechArrives ? waitingContext : .cyan.opacity(0.8))
+                    .foregroundColor(dimsContextUntilSpeechArrives ? waitingContext : RecorderContextColor.selection.opacity(0.8))
             case .screenshot(let filename):
                 part = Text("\(String(localized: "Screenshot")): \(filename)")
-                    .foregroundColor(dimsContextUntilSpeechArrives ? waitingContext : .purple.opacity(0.95))
+                    .foregroundColor(dimsContextUntilSpeechArrives ? waitingContext : RecorderContextColor.screenshot.opacity(0.95))
             }
             return result + (entry.offset == 0 ? Text("") : Text("  ")) + part
         }

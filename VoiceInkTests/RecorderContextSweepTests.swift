@@ -224,8 +224,8 @@ struct RecorderContextSweepTests {
         #expect(RecorderContextAcceptancePulse.Kind.selection.color == RecorderContextColor.selection)
         #expect(RecorderContextAcceptancePulse.Kind.screenshot.color == RecorderContextColor.screenshot)
         let transcript = try source("VoiceInk/Views/Recorder/RecorderComponents.swift")
-        #expect(transcript.contains("waitingContext : .cyan.opacity(0.8))"))
-        #expect(transcript.contains("waitingContext : .purple.opacity(0.95))"))
+        #expect(transcript.contains("waitingContext : RecorderContextColor.selection.opacity(0.8))"))
+        #expect(transcript.contains("waitingContext : RecorderContextColor.screenshot.opacity(0.95))"))
 
         let sweep = RecorderContextSweep.self
         func cyclicDistance(_ a: Double, _ b: Double) -> Double { abs(RecorderCaptureOutlineTrace.wrapped(a - b)) }

@@ -5,12 +5,9 @@
 // captured without looking at the HUD. Presentation only. — Claude Opus 5.5
 import SwiftUI
 
-/// The recorder's context-type colours. LiveTranscriptView tints "Selected Text"
-/// `.cyan` and "Screenshot" `.purple` (a source-contract test pins those lines),
-/// and the outline lap uses the same system colours, so the border speaks the
-/// transcript's colour language. Each is resolved against the panel's own
-/// environment, so the lap matches the text in light and dark appearances.
-/// — Claude Opus 5.5
+/// One colour source for the HUD context labels and their acceptance lap. The HUD
+/// keeps its existing opacity and waiting-for-speech treatment; both consumers
+/// resolve these same system colours in their own environment. — GPT-6.1 Sol
 enum RecorderContextColor {
     static let selection = Color.cyan
     static let screenshot = Color.purple
