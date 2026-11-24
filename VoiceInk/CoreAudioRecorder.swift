@@ -194,6 +194,9 @@ final class CoreAudioRecorder: @unchecked Sendable {
     private let meterLock = NSLock()
     private var _averagePower: Float = -160.0
     private var _peakPower: Float = -160.0
+    /// Energy captured since the recorder HUD last drained it, guarded by `meterLock`.
+    /// See `MicrophoneLevelAccumulator` for why every buffer counts. — Claude Opus 5.5
+    private var pendingMeterEnergy = MicrophoneLevelAccumulator()
 
     var averagePower: Float {
         meterLock.lock()
@@ -205,6 +208,17 @@ final class CoreAudioRecorder: @unchecked Sendable {
         meterLock.lock()
         defer { meterLock.unlock() }
         return _peakPower
+    }
+
+    /// Returns and clears everything captured since the previous call. Recorder's
+    /// main-queue meter tick is the only caller; this is one short lock and never
+    /// touches the audio thread's work. — Claude Opus 5.5
+    func drainMeterWindow() -> MicrophoneLevelWindow {
+        meterLock.lock()
+        defer { meterLock.unlock() }
+        let window = pendingMeterEnergy.window
+        pendingMeterEnergy = MicrophoneLevelAccumulator()
+        return window
     }
 
     // Pre-allocated render buffer (to avoid malloc in real-time callback)
@@ -1051,6 +1065,9 @@ final class CoreAudioRecorder: @unchecked Sendable {
         meterLock.lock()
         _averagePower = -160.0
         _peakPower = -160.0
+        // Pause and stop close the input gate first, so no paused or post-stop sound can
+        // reach the next capture run's waveform. — Claude Opus 5.5
+        pendingMeterEnergy = MicrophoneLevelAccumulator()
         meterLock.unlock()
     }
 
@@ -1164,10 +1181,15 @@ final class CoreAudioRecorder: @unchecked Sendable {
         let rms = sqrt(sum / Float(frameCount))
         let avgDb = 20.0 * log10(max(rms, 0.000001))
         let peakDb = 20.0 * log10(max(peak, 0.000001))
+        // The waveform's time base is captured frames at the callback rate, the same rate
+        // convertAndWriteToFile resamples from. A stalled device adds no time and so draws
+        // no motion. — Claude Opus 5.5
+        let sampleRate = deviceFormat.mSampleRate
 
         meterLock.lock()
         _averagePower = avgDb
         _peakPower = peakDb
+        pendingMeterEnergy.addBuffer(squareSum: Double(sum), frameCount: Int(frameCount), sampleRate: sampleRate)
         meterLock.unlock()
     }
 

@@ -49,7 +49,11 @@ class Recorder: NSObject, ObservableObject {
     private var isReconfiguring = false
     private let mediaController = MediaController.shared
     private let playbackController = PlaybackController.shared
-    @Published var audioMeter = AudioMeter(averagePower: 0, peakPower: 0)
+    @Published var audioMeter = AudioMeter.silent
+    /// The single authoritative recent-sound history that every mirrored Mini/Notch
+    /// waveform draws from, via `audioMeter`. Fixed size whatever the recording length.
+    /// — Claude Opus 5.5
+    private var levelHistory = MicrophoneLevelHistory()
     private var audioMeterUpdateTimer: DispatchSourceTimer?
     /// Idle preparation stays below UI work; Start/first enable/Resume explicitly
     /// request interactive scheduling on this same FIFO hardware queue.
@@ -61,8 +65,6 @@ class Recorder: NSObject, ObservableObject {
     private var chatGPTVoiceMuteLease: ChatGPTVoiceCaptureMuteLease?
     private var recordingActivityStarted = false
     private var keyboardStartAwaitingCapture = false
-    private var smoothedAverage: Float = 0
-    private var smoothedPeak: Float = 0
 
     /// Audio chunk callback for streaming. Can be updated while recording;
     /// changes are forwarded to the live CoreAudioRecorder.
@@ -625,10 +627,17 @@ class Recorder: NSObject, ObservableObject {
 
     private func startAudioMeterTimer() {
         audioMeterUpdateTimer?.cancel()
+        // Each capture run (start, resume, or a failed pause that keeps capturing) begins
+        // with an empty history, so the bars never join sound across a pause gap or show a
+        // previous recording whose stop is still finishing. Audio captured since the
+        // hardware started stays in CoreAudioRecorder's accumulator and reaches the first
+        // tick. — Claude Opus 5.5
+        resetAudioMeter()
         let timer = DispatchSource.makeTimerSource(queue: .main)
-        // Thirty frames per second is visually smooth for a 15-bar meter and keeps
-        // three mirrored SwiftUI panels from consuming a main-thread update every
-        // 17 ms. The visualizer intentionally uses this as its sole animation clock.
+        // Thirty reads per second keep the newest bar within one display frame of the
+        // voice and keep three mirrored SwiftUI panels from consuming a main-thread update
+        // every 17 ms. This tick is the waveform's only update cadence. It does not set
+        // the scroll speed: that comes from how much audio each read actually captured.
         timer.schedule(deadline: .now(), repeating: .milliseconds(33))
         timer.setEventHandler { [weak self] in
             self?.updateAudioMeter()
@@ -643,9 +652,8 @@ class Recorder: NSObject, ObservableObject {
     }
 
     private func resetAudioMeter() {
-        smoothedAverage = 0
-        smoothedPeak = 0
-        audioMeter = AudioMeter(averagePower: 0, peakPower: 0)
+        levelHistory = MicrophoneLevelHistory()
+        audioMeter = .silent
     }
 
     private func scheduleCaptureRefresh(reason: String, invalidate: Bool = true) {
@@ -698,43 +706,28 @@ class Recorder: NSObject, ObservableObject {
         }
     }
 
+    /// Moves everything captured since the previous tick into the shared history and
+    /// publishes what the waveform should draw.
+    ///
+    /// Found by Ethan. Fixed by Claude Opus 5.5. This used to sample only the newest
+    /// buffer's level, smooth it 60/40 and leave the visualizer to animate one shared
+    /// value. Now each window's measured energy lands in its own slice of audio time, with
+    /// no smoothing: Ethan's pauses read as quiet straight away. — Claude Opus 5.5
     private func updateAudioMeter() {
         guard let recorder = recorder else { return }
 
-        // Sample audio levels (thread-safe read)
-        let averagePower = recorder.averagePower
-        let peakPower = recorder.peakPower
-
-        // Normalize values
-        let minVisibleDb: Float = -60.0
-        let maxVisibleDb: Float = 0.0
-
-        let normalizedAverage: Float
-        if averagePower < minVisibleDb {
-            normalizedAverage = 0.0
-        } else if averagePower >= maxVisibleDb {
-            normalizedAverage = 1.0
-        } else {
-            normalizedAverage = (averagePower - minVisibleDb) / (maxVisibleDb - minVisibleDb)
+        // Sample on the display queue itself: a dispatch timer coalesces missed ticks, so
+        // old waveform frames cannot pile up behind transcript layout. A coalesced tick is
+        // not lost audio either: the drained window simply covers the longer span.
+        let window = recorder.drainMeterWindow()
+        // No buffer arrived: keep the last frame rather than move without sound.
+        guard levelHistory.append(window) else { return }
+        let meter = levelHistory.meter
+        // Silence after silence would redraw identical pixels on every mirrored panel.
+        // — Claude Opus 5.5
+        if meter != audioMeter {
+            audioMeter = meter
         }
-
-        let normalizedPeak: Float
-        if peakPower < minVisibleDb {
-            normalizedPeak = 0.0
-        } else if peakPower >= maxVisibleDb {
-            normalizedPeak = 1.0
-        } else {
-            normalizedPeak = (peakPower - minVisibleDb) / (maxVisibleDb - minVisibleDb)
-        }
-
-        // Smoothing and reset share the main queue.
-        smoothedAverage = smoothedAverage * 0.6 + normalizedAverage * 0.4
-        smoothedPeak = smoothedPeak * 0.6 + normalizedPeak * 0.4
-        let newAudioMeter = AudioMeter(averagePower: Double(smoothedAverage), peakPower: Double(smoothedPeak))
-
-        // Sample on the display queue itself: a dispatch timer coalesces missed
-        // ticks, so old waveform frames cannot pile up behind transcript layout.
-        audioMeter = newAudioMeter
     }
     
     // MARK: - Cleanup
@@ -756,9 +749,4 @@ class Recorder: NSObject, ObservableObject {
         }
         recorder?.teardown()
     }
-}
-
-struct AudioMeter: Equatable {
-    let averagePower: Double
-    let peakPower: Double
 }
