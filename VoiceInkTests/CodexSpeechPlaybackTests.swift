@@ -365,11 +365,14 @@ struct CodexSpeechPlaybackTests {
     }
 
     @MainActor @Test func parkedSystemChildOnlyRunsAfterIdleAdmission() throws {
+        // The system shim can select a different Xcode inside XCTest; prefer the installed Apple CLT runtime. — GPT-6.1 Sol
+        let commandLinePython = "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/Current/Resources/Python.app/Contents/MacOS/Python"
+        let python = FileManager.default.isExecutableFile(atPath: commandLinePython) ? commandLinePython : "/usr/bin/python3"
         for recording in [false, true] {
             let marker = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             defer { try? FileManager.default.removeItem(at: marker); try? FileManager.default.removeItem(atPath: marker.path + ".ready") }
             let child = Process()
-            child.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+            child.executableURL = URL(fileURLWithPath: python)
             child.arguments = ["-c", """
             import os,signal,sys,time
             admitted = False
