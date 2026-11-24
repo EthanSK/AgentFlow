@@ -330,7 +330,8 @@ struct RecorderCaptureOutlineTests {
                 ("compact", false, RecordingState.recording, false),
                 ("expanded", true, .recording, false),
                 ("stop-tail", true, .recording, true),
-                ("finishing", false, .transcribing, true)
+                ("finishing", false, .transcribing, true),
+                ("enhancing", false, .enhancing, true)
             ] {
                 state.showsRealtimeTranscriptHUD = expanded
                 state.recordingState = phase

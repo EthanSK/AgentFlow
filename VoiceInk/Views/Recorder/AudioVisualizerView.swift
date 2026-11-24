@@ -167,9 +167,9 @@ struct ProcessingStatusDisplay: View {
         VStack(spacing: 4) {
             Text(label)
                 .foregroundColor(color)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: MiniRecorderLayoutMetrics.processingFontSize, weight: .medium))
                 .lineLimit(1)
-                .minimumScaleFactor(0.5)
+                .fixedSize(horizontal: true, vertical: false)
 
             ProgressAnimation(color: color, animationSpeed: animationSpeed)
         }

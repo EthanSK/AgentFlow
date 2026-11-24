@@ -482,9 +482,10 @@ struct TranscribingChip: View {
                 RecorderChatBanner(layout: banner)
             } else {
                 Text(label)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: MiniRecorderLayoutMetrics.processingFontSize, weight: .medium))
                     .foregroundColor(.white.opacity(0.82))
                     .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
             }
 
             // Pending cards omit the same secondary app/warning icon as the main bar.
@@ -494,7 +495,8 @@ struct TranscribingChip: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
-        .frame(width: banner?.cardWidth ?? (style == .mini ? 158 : 174), height: banner?.height)
+        .frame(width: max(banner?.cardWidth ?? 0,
+            MiniRecorderLayoutMetrics.processingChipWidth + (style == .mini ? 0 : 16)), height: banner?.height)
         .onChange(of: banner?.height) { _, _ in onHeightChange() }
         .background(Color.black.opacity(style == .mini ? 1.0 : 0.92))
         .clipShape(RoundedRectangle(cornerRadius: style == .mini ? 16 : 12, style: .continuous))

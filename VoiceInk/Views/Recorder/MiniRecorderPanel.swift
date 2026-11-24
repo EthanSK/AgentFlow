@@ -6,6 +6,11 @@ import AppKit
 /// notification offset previously assumed a 34pt bar and overlapped the 97pt
 /// real-time transcript HUD.
 enum MiniRecorderLayoutMetrics {
+    // Ethan's "minimum text size": processing labels keep this base font instead
+    // of shrinking to fit. The user's separate HUD scale still applies normally.
+    static let processingFontSize: CGFloat = 12
+    static let processingCardWidth: CGFloat = 352
+    static let processingChipWidth: CGFloat = 224
     // Keep the expanded width for mixed speech/context, but use the midpoint
     // between the original 12pt and enlarged 24pt type. The separate HUD
     // slider scales the entire panel without changing this layout measurement.

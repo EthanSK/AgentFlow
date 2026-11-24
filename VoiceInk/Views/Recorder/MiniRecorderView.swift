@@ -44,13 +44,15 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     private var capsuleWidth: CGFloat {
         if hasAssistantResponse { return assistantWidth }
         if hasLiveTranscript { return expandedWidth }
-        if let chatBanner { return chatBanner.cardWidth }
+        if let chatBanner {
+            return max(chatBanner.cardWidth, stateProvider.recordingState.isProcessing
+                ? MiniRecorderLayoutMetrics.processingCardWidth : 0)
+        }
+        if stateProvider.recordingState.isProcessing { return MiniRecorderLayoutMetrics.processingCardWidth }
         // Leave room for Pause/Play and the current app. Ethan removed the secondary
         // app icon because its unused destination warning was mostly visual noise.
-        if stateProvider.captureFinishRequested && stateProvider.recordingState == .recording { return 324 }
         if stateProvider.recordingState.isRecordingOrPaused { return 324 }
-        return stateProvider.recordingState == .starting || stateProvider.recordingState.isProcessing
-            ? 254 : compactWidth
+        return stateProvider.recordingState == .starting ? 254 : compactWidth
     }
 
     // Realtime mode owns this panel immediately. LiveTranscriptView renders the
