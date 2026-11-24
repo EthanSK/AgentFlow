@@ -34,6 +34,7 @@ enum ChatGPTVoiceSuppressionOutcome: String, Sendable {
     case stillListening
     case mutedVerified
     case mutedUnverified
+    case captureSuperseded
 }
 
 enum ChatGPTVoiceRestorationOutcome: String, Sendable {
@@ -68,12 +69,11 @@ protocol ChatGPTVoiceMuteTransport: Sendable {
 /// state, activates ChatGPT, or moves the pointer.
 ///
 /// Core Audio shows whether ChatGPT is using an input stream, including when its Voice
-/// microphone is muted. A separate read-only
-/// Accessibility state check recognizes the microphone control when ChatGPT exposes it.
-/// Exact local Voice call boundaries distinguish calls that reuse the same process. An
-/// identified active call with unreadable mute state still gets the existing single
-/// attempt at Start and at most one inverse at Stop. Readable manual mute and unmute
-/// states take precedence.
+/// microphone is muted. Ethan's normal path now sends paired direct toggles without
+/// reading microphone controls. Exact local Voice call boundaries still distinguish
+/// calls that reuse the same process. The optional Accessibility reader remains behind
+/// an OFF-by-default flag: only when explicitly enabled can readable manual state take
+/// precedence. Direct toggles cannot verify the user's starting mute state. — GPT-6.1 Sol
 /// Accessibility is never used to activate ChatGPT, set focus, press the control, or move the
 /// pointer; the only mutation remains the user-configured keyboard command. VoiceInk++ deliberately
 /// does not poll that tree while recording—the rejected polling experiment caused lag.
@@ -113,6 +113,9 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
     private let pairedActivity: PairedVoiceMuteActivity?
     private let speaker: ChatGPTVoiceCaptureSpeaker?
     private let events: (any CodexVoiceCaptureEventSending)?
+    private let shortcutUptime: @Sendable () -> TimeInterval
+    private let waitForShortcutGap: @Sendable (TimeInterval) async throws -> Void
+    private var lastSpeakerShortcutUptime: TimeInterval?
     private var captureEvents: [UInt64: CodexVoiceCaptureContext] = [:]
     private let logger = Logger(
         subsystem: "com.ethansk.VoiceInkPlusPlus",
@@ -137,7 +140,11 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
         pairedLeaseTimer: any PairedVoiceMuteLeaseTimer = TaskPairedVoiceMuteLeaseTimer(),
         pairedActivity: PairedVoiceMuteActivity? = nil,
         speaker: ChatGPTVoiceCaptureSpeaker? = nil,
-        events: (any CodexVoiceCaptureEventSending)? = nil
+        events: (any CodexVoiceCaptureEventSending)? = nil,
+        shortcutUptime: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+        waitForShortcutGap: @escaping @Sendable (TimeInterval) async throws -> Void = {
+            try await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000))
+        }
     ) {
         self.transport = transport
         self.pairedFanOut = pairedFanOut
@@ -146,6 +153,8 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
         self.pairedActivity = pairedActivity
         self.speaker = speaker
         self.events = events
+        self.shortcutUptime = shortcutUptime
+        self.waitForShortcutGap = waitForShortcutGap
     }
 
     /// Finish listener suppression before VoiceInk++ opens the shared Core Audio input.
@@ -172,7 +181,12 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
             await self?.beginCapture(lease)
         }
         transitionTail = transition
-        await transition.value
+        await withTaskCancellationHandler(operation: {
+            await transition.value
+        }, onCancel: {
+            transition.cancel()
+            Task { await self.releaseCapture(lease) }
+        })
         return lease
     }
 
@@ -317,6 +331,12 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
         appliedPairedOwners.count
     }
 
+    func pendingPairedOwnerCountForTesting() -> Int { pairedLedger.activeOwners.count }
+
+    func hasQueuedLocalCaptureForTesting() -> Bool {
+        requestedLease != nil && requestedLease != appliedLease
+    }
+
     private func enqueuePairedTransition<Result: Sendable>(
         _ body: @escaping @Sendable (ChatGPTVoiceCaptureMuteCoordinator) async -> Result
     ) -> Task<Result?, Never> {
@@ -376,8 +396,11 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
         // Keep the microphone snapshot before either toggle so a repaint
         // cannot turn an already-muted mic into the unknown-state fallback.
         let before = await transport.snapshot()
+        guard requestedLease == lease, !Task.isCancelled else { return }
         let speakerPost = await speaker?.silenceForCapture()
-        let microphone = await suppressChatGPTVoiceIfNeeded(using: .acceptedLocalBinding, before: before)
+        recordSpeakerShortcut(speakerPost)
+        let microphone = await suppressChatGPTVoiceIfNeeded(
+            using: .acceptedLocalBinding, before: before, intent: .local(lease))
         if events != nil, let call = before?.call {
             captureEvents[lease.id] = CodexVoiceCaptureContext(call: call,
                 microphoneResult: microphone, microphoneAttemptedAt: microphoneAttemptedAt,
@@ -386,7 +409,10 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
     }
 
     private func endCapture(_ lease: ChatGPTVoiceCaptureMuteLease) async {
-        guard appliedLease == lease else { return }
+        // A replacement cancelled before applying can still inherit the older
+        // speaker toggle. The final unrequested lease settles it; an outstanding
+        // newer request must keep its silence. Found and fixed by GPT-6.1 Sol.
+        guard appliedLease == lease || (requestedLease == nil && appliedLease != nil) else { return }
         appliedLease = nil
         // Preserve a readable manual mic-unmute before the speaker action can
         // repaint Voice. This is one fresh microphone snapshot,
@@ -395,6 +421,7 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
         let before = appliedPairedOwners.isEmpty && ownedMicrophoneMute != nil
             ? await transport.snapshot() : nil
         let speakerPost = requestedLease == nil ? await speaker?.restoreAfterCapture() : nil
+        recordSpeakerShortcut(speakerPost)
         // A queued local capture inherits silence. Paired capture owns only the
         // existing microphone path, so it cannot keep the local speaker silenced.
         if !appliedPairedOwners.isEmpty {
@@ -417,7 +444,7 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
             appliedPairedOwners.remove(replaced)
         }
         appliedPairedOwners.insert(owner)
-        return await suppressChatGPTVoiceIfNeeded(using: .deviceConfiguredBinding)
+        return await suppressChatGPTVoiceIfNeeded(using: .deviceConfiguredBinding, intent: .paired(owner))
     }
 
     private func endPairedCapture(
@@ -432,17 +459,20 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
     }
 
     private func suppressChatGPTVoiceIfNeeded(
-        using authority: ChatGPTVoiceShortcutAuthority
+        using authority: ChatGPTVoiceShortcutAuthority,
+        intent: SuppressionIntent
     ) async -> ChatGPTVoiceSuppressionOutcome {
         let before = await transport.snapshot()
-        return await suppressChatGPTVoiceIfNeeded(using: authority, before: before)
+        return await suppressChatGPTVoiceIfNeeded(using: authority, before: before, intent: intent)
     }
 
     private func suppressChatGPTVoiceIfNeeded(
         using authority: ChatGPTVoiceShortcutAuthority,
-        before: ChatGPTVoiceInputSnapshot?
+        before: ChatGPTVoiceInputSnapshot?,
+        intent: SuppressionIntent
     ) async -> ChatGPTVoiceSuppressionOutcome {
         microphoneAttemptedAt = nil
+        guard suppressionIsStillWanted(intent), !Task.isCancelled else { return .captureSuperseded }
         guard let before else {
             logger.debug("Capture began without one resolvable ChatGPT application; listener suppression is a no-op")
             return .noChatGPT
@@ -459,7 +489,12 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
             return .alreadyMuted
         }
         if before.microphoneState == nil {
-            logger.notice("ChatGPT Voice control was unreadable; using one paired shortcut lease for the active session pid=\(before.applicationPID, privacy: .public)")
+            logger.notice("ChatGPT Voice microphone state is unverified; using one paired shortcut lease for the active session pid=\(before.applicationPID, privacy: .public)")
+        }
+        guard await allowMicrophoneAfterSpeaker(toward: .muted),
+              suppressionIsStillWanted(intent) else {
+            logger.notice("Microphone shortcut skipped: capture changed while waiting for the speaker shortcut gap")
+            return .captureSuperseded
         }
         guard let attemptedAt = await transport.postMicrophoneToggle(from: before, toward: .muted, using: authority) else {
             logger.notice("ChatGPT Voice microphone mute was not posted pid=\(before.applicationPID, privacy: .public)")
@@ -502,24 +537,27 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
     ) async -> ChatGPTVoiceRestorationOutcome {
         microphoneAttemptedAt = nil
         guard let owned = ownedMicrophoneMute else { return .notOwned }
-        // A refused post must not leave ownership that a later recording can inherit.
-        ownedMicrophoneMute = nil
+        guard !suppressionIsPending else { return .heldByOtherCapture }
         let ownedPID = owned.call.applicationPID
         guard let current,
               current.applicationPID == ownedPID else {
+            ownedMicrophoneMute = nil
             logger.notice("ChatGPT process changed or exited; stale microphone-suppression ownership was discarded pid=\(ownedPID, privacy: .public)")
             return .processChanged
         }
         guard current.isInputRunning else {
+            ownedMicrophoneMute = nil
             logger.notice("ChatGPT input stream ended; microphone restoration skipped pid=\(ownedPID, privacy: .public)")
             return .voiceEnded
         }
         guard current.call == owned.call else {
+            ownedMicrophoneMute = nil
             logger.notice("ChatGPT Voice call changed or could not be identified; microphone restoration skipped pid=\(ownedPID, privacy: .public)")
             return .callChanged
         }
         switch current.microphoneState {
         case .listening:
+            ownedMicrophoneMute = nil
             logger.notice("ChatGPT Voice microphone was visibly unmuted; restoration ownership was relinquished pid=\(ownedPID, privacy: .public)")
             return .userUnmuted
         case .muted:
@@ -527,8 +565,15 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
         case nil:
             // The same Voice call remains, but its background control is unreadable. Pair the
             // single shortcut posted at capture start exactly once; never retry an unobserved result.
-            logger.notice("ChatGPT Voice control remained unreadable; pairing the owned microphone shortcut pid=\(ownedPID, privacy: .public)")
+            logger.notice("ChatGPT Voice microphone state is unverified; pairing the owned shortcut pid=\(ownedPID, privacy: .public)")
         }
+        guard await allowMicrophoneAfterSpeaker(toward: .listening) else { return .shortcutFailed }
+        // A new local or paired capture can arrive during the gap. Transfer the
+        // existing microphone ownership instead of unmuting beneath that capture.
+        // Found and fixed by GPT-6.1 Sol.
+        guard !suppressionIsPending else { return .heldByOtherCapture }
+        // A refused post must not leave ownership for a later recording to inherit.
+        ownedMicrophoneMute = nil
         // Not the authority of whichever owner finished last: on a Mac without the local binding,
         // a local capture that joined a paired mute must still be able to undo that mute.
         guard let attemptedAt = await transport.postMicrophoneToggle(from: current, toward: .listening, using: owned.authority) else {
@@ -554,6 +599,45 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
         }
     }
 
+    private enum SuppressionIntent {
+        case local(ChatGPTVoiceCaptureMuteLease)
+        case paired(PairedVoiceMuteOwner)
+    }
+
+    private func suppressionIsStillWanted(_ intent: SuppressionIntent) -> Bool {
+        switch intent {
+        case .local(let lease): return requestedLease == lease && appliedLease == lease
+        case .paired(let owner):
+            return appliedPairedOwners.contains(owner) && pairedLedger.activeOwners.contains(owner)
+        }
+    }
+
+    private var suppressionIsPending: Bool {
+        requestedLease != nil || appliedLease != nil || !appliedPairedOwners.isEmpty || !pairedLedger.activeOwners.isEmpty
+    }
+
+    private func recordSpeakerShortcut(_ post: ChatGPTVoiceSpeakerPost?) {
+        if case .postedDirectly? = post { lastSpeakerShortcutUptime = shortcutUptime() }
+    }
+
+    /// Ethan requested 300ms between commands, not inside a chord's down/up pair.
+    /// The serialized transition shares this clock with pending paired owners. — GPT-6.1 Sol
+    private func allowMicrophoneAfterSpeaker(toward target: ChatGPTVoiceMicrophoneState) async -> Bool {
+        guard !Task.isCancelled else { return false }
+        if let posted = lastSpeakerShortcutUptime {
+            let remaining = max(0, 0.3 - (shortcutUptime() - posted))
+            if remaining > 0 {
+                let started = shortcutUptime()
+                do { try await waitForShortcutGap(remaining) }
+                catch {
+                    logger.notice("Voice shortcut gap cancelled; no second command posted")
+                    return false
+                }
+                logger.notice("Voice shortcut gap target=\(String(describing: target), privacy: .public) requestedMs=\(remaining * 1000, privacy: .public) waitedMs=\((shortcutUptime() - started) * 1000, privacy: .public)")
+            }
+        }
+        return !Task.isCancelled
+    }
 }
 
 final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTVoiceSpeakerTransport, @unchecked Sendable {
@@ -712,6 +796,7 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTV
     }
 
     func microphoneStateAfterToggle(for call: ChatGPTVoiceCall) async -> ChatGPTVoiceMicrophoneState? {
+        guard ChatGPTVoiceMicrophoneStateReading.isEnabled() else { return nil }
         // One delayed, bounded observation is enough to distinguish a visible state change.
         // Repeated AX traversal was a rejected source of VoiceInk++ UI lag, and an unreadable
         // background surface already has the paired one-shot lease fallback above.
@@ -777,7 +862,8 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTV
     /// its pointer fallback stole Ethan's mouse. This bounded traversal performs no AX action or
     /// attribute write; it exists solely to make the proven keyboard-command lease reversible.
     static func microphoneState(applicationPID: pid_t) -> ChatGPTVoiceMicrophoneState? {
-        readVoiceControls(applicationPID: applicationPID, channel: .microphone)
+        guard ChatGPTVoiceMicrophoneStateReading.isEnabled() else { return nil }
+        return readVoiceControls(applicationPID: applicationPID, channel: .microphone)
             .isMuted.map { $0 ? .muted : .listening }
     }
 

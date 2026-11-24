@@ -38,6 +38,12 @@ final class ChatGPTVoiceAccessibilityPreparation {
     private var observers: [NSObjectProtocol] = []
 
     func startForApplication() {
+        // Ethan left UI-state detection OFF. Do not prepare or observe Codex's
+        // UI for this dormant feature; direct keyboard posting needs no tree. — GPT-6.1 Sol
+        guard ChatGPTVoiceMicrophoneStateReading.isEnabled() else {
+            Self.logger.notice("Voice microphone UI-state reading is disabled; no Accessibility exposure requested")
+            return
+        }
         // A test host must not prepare the user's real Codex process as a side
         // effect of starting its app delegate. Fixtures inject their own model.
         guard observers.isEmpty,
@@ -60,12 +66,14 @@ final class ChatGPTVoiceAccessibilityPreparation {
     }
 
     nonisolated private static func prepareInBackground(expectedPID: pid_t? = nil) {
+        guard ChatGPTVoiceMicrophoneStateReading.isEnabled() else { return }
         Task.detached(priority: .utility) {
             // A configured speaker binding is the opt-in. Do not expose Codex's
             // renderer for users who have not configured this Voice integration.
             let bindings = FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent(".codex/keybindings.json")
-            guard case .resolved = ChatGPTVoiceShortcut.resolve(
+            guard ChatGPTVoiceMicrophoneStateReading.isEnabled(),
+                  case .resolved = ChatGPTVoiceShortcut.resolve(
                 keybindings: try? Data(contentsOf: bindings),
                 command: SystemChatGPTVoiceMuteTransport.speakerShortcutCommand),
                   AXIsProcessTrusted(),
@@ -80,7 +88,8 @@ final class ChatGPTVoiceAccessibilityPreparation {
             var value: CFTypeRef?
             if AXUIElementCopyAttributeValue(root, "AXManualAccessibility" as CFString, &value) == .success,
                value as? Bool == true { return }
-            guard let fresh = SystemChatGPTVoiceMuteTransport.expectedApplication(),
+            guard ChatGPTVoiceMicrophoneStateReading.isEnabled(),
+                  let fresh = SystemChatGPTVoiceMuteTransport.expectedApplication(),
                   fresh.processIdentifier == identity.pid, fresh.launchDate == identity.launchedAt
             else { return }
             // This is the sole allowed AX write. Request once, never switch it
