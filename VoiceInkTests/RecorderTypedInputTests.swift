@@ -417,7 +417,14 @@ struct RecorderTypedInputTests {
             wheel.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: 80)
             let event = try #require(NSEvent(cgEvent: wheel))
             try #require(event.windowNumber == panel.windowNumber)
-            NSApp.sendEvent(event)
+            // Pump this owned event through AppKit's queue, as a physical wheel
+            // arrives. Direct dispatch leaves NSApp.currentEvent on a prior key
+            // or drag from another fixture.
+            NSApp.postEvent(event, atStart: true)
+            let queued = try #require(NSApp.nextEvent(matching: .scrollWheel,
+                until: Date().addingTimeInterval(1), inMode: .default, dequeue: true))
+            try #require(queued.windowNumber == panel.windowNumber)
+            NSApp.sendEvent(queued)
             RunLoop.current.run(until: Date().addingTimeInterval(0.1))
             #expect(scroll.contentView.bounds.origin.y != before,
                 "scale=\(scale) window=\(event.windowNumber) location=\(event.locationInWindow) scrollFrame=\(scroll.convert(scroll.bounds, to: nil)) flags=\(event.modifierFlags.rawValue) deltaY=\(event.scrollingDeltaY) deltaX=\(event.scrollingDeltaX) phase=\(event.phase.rawValue) documentHeight=\(scroll.documentView?.frame.height ?? 0)")
