@@ -176,11 +176,11 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
         // Live-capture signal only, mirroring the Mini card: above the fill, beneath
         // every control and transcript line, bounded by the clip, and never a saved
         // or Next destination marker. The pill hangs from the display's top edge, so
-        // the tube fades out just below the top flares and reads as a U lit from
-        // the bezel instead of a line along the menu bar.
+        // the border keeps an open top, without a line along the menu bar or a
+        // fade into the black interior.
         .background {
             if captureOutlineEnabled && stateProvider.showsLiveCaptureOutline {
-                RecorderCaptureOutline(shape: pillShape, topEdgeFade: pillShape.topCornerRadius + 8)
+                RecorderCaptureOutline(shape: pillShape, omitsTopEdge: true)
                     .transition(.identity)
             }
         }

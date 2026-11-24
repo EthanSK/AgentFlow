@@ -78,7 +78,9 @@ struct RecorderCaptureOutlineTests {
         }
     }
 
-    @Test func neonSpectrumIsCyclicVividAndKeepsItsHueInTheHotCore() {
+    // Former neonSpectrumIsCyclicVividAndKeepsItsHueInTheHotCore: the hot core
+    // was removed at Ethan's request; the single border keeps the same spectrum.
+    @Test func rainbowSpectrumRemainsVividAndCyclic() {
         func channels(_ value: RecorderNeonSpectrum.Components) -> [Double] {
             [value.red, value.green, value.blue]
         }
@@ -91,12 +93,6 @@ struct RecorderCaptureOutlineTests {
             #expect(tubeChroma > 0.5, "position \(position)")
             #expect(tube.max()! > 0.85, "position \(position)")
 
-            let core = channels(RecorderNeonSpectrum.components(
-                at: position, whiteMix: RecorderCaptureOutlineStyle.coreWhiteMix
-            ))
-            let coreChroma = core.max()! - core.min()!
-            #expect(core.max()! > 0.9, "position \(position)")
-            #expect(coreChroma > 0.25 && coreChroma < tubeChroma, "position \(position)")
         }
     }
 
@@ -162,7 +158,7 @@ struct RecorderCaptureOutlineTests {
                     session.completionDisposition = disposition
                     session.liveRecordingState = state
                     host.layoutSubtreeIfNeeded()
-                    // Longer than the ignition flicker, so a lit tube is at full strength.
+                    // Let the real native card finish laying out before reading pixels.
                     try await Task.sleep(for: .milliseconds(500))
                     host.layoutSubtreeIfNeeded()
                     let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
@@ -205,7 +201,7 @@ struct RecorderCaptureOutlineTests {
                         #expect(edge.saturatedFraction > 0.6, "\(label): \(edge.saturatedFraction)")
                         #expect(edge.hueBuckets.count >= 2, "\(label): \(edge.hueBuckets)")
                         if style == "notch" {
-                            // The U fades into the bezel instead of lining the menu bar.
+                            // The sharp U leaves the bezel edge unpainted.
                             #expect(topOfNotch.opaqueFraction > 0.9, "\(label)")
                             #expect(topOfNotch.saturatedFraction < 0.1, "\(label): \(topOfNotch.saturatedFraction)")
                         }
@@ -265,6 +261,16 @@ struct RecorderCaptureOutlineTests {
                 let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
                 host.cacheDisplay(in: host.bounds, to: bitmap)
                 frames.append(bitmap)
+                // Ethan asked for no gradient into the black interior. The old
+                // blurred bloom painted these pixels; the thin border must not.
+                let sx = CGFloat(bitmap.pixelsWide) / size.width
+                let sy = CGFloat(bitmap.pixelsHigh) / size.height
+                for x in stride(from: CGFloat(30), through: 470, by: 10) {
+                    for y in [CGFloat(3), 5, 7] {
+                        let c = try #require(bitmap.colorAt(x: Int(x * sx), y: Int(y * sy))?.usingColorSpace(.sRGB))
+                        #expect(max(c.redComponent, c.greenComponent, c.blueComponent) < 0.015)
+                    }
+                }
                 if let directory = ProcessInfo.processInfo.environment["VIPP_OUTLINE_SNAPSHOT_DIR"] {
                     let folder = URL(fileURLWithPath: directory, isDirectory: true)
                     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)

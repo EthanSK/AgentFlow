@@ -1,31 +1,24 @@
-// Flowing neon rainbow ring that marks live microphone capture on every mirrored
-// Mini and Notch recorder card. Ethan asked for it on 2026-11-24 so he can tell at
-// a glance that Agent Flow is recording. MiniRecorderView and NotchRecorderView
+// Ethan's "rainbow thing": a thin, sharp rainbow border on every mirrored
+// Mini and Notch recorder card. His 2026-11-24 refinement explicitly removes
+// blur and colour bleeding into the black panel. MiniRecorderView and NotchRecorderView
 // draw it from `RecorderStateProvider.showsLiveCaptureOutline`; Settings ->
 // Interface -> Recording Outline turns it off.
 import SwiftUI
 
-/// A neon tube drawn just inside a recorder card's own silhouette while that card's
-/// microphone is live.
-///
-/// Design: a real neon sign rather than a thick multicolour border. A saturated
-/// tube carries a hotter, paler core of the same hue, and its light bleeds a few
-/// points into the dark glass. Colour advances along the tube at an even pace, so
-/// a wide 1,100pt transcript card and a 40pt capsule both read as one continuous
-/// tube. When capture starts or resumes the tube "strikes" with one brief flicker,
-/// like a sign catching; Reduce Motion replaces that with a plain fade and holds the
-/// colours still.
+/// One sharp stroke follows the recorder's silhouette while its microphone is live.
+/// Colour still flows evenly around the border; there is no bloom, pale core,
+/// opacity flicker or interior shading. Reduce Motion holds the colours still.
 ///
 /// Callers place it in a `.background` above the card fill and beneath content, and
 /// the card's own clip bounds it, so it changes no geometry, hit target, drag
 /// surface, scroll view or keyboard focus. This is capture state only. It never
-/// marks a saved destination, a Next route or the current-focus icon. — Claude Opus 5.5
+/// marks a saved destination, a Next route or the current-focus icon.
+/// Original design by Claude Opus 5.5; border-only refinement by GPT-6.1 Sol.
 struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
     var shape: OutlineShape
-    /// Points at the top to fade out. The Notch pill hangs from the display's top
-    /// edge, so its tube fades into the bezel instead of running along the menu bar.
-    /// The Mini card floats freely, so it keeps a closed ring. — Claude Opus 5.5
-    var topEdgeFade: CGFloat = 0
+    /// Formerly `topEdgeFade`: the Notch keeps its open top with a sharp clip,
+    /// without an opacity gradient into the black surface. Mini stays a closed ring.
+    var omitsTopEdge = false
 
     // macOS exposes Reduce Motion as a read-only environment value. Hosted
     // appearance previews can exercise its static branch without changing the
@@ -34,18 +27,13 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     private var reduceMotion: Bool { reduceMotionForPreview ?? systemReduceMotion }
     @State private var trace = RecorderCaptureOutlineTrace()
-    @State private var ignition: Double = 0
-    @State private var ignitionTask: Task<Void, Never>?
 
     /// Forwards the card shape's own animation, so the tube follows the clip through
     /// compact/expanded corner and size springs instead of snapping ahead of it and
     /// being cut off at the corners. — Claude Opus 5.5
-    var animatableData: AnimatablePair<OutlineShape.AnimatableData, CGFloat> {
-        get { AnimatablePair(shape.animatableData, topEdgeFade) }
-        set {
-            shape.animatableData = newValue.first
-            topEdgeFade = newValue.second
-        }
+    var animatableData: OutlineShape.AnimatableData {
+        get { shape.animatableData }
+        set { shape.animatableData = newValue }
     }
 
     var body: some View {
@@ -60,22 +48,15 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
         )) { timeline in
             let phase = reduceMotion ? 0 : RecorderCaptureOutlineStyle.flowPhase(at: timeline.date)
             Canvas { context, size in
-                drawNeonTube(in: context, size: size, phase: phase)
+                drawBorder(in: context, size: size, phase: phase)
             }
         }
-        .opacity(ignition)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
-        .onAppear(perform: ignite)
-        .onDisappear {
-            ignitionTask?.cancel()
-            ignitionTask = nil
-        }
     }
 
-    /// Draws bloom, tube and core into one isolated layer clipped to the card, so the
-    /// Notch top fade erases only the outline and never the card fill. — Claude Opus 5.5
-    private func drawNeonTube(in context: GraphicsContext, size: CGSize, phase: Double) {
+    // Former `drawNeonTube`: one stroke replaces its bloom and pale core.
+    private func drawBorder(in context: GraphicsContext, size: CGSize, phase: Double) {
         let style = RecorderCaptureOutlineStyle.self
         let bounds = CGRect(origin: .zero, size: size)
         guard bounds.width > style.tubeInset * 4, bounds.height > style.tubeInset * 4 else { return }
@@ -97,64 +78,14 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
             }),
             center: center
         )
-        let core = GraphicsContext.Shading.conicGradient(
-            Gradient(stops: samples.map { sample in
-                Gradient.Stop(
-                    color: RecorderNeonSpectrum.color(
-                        at: sample.clockwiseFraction - phase, whiteMix: style.coreWhiteMix
-                    ),
-                    location: sample.angularLocation
-                )
-            }),
-            center: center
-        )
-
         context.drawLayer { layer in
             layer.clip(to: cardPath)
-            layer.drawLayer { bloom in
-                bloom.opacity = style.bloomOpacity
-                bloom.addFilter(.blur(radius: style.bloomBlurRadius))
-                bloom.stroke(tubePath, with: tube, lineWidth: style.bloomWidth)
+            if omitsTopEdge {
+                let top = style.tubeInset + style.tubeWidth / 2
+                layer.clip(to: Path(CGRect(x: 0, y: top, width: size.width,
+                                          height: max(0, size.height - top))))
             }
             layer.stroke(tubePath, with: tube, lineWidth: style.tubeWidth)
-            layer.stroke(tubePath, with: core, lineWidth: style.coreWidth)
-
-            guard topEdgeFade > 0 else { return }
-            layer.blendMode = .destinationOut
-            layer.fill(
-                Path(CGRect(x: 0, y: 0, width: size.width, height: topEdgeFade)),
-                with: .linearGradient(
-                    Gradient(colors: [.black, .black.opacity(0)]),
-                    startPoint: .zero,
-                    endPoint: CGPoint(x: 0, y: topEdgeFade)
-                )
-            )
-        }
-    }
-
-    /// Lights the tube each time capture starts or resumes. The single dip is the
-    /// signature "neon catching" beat and acknowledges live audio; it is presentation
-    /// only and never delays capture or any recorder action. Reduce Motion gets a
-    /// plain fade with no flicker. — Claude Opus 5.5
-    private func ignite() {
-        ignitionTask?.cancel()
-        let shouldReduceMotion = reduceMotion
-
-        var reset = Transaction()
-        reset.disablesAnimations = true
-        withTransaction(reset) { ignition = 0 }
-
-        guard !shouldReduceMotion else {
-            withAnimation(.easeOut(duration: 0.18)) { ignition = 1 }
-            return
-        }
-
-        ignitionTask = Task { @MainActor in
-            withAnimation(.easeOut(duration: 0.05)) { ignition = 0.9 }
-            do { try await Task.sleep(nanoseconds: 70_000_000) } catch { return }
-            withAnimation(.easeIn(duration: 0.04)) { ignition = 0.3 }
-            do { try await Task.sleep(nanoseconds: 60_000_000) } catch { return }
-            withAnimation(.easeOut(duration: 0.2)) { ignition = 1 }
         }
     }
 }
@@ -168,18 +99,11 @@ enum RecorderCaptureOutlinePreference {
     static let defaultValue = true
 }
 
-/// Tube proportions and flow timing in recorder points, before the HUD size slider
-/// scales the whole panel. The bloom stays within about 10pt of the edge, clear of
-/// every control's padding, so text and buttons keep their existing contrast.
-/// — Claude Opus 5.5
+/// Border thickness and timing in recorder points, before whole-panel HUD scaling.
+/// Ethan requested a thinner outline with no blur on 2026-11-24. — GPT-6.1 Sol
 enum RecorderCaptureOutlineStyle {
-    static let tubeInset: CGFloat = 1.6
-    static let tubeWidth: CGFloat = 2.2
-    static let coreWidth: CGFloat = 0.8
-    static let coreWhiteMix: Double = 0.45
-    static let bloomWidth: CGFloat = 7
-    static let bloomBlurRadius: CGFloat = 5
-    static let bloomOpacity: Double = 0.6
+    static let tubeInset: CGFloat = 0.5
+    static let tubeWidth: CGFloat = 1
     /// One full trip around the card. Slow enough to stay peripheral while Ethan
     /// reads his live transcript, fast enough to read as alive. — Claude Opus 5.5
     static let lapDuration: TimeInterval = 5
@@ -213,9 +137,8 @@ enum RecorderNeonSpectrum {
         Components(red: 1.00, green: 0.40, blue: 0.18)  // tube orange
     ]
 
-    /// The colour at a cyclic position, where 0 and 1 are the same point. `whiteMix`
-    /// lifts the same hue toward white for the tube's hot core. — Claude Opus 5.5
-    static func components(at position: Double, whiteMix: Double = 0) -> Components {
+    /// The colour at a cyclic position, where 0 and 1 are the same point.
+    static func components(at position: Double) -> Components {
         let wrapped = position - position.rounded(.down)
         let scaled = wrapped * Double(anchors.count)
         let lowerIndex = min(Int(scaled), anchors.count - 1)
@@ -224,8 +147,7 @@ enum RecorderNeonSpectrum {
         let lower = anchors[lowerIndex]
         let upper = anchors[upperIndex]
         func channel(_ from: Double, _ to: Double) -> Double {
-            let value = from + (to - from) * blend
-            return value + (1 - value) * whiteMix
+            from + (to - from) * blend
         }
         return Components(
             red: channel(lower.red, upper.red),
@@ -234,8 +156,8 @@ enum RecorderNeonSpectrum {
         )
     }
 
-    static func color(at position: Double, whiteMix: Double = 0) -> Color {
-        let components = components(at: position, whiteMix: whiteMix)
+    static func color(at position: Double) -> Color {
+        let components = components(at: position)
         return Color(.sRGB, red: components.red, green: components.green, blue: components.blue)
     }
 }

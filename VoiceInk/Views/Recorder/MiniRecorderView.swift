@@ -233,8 +233,8 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
         // Live-capture signal only. Chained before the fill, it sits above the card
         // colour but beneath every control, transcript line and drag surface, and the
         // clip below bounds it. It never marks a saved or Next destination. Removal is
-        // instant so Stop and Pause acknowledge at once; the outline animates its own
-        // ignition when capture starts or resumes.
+        // instant so Stop and Pause acknowledge at once; only the border's colours
+        // animate while the microphone remains on.
         .background {
             if captureOutlineEnabled && stateProvider.showsLiveCaptureOutline {
                 RecorderCaptureOutline(shape: cardShape)
