@@ -1,17 +1,17 @@
 // Ethan's "rainbow thing": a thin, sharp rainbow border on every mirrored
 // Mini and Notch recorder card. His 2026-11-24 refinement explicitly removes
 // blur and colour bleeding into the black panel. MiniRecorderView and NotchRecorderView
-// draw it from `RecorderStateProvider.showsLiveCaptureOutline`; Settings ->
+// draw it from `RecorderStateProvider.showsRecordingActivityOutline`; Settings ->
 // Interface -> Recording Outline turns it off. — GPT-6.1 Sol
 import SwiftUI
 
-/// One sharp stroke follows the recorder's silhouette while its microphone is live.
+/// One sharp stroke follows the recorder's silhouette during capture and transcription.
 /// Colour still flows evenly around the border; there is no bloom, pale core,
 /// opacity flicker or interior shading. Reduce Motion holds the colours still.
 ///
 /// Callers place it in a `.background` above the card fill and beneath content, and
 /// the card's own clip bounds it, so it changes no geometry, hit target, drag
-/// surface, scroll view or keyboard focus. This is capture state only. It never
+/// surface, scroll view or keyboard focus. This is recording activity only. It never
 /// marks a saved destination, a Next route or the current-focus icon.
 /// Original design by Claude Opus 5.5; border-only refinement by GPT-6.1 Sol.
 /// — GPT-6.1 Sol

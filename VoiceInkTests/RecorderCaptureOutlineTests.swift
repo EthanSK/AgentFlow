@@ -19,31 +19,57 @@ struct RecorderCaptureOutlineTests {
         #expect(restored.recorderCaptureOutlineEnabled == false)
     }
 
-    @Test @MainActor func outlineLightsOnlyWhileThisSessionsMicrophoneIsLive() {
+    @Test @MainActor func outlineFollowsLiveCaptureAndProcessingButNotPauseOrTyping() {
         let session = RecordingSession()
-        #expect(session.showsLiveCaptureOutline)
+        #expect(session.showsRecordingActivityOutline)
 
         session.liveRecordingState = .starting
-        #expect(!session.showsLiveCaptureOutline)
+        #expect(!session.showsRecordingActivityOutline)
         session.liveRecordingState = .recording
 
         // Microphone-off typing keeps the recording state but captures no audio.
         session.microphoneOff = true
-        #expect(!session.showsLiveCaptureOutline)
+        #expect(!session.showsRecordingActivityOutline)
         session.microphoneOff = false
 
         // Won't paste is a delivery choice; capture continues through its gesture
         // decision window and real stop tail, so the recording signal stays honest.
         session.completionDisposition = .clipboardOnly
-        #expect(session.showsLiveCaptureOutline)
+        #expect(session.showsRecordingActivityOutline)
         session.completionDisposition = .normalDelivery
 
-        for state in [RecordingState.paused, .transcribing, .enhancing, .idle, .busy] {
+        for state in [RecordingState.paused, .idle, .busy] {
             session.liveRecordingState = state
-            #expect(!session.showsLiveCaptureOutline, "\(state)")
+            #expect(!session.showsRecordingActivityOutline, "\(state)")
+        }
+        for state in [RecordingState.transcribing, .enhancing] {
+            session.liveRecordingState = state
+            #expect(session.showsRecordingActivityOutline, "\(state)")
         }
         session.liveRecordingState = .recording
-        #expect(session.showsLiveCaptureOutline)
+        #expect(session.showsRecordingActivityOutline)
+    }
+
+    @Test @MainActor func acceptedStopHidesEditorWithoutEndingAudioOrSealingItsFinalWords() {
+        let session = RecordingSession()
+        session.partialTranscript = "before stop"
+        session.updateTypedInput("typed ending")
+        #expect(session.showsLiveContext)
+        session.acknowledgeCaptureFinish()
+        #expect(!session.showsLiveContext)
+        #expect(session.phase == .recording)
+        #expect(session.recordingState == .recording) // The real tail keeps the waveform.
+        #expect(!session.microphoneOff)
+        #expect(session.canTypeInHUD) // Annotation capture still accepts the final words.
+        session.partialTranscript = "before stop and final words"
+        #expect(session.typedInput == "typed ending")
+        #expect(session.showsRecordingActivityOutline)
+        session.phase = .transcribing
+        session.liveRecordingState = .transcribing
+        #expect(!session.showsLiveContext)
+        #expect(session.showsRecordingActivityOutline)
+        let next = RecordingSession()
+        #expect(!next.captureFinishRequested && next.showsLiveContext)
     }
 
     @Test @MainActor func traceSpreadsColourEvenlyAndFlowsClockwiseOnEveryCardShape() {
@@ -221,7 +247,7 @@ struct RecorderCaptureOutlineTests {
         for name in ["MiniRecorderView", "NotchRecorderView"] {
             let card = try source("VoiceInk/Views/Recorder/\(name).swift")
             #expect(card.contains("@AppStorage(RecorderCaptureOutlinePreference.preferenceKey)"))
-            #expect(card.contains("captureOutlineEnabled && stateProvider.showsLiveCaptureOutline"))
+            #expect(card.contains("captureOutlineEnabled && stateProvider.showsRecordingActivityOutline"))
             // Chained before the fill and the clip: above the card colour, beneath
             // every control and transcript line, and inside the card's silhouette.
             let outline = try #require(card.range(of: "RecorderCaptureOutline(shape:"))
@@ -300,13 +326,15 @@ struct RecorderCaptureOutlineTests {
         let recorder = Recorder()
         let assistant = AssistantSession()
         for style in ["mini", "notch"] {
-            for (name, expanded, phase) in [
-                ("compact", false, RecordingState.recording),
-                ("expanded", true, .recording),
-                ("finishing", false, .transcribing)
+            for (name, expanded, phase, finishing) in [
+                ("compact", false, RecordingState.recording, false),
+                ("expanded", true, .recording, false),
+                ("stop-tail", true, .recording, true),
+                ("finishing", false, .transcribing, true)
             ] {
                 state.showsRealtimeTranscriptHUD = expanded
                 state.recordingState = phase
+                state.captureFinishRequested = finishing
                 let width = style == "mini" ? 640 : MiniRecorderLayoutMetrics.liveTranscriptWidth
                 let card: AnyView = style == "mini"
                     ? AnyView(MiniRecorderView(stateProvider: state,
@@ -331,6 +359,13 @@ struct RecorderCaptureOutlineTests {
                 let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
                 host.cacheDisplay(in: host.bounds, to: bitmap)
                 #expect(bitmap.pixelsWide >= Int(width))
+                // The same full transcript must no longer occupy the large card
+                // after Stop, although its real audio state still says recording.
+                let probeY: CGFloat = style == "mini" ? 150 : 100
+                let probe = try #require(bitmap.colorAt(
+                    x: Int(CGFloat(bitmap.pixelsWide) / 2),
+                    y: Int(probeY * CGFloat(bitmap.pixelsHigh) / 300)))
+                #expect((probe.alphaComponent > 0.5) == (expanded && !finishing), "\(style) \(name)")
                 if let directory = ProcessInfo.processInfo.environment["VIPP_OUTLINE_SNAPSHOT_DIR"] {
                     let folder = URL(fileURLWithPath: directory, isDirectory: true)
                     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -430,6 +465,7 @@ struct RecorderCaptureOutlineTests {
 
 @MainActor private final class OutlineAppearanceState: ObservableObject, RecorderStateProvider {
     @Published var recordingState = RecordingState.recording
+    @Published var captureFinishRequested = false
     @Published var showsRealtimeTranscriptHUD = false
     let partialTranscript = "The flowing rainbow stays around the panel while the transcript grows.\nControls and text remain clear inside the neon edge."
     var skipPostProcessing = false

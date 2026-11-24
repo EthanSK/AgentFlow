@@ -275,6 +275,14 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     // Command edge while a voice-start hardware await may already be in flight.
     var beganMicrophoneOff = false
     var pendingStopDelay: Task<Void, Error>?
+    // Ethan's "stop UI" acknowledges accepted Stop immediately, while the real
+    // microphone tail still owns capture. Never use this flag as a hardware,
+    // annotation-timing, delivery, or session-phase boundary.
+    @Published private(set) var captureFinishRequested = false
+    func acknowledgeCaptureFinish() {
+        captureFinishRequested = true
+        typingFocus.disable(releaseKeyboard: false)
+    }
     private var microphoneTransitionWaiters: [CheckedContinuation<Void, Never>] = []
     func finishMicrophoneTransition() {
         microphoneTransitionPending = false
@@ -409,7 +417,9 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     // scheduling and again before a queued return could reclaim the keyboard.
     lazy var typingFocus = RecorderTypingFocus(canAutomaticallyReturn: { [weak self] in
         self?.microphoneOff == true && self?.microphoneTransitionPending == false
-    }, canFocus: { [weak self] in self?.canTypeInHUD == true })
+    }, canFocus: { [weak self] in
+        self?.canTypeInHUD == true && self?.captureFinishRequested == false
+    })
     var typingFocusController: RecorderTypingFocus? { typingFocus }
 
     var canTypeInHUD: Bool {

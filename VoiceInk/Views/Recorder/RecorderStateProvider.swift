@@ -17,6 +17,7 @@ protocol RecorderStateProvider: AnyObject {
     var microphoneOff: Bool { get }
     var potentialTTSActive: Bool { get }
     var microphoneTransitionPending: Bool { get }
+    var captureFinishRequested: Bool { get }
     func toggleMicrophone()
     func togglePause()
     func updateTypedInput(_ value: String)
@@ -40,7 +41,7 @@ extension RecorderStateProvider {
     // The editor disappears at finish. Do not measure its now-hidden transcript
     // while showing the loading card; all mirrored layouts use this same gate.
     var showsLiveContext: Bool {
-        (recordingState.isRecordingOrPaused || canTypeInHUD)
+        !captureFinishRequested && (recordingState.isRecordingOrPaused || canTypeInHUD)
             && (showsRealtimeTranscriptHUD || canTypeInHUD || !liveSelectionReferences.isEmpty)
     }
 
@@ -50,15 +51,14 @@ extension RecorderStateProvider {
         realtimeStreamSleeping && !microphoneOff && recordingState == .recording
     }
 
-    /// The rainbow Recording Outline promises one thing: this session's microphone is
-    /// capturing right now. Starting, Pause, microphone-off typing, transcription,
-    /// enhancement and idle never borrow that promise. Won't paste changes delivery,
-    /// not capture: keep the outline lit during its gesture window and the approved
-    /// real microphone stop tail. GPT Live sleeping also keeps it lit. Presentation
-    /// only: no capture, playback or Primary/Next delivery path reads it.
+    /// Ethan's rainbow now follows live microphone capture AND the small loading
+    /// card until transcription/processing finishes. During the real stop tail the
+    /// small card keeps the actual waveform; only capture end changes it to loading.
+    /// Starting, Pause, microphone-off typing and idle remain unlit. This replaces
+    /// the old showsLiveCaptureOutline gate; it is never a hardware or route signal.
     /// Original design by Claude Opus 5.5. Found and fixed by GPT-6.1 Sol.
-    var showsLiveCaptureOutline: Bool {
-        recordingState == .recording && !microphoneOff
+    var showsRecordingActivityOutline: Bool {
+        (recordingState == .recording && !microphoneOff) || recordingState.isProcessing
     }
 
     // Context colors acknowledge provider words, not microphone intent, a moving
@@ -88,6 +88,7 @@ extension RecorderStateProvider {
     var microphoneOff: Bool { recordingState == .paused }
     var potentialTTSActive: Bool { false }
     var microphoneTransitionPending: Bool { false }
+    var captureFinishRequested: Bool { false }
     func toggleMicrophone() {}
     func togglePause() {}
     func updateTypedInput(_ value: String) {}

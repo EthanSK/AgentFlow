@@ -32,6 +32,7 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     }
 
     private var displayState: DisplayState {
+        if stateProvider.captureFinishRequested { return .active }
         if assistantSession.isVisible {
             return .assistant
         }
@@ -140,7 +141,7 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     private let collapseAnimation = Animation.spring(response: 0.45, dampingFraction: 1.0)
 
     private var pillAnimation: Animation? {
-        if stateProvider.recordingState.isProcessing { return nil }
+        if stateProvider.captureFinishRequested || stateProvider.recordingState.isProcessing { return nil }
         return displayState == .collapsed ? collapseAnimation : expandAnimation
     }
 
@@ -162,13 +163,13 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
             assistantPanel
         }
         .frame(width: pillWidth, height: pillHeight)
-        // Live-capture signal only, mirroring the Mini card: above the fill, beneath
+        // Recording/processing activity, mirroring the Mini card: above the fill, beneath
         // every control and transcript line, bounded by the clip, and never a saved
         // or Next destination marker. The pill hangs from the display's top edge, so
         // the border keeps an open top, without a line along the menu bar or a
         // fade into the black interior. — GPT-6.1 Sol
         .background {
-            if captureOutlineEnabled && stateProvider.showsLiveCaptureOutline {
+            if captureOutlineEnabled && stateProvider.showsRecordingActivityOutline {
                 RecorderCaptureOutline(shape: pillShape, omitsTopEdge: true)
                     .transition(.identity)
             }
@@ -207,6 +208,8 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                         recordingState: stateProvider.recordingState,
                         action: onRecordButtonTapped
                     )
+                    .disabled(stateProvider.captureFinishRequested)
+                    .saturation(stateProvider.captureFinishRequested ? 0 : 1)
                 }
 
                 // Cancel ("X") immediately to the right of the Stop/record control so an
@@ -217,10 +220,10 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                     RecorderCancelButton(action: onCancelTapped)
                         .transition(.opacity)
 
-                    if stateProvider.recordingState.isRecordingOrPaused {
+                    if stateProvider.recordingState.isRecordingOrPaused && !stateProvider.captureFinishRequested {
                         RecorderPauseButton(stateProvider: stateProvider)
                     }
-                    if stateProvider.canTypeInHUD {
+                    if stateProvider.canTypeInHUD && !stateProvider.captureFinishRequested {
                         RecorderMicrophoneButton(stateProvider: stateProvider)
                     }
                 }

@@ -47,6 +47,7 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
         if let chatBanner { return chatBanner.cardWidth }
         // Leave room for Pause/Play and the current app. Ethan removed the secondary
         // app icon because its unused destination warning was mostly visual noise.
+        if stateProvider.captureFinishRequested && stateProvider.recordingState == .recording { return 324 }
         if stateProvider.recordingState.isRecordingOrPaused { return 324 }
         return stateProvider.recordingState == .starting || stateProvider.recordingState.isProcessing
             ? 254 : compactWidth
@@ -59,7 +60,7 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     }
 
     private var hasAssistantResponse: Bool {
-        assistantSession.isVisible
+        assistantSession.isVisible && !stateProvider.captureFinishRequested
     }
 
     private var shouldShowCloseButton: Bool {
@@ -102,6 +103,8 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                             recordingState: stateProvider.recordingState,
                             action: onRecordButtonTapped
                         )
+                        .disabled(stateProvider.captureFinishRequested)
+                        .saturation(stateProvider.captureFinishRequested ? 0 : 1)
                     }
                 }
 
@@ -113,10 +116,10 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                     RecorderCancelButton(action: onCancelTapped)
                         .transition(.opacity)
 
-                    if stateProvider.recordingState.isRecordingOrPaused {
+                    if stateProvider.recordingState.isRecordingOrPaused && !stateProvider.captureFinishRequested {
                         RecorderPauseButton(stateProvider: stateProvider)
                     }
-                    if stateProvider.canTypeInHUD {
+                    if stateProvider.canTypeInHUD && !stateProvider.captureFinishRequested {
                         RecorderMicrophoneButton(stateProvider: stateProvider)
                     }
                 }
@@ -208,13 +211,12 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
             controlBar
         }
         .frame(width: capsuleWidth)
-        // Live-capture signal only. Chained before the fill, it sits above the card
+        // Recording/processing activity. Chained before the fill, it sits above the card
         // colour but beneath every control, transcript line and drag surface, and the
         // clip below bounds it. It never marks a saved or Next destination. Removal is
-        // instant so Stop and Pause acknowledge at once; only the border's colours
-        // animate while the microphone remains on.
+        // instant for Pause; Stop retains it through the tail and transcription.
         .background {
-            if captureOutlineEnabled && stateProvider.showsLiveCaptureOutline {
+            if captureOutlineEnabled && stateProvider.showsRecordingActivityOutline {
                 RecorderCaptureOutline(shape: cardShape)
                     .transition(.identity)
             }
@@ -235,7 +237,7 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
         .clipShape(cardShape)
         // Finish must visibly acknowledge the first press, not first shrink the
         // editor and cross-fade its loading indicator over another 300 ms.
-        .animation(stateProvider.recordingState.isProcessing ? nil : .easeInOut(duration: 0.3), value: hasLiveTranscript)
+        .animation(stateProvider.captureFinishRequested || stateProvider.recordingState.isProcessing ? nil : .easeInOut(duration: 0.3), value: hasLiveTranscript)
         .animation(.easeInOut(duration: 0.3), value: hasAssistantResponse)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
     }

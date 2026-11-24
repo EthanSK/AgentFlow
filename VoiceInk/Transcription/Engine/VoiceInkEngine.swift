@@ -964,6 +964,11 @@ class VoiceInkEngine: NSObject, ObservableObject {
 
         if let active = activeRecordingSession {
             guard !active.shouldCancel, active.pendingStopDelay == nil else { return }
+            // Flush composition before the editor collapses, without sealing its
+            // run before the final captured words. This is presentation only:
+            // the existing real 600 ms tail and its capture owner remain intact.
+            RecorderTypingTextView.releaseKeyboardBeforeFinish()
+            active.acknowledgeCaptureFinish()
             let stopDelay = RecordingStopDelay.duration(
                 milliseconds: UserDefaults.standard.integer(forKey: RecordingStopDelay.preferenceKey),
                 state: active.liveRecordingState,
