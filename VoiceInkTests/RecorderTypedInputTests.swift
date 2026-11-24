@@ -6,15 +6,6 @@ import Testing
 @testable import VoiceInkPlusPlus
 
 struct RecorderTypedInputTests {
-    /// Wait for the real main-actor handoff, rather than assuming a hosted runner's
-    /// other window tests leave enough time inside a short fixed sleep.
-    @MainActor private func waitForCompletion(_ condition: () -> Bool) async throws {
-        for _ in 0..<400 where !condition() {
-            try await Task.sleep(for: .milliseconds(5))
-        }
-        try #require(condition(), "The expected recorder action did not complete")
-    }
-
     @Test @MainActor func contextColorsWaitForRecognizedSpeechNotTypingOrCaptureIntent() throws {
         let session = RecordingSession()
         session.showsRealtimeTranscriptHUD = true
