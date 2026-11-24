@@ -1639,7 +1639,19 @@ struct RecorderTypedInputTests {
             }
             #expect(result.archive.contains(typed) && result.archive.contains("Selected exact content"))
             let readableHistory = HistoryContextPresentation.document(result.history).plainText
-            #expect(readableHistory.contains("Every typed word") && readableHistory.contains(speech))
+            #expect(readableHistory.contains("Every typed word"))
+            if AgentFlowPromptPreview.telegramRecipientBundleIdentifiers.contains(bundleID) {
+                // Without the duplicate opening, authored speech is correctly
+                // separated by the selections/typing it surrounded. Verify all
+                // its words in order instead of requiring a second contiguous copy.
+                let events = AgentFlowPromptViewer.events(readableHistory)
+                let spoken = events.filter { $0.tag == "speech" }
+                    .flatMap { $0.text.split(whereSeparator: \.isWhitespace) }.joined(separator: " ")
+                #expect(spoken == speech)
+                #expect(!events.contains { $0.tag == "opening" })
+            } else {
+                #expect(readableHistory.contains(speech))
+            }
         }
         let raw = try await clipboardPipelineFixture(clipboardOnly: false,
             typed: "Raw stays verbatim", raw: true)

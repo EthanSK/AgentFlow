@@ -470,6 +470,7 @@ struct StyledContextPresentationTests {
         let speech = "unique dictated request"
         let highlight = try #require(LiveSelectionReference("complete selected context"))
         let typed = try #require(LiveSelectionReference(typedText: "typed ending"))
+            .timed(at: Date(timeIntervalSince1970: 2), startedAt: Date(timeIntervalSince1970: 1))
         let screenshot = try #require(LiveSelectionReference(
             screenshotURL: URL(fileURLWithPath: "/Users/test/Screenshots/full.png")))
         let references = [highlight.anchored(after: speech), typed.anchored(after: speech),
