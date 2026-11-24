@@ -157,6 +157,10 @@ enum BackupImporter {
         if let recType = general.recorderType {
             recorderUIManager.recorderType = recType
         }
+        // Old backups omit this field and preserve this Mac's current choice.
+        if let outlineEnabled = general.recorderCaptureOutlineEnabled {
+            UserDefaults.standard.set(outlineEnabled, forKey: RecorderCaptureOutlinePreference.preferenceKey)
+        }
 
         if let transcriptionCleanup = general.isTranscriptionCleanupEnabled {
             UserDefaults.standard.set(transcriptionCleanup, forKey: keyIsTranscriptionCleanupEnabled)

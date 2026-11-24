@@ -226,6 +226,13 @@ struct RecorderResponsivenessTests {
         let recorder = Recorder()
         let assistant = AssistantSession()
         let panel = MiniRecorderPanel(contentRect: .zero)
+        // This live session lights the Recording Outline along the card's bottom edge.
+        // RecorderCaptureOutlineTests covers that ring; a private suite turns it off
+        // here so this geometry check still samples the black card body.
+        let outlineSuiteName = "AgentFlowTests.MiniBottom.\(UUID().uuidString)"
+        let outlineOff = try #require(UserDefaults(suiteName: outlineSuiteName))
+        outlineOff.set(false, forKey: RecorderCaptureOutlinePreference.preferenceKey)
+        defer { outlineOff.removePersistentDomain(forName: outlineSuiteName) }
         let view = MiniRecorderView(
             stateProvider: session, liveTranscriptHeight: 56, liveTranscriptWidth: 640,
             recorder: recorder, assistantSession: assistant,
@@ -233,6 +240,7 @@ struct RecorderResponsivenessTests {
             onAssistantFollowUp: { _ in })
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .background(RecorderPanelHeightSync(desiredHeight: 200, edge: .bottom, scale: scale))
+            .defaultAppStorage(outlineOff)
         let host = ScaledRecorderHostingView(rootView: AnyView(view), scale: scale)
         panel.contentView = host
         defer { panel.orderOut(nil); panel.close() }

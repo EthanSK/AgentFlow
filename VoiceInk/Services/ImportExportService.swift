@@ -173,6 +173,8 @@ class ImportExportService {
             launchAtLoginEnabled: LaunchAtLogin.isEnabled,
             isMenuBarOnly: menuBarManager.isMenuBarOnly,
             recorderType: recorderUIManager.recorderPanelStyle.rawValue,
+            recorderCaptureOutlineEnabled: UserDefaults.standard.object(forKey: RecorderCaptureOutlinePreference.preferenceKey) as? Bool
+                ?? RecorderCaptureOutlinePreference.defaultValue,
             isTranscriptionCleanupEnabled: UserDefaults.standard.bool(forKey: keyIsTranscriptionCleanupEnabled),
             transcriptionRetentionMinutes: UserDefaults.standard.integer(forKey: keyTranscriptionRetentionMinutes),
             isAudioCleanupEnabled: UserDefaults.standard.bool(forKey: keyIsAudioCleanupEnabled),

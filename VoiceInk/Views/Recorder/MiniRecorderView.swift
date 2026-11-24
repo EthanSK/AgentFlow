@@ -15,6 +15,11 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     let onCancelTapped: () -> Void
     let onAssistantFollowUp: (String) -> Void
 
+    // Settings -> Interface -> Recording Outline. A missing value means on, and an
+    // explicit false stays off; see RecorderCaptureOutlinePreference.
+    @AppStorage(RecorderCaptureOutlinePreference.preferenceKey)
+    private var captureOutlineEnabled = RecorderCaptureOutlinePreference.defaultValue
+
     // MARK: - Layout Constants
 
     private let compactWidth: CGFloat = 228
@@ -22,6 +27,15 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     private var assistantWidth: CGFloat { min(liveTranscriptWidth, MiniRecorderLayoutMetrics.assistantPanelWidth) }
     private let compactCornerRadius: CGFloat = 20
     private let expandedCornerRadius: CGFloat = 14
+
+    // One silhouette for the clip and the Recording Outline, so the neon tube
+    // follows every compact/expanded corner and width change exactly.
+    private var cardShape: RoundedRectangle {
+        RoundedRectangle(
+            cornerRadius: hasLiveTranscript || hasAssistantResponse ? expandedCornerRadius : compactCornerRadius,
+            style: .continuous
+        )
+    }
 
     private var chatBanner: RecorderChatBannerLayout? {
         stateProvider.codexBanner.map { RecorderChatBannerLayout($0, availableWidth: hasAssistantResponse ? assistantWidth : liveTranscriptWidth) }
@@ -216,6 +230,17 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
             controlBar
         }
         .frame(width: capsuleWidth)
+        // Live-capture signal only. Chained before the fill, it sits above the card
+        // colour but beneath every control, transcript line and drag surface, and the
+        // clip below bounds it. It never marks a saved or Next destination. Removal is
+        // instant so Stop and Pause acknowledge at once; the outline animates its own
+        // ignition when capture starts or resumes.
+        .background {
+            if captureOutlineEnabled && stateProvider.showsLiveCaptureOutline {
+                RecorderCaptureOutline(shape: cardShape)
+                    .transition(.identity)
+            }
+        }
         .background {
             if stateProvider.recordingState == .paused {
                 RecorderPanelAppearance.pausedBackground
@@ -229,7 +254,7 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                 Color.black
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: hasLiveTranscript || hasAssistantResponse ? expandedCornerRadius : compactCornerRadius, style: .continuous))
+        .clipShape(cardShape)
         // Finish must visibly acknowledge the first press, not first shrink the
         // editor and cross-fade its loading indicator over another 300 ms.
         .animation(stateProvider.recordingState.isProcessing ? nil : .easeInOut(duration: 0.3), value: hasLiveTranscript)

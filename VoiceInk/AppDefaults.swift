@@ -29,6 +29,7 @@ enum AppDefaults {
             "SelectedLanguage": "en",
             "AppendTrailingSpace": true,
             "RecorderType": "mini",
+            RecorderCaptureOutlinePreference.preferenceKey: RecorderCaptureOutlinePreference.defaultValue,
             // Off by default: sending recent Codex/dictation text to OpenAI is opt-in.
             RecentTranscriptContextSettings.enabledKey: false,
 

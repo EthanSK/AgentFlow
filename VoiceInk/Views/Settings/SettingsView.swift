@@ -21,6 +21,9 @@ struct SettingsView: View {
     @AppStorage(CodexSelectionImageCapture.preferenceKey) private var codexHighlightImages = false
     @AppStorage(PasteMethod.userDefaultsKey) private var pasteMethodRawValue = PasteMethod.standard.rawValue
     @AppStorage(NewChatRecordingHarness.preferenceKey) private var newChatApp = NewChatRecordingHarness.codex.rawValue
+    // On unless Ethan turns it off (requested 2026-11-24); the recorder cards read the same key.
+    @AppStorage(RecorderCaptureOutlinePreference.preferenceKey)
+    private var recordingOutlineEnabled = RecorderCaptureOutlinePreference.defaultValue
     @State private var showResetOnboardingAlert = false
     @State private var hasCancelRecordingShortcut = ShortcutStore.shortcut(for: .cancelRecorder) != nil
 
@@ -227,6 +230,7 @@ struct SettingsView: View {
                         .frame(width: 42, alignment: .trailing)
                 }
 
+                Toggle("Recording Outline", isOn: $recordingOutlineEnabled)
             }
 
             Section("General") {

@@ -17,6 +17,11 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     let onCancelTapped: () -> Void
     let onAssistantFollowUp: (String) -> Void
 
+    // Settings -> Interface -> Recording Outline. A missing value means on, and an
+    // explicit false stays off; see RecorderCaptureOutlinePreference.
+    @AppStorage(RecorderCaptureOutlinePreference.preferenceKey)
+    private var captureOutlineEnabled = RecorderCaptureOutlinePreference.defaultValue
+
     // MARK: - Display State
 
     private enum DisplayState: Equatable {
@@ -93,6 +98,15 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
         }
     }
 
+    // One silhouette for the clip and the Recording Outline, so the neon tube
+    // follows every display-state corner and size spring exactly.
+    private var pillShape: NotchShape {
+        NotchShape(
+            topCornerRadius: displayState == .liveText ? 12 : 8,
+            bottomCornerRadius: displayState == .liveText || displayState == .assistant ? 22 : 16
+        )
+    }
+
     private var sideEdgePadding: CGFloat {
         displayState == .liveText || displayState == .assistant ? 20 : 16
     }
@@ -159,6 +173,17 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
             assistantPanel
         }
         .frame(width: pillWidth, height: pillHeight)
+        // Live-capture signal only, mirroring the Mini card: above the fill, beneath
+        // every control and transcript line, bounded by the clip, and never a saved
+        // or Next destination marker. The pill hangs from the display's top edge, so
+        // the tube fades out just below the top flares and reads as a U lit from
+        // the bezel instead of a line along the menu bar.
+        .background {
+            if captureOutlineEnabled && stateProvider.showsLiveCaptureOutline {
+                RecorderCaptureOutline(shape: pillShape, topEdgeFade: pillShape.topCornerRadius + 8)
+                    .transition(.identity)
+            }
+        }
         .background {
             if stateProvider.recordingState == .paused {
                 RecorderPanelAppearance.pausedBackground
@@ -172,12 +197,7 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                 Color.black
             }
         }
-        .clipShape(
-            NotchShape(
-                topCornerRadius: displayState == .liveText ? 12 : 8,
-                bottomCornerRadius: displayState == .liveText || displayState == .assistant ? 22 : 16
-            )
-        )
+        .clipShape(pillShape)
     }
 
     // MARK: - Main Row

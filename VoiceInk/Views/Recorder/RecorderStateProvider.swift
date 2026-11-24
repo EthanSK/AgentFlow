@@ -65,6 +65,17 @@ extension RecorderStateProvider {
         realtimeStreamSleeping && !microphoneOff && recordingState == .recording
     }
 
+    /// The rainbow Recording Outline promises one thing: this session's microphone is
+    /// capturing right now. Starting, Pause, microphone-off typing, transcription,
+    /// enhancement and idle never borrow that promise. Won't paste changes delivery,
+    /// not capture: keep the outline lit during its gesture window and the approved
+    /// real microphone stop tail. GPT Live sleeping also keeps it lit. Presentation
+    /// only: no capture, playback or Primary/Next delivery path reads it.
+    /// — Claude Opus 5.5; capture-boundary correction by GPT-6.1 Sol
+    var showsLiveCaptureOutline: Bool {
+        recordingState == .recording && !microphoneOff
+    }
+
     // Context colors acknowledge provider words, not microphone intent, a moving
     // meter, typing, or captured selections. This is only HUD presentation: batch
     // capture/realtime fallback stays unconfirmed until stop, and saved context
