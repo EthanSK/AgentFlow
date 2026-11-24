@@ -19,6 +19,12 @@ the documented `shasum -a 256 -c SHA256SUMS` works from a clean download directo
 
 ## Automatic signed updates
 
+First complete hosted qualification: [v2.0.540](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.540),
+[source `91975cec`](https://github.com/EthanSK/AgentFlow/tree/91975cec99c30466eeca31e42fa7f10ea56f6cf8),
+[run 45442964246](https://github.com/EthanSK/AgentFlow/actions/runs/45442964246):
+1,015 named tests in 49 suites, clean universal build, signing/notarization,
+immutable publication and public-download hash verification all passed.
+
 Trusted native/release changes pushed to `main`, or a manual dispatch, start
 `.github/workflows/release.yml` on a GitHub-hosted Apple Silicon Mac. It builds the
 pinned speech dependency, runs the complete named test gate and builds a separate

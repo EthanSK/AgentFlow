@@ -1,5 +1,30 @@
 # Learnings
 
+## 2026-11-24 — Fully hosted public signing and exact-source qualification
+
+[Agent Flow v2.0.540](https://github.com/EthanSK/AgentFlow/releases/tag/v2.0.540)
+was built, tested, Developer ID signed, Apple notarized, stapled and published entirely
+on a GitHub-hosted Mac in [run 45442964246](https://github.com/EthanSK/AgentFlow/actions/runs/45442964246).
+All 1,015 named tests in 49 suites passed for exact source `91975cec99c30466eeca31e42fa7f10ea56f6cf8`
+and build 540. The workflow downloaded the public assets and verified their hashes;
+the public `release.json` independently matches that source. Existing Developer ID,
+Automation/audio entitlements and Sparkle updater identity were preserved. This
+qualifies public distribution; it does not restart the separately installed local app.
+
+Select the workflow's verified Xcode 26.3 toolchain on the hosted macOS 15 image.
+The parked-child fixture must use the installed Apple Command Line Tools Python
+runtime directly when available: the `/usr/bin/python3` shim selected a missing
+Xcode Python in the earlier hosted run. This changes the test fixture, not the
+production helper trust boundary or readiness deadline. Keep the removed
+`build-public-on-fleet.py` release route retired; local Mini development remains separate.
+
+Parse the raw signed entitlement plist and require Boolean `true` values. Do not
+grep `plutil -p` display text: macOS 15 prints true as `1`, which stopped the previous
+release after successful notarization. The strict typed parser passed eight focused
+release-signing checks and [a real hosted public-app probe](https://github.com/EthanSK/AgentFlow/actions/runs/45442126131)
+before full qualification. All signature, Team ID, runtime, timestamp, universal
+architecture, stapling and Gatekeeper checks remain mandatory.
+
 ## 2026-11-24 — Spoken backspace edits speech before final delivery
 
 Ethan's “backspace, backspace” means remove one preceding dictated word per
@@ -25,8 +50,8 @@ all-session idle quit, preserving the 600 ms tail, media preference, Scarlett in
 and disabled dictated-text queue. Ethan subsequently reported that the feature
 seemed to work in normal use; basic spoken acceptance is now recorded. This does
 not add instrumented evidence for every recognition variant or delivery surface.
-Public binary qualification is pending the independently owned hosted-signing
-migration; do not silently start the superseded personal-Mac release workflow.
+Public binary qualification is now complete in fully hosted run 45442964246 for
+v2.0.540; see the hosted-signing entry above. Keep the personal-Mac release route retired.
 
 ## 2026-11-24 — Disable the automatic Voice recap producer, not the recipient monitor
 
