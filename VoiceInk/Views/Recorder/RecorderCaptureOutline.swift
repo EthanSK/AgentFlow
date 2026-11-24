@@ -8,6 +8,8 @@ import SwiftUI
 /// One sharp stroke follows the recorder's silhouette during capture and transcription.
 /// Colour still flows evenly around the border; there is no bloom, pale core,
 /// opacity flicker or interior shading. Reduce Motion holds the colours still.
+/// An accepted highlight or screenshot recolours the same stroke for one quick lap
+/// (`RecorderContextSweep`); it never changes its width, alignment or phase. — Claude Opus 5.5
 ///
 /// Callers place it in a `.background` above the card fill and beneath content, and
 /// the card's own clip bounds it, so it changes no geometry, hit target, drag
@@ -20,6 +22,11 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
     /// Formerly `topEdgeFade`: the Notch omits its closing top segment,
     /// without an opacity gradient into the black surface. Mini stays a closed ring. — GPT-6.1 Sol
     var omitsTopEdge = false
+    /// The session's latest accepted highlight/screenshot. It is a plain value from
+    /// the card, so this leaf still never observes the session. The lap is derived
+    /// from this leaf's existing clock and simply stops being drawn when it ends.
+    /// — Claude Opus 5.5
+    var acceptancePulse: RecorderContextAcceptancePulse? = nil
 
     // macOS exposes Reduce Motion as a read-only environment value. Hosted
     // appearance previews can exercise its static branch without changing the
@@ -30,6 +37,9 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
     private var reduceMotion: Bool { reduceMotionForPreview ?? systemReduceMotion }
     @Environment(\.displayScale) private var displayScale
     @State private var trace = RecorderCaptureOutlineTrace()
+    /// Reduce Motion pauses the clock, so its still acknowledgement is held by one
+    /// bounded task instead. — Claude Opus 5.5
+    @State private var stillAcknowledgement: RecorderContextAcceptancePulse? = nil
 
     /// Forwards the card shape's own animation, so the tube follows the clip through
     /// compact/expanded corner and size springs instead of snapping ahead of it and
@@ -50,23 +60,49 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
             paused: reduceMotion
         )) { timeline in
             let phase = reduceMotion ? 0 : RecorderCaptureOutlineStyle.flowPhase(at: timeline.date)
+            // The lap reads the same wall-clock frame as the rainbow, so mirrored
+            // panels match, and it never shifts the rainbow's phase. — Claude Opus 5.5
+            let acknowledgement = reduceMotion
+                ? stillAcknowledgement.map { RecorderContextSweep.Acknowledgement(kind: $0.kind, form: .still) }
+                : RecorderContextSweep.acknowledgement(for: acceptancePulse, at: timeline.date)
             GeometryReader { geometry in
                 let frame = geometry.frame(in: .global)
                 let pixels = RecorderCaptureOutlinePixels(
                     localSize: geometry.size, frame: frame, displayScale: displayScale)
                 Canvas { context, size in
-                    drawBorder(in: context, size: size, phase: phase, pixels: pixels)
+                    drawBorder(in: context, size: size, phase: phase,
+                               acknowledgement: acknowledgement, pixels: pixels)
                 }
                 .frame(width: pixels.bounds.width, height: pixels.bounds.height)
                 .offset(x: pixels.bounds.minX, y: pixels.bounds.minY)
             }
         }
+        // A newer pulse or the outline's removal cancels this task, so no hold can
+        // outlive its pulse or clear a newer one. — Claude Opus 5.5
+        .task(id: acceptancePulse?.id) { await holdStillAcknowledgement() }
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
 
+    /// Reduce Motion's acknowledgement: the whole border takes the context colour
+    /// for `RecorderContextSweep.stillDuration`, without movement or fade, then
+    /// returns to the still rainbow. With motion this returns at once and the lap
+    /// runs on the leaf's own clock. — Claude Opus 5.5
+    private func holdStillAcknowledgement() async {
+        guard reduceMotion, let pulse = acceptancePulse,
+              let remaining = RecorderContextSweep.stillRemaining(of: pulse, at: Date()) else {
+            if stillAcknowledgement != nil { stillAcknowledgement = nil }
+            return
+        }
+        stillAcknowledgement = pulse
+        try? await Task.sleep(for: .seconds(remaining))
+        guard !Task.isCancelled, stillAcknowledgement?.id == pulse.id else { return }
+        stillAcknowledgement = nil
+    }
+
     // Former `drawNeonTube`: one stroke replaces its bloom and pale core. — GPT-6.1 Sol
     private func drawBorder(in context: GraphicsContext, size: CGSize, phase: Double,
+                            acknowledgement: RecorderContextSweep.Acknowledgement?,
                             pixels: RecorderCaptureOutlinePixels) {
         let style = RecorderCaptureOutlineStyle.self
         let bounds = CGRect(origin: .zero, size: size)
@@ -80,10 +116,18 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
         let samples = trace.samples(along: tubePath, around: center)
         guard !samples.isEmpty else { return }
 
+        // Only while an acknowledgement shows: the transcript colour as this panel
+        // draws it, recoloring the same stops along the same single stroke.
+        let paint = acknowledgement.map {
+            RecorderContextSweepPaint(
+                tint: RecorderContextSweep.components(of: $0.kind.color, in: context.environment),
+                form: $0.form)
+        }
         let tube = GraphicsContext.Shading.conicGradient(
             Gradient(stops: samples.map { sample in
-                Gradient.Stop(
-                    color: RecorderNeonSpectrum.color(at: sample.clockwiseFraction - phase),
+                let position = sample.clockwiseFraction - phase
+                return Gradient.Stop(
+                    color: paint?.color(at: position) ?? RecorderNeonSpectrum.color(at: position),
                     location: sample.angularLocation
                 )
             }),

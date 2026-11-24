@@ -273,6 +273,9 @@ struct LiveSelectionReference: Equatable, Sendable {
     var isTypedText: Bool { typedText != nil }
     var hasSpeechTiming: Bool { speechBoundary }
     var isSelection: Bool { screenshotPath == nil && !isTypedText && !speechBoundary }
+    /// A saved macOS screenshot, not a selection image. The Recording Outline's
+    /// acceptance lap uses this to pick magenta over the selection blue. — Claude Opus 5.5
+    var isScreenshot: Bool { screenshotPath != nil }
 
     var spokenWordCount: Int {
         anchoredWordCount

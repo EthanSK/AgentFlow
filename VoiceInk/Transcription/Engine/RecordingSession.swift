@@ -359,6 +359,13 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     @Published private(set) var liveSelectionReferences: [LiveSelectionReference] = [] {
         didSet { hudContextPreviewCache = nil }
     }
+    // Ethan's one-lap outline acknowledgement for the latest highlight/screenshot
+    // accepted during live capture. It is published in the same turn as the
+    // reference itself, so the card updates once, and every mirrored panel draws
+    // the same lap. Presentation only: never a capture, focus, Pause, media,
+    // microphone or delivery signal. — Claude Opus 5.5
+    @Published private(set) var contextAcceptancePulse: RecorderContextAcceptancePulse?
+    private var lastAcknowledgedContext: LiveSelectionReference?
     private var liveSelectionCapture: LiveSelectionCapture?
     // The editable prose run is NOT part of `liveSelectionReferences`. It has no
     // timeline position until it is committed (Enter, leaving the editor, an
@@ -981,6 +988,38 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         }
         noteRealtimeSessionActivity()
         if !deferTypingFocus { typingFocus.returnAfterContext() }
+        // Last, so the existing commit, stream and focus steps keep their order.
+        acknowledgeAcceptedContext(reference, precedesSpeech: precedesSpeech)
+    }
+
+    /// Launches the outline's one-lap acknowledgement, after the guard above has
+    /// accepted `reference`. This is the only place a lap starts. Label updates, a
+    /// drag's attached image, retry hydration and history never call it, so they
+    /// never animate. It only publishes presentation state, after every existing
+    /// step, and changes no capture, focus or timing. — Claude Opus 5.5
+    private func acknowledgeAcceptedContext(_ reference: LiveSelectionReference, precedesSpeech: Bool,
+                                            at date: Date = Date()) {
+        // Typed prose and speech-timing markers are not captured context.
+        guard let pulse = RecorderContextAcceptancePulse(accepting: reference, at: date) else { return }
+        // The same accepted gesture arriving again must not relaunch its lap.
+        if let last = lastAcknowledgedContext, Self.isSameAcceptance(reference, last) { return }
+        lastAcknowledgedContext = reference
+        // A highlight or screenshot made before Start was already in view when
+        // Ethan pressed it; the lap answers gestures made while recording. Pause,
+        // microphone-off typing and startup show no outline, so a lap launched
+        // there would only surface later as a stale partial lap.
+        guard !precedesSpeech, showsRecordingActivityOutline else { return }
+        contextAcceptancePulse = pulse
+    }
+
+    /// Text and Telegram images carry a per-gesture capture ID. Screenshots and a
+    /// standalone Codex drag image do not, so they compare whole: the same saved
+    /// file at the same time. A repeat highlight of the same words is a new
+    /// gesture with a new ID and time, so it still gets its own lap. — Claude Opus 5.5
+    private static func isSameAcceptance(_ reference: LiveSelectionReference,
+                                         _ previous: LiveSelectionReference) -> Bool {
+        if let captureID = reference.captureID { return captureID == previous.captureID }
+        return previous.captureID == nil && previous == reference
     }
 
     /// Codex drag image (approved 2026-11-07): the picture of a gesture whose

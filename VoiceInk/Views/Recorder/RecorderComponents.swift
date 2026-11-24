@@ -108,8 +108,10 @@ struct RecorderToggleButton: View {
 struct RecorderRecordButton: View {
     let recordingState: RecordingState
     let action: () -> Void
+    var finishRequested = false
 
     private var visualState: VisualState {
+        if finishRequested && recordingState.isRecordingOrPaused { return .finishing }
         switch recordingState {
         case .idle, .starting, .busy:
             return .ready
@@ -121,6 +123,7 @@ struct RecorderRecordButton: View {
     }
 
     private var isDisabled: Bool {
+        if finishRequested { return true }
         switch recordingState {
         case .idle, .recording, .paused:
             return false
@@ -170,7 +173,7 @@ struct RecorderRecordButton: View {
                 border: red.opacity(0.98),
                 mark: .white
             )
-        case .processing:
+        case .processing, .finishing:
             return StateColors(
                 surface: Color.white.opacity(0.13),
                 border: Color.white.opacity(0.18),
@@ -182,7 +185,7 @@ struct RecorderRecordButton: View {
     @ViewBuilder
     private var stateMark: some View {
         switch visualState {
-        case .ready, .recording:
+        case .ready, .recording, .finishing:
             RoundedRectangle(cornerRadius: 2.2, style: .continuous)
                 .fill(colors.mark)
                 .frame(width: 8, height: 8)
@@ -213,6 +216,9 @@ struct RecorderRecordButton: View {
     private enum VisualState: Equatable {
         case ready
         case recording
+        // Neutral disabled Stop acknowledges the request without putting a loading
+        // icon beside the still-live waveform during the real microphone tail.
+        case finishing
         case processing
     }
 
@@ -483,6 +489,8 @@ struct LiveTranscriptView: View {
                 part = Text("Potential ignore: " + speech)
                     .foregroundColor(amber)
             case .selection(let preview):
+                // RecorderContextColor mirrors this cyan and the screenshot purple
+                // below for the Recording Outline's acceptance lap. — Claude Opus 5.5
                 part = Text("\(String(localized: "Selected Text")): \(preview)")
                     .foregroundColor(dimsContextUntilSpeechArrives ? waitingContext : .cyan.opacity(0.8))
             case .screenshot(let filename):

@@ -167,9 +167,9 @@ struct RecorderResponsivenessTests {
             #expect(gate.lowerBound < measured.lowerBound)
         }
         let mini = try source("VoiceInk/Views/Recorder/MiniRecorderView.swift")
-        #expect(mini.contains(".animation(stateProvider.recordingState.isProcessing ? nil : .easeInOut(duration: 0.3), value: hasLiveTranscript)"))
+        #expect(mini.contains(".animation(stateProvider.captureFinishRequested || stateProvider.recordingState.isProcessing ? nil : .easeInOut(duration: 0.3), value: hasLiveTranscript)"))
         let notch = try source("VoiceInk/Views/Recorder/NotchRecorderView.swift")
-        #expect(notch.contains("if stateProvider.recordingState.isProcessing { return nil }"))
+        #expect(notch.contains("if stateProvider.captureFinishRequested || stateProvider.recordingState.isProcessing { return nil }"))
         let components = try source("VoiceInk/Views/Recorder/RecorderComponents.swift")
         #expect(components.contains(".animation(currentState.isProcessing ? nil : .easeInOut(duration: 0.2), value: currentState)"))
     }
@@ -188,11 +188,13 @@ struct RecorderResponsivenessTests {
         #expect(body.contains("stoppedReferences, with: stoppedTranscript, includeTiming: true"))
     }
 
-    @Test @MainActor func miniFinishCollapsesOnFirstUpdateWithoutMovingBottomEdge() async throws {
+    @Test(arguments: [false, true]) @MainActor
+    func miniFinishCollapsesOnFirstUpdateWithoutMovingBottomEdge(captureTail: Bool) async throws {
         let screen = try #require(NSScreen.main)
         let session = RecordingSession()
         session.microphoneOff = true
         session.updateTypedInput(String(repeating: "Long typed draft with context ", count: 400))
+        session.microphoneOff = !captureTail
         let panel = MiniRecorderPanel(contentRect: NSRect(x: 100, y: 100, width: 640, height: 240))
         let view = MiniRecorderView(stateProvider: session, liveTranscriptHeight: 180, liveTranscriptWidth: 640,
             recorder: Recorder(), assistantSession: AssistantSession(), onRecordButtonTapped: {},
@@ -205,8 +207,13 @@ struct RecorderResponsivenessTests {
         defer { panel.orderOut(nil); panel.close() }
         host.layoutSubtreeIfNeeded()
         let bottom = panel.frame.minY
-        session.phase = .transcribing
-        session.liveRecordingState = .transcribing
+        if captureTail {
+            session.acknowledgeCaptureFinish()
+            #expect(session.phase == .recording && session.recordingState == .recording)
+        } else {
+            session.phase = .transcribing
+            session.liveRecordingState = .transcribing
+        }
         // One display opportunity, well below the old 200/300 ms fade/collapse.
         try await Task.sleep(for: .milliseconds(30))
         host.layoutSubtreeIfNeeded()
