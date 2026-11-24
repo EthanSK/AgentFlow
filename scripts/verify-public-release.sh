@@ -31,9 +31,15 @@ grep -Fq 'TeamIdentifier=T34G959ZG8' <<<"$signature"
 grep -Eq 'flags=.*runtime' <<<"$signature"
 grep -Fq 'Timestamp=' <<<"$signature"
 
-entitlements=$(codesign --display --entitlements :- "$app" 2>/dev/null | plutil -p -)
-grep -Fq '"com.apple.security.automation.apple-events" => true' <<<"$entitlements"
-grep -Fq '"com.apple.security.device.audio-input" => true' <<<"$entitlements"
+# Parse the signed plist: macOS 15's human-readable formatter prints true as 1. — GPT-6.1 Sol
+entitlements=$(codesign --display --entitlements :- "$app" 2>/dev/null)
+printf '%s\n' "$entitlements" | /usr/bin/python3 -c '
+import plistlib, sys
+data = plistlib.loads(sys.stdin.buffer.read())
+for key in ("com.apple.security.automation.apple-events", "com.apple.security.device.audio-input"):
+    if data.get(key) is not True:
+        sys.exit("Required public-release entitlement is not Boolean true: " + key)
+'
 test "$(wc -l <"$app/Contents/Resources/COPYING" | tr -d ' ')" -ge 600
 
 whisper="$app/Contents/Frameworks/whisper.framework"

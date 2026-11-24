@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Publish only the Mini-built artifact after signing/notarization. Publication never rebuilds it.
+# Publish only the verified artifact after signing/notarization. Publication never rebuilds it.
 root=$(cd "$(dirname "$0")/.." && pwd)
 release_dir=${1:?Pass the directory containing release.json and the notarized ZIP}
 manifest="$release_dir/release.json"

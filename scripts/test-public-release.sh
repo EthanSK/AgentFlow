@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # A public binary needs a full, named test pass from its exact source/build.
-# Run on the dedicated Mac Mini, in a clean checkout; do not copy the test host into a release.
+# Run in a clean release checkout on the selected build host; never package the test host.
 root=$(cd "$(dirname "$0")/.." && pwd)
 output=${1:?Pass a fresh, task-scoped output directory}
 mkdir -p "$output"
@@ -61,7 +61,13 @@ else
   fi
   host="$derived/Build/Products/Debug/AgentFlow.app"
   bundle="$host/Contents/PlugIns/VoiceInkTests.xctest"
-  test -d "$bundle" || { echo 'Xcode did not build the test bundle.' >&2; exit 1; }
+  if ! test -d "$bundle"; then
+    echo 'Xcode did not build the test bundle.' >&2
+    # Keep the actual build failure in CI; the disposable runner takes its local log away. — GPT-6.1 Sol
+    grep -E 'error:|[Ff]ailed|[Uu]nable to|[Cc]ould not' "$canonical_log" >&2 || true
+    tail -40 "$canonical_log" >&2
+    exit 1
+  fi
   # The direct runner uses a different Bundle.main. Keep the built host untouched and stage its
   # package resource beside a disposable framework copy so MediaRemoteAdapter can find it.
   resource_bundle="$host/Contents/Resources/MediaRemoteAdapter_MediaRemoteAdapter.bundle"

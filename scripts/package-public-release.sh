@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build/test only on the dedicated Mac Mini. Signing a source-bound prebuilt archive may run
-# on the MacBook, keeping its isolated notarization credential in that machine's Keychain.
+# Build and test the selected source, then sign with the supplied release identity. — GPT-6.1 Sol
 # Keep output outside the source tree. Never overwrite the installed app or a published release.
 root=$(cd "$(dirname "$0")/.." && pwd)
 output=${1:?Pass a fresh, task-scoped output directory}
 mode=${2:---complete}
 case "$mode" in --complete|--build-only|--sign-prebuilt) ;; *) echo 'Unknown release mode.' >&2; exit 1 ;; esac
-# This release uses a dedicated local Keychain profile, never another project's credential.
-# The profile name is public configuration; notarytool securely stores the secret itself.
+# Hosted releases use a job-local profile in an explicit temporary Keychain.
+# Local packaging retains its separately configured profile; never put secrets in source.
 notary_profile=${AGENTFLOW_NOTARY_PROFILE:-AgentFlowRelease}
-expected_build_host=${AGENTFLOW_BUILD_HOST:?Set AGENTFLOW_BUILD_HOST to the dedicated Mac Mini hostname}
+notary_flags=()
+if [[ -n "${NOTARY_KEYCHAIN:-}" ]]; then notary_flags=(--keychain "$NOTARY_KEYCHAIN"); fi
+expected_build_host=${AGENTFLOW_BUILD_HOST:?Set AGENTFLOW_BUILD_HOST to the selected build host}
 identity=${VOICEINK_DEVELOPER_ID:-Developer ID Application: Ethan Sarif-Kattan (T34G959ZG8)}
 whisper_commit=0ec0845110dc934911dc48e8c5beb5ad3189b3f3
 whisper_repo="$HOME/VoiceInk-Dependencies/whisper.cpp"
@@ -19,7 +20,7 @@ whisper_framework="$whisper_repo/build-apple/whisper.xcframework"
 
 if test "$mode" != --sign-prebuilt; then
   test "$(hostname)" = "$expected_build_host" || {
-    echo 'Public Agent Flow builds must run on the dedicated Mac Mini.' >&2
+    echo 'Public Agent Flow builds must run on the selected build host.' >&2
     exit 1
   }
   test ! -e "$output" || { echo 'Use a fresh output directory.' >&2; exit 1; }
@@ -57,7 +58,7 @@ security find-identity -v -p codesigning | grep -Fq "\"$identity\"" || {
   echo 'Developer ID signing identity is unavailable.' >&2
   exit 1
 }
-xcrun notarytool history --keychain-profile "$notary_profile" --output-format json >/dev/null || {
+xcrun notarytool history --keychain-profile "$notary_profile" ${notary_flags[@]+"${notary_flags[@]}"} --output-format json >/dev/null || {
   echo 'Notary credentials are unavailable; refusing an unnotarized public build.' >&2
   exit 1
 }
@@ -153,7 +154,7 @@ build=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.
 archive="$output/AgentFlow-v${version}.${build}-mac-universal.zip"
 submission="$output/notary-submission.zip"
 ditto -c -k --keepParent "$app" "$submission"
-xcrun notarytool submit "$submission" --keychain-profile "$notary_profile" \
+xcrun notarytool submit "$submission" --keychain-profile "$notary_profile" ${notary_flags[@]+"${notary_flags[@]}"} \
   --wait --timeout 45m --output-format json >"$output/notary-result.json"
 /usr/bin/python3 -c 'import json,sys; data=json.load(open(sys.argv[1])); assert data.get("status")=="Accepted", data.get("status")' \
   "$output/notary-result.json"
@@ -180,7 +181,9 @@ actual_key=$("$SPARKLE_TOOLS/generate_keys" --account com.ethansk.AgentFlow -p)
 [[ "$expected_key" == "$actual_key" ]]
 mkdir -p "$output/feed"
 ditto "$archive" "$output/feed/$(basename "$archive")"
-"$SPARKLE_TOOLS/generate_appcast" --account com.ethansk.AgentFlow --maximum-deltas 0 \
+sparkle_args=(--account com.ethansk.AgentFlow)
+if [[ -n "${SPARKLE_KEY_FILE:-}" ]]; then sparkle_args=(--ed-key-file "$SPARKLE_KEY_FILE"); fi
+"$SPARKLE_TOOLS/generate_appcast" "${sparkle_args[@]}" --maximum-deltas 0 \
   --download-url-prefix "https://github.com/EthanSK/AgentFlow/releases/download/v${version}.${build}/" \
   -o "$output/appcast.xml" "$output/feed"
 # Public checksums must work after download, not refer to a private builder path.

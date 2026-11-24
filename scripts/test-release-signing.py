@@ -15,6 +15,30 @@ BLOCK = PACKAGE[START:END]
 
 
 class SparkleSigningTests(unittest.TestCase):
+    def test_entitlements_read_signed_types_instead_of_pretty_printed_booleans(self):
+        import plistlib
+        source = (ROOT / "scripts/verify-public-release.sh").read_text()
+        start = source.index("entitlements=")
+        block = source[start:source.index('\ntest "$(wc', start)]
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = Path(directory) / "entitlements.plist"
+            for automation, microphone in ((True, True), (False, True), (True, False), ("true", True), (1, True)):
+                with self.subTest(automation=automation, microphone=microphone):
+                    fixture.write_bytes(plistlib.dumps({
+                        "com.apple.security.automation.apple-events": automation,
+                        "com.apple.security.device.audio-input": microphone,
+                    }))
+                    # Execute the real gate with signed-plist bytes. The legacy formatter
+                    # reproduces macOS 15's numeric display and must not define truth.
+                    script = ('set -eu\napp=fixture.app\n'
+                              'codesign() { cat "$FIXTURE_ENTITLEMENTS"; }\n'
+                              'plutil() { cat >/dev/null; printf \'"com.apple.security.automation.apple-events" => 1\\n"com.apple.security.device.audio-input" => 1\\n\'; }\n'
+                              + block)
+                    result = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
+                                            env={**os.environ, "FIXTURE_ENTITLEMENTS": str(fixture)})
+                    expected = automation is True and microphone is True
+                    self.assertEqual(result.returncode == 0, expected, result.stderr)
+
     def test_default_app_configs_match_standalone_signature(self):
         import json
         import plistlib
