@@ -106,11 +106,17 @@ private struct ShortcutTestHarness {
 }
 
 private func eventually(_ predicate: () async -> Bool) async -> Bool {
-    for _ in 0..<10_000 {
+    // A yield count exhausted in 22ms under the hosted full suite. Give the
+    // required actor work a real deadline and suspend between observations;
+    // success stays immediate and virtual shortcut timing is unchanged. — GPT-6.1 Sol
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: .seconds(5))
+    while clock.now < deadline {
         if await predicate() { return true }
-        await Task.yield()
+        do { try await Task.sleep(for: .milliseconds(5)) }
+        catch { return false }
     }
-    return false
+    return await predicate()
 }
 
 struct ChatGPTVoiceShortcutSpacingTests {
