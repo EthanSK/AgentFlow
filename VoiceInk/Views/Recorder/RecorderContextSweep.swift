@@ -127,8 +127,11 @@ enum RecorderContextSweep {
     /// over. A clock that reads earlier than the start still yields at most
     /// `stillDuration`, so the hold is always bounded.
     static func stillRemaining(of pulse: RecorderContextAcceptancePulse, at date: Date) -> TimeInterval? {
-        let remaining = stillDuration - max(0, date.timeIntervalSince(pulse.startedAt))
-        return remaining > 0 ? remaining : nil
+        // Compare the same representable Date deadline used by callers. Subtracting
+        // elapsed time from0.8 could leave47ns at the nominal endpoint. — GPT-6.1 Sol
+        let deadline = pulse.startedAt.addingTimeInterval(stillDuration)
+        guard date < deadline else { return nil }
+        return stillDuration - max(0, date.timeIntervalSince(pulse.startedAt))
     }
 
     /// The spectrum position whose colour is nearest `tint`. The lap launches and

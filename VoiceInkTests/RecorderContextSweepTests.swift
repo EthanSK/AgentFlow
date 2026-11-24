@@ -203,7 +203,10 @@ struct RecorderContextSweepTests {
         #expect(sweep.stillDuration > 0.3 && sweep.stillDuration < 1.5)
         #expect(sweep.stillRemaining(of: pulse, at: start) == sweep.stillDuration)
         let partway = try #require(sweep.stillRemaining(of: pulse, at: start.addingTimeInterval(0.3)))
-        #expect(abs(partway - (sweep.stillDuration - 0.3)) < 1e-9)
+        // Date stores an absolute floating-point value; fractional intervals are
+        // only as precise as that epoch's adjacent representable values.
+        let precision = max(1e-9, abs(start.timeIntervalSinceReferenceDate).ulp * 2)
+        #expect(abs(partway - (sweep.stillDuration - 0.3)) <= precision)
         #expect(sweep.stillRemaining(of: pulse, at: start.addingTimeInterval(sweep.stillDuration)) == nil)
         // A clock reading earlier than the start still yields a bounded hold.
         #expect(sweep.stillRemaining(of: pulse, at: start.addingTimeInterval(-5)) == sweep.stillDuration)
