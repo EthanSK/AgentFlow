@@ -341,10 +341,33 @@ struct RecorderCaptureOutlineTests {
         }
     }
 
+    @Test func outlineFitsWholePixelsOnStandardAndRetinaDisplays() {
+        for display: CGFloat in [1, 2] {
+            for hudScale: CGFloat in [0.5, 0.85, 1] {
+                let size = CGSize(width: 640, height: 101)
+                let frame = CGRect(x: 0.3, y: 0.7, width: size.width * hudScale, height: size.height * hudScale)
+                let pixels = RecorderCaptureOutlinePixels(localSize: size, frame: frame, displayScale: display)
+                let density = display * hudScale
+                #expect(abs(pixels.width * density - (pixels.width * density).rounded()) < 1e-9)
+                let path = pixels.aligned(Rectangle().path(in: pixels.bounds.insetBy(
+                    dx: pixels.width / 2, dy: pixels.width / 2)))
+                let physical = path.boundingRect.applying(CGAffineTransform(scaleX: density, y: density))
+                    .offsetBy(dx: frame.minX * display, dy: frame.minY * display)
+                let half = pixels.width * density / 2
+                for edge in [physical.minX - half, physical.minY - half,
+                             physical.maxX + half, physical.maxY + half] {
+                    #expect(abs(edge - edge.rounded()) < 1e-9)
+                }
+                #expect(physical.minX - half >= frame.minX * display - 1e-9)
+                #expect(physical.maxX + half <= frame.maxX * display + 1e-9)
+            }
+        }
+    }
+
     @Test @MainActor func scaledOutlinePaintsEveryStraightEdgeEvenly() async throws {
         for scale: CGFloat in [0.5, 0.85, 1] {
             for style in ["mini", "notch"] {
-                let sourceSize = CGSize(width: 640, height: 100)
+                let sourceSize = CGSize(width: 640, height: 101)
                 let size = CGSize(width: sourceSize.width * scale, height: sourceSize.height * scale)
                 let outline: AnyView = style == "mini"
                     ? AnyView(RecorderCaptureOutline(shape: RoundedRectangle(cornerRadius: 14),
@@ -355,7 +378,9 @@ struct RecorderCaptureOutlineTests {
                     styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
                 panel.isOpaque = false
                 panel.backgroundColor = .clear
-                let host = ScaledRecorderHostingView(rootView: outline, scale: scale)
+                let host = ScaledRecorderHostingView(rootView: AnyView(outline
+                    .frame(width: sourceSize.width - 0.6, height: sourceSize.height - 0.6)
+                    .padding(0.3)), scale: scale)
                 panel.contentView = host
                 panel.orderFrontRegardless()
                 defer { panel.orderOut(nil); panel.close() }

@@ -70,7 +70,7 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
 
         // The same shape in a slightly smaller rect keeps the tube parallel to the
         // card edge, including the Notch flares, without needing an insettable shape.
-        let tubePath = pixels.aligned(shape.path(in: bounds.insetBy(
+        let tubePath = pixels.aligned(shape.path(in: pixels.bounds.insetBy(
             dx: pixels.width / 2, dy: pixels.width / 2)))
         let center = CGPoint(x: bounds.midX, y: bounds.midY)
         let samples = trace.samples(along: tubePath, around: center)
@@ -101,9 +101,10 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
 /// horizontal edge lands on one solid row. Geometry's global frame includes that
 /// transform; displayScale accounts for Retina. The caller still owns its clip,
 /// so an extra antialiased silhouette mask cannot dim the edge a second time.
-/// Found and fixed by GPT-6.1 Sol.
+/// Found by Ethan. Fixed by GPT-6.1 Sol.
 struct RecorderCaptureOutlinePixels {
     let width: CGFloat
+    let bounds: CGRect
     private let scale: CGFloat
     private let origin: CGPoint
 
@@ -112,6 +113,12 @@ struct RecorderCaptureOutlinePixels {
         scale = max(0.01, hudScale * displayScale)
         width = max(1, (RecorderCaptureOutlineStyle.tubeWidth * scale).rounded()) / scale
         origin = CGPoint(x: frame.minX * displayScale, y: frame.minY * displayScale)
+        let minimum = CGPoint(x: origin.x.rounded(.up), y: origin.y.rounded(.up))
+        let maximum = CGPoint(x: (origin.x + localSize.width * scale).rounded(.down),
+                              y: (origin.y + localSize.height * scale).rounded(.down))
+        bounds = CGRect(x: (minimum.x - origin.x) / scale, y: (minimum.y - origin.y) / scale,
+                        width: max(0, maximum.x - minimum.x) / scale,
+                        height: max(0, maximum.y - minimum.y) / scale)
     }
 
     func aligned(_ path: Path) -> Path {
