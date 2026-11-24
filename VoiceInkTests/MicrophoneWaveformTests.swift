@@ -470,13 +470,15 @@ struct MicrophoneWaveformTests {
                     host.layoutSubtreeIfNeeded()
                     let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
                     host.cacheDisplay(in: host.bounds, to: bitmap)
+                    // Compare the same lossless pixels that the diagnostic saves, with
+                    // independent storage across later host redraws. — GPT-6.1 Sol
+                    let data = try #require(bitmap.representation(using: .png, properties: [:]))
                     if let directory = ProcessInfo.processInfo.environment["VIPP_WAVEFORM_SNAPSHOT_DIR"] {
                         let folder = URL(fileURLWithPath: directory, isDirectory: true)
                         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                        let data = try #require(bitmap.representation(using: .png, properties: [:]))
                         try data.write(to: folder.appendingPathComponent("\(style)-\(scale)-\(name).png"))
                     }
-                    return bitmap
+                    return try #require(NSBitmapImageRep(data: data))
                 }
 
                 let silent = try await render("silent", .silent)
