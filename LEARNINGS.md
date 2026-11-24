@@ -16,6 +16,23 @@ tail is still live can record the video. Preserve clipboard-only playback
 disposition, pause/resume's no-media contract and the same-call Voice safeguards.
 `recorderResumesYouTubeBeforeAwaitingVoiceRestoration` pins the recorder ordering.
 
+Build 537 from `45997a01` passed all 1,019 named tests in 49 suites, including that
+ordering guard and the existing tail/playback ownership checks. The signed local
+build was installed through the cooperative idle guard. Its separate universal
+public release was notarized and downloaded back with SHA-256
+`c0c0469a209cbde2d248c2b98ca094b48ba5a36658b544ba8a85c124b66ac3e6`.
+Actual browser-resume timing during a natural capture remains unverified.
+
+Ethan then explicitly kept the real 600 ms microphone tail. His reason is the
+observed improvement at the END of transcripts when he leaves capture running
+longer, even without saying anything more. Do not reduce that requirement to
+catching a final syllable. More processing time is his hypothesis, not a verified
+cause. Synthetic silence is not implemented or approved as its replacement.
+The current GPT Live path uses manual commit and waits for the final transcript;
+OpenAI's transcription guide does not require server-side silence detection for
+that model. Padding, elapsed capture time and finalization are separate variables;
+no quality comparison here establishes them as interchangeable.
+
 ## 2026-11-22 — One timestamped Voice recap notice, using normal Desktop queue delivery
 
 Build 535 (`8f7cae74`) produced actual start/stop metadata in the exact owning Voice
@@ -135,8 +152,10 @@ Do not assume all empty live responses mean acoustic silence.
   realtime capture. The first accepted finish owns the delay on that recording.
   Cancel and reset cancel it, and typing-only and already-paused sessions finish
   without a delay. The existing Primary gesture decision still runs independently.
-- The added audio can protect a trailing word when Stop comes too quickly.
-  Transcription accuracy has not been measured against a shorter recording.
+- Ethan clarified on 2026-11-24 that his observed benefit is better end-of-transcript
+  accuracy even when he says nothing more during the tail. Catching a late word is
+  another possible benefit, not the original reason. A controlled accuracy
+  comparison and the cause of his reported improvement remain unverified.
 
 ## 2026-11-18 — Restore full response preferences to linked prompts
 
