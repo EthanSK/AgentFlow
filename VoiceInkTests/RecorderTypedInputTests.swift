@@ -415,7 +415,12 @@ struct RecorderTypedInputTests {
                 until: Date().addingTimeInterval(1), inMode: .default, dequeue: true))
             try #require(queued.windowNumber == panel.windowNumber)
             try #require(NSApp.currentEvent === queued)
-            NSApp.sendEvent(queued)
+            // Exercise the actual hit-tested production receiver's forwarding.
+            // Application-level routing of a fabricated wheel is a separate
+            // AppKit integration boundary; it was intermittent in the hosted
+            // full suite despite the correct window/current-event identity.
+            // Do not bypass this override by calling the scroll view directly.
+            drag.scrollWheel(with: queued)
             RunLoop.current.run(until: Date().addingTimeInterval(0.1))
             #expect(scroll.contentView.bounds.origin.y != before,
                 "scale=\(scale) window=\(event.windowNumber) location=\(event.locationInWindow) scrollFrame=\(scroll.convert(scroll.bounds, to: nil)) flags=\(event.modifierFlags.rawValue) deltaY=\(event.scrollingDeltaY) deltaX=\(event.scrollingDeltaX) phase=\(event.phase.rawValue) documentHeight=\(scroll.documentView?.frame.height ?? 0)")

@@ -1,5 +1,24 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-24 — Treating queued synthetic wheel routing as a reliable full-suite fix — REJECTED
+
+The owned public window-associated wheel, normal AppKit queue and verified
+`NSApp.currentEvent` passed 237 selected cases and the first hosted build 545
+full run's scroll assertion. A second hosted full run at `ab4a207f` nevertheless
+failed its actual scroll-offset assertion once among 1,061 functions, with the
+five repaired timing functions passing. That evidence rejects accepting queue
+identity alone as a stable application-level synthetic wheel route; it does not
+establish a production scrolling defect or the underlying AppKit cause.
+
+The next bounded fixture check invokes the real hit-tested
+`RecorderPanelDragView.scrollWheel(with:)` override using that same owned queued
+event. It must still move the actual enclosing native scroll view, preserve
+click/drag/nonactivation assertions and pass the complete hosted gate. It must
+not call the scroll view directly, set the expected offset itself, retry a wheel
+or skip the failing scale. Reconsider an application-level injected-wheel claim
+only with repeatable full-suite evidence or an identified native routing cause;
+physical input acceptance remains separate.
+
 ## 2026-11-24 — Counting scheduler yields as a test completion deadline — REJECTED
 
 In the 1,061-function hosted build 545 suite, two Voice spacing fixtures exhausted
