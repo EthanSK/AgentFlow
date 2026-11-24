@@ -539,10 +539,6 @@ class Recorder: NSObject, ObservableObject {
         await pendingMediaPause?.value
 
         resetAudioMeter()
-        if let muteLease {
-            await ChatGPTVoiceCaptureMuteCoordinator.shared.captureStopped(muteLease, at: stoppedAt, reason: "stopped")
-            await ChatGPTVoiceCaptureMuteCoordinator.shared.releaseCapture(muteLease)
-        }
 
         // Playback owns its own recording-scoped lease and delayed resume. Never
         // hide that work inside audioRestorationTask: a rapid recording must cancel
@@ -573,6 +569,17 @@ class Recorder: NSObject, ObservableObject {
             case .preserveCurrentPlayback:
                 RecordingActivityNotifier.postRecordingStoppedPreservingPlayback()
             }
+        }
+
+        // Ethan wants YouTube back before returning to Voice. Capture is already
+        // closed and the owned media episode has finished above; do not hold it
+        // behind Voice's separate speaker/microphone restoration readbacks.
+        // Keep the exact hardware-stop time for the Voice interval, and still await
+        // its same-call restoration before completing this recorder teardown.
+        // Found and fixed by GPT-6.1 Sol.
+        if let muteLease {
+            await ChatGPTVoiceCaptureMuteCoordinator.shared.captureStopped(muteLease, at: stoppedAt, reason: "stopped")
+            await ChatGPTVoiceCaptureMuteCoordinator.shared.releaseCapture(muteLease)
         }
 
         deviceManager.isRecordingActive = false

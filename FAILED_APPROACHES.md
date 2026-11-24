@@ -1,5 +1,15 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-24 — Hold YouTube behind unrelated Voice restoration checks
+
+Build 536 posted the YouTube stop notification only after awaiting Voice's
+recording-stop and same-call mute restoration work. Hardware capture was already
+closed, so those readbacks unnecessarily delayed playback. Release only the
+existing owned playback episode before that Voice work; retain the actual hardware
+stop timestamp and await Voice cleanup before teardown completes. Do not compensate
+with a state-blind media toggle or resume during the configured live audio tail.
+Reconsider a later YouTube release only if a measured dependency requires it.
+
 ## 2026-11-22 — CLI acceptance is not active-turn event delivery
 
 Build 535's ordinary CLI queue delivered real recording metadata at idle boundaries,

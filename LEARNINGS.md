@@ -1,5 +1,21 @@
 # Learnings
 
+## 2026-11-24 — Release YouTube playback before restoring Codex Voice
+
+`Recorder.stopRecording` closed AUHAL, then awaited the same-call Voice stop and
+restore work before notifying the YouTube helper. Those separate bounded control
+readbacks therefore held the video paused after capture had already ended.
+Finish the existing owned media lease and post the single YouTube stop edge after
+hardware closes and any pending pause settles, before awaiting Voice restoration.
+Keep the hardware `stoppedAt` value for the Voice event; notification dispatch is
+not proof that the browser actually resumed.
+
+This does not shorten the separately configured 600 ms live microphone tail or
+the user's media-resumption preference. Resuming playback while that microphone
+tail is still live can record the video. Preserve clipboard-only playback
+disposition, pause/resume's no-media contract and the same-call Voice safeguards.
+`recorderResumesYouTubeBeforeAwaitingVoiceRestoration` pins the recorder ordering.
+
 ## 2026-11-22 — One timestamped Voice recap notice, using normal Desktop queue delivery
 
 Build 535 (`8f7cae74`) produced actual start/stop metadata in the exact owning Voice

@@ -12,6 +12,29 @@ import Combine
 /// shared Recorder, and a cooperative quit waits for a start that has no card yet.
 @Suite(.serialized)
 struct RecordingStopSafetyTests {
+    @Test func recorderResumesYouTubeBeforeAwaitingVoiceRestoration() throws {
+        let recorder = try source("VoiceInk/Recorder.swift")
+        let stop = try #require(recorder.range(of: "    func stopRecording(\n"))
+        let end = try #require(recorder.range(of: "    private func muteSystemAudio()", range: stop.upperBound..<recorder.endIndex))
+        let body = recorder[stop.upperBound..<end.lowerBound]
+        let hardwareStop = try #require(body.range(of: "currentRecorder?.stopRecording()"))
+        let mediaJoin = try #require(body.range(of: "await pendingMediaPause?.value"))
+        let finishPlayback = try #require(body.range(of: "playbackController.finishRecordingPause("))
+        let resumeYouTube = try #require(body.range(of: "RecordingActivityNotifier.postRecordingStopped()"))
+        let preserveYouTube = try #require(body.range(of: "RecordingActivityNotifier.postRecordingStoppedPreservingPlayback()"))
+        let stopVoice = try #require(body.range(of: "await ChatGPTVoiceCaptureMuteCoordinator.shared.captureStopped("))
+        let restoreVoice = try #require(body.range(of: "await ChatGPTVoiceCaptureMuteCoordinator.shared.releaseCapture("))
+
+        #expect(hardwareStop.lowerBound < mediaJoin.lowerBound)
+        #expect(mediaJoin.lowerBound < finishPlayback.lowerBound)
+        #expect(finishPlayback.lowerBound < resumeYouTube.lowerBound)
+        #expect(resumeYouTube.lowerBound < stopVoice.lowerBound)
+        #expect(preserveYouTube.lowerBound < stopVoice.lowerBound)
+        #expect(stopVoice.lowerBound < restoreVoice.lowerBound)
+        #expect(body.components(separatedBy: "RecordingActivityNotifier.postRecordingStopped()").count == 2)
+        #expect(body.contains("at: stoppedAt, reason: \"stopped\""))
+    }
+
     @Test func recordingStopDelayAppliesOnlyToLiveMicrophoneCapture() {
         #expect(RecordingStopDelay.duration(milliseconds: 600, state: .recording, microphoneOff: false)
                 == .milliseconds(600))
