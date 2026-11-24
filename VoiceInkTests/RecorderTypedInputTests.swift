@@ -6,6 +6,15 @@ import Testing
 @testable import VoiceInkPlusPlus
 
 struct RecorderTypedInputTests {
+    /// Wait for the real main-actor handoff, rather than assuming a hosted runner's
+    /// other window tests leave enough time inside a short fixed sleep.
+    @MainActor private func waitForCompletion(_ condition: () -> Bool) async throws {
+        for _ in 0..<400 where !condition() {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        try #require(condition(), "The expected recorder action did not complete")
+    }
+
     @Test @MainActor func contextColorsWaitForRecognizedSpeechNotTypingOrCaptureIntent() throws {
         let session = RecordingSession()
         session.showsRealtimeTranscriptHUD = true
@@ -398,9 +407,16 @@ struct RecorderTypedInputTests {
             scroll.contentView.scroll(to: NSPoint(x: 0, y: 200))
             scroll.reflectScrolledClipView(scroll.contentView)
             let before = scroll.contentView.bounds.origin.y
-            let wheel = try #require(CGEvent(scrollWheelEvent2Source: nil, units: .pixel,
-                wheelCount: 1, wheel1: 80, wheel2: 0, wheel3: 0))
+            // Begin with AppKit's public window-associated event factory. A fresh
+            // CG wheel has windowNumber=0, unlike the events this view receives.
+            let wheel = try #require(try mouse(.mouseMoved).cgEvent)
+            wheel.type = .scrollWheel
+            wheel.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)
+            wheel.setIntegerValueField(.scrollWheelEventPointDeltaAxis1, value: 80)
+            wheel.setIntegerValueField(.scrollWheelEventFixedPtDeltaAxis1, value: 80 << 16)
+            wheel.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: 80)
             let event = try #require(NSEvent(cgEvent: wheel))
+            try #require(event.windowNumber == panel.windowNumber)
             drag.scrollWheel(with: event)
             RunLoop.current.run(until: Date().addingTimeInterval(0.1))
             #expect(scroll.contentView.bounds.origin.y != before,
@@ -801,6 +817,7 @@ struct RecorderTypedInputTests {
             cancelRecording: {}, reserveRecordingStart: { UUID() },
             startReservedRecording: { _, _ in starts += 1; state = .recording }
         )
+        defer { handler.reset() }
         monitor.start(shortcuts: [.secondaryRecording: .modifierOnly(keyCode: nil,
             modifierFlags: [.shift, .option, .command])],
             deferredModifierToggleActions: [.secondaryRecording],
@@ -821,18 +838,18 @@ struct RecorderTypedInputTests {
             }
         }
         try tap()
-        try await Task.sleep(nanoseconds: 650_000_000)
+        try await waitForCompletion { state == .idle && finishes.count == 1 }
         #expect(state == .idle && finishes == [.primaryCurrentInput])
         try tap()
-        // A distinct physical press must clear Primary's existing 90 ms duplicate
-        // transport window; a 30 ms re-press deliberately coalesces as one gesture.
-        try await Task.sleep(nanoseconds: 120_000_000)
+        try await waitForCompletion { state == .recording && starts == 1 }
         #expect(state == .recording && starts == 1)
         // The original Primary can finish the alias-started session too.
-        let now = ProcessInfo.processInfo.systemUptime
+        // Keep this distinct test press outside the real 90 ms duplicate window
+        // without making fixture correctness depend on scheduler wall time.
+        let now = ProcessInfo.processInfo.systemUptime + 0.1
         await handler.handleKeyDown(action: .primaryRecording, eventTime: now, mode: .toggle)
         await handler.handleKeyUp(action: .primaryRecording, eventTime: now, mode: .toggle)
-        try await Task.sleep(nanoseconds: 650_000_000)
+        try await waitForCompletion { state == .idle && finishes.count == 2 }
         #expect(state == .idle && finishes == [.primaryCurrentInput, .primaryCurrentInput])
     }
 
@@ -849,6 +866,7 @@ struct RecorderTypedInputTests {
         var finishes: [RecordingPasteDestination] = []
         var clipboardFinishes = 0
         var callbacks = 0
+        var completedCallbacks = 0
         let handler = RecordingShortcutModeHandler(
             canHandleShortcutAction: { true }, isRecorderVisible: { state != .idle },
             recordingState: { state },
@@ -864,6 +882,7 @@ struct RecorderTypedInputTests {
                 callbacks += 1
                 Task { @MainActor in
                     await handler.handleTypingToggle(clipboardOnly: clipboardOnly) { _ in }
+                    completedCallbacks += 1
                 }
             }, installSystemEventTap: false)
         panel.start(shortcuts: RecorderPanelShortcutPolicy.shortcuts(
@@ -873,6 +892,7 @@ struct RecorderTypedInputTests {
             onKeyDown: { _, _ in }, onKeyUp: { _, _ in }, installSystemEventTap: false)
         func chord(through monitors: [ShortcutMonitor], rightFirst: Bool = false,
                    shift: Bool = false) async throws {
+            let expectedCompletion = completedCallbacks + 1
             let keys: [(UInt16, UInt64)] = rightFirst
                 ? [(54, 0x10), (61, 0x40), (55, 0x08), (58, 0x20)]
                 : [(55, 0x08), (58, 0x20), (54, 0x10), (61, 0x40)]
@@ -900,7 +920,7 @@ struct RecorderTypedInputTests {
                 #expect(consumed == shouldConsume)
             }
             // Drain the actual tap-to-main-queue-to-handler handoff.
-            try await Task.sleep(nanoseconds: 20_000_000)
+            try await waitForCompletion { completedCallbacks == expectedCompletion }
         }
         try await chord(through: [modes, recording])
         #expect(state == .recording && starts == 1 && callbacks == 1)
@@ -2766,7 +2786,7 @@ struct RecorderTypedInputTests {
         let click = UUID()
         host.rootView = input(click)
         host.layoutSubtreeIfNeeded()
-        try await Task.sleep(nanoseconds: 40_000_000)
+        try await waitForCompletion { window.focusRequests == 1 && session.typingFocus.isEnabled }
         #expect(window.focusRequests == 1 && session.typingFocus.isEnabled)
         host.rootView = input(click)
         host.layoutSubtreeIfNeeded()
@@ -3054,7 +3074,7 @@ struct RecorderTypedInputTests {
         focus.enable(editor)
         focus.returnAfterContext()
         focus.returnAfterContext()
-        try await Task.sleep(nanoseconds: 30_000_000)
+        try await waitForCompletion { checks == 3 }
         #expect(checks == 3 && window.focusRequests == 0)
         held = false
         try await Task.sleep(nanoseconds: 15_000_000)

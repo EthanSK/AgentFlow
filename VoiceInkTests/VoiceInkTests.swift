@@ -3326,7 +3326,7 @@ struct VoiceInkTests {
     }
 
     @MainActor
-    @Test(arguments: [false, true]) func primaryStartWaitsOnlyForPendingTranscriptionDecision(hasPendingTranscription: Bool) async {
+    @Test(arguments: [false, true]) func primaryStartWaitsOnlyForPendingTranscriptionDecision(hasPendingTranscription: Bool) async throws {
         let state = PrimaryShortcutHandlerTestState(
             recordingState: .idle,
             isRecorderVisible: hasPendingTranscription
@@ -3334,6 +3334,7 @@ struct VoiceInkTests {
         let requestID = UUID()
         var reserved: [UUID] = []
         var committed: [UUID] = []
+        var decisionContinuation: CheckedContinuation<Void, Never>?
         let handler = RecordingShortcutModeHandler(
             canHandleShortcutAction: { true },
             isRecorderVisible: { state.isRecorderVisible },
@@ -3358,7 +3359,10 @@ struct VoiceInkTests {
             primaryDoublePressInterval: 0.45,
             primaryStartDebounceInterval: 0.02,
             primaryTriplePressInterval: 0.8,
-            primaryDuplicateChordInterval: 0.005
+            primaryDuplicateChordInterval: 0.005,
+            waitForPrimaryStartDecision: { _ in
+                await withCheckedContinuation { decisionContinuation = $0 }
+            }
         )
 
         await handler.handleKeyDown(
@@ -3375,7 +3379,16 @@ struct VoiceInkTests {
         #expect(committed == (hasPendingTranscription ? [] : [requestID]))
         #expect(state.recordingState == (hasPendingTranscription ? .idle : .starting))
 
-        try? await Task.sleep(nanoseconds: 50_000_000)
+        if hasPendingTranscription {
+            for _ in 0..<400 where decisionContinuation == nil {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+            let decision = try #require(decisionContinuation)
+            decision.resume()
+            for _ in 0..<400 where committed.isEmpty {
+                try await Task.sleep(for: .milliseconds(5))
+            }
+        }
         #expect(committed == [requestID])
         #expect(state.recordingState == .starting)
         #expect(state.isRecorderVisible)
