@@ -1252,6 +1252,111 @@ struct RecorderTypedInputTests {
         }
     }
 
+    @Test func spokenBackspaceRemovesWordsInOrderAndPreservesOrdinaryText() {
+        for (speech, expected) in [
+            ("One two backspace three", "One three"),
+            ("One two three BACKSPACE, backspace. four", "One four"),
+            ("Backspace backspace hello", "hello"),
+            ("One backspace backspace", ""),
+            ("Hello café, backspace 世界!", "Hello 世界!"),
+            ("Keep\nwrong backspace right.", "Keep\nright."),
+            ("say literal backspace", "say backspace"),
+            ("say literal backspace backspace", "say"),
+            ("backspaces and backspace-like stay", "backspaces and backspace-like stay"),
+            ("  untouched\nformatting  ", "  untouched\nformatting  ")
+        ] {
+            #expect(SpokenBackspace.apply(speech).text == expected)
+        }
+    }
+
+    @Test func spokenBackspaceKeepsContextAmongSurvivingSpeech() throws {
+        let selection = try #require(LiveSelectionReference("Quoted backspace stays literal"))
+            .anchored(after: "One two")
+        let typed = try #require(LiveSelectionReference(typedText: "Typed backspace stays literal"))
+            .anchored(after: "One two backspace three")
+        let edits = SpokenBackspace.apply("One two backspace three backspace four")
+        let references = [selection, typed].map { $0.reanchored(after: edits) }
+        #expect(edits.text == "One four")
+        #expect(references.map(\.spokenWordCount) == [1, 1])
+        let sections = LiveSelectionReference.compactPromptSections(references, with: edits.text)
+        #expect(sections.map(\.tag) == ["speech", "selection", "typed_text", "speech"])
+        #expect(sections.first?.text == "One" && sections.last?.text == "four")
+        #expect(sections[1].text.contains("Quoted backspace stays literal"))
+        #expect(sections[2].text == "Typed backspace stays literal")
+    }
+
+    @Test @MainActor func spokenBackspaceHUDRecomputesRevisionsWithoutMutatingProviderEvidence() {
+        let recording = RecordingSession()
+        recording.partialTranscript = "One two backspace"
+        #expect(recording.liveContextPreviewParts == [.speech("One")])
+        #expect(recording.partialTranscript == "One two backspace")
+        recording.partialTranscript = "One two backspace three"
+        #expect(recording.liveContextPreviewParts == [.speech("One three")])
+        recording.partialTranscript = "One two three"
+        #expect(recording.liveContextPreviewParts == [.speech("One two three")])
+        recording.partialTranscript = "One two backspace"
+        recording.skipPostProcessing = true
+        #expect(recording.liveContextPreviewParts == [.speech("One two backspace")])
+        recording.skipPostProcessing = false
+        #expect(recording.liveContextPreviewParts == [.speech("One")])
+    }
+
+    @Test @MainActor func spokenBackspaceProductionPipelinePreservesRoutesRawModeAndTypedWords() async throws {
+        for destination in [RecordingPasteDestination.primaryCurrentInput, .recordingStart, .focusedDuringTranscription] {
+            for raw in [false, true] {
+                for speech in ["One two backspace three", "backspace backspace"] {
+                    let schema = Schema([Transcription.self, WordReplacement.self, SessionMetric.self])
+                    let container = try ModelContainer(for: schema,
+                        configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true))
+                    let context = ModelContext(container)
+                    let registry = TranscriptionServiceRegistry(modelProvider: TypingTestModelProvider(),
+                        modelsDirectory: URL(fileURLWithPath: "/tmp"), modelContext: context)
+                    let output = TypingTestDelivery()
+                    let audio = TypingTestAudioSession()
+                    audio.completedText = speech
+                    let mode = ModeConfig(name: "Backspace fixture", isAIEnhancementEnabled: false,
+                        isTextFormattingEnabled: false, outputMode: .paste, autoSendKey: .enter)
+                    let typed = try #require(LiveSelectionReference(typedText: "Typed backspace"))
+                        .anchored(after: "One two")
+                    let references = speech.hasPrefix("One") ? [typed] : []
+                    let expectedSpeech = raw ? speech : (speech.hasPrefix("One") ? "One three" : "")
+                    let expectedReferences = references.isEmpty ? [] : [typed.anchored(after: raw ? "One two" : "One")]
+                    let expected = LiveSelectionReference.interleaving(expectedReferences, with: expectedSpeech)
+                    var archived: [String] = [], triggerInputs: [String] = [], failures: [String] = []
+                    let pipeline = TranscriptionPipeline(modelContext: context, serviceRegistry: registry,
+                        enhancementService: nil, delivery: output, archivePrompt: { text, _ in
+                            archived.append(text)
+                            return .init(url: URL(fileURLWithPath: "/tmp/backspace-test.md"), rainbowStartIndex: 0)
+                        }, currentPromptRecipient: { .init(bundleID: "com.apple.TextEdit", bundleURL: nil) })
+                    let record = Transcription(text: "", duration: 0)
+                    context.insert(record)
+                    let url = URL(fileURLWithPath: "/tmp/backspace-\(UUID()).wav")
+                    let model = NativeAppleModel(name: "unused", displayName: "Test", description: "Fixture",
+                        isMultilingualModel: false, supportedLanguages: [:])
+                    await pipeline.run(transcription: record, audioURL: url,
+                        transcriptionConfiguration: .init(mode: mode, model: model, language: "en",
+                            isRealtimeEnabled: false, requestContext: .init(language: "en", prompt: nil)),
+                        jobIdentity: .init(generation: 1, enqueueSequence: 1, recordingSessionID: UUID(),
+                            transcriptionID: record.id, audioURL: url),
+                        formattingConfiguration: { .init(mode: mode, isTextFormattingEnabled: false) },
+                        session: audio, triggerWordModeSelection: { triggerInputs.append($0); return nil },
+                        enhancementConfiguration: { nil }, liveSelectionReferences: { references },
+                        pasteTarget: { .init(destination: destination, focusedInput: nil, mode: mode) },
+                        outputConfiguration: { .init(mode: mode, outputMode: .paste, autoSendKey: .enter, customCommand: nil) },
+                        skipPostProcessing: { raw }, onStateChange: { _ in }, shouldCancel: { false },
+                        isDeliveryAuthorized: { true }, onCancel: {}, onDismiss: {},
+                        onTranscriptionFailure: { failures.append($0) })
+                    #expect(failures.isEmpty)
+                    #expect(output.messages == (expected.isEmpty ? [] : [expected]))
+                    #expect(output.routes == (expected.isEmpty ? [] : [destination]))
+                    #expect(output.keys == (expected.isEmpty ? [] : [raw ? .none : .enter]))
+                    #expect(triggerInputs == (raw ? [] : [expectedSpeech]))
+                    #expect(archived.allSatisfy { !$0.contains("two backspace three") || raw })
+                }
+            }
+        }
+    }
+
     @Test @MainActor func personalNoteProductionPipelineUsesRawNoSendAcrossRoutesAndModes() async throws {
         for destination in [RecordingPasteDestination.primaryCurrentInput, .recordingStart, .focusedDuringTranscription] {
             for outputMode in [ModeOutputMode.paste, .respond, .customCommand] {

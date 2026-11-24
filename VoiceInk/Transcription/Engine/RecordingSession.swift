@@ -445,8 +445,13 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
             references.append(.speechTiming(after: pendingSpeechAnchor, startedAt: started, endedAt: ended))
         }
         references = annotatedReferences(references, endedAt: nil)
-        let snapshot = (references: references,
-                        parts: LiveSelectionReference.previewParts(references, with: partialTranscript))
+        // Display edits only; the provider partial, recovery journal and capture
+        // anchors remain original evidence. Final processing uses the same reducer.
+        let edits = skipPostProcessing || useCase.isAssistantFollowUp || NoteToSelfPrefix.matches(partialTranscript)
+            ? nil : SpokenBackspace.apply(partialTranscript)
+        let displayedReferences = edits.map { edit in references.map { $0.reanchored(after: edit) } } ?? references
+        let snapshot = (references: displayedReferences,
+                        parts: LiveSelectionReference.previewParts(displayedReferences, with: edits?.text ?? partialTranscript))
         hudContextPreviewCache = snapshot
         return snapshot
     }
@@ -636,7 +641,9 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     // pipeline-run time (after STOP), so toggling the button any time BEFORE the pipeline's
     // enhancement/delivery step is honored. @Published so the recorder card's toggle button
     // re-renders its on/off (subdued vs amber) state the instant it flips.
-    @Published var skipPostProcessing: Bool = false
+    @Published var skipPostProcessing: Bool = false {
+        didSet { hudContextPreviewCache = nil }
+    }
 
     // A genuine Primary double-click sets this one-shot value during capture or
     // pending transcription. It must travel with this exact session because another
