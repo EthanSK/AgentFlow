@@ -509,8 +509,13 @@ struct MicrophoneWaveformTests {
 
                 // Measure in recorder points, before the HUD scale.
                 let everything = changedRegion(silent, loud, hostSize: size).scaled(by: 1 / scale)
-                let recent = changedRegion(silent, newest, hostSize: size).scaled(by: 1 / scale)
-                let past = changedRegion(silent, earlier, hostSize: size).scaled(by: 1 / scale)
+                // Position comes from the tall bright bars. The half-size Notch's dim
+                // dots differ by about 0.10 per RGB channel between native colour-space
+                // conversions; do not let that tiny centre-row change define the loud
+                // bars' bounds. The whole-card containment check keeps its stricter
+                // threshold, and exact silence still compares every pixel. — GPT-6.1 Sol
+                let recent = changedRegion(silent, newest, hostSize: size, minimumDifference: 0.5).scaled(by: 1 / scale)
+                let past = changedRegion(silent, earlier, hostSize: size, minimumDifference: 0.5).scaled(by: 1 / scale)
                 #expect(everything.count > 0 && recent.count > 0 && past.count > 0, "\(label)")
                 // Only the 73 × 28 pt waveform slot changes; the card and controls do not.
                 #expect(everything.width <= AudioVisualizerLayout.width + 3, "\(label) width \(everything.width)")
@@ -593,7 +598,7 @@ struct MicrophoneWaveformTests {
     /// Bounding box, in host points, of pixels that differ between two renders. Each
     /// render is sampled every other backing pixel. — Claude Opus 5.5
     private func changedRegion(_ first: NSBitmapImageRep, _ second: NSBitmapImageRep,
-                               hostSize: CGSize) -> PixelRegion {
+                               hostSize: CGSize, minimumDifference: CGFloat = 0.3) -> PixelRegion {
         var region = PixelRegion()
         let scaleX = CGFloat(first.pixelsWide) / hostSize.width
         let scaleY = CGFloat(first.pixelsHigh) / hostSize.height
@@ -601,13 +606,9 @@ struct MicrophoneWaveformTests {
             for x in stride(from: 0, to: min(first.pixelsWide, second.pixelsWide), by: 2) {
                 guard let a = first.colorAt(x: x, y: y)?.usingColorSpace(.sRGB),
                       let b = second.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
-                // Transparent pixels can retain different hidden RGB after a redraw.
-                // Compare visible, premultiplied colour and alpha. — GPT-6.1 Sol
-                let difference = abs(a.redComponent * a.alphaComponent - b.redComponent * b.alphaComponent)
-                    + abs(a.greenComponent * a.alphaComponent - b.greenComponent * b.alphaComponent)
-                    + abs(a.blueComponent * a.alphaComponent - b.blueComponent * b.alphaComponent)
-                    + abs(a.alphaComponent - b.alphaComponent)
-                if difference > 0.3 {
+                let difference = abs(a.redComponent - b.redComponent) + abs(a.greenComponent - b.greenComponent)
+                    + abs(a.blueComponent - b.blueComponent) + abs(a.alphaComponent - b.alphaComponent)
+                if difference > minimumDifference {
                     region.include(x: CGFloat(x) / scaleX, y: CGFloat(y) / scaleY)
                 }
             }
