@@ -1,5 +1,41 @@
 # Learnings
 
+## 2026-11-24 — Disable the automatic Voice recap producer, not the recipient monitor
+
+Ethan asked at 12:48 UTC to turn off the queued "Recording stopped" messages.
+The recipient paused a Codex monitoring goal, leaving Agent Flow's producer active.
+The later speaker-button request was separate; its successful toggle fix did not
+remove automatic recap generation. Repeated receipts in build 538 proved that gap.
+
+Remove the recap formatter, interval batcher and queue-delivery implementation.
+Retain the capture coordinator's local metadata diagnostics and audio ownership;
+ordinary dictated prompt delivery continues through its existing separate path.
+Old queued/delivered messages and receipts remain historical evidence. The source
+contract test rejects reintroducing the producer into the diagnostic sender.
+
+Build 539 passed 53 named Mini tests in five suites, including the recap guard,
+microphone/speaker cases and the ordinary Primary/HUD delivery guards. The signed
+local build is installed and running; its binary retains the local diagnostic
+message and no longer contains the recap sender/notice types or instructions.
+No new recording or Voice call was started to test this removal.
+
+## 2026-11-24 — Send the recording speaker shortcut directly
+
+Build 537 could identify the active Voice call and still skip its output shortcut
+because its 120 ms Voice control read did not find a live control. Ethan requested
+direct dispatch of the configured output shortcut. The [Voice controls reference](.agents/skills/learnings/references/codex-voice-accessibility.md#recording-speaker-shortcut)
+owns the current dispatch and reporting contract. The older speaker visibility
+and manual-state requirements below describe the historical implementation.
+
+Build 538's focused Xcode run passed all 52 tests in three suites on the Mini.
+The tests cover missing speaker controls, one toggle per capture boundary,
+call replacement, missing bindings, disabled automation, microphone handling
+and attempts distinguished from observed output. An actual Voice call with
+another chat selected still needs an attended audio check.
+The Developer ID local build was installed through the idle-only restart and
+answered the app readiness check with the same signing requirement and updater
+identity. The verified build 537 rollback is retained.
+
 ## 2026-11-24 — Release YouTube playback before restoring Codex Voice
 
 `Recorder.stopRecording` closed AUHAL, then awaited the same-call Voice stop and

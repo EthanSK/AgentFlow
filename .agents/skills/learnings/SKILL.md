@@ -776,31 +776,19 @@ Treat lagging AX control values as readbacks, not independent proof of audible s
 Keep actual command rejection distinct from an unreadable or stale control.
 User-requested — 2026-11-22; see the dated Voice evidence in `LEARNINGS.md`.
 
-For that earlier recording-owned speaker integration, Ethan requested one reversible
-attempt on an identified live call even when its state is unreadable. Microphone and
-speaker restoration must match that exact call, including when successive calls
-reuse the same app process. Readable manual state still takes precedence. Keep a
-posted shortcut distinct from an observed mute, and discard a failed restore rather
-than letting a later recording inherit it. See the 2026-11-13 and 2026-11-14 Voice
-entries in `LEARNINGS.md`. Self-improved — 2026-11-14: the newer call-scoped
-integration and regression fixtures supersede the earlier speaker-extension gate.
+The recording-owned speaker path sends the configured Codex Voice output shortcut
+directly at capture start and pairs it once at capture end on the same identified
+call. Ethan asked to remove the speaker-control precheck on 2026-11-24 so switching
+chats cannot prevent dispatch. Follow the [Voice controls reference](references/codex-voice-accessibility.md#recording-speaker-shortcut)
+for the microphone and reporting boundaries.
 
-For recording-summary notices only, Ethan accepted the normal Codex queue route on
-2026-11-22 after a timestamped test arrived: "that's fine for what we need. Let's just
-go with that then". This supersedes his earlier "It should never queue" direction for
-these notices; the separate dictated-text queue stays off. Send ONE readable completed
-capture/mute interval to its frozen Voice chat, with stable ID, original times, separately
-recorded enqueue/acceptance times, and honest observed versus attempted states. Never
-resend an uncertain enqueue or send a per-edge burst. The recap instruction must compare
-those times with assistant speech evidence and verify the CURRENT same-call speaker state
-before claiming audibility; stale UI/historical events are insufficient. Use a written
-recap or defer speech when current restoration is unknown. Never invent missed speech.
-
-The feature must work with normal Desktop launch for other users too; no shared daemon,
-special launcher, plugin changes or competing server. Direct steering remains a separate
-desired capability. The experimental append-text RPC is used inside the current frontend,
-but no supported external entry was found. Do not impersonate its caller or duplicate the
-already-submitted OpenAI integration feedback. User-requested — 2026-11-22.
+Automatic recording-summary/Voice recap notices are removed at Ethan's request on
+2026-11-24, superseding his 2026-11-22 acceptance of the normal Codex queue route.
+Do not generate or enqueue "Recording stopped" messages on capture boundaries.
+Keep local metadata diagnostics, ordinary dictated prompt delivery and the paired
+microphone/speaker shortcut ownership separate. Pausing a Codex monitoring task does
+not disable Agent Flow's message producer; verify the producer and installed build.
+Do not remove already-delivered chat messages or old receipts as part of this change.
 
 Before changing Codex Voice control exposure or diagnosing alternating speaker
 Start/Stop reads, read [references/codex-voice-accessibility.md](references/codex-voice-accessibility.md).
