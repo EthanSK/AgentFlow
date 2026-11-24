@@ -466,6 +466,42 @@ struct StyledContextPresentationTests {
         }
     }
 
+    @Test func telegramKeepsOneCompleteTimelineWithoutARepeatedOpening() throws {
+        let speech = "unique dictated request"
+        let highlight = try #require(LiveSelectionReference("complete selected context"))
+        let typed = try #require(LiveSelectionReference(typedText: "typed ending"))
+        let screenshot = try #require(LiveSelectionReference(
+            screenshotURL: URL(fileURLWithPath: "/Users/test/Screenshots/full.png")))
+        let references = [highlight.anchored(after: speech), typed.anchored(after: speech),
+                          screenshot.anchored(after: speech)]
+        for bundle in AgentFlowPromptPreview.telegramRecipientBundleIdentifiers {
+            #expect(!AgentFlowPromptPreview.supportsLocalFilePrompt(bundleID: bundle, bundleURL: nil))
+            for presentation in [LiveSelectionReference.Presentation.plain, .styledMath] {
+                let output = LiveSelectionReference.interleaving(references, with: speech,
+                    presentation: presentation, includeTiming: true,
+                    includeReadablePreview: LiveContextPastePolicy.includesReadableOpening(
+                        recipientBundleIdentifier: bundle))
+                let plain = try unwrappedXML(output)
+                #expect(plain.components(separatedBy: speech).count == 2)
+                #expect(plain.hasPrefix("<speech "))
+                #expect(plain.contains("complete selected context"))
+                #expect(plain.contains("typed ending"))
+                #expect(plain.contains("/Users/test/Screenshots/full.png"))
+                #expect(plain.contains("<typed_text "))
+                #expect(!plain.contains("Read the [full prompt]"))
+            }
+        }
+        // This change belongs only to known Telegram recipients. Codex's compact
+        // opening, unconfirmed Claude's inline opening and unknown-recipient
+        // clipboard recovery keep their existing presentation contracts.
+        for bundle in [nil, "com.openai.codex", "com.anthropic.claudefordesktop"] as [String?] {
+            #expect(LiveContextPastePolicy.includesReadableOpening(recipientBundleIdentifier: bundle))
+        }
+        let pipeline = try repositorySource("VoiceInk/Transcription/Engine/TranscriptionPipeline.swift")
+        #expect(pipeline.contains("includeReadableOpening: LiveContextPastePolicy.includesReadableOpening("))
+        #expect(pipeline.contains("recipientBundleIdentifier: presentationRecipient"))
+    }
+
     @Test func excludingCapturedContextKeepsInterleavedTypingAndSpeech() throws {
         let highlight = try #require(LiveSelectionReference("selected source"))
         let screenshot = try #require(LiveSelectionReference(

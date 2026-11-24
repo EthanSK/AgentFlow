@@ -1096,6 +1096,16 @@ enum LiveSelectionStyledMath {
 /// queue wait and Next's saved app; the highlight source never owns this choice.
 /// This is text formatting only, never input capture, focus or paste authority.
 enum LiveContextPastePolicy {
+    // Ethan's "repeated thing" in Telegram was the readable opening followed
+    // by the same words in the authoritative timeline. A Telegram recipient may
+    // live on another machine, so keep complete inline context once rather than
+    // replacing it with an unreadable local-Mac archive link. This is text
+    // presentation only; it grants no app-specific Primary delivery authority.
+    static func includesReadableOpening(recipientBundleIdentifier: String?) -> Bool {
+        guard let recipientBundleIdentifier else { return true }
+        return !AgentFlowPromptPreview.telegramRecipientBundleIdentifiers.contains(recipientBundleIdentifier)
+    }
+
     static func includesSourceContext(
         destination: RecordingPasteDestination,
         currentApplicationBundleIdentifier: String?,

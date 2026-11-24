@@ -808,13 +808,15 @@ enum AgentFlowPromptPreview {
         return ["Codex.app", "ChatGPT.app"].contains(bundleURL.lastPathComponent)
     }
 
-    static let inlineContextRecipientBundleIdentifiers: Set<String> = [
-        "ru.keepcoder.Telegram", "org.telegram.desktop",
+    static let telegramRecipientBundleIdentifiers: Set<String> = [
+        "ru.keepcoder.Telegram", "org.telegram.desktop"
+    ]
+    static let inlineContextRecipientBundleIdentifiers = telegramRecipientBundleIdentifiers.union([
         // Explicit recipient opt-in: unknown Claude panes need full inline XML.
         // Its Chat/remote Code modes cannot be assumed to read this Mac's files.
         // This never allows Claude-specific focus, insertion or Send behavior.
         "com.anthropic.claudefordesktop"
-    ]
+    ])
 
     static func excerpt(_ text: String, limit: Int) -> String {
         let compact = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")

@@ -273,6 +273,7 @@ class TranscriptionPipeline {
 
         func attachLiveSelectionsToFinalText(
             includeSourceContext: Bool = true,
+            includeReadableOpening: Bool = true,
             presentation: LiveSelectionReference.Presentation = .plain,
             compactArchive: AgentFlowPromptArchive.SavedPrompt? = nil
         ) async {
@@ -308,7 +309,7 @@ class TranscriptionPipeline {
                 with: current,
                 presentation: presentation,
                 includeTiming: includeSourceContext && !skipPostProcessingNow,
-                includeReadablePreview: includeSourceContext && !skipPostProcessingNow,
+                includeReadablePreview: includeReadableOpening && includeSourceContext && !skipPostProcessingNow,
                 rainbowStartIndex: rainbowStart
             )
             if includeSourceContext && !skipPostProcessingNow {
@@ -1176,6 +1177,8 @@ class TranscriptionPipeline {
                 bundleURL: recipient.bundleURL, claudeLocalCodeConfirmed: claudeLocalCodeConfirmed)
         await attachLiveSelectionsToFinalText(
             includeSourceContext: includesSourceContext,
+            includeReadableOpening: LiveContextPastePolicy.includesReadableOpening(
+                recipientBundleIdentifier: presentationRecipient),
             presentation: contextPresentation,
             compactArchive: usesCompactPrompt ? archivedPrompt : nil
         )

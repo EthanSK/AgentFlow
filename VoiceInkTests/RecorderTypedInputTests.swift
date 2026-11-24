@@ -1134,7 +1134,7 @@ struct RecorderTypedInputTests {
         }
         for style in ["Mini", "Notch"] {
             let view = try source("VoiceInk/Views/Recorder/\(style)RecorderView.swift")
-            #expect(view.contains("if stateProvider.recordingState.isRecordingOrPaused {\n                        RecorderPauseButton(stateProvider: stateProvider)"))
+            #expect(view.contains("if stateProvider.recordingState.isRecordingOrPaused && !stateProvider.captureFinishRequested {\n                        RecorderPauseButton(stateProvider: stateProvider)"))
         }
         let engine = try source("VoiceInk/Transcription/Engine/VoiceInkEngine.swift")
         let start = try #require(engine.range(of: "    func toggleRecordingPauseFromHUD("))
@@ -3407,8 +3407,14 @@ struct RecorderTypedInputTests {
         #expect(editor.performKeyEquivalent(with: submit) && submits == 1)
         // The engine's finish path: release this editor, then end capture.
         RecorderTypingTextView.releaseKeyboardBeforeFinish()
+        session.acknowledgeCaptureFinish()
         #expect(panel.firstResponder !== editor)
         #expect(session.liveSelectionReferences.isEmpty && session.typedInput == "typed while speaking")
+        #expect(!session.showsLiveContext && session.phase == .recording)
+        // Audio/recognition remain live after the editor is hidden during the
+        // real stop tail. Its draft still lands after those final captured words.
+        session.partialTranscript = "spoken words so far and the final tail"
+        #expect(session.typedInput == "typed while speaking")
         session.phase = .transcribing
         session.endLiveSelectionCapture()
         #expect(session.typedInput.isEmpty)
@@ -3460,7 +3466,11 @@ struct RecorderTypedInputTests {
         let paste = try source("VoiceInk/Paste/CursorPaster.swift")
         #expect(paste.contains("!RecorderTypingTextView.ownsKeyboard && requestedCanPost()"))
         let engine = try source("VoiceInk/Transcription/Engine/VoiceInkEngine.swift")
-        let stopRelease = try #require(engine.range(of: "RecorderTypingTextView.releaseKeyboardBeforeFinish()"))
+        let earlyRelease = try #require(engine.range(of: "RecorderTypingTextView.releaseKeyboardBeforeFinish()"))
+        let acknowledge = try #require(engine.range(of: "active.acknowledgeCaptureFinish()", range: earlyRelease.upperBound..<engine.endIndex))
+        let tailWait = try #require(engine.range(of: "try await delay.value", range: acknowledge.upperBound..<engine.endIndex))
+        let stopRelease = try #require(engine.range(of: "RecorderTypingTextView.releaseKeyboardBeforeFinish()", range: tailWait.upperBound..<engine.endIndex))
+        #expect(earlyRelease.lowerBound < acknowledge.lowerBound && acknowledge.lowerBound < tailWait.lowerBound)
         let stoppedCapture = try #require(engine.range(of: "active.endLiveSelectionCapture()", range: stopRelease.upperBound..<engine.endIndex))
         let stopTransition = engine[stopRelease.upperBound..<stoppedCapture.lowerBound]
         #expect(stopTransition.contains("active.phase = .transcribing"))
@@ -3469,10 +3479,10 @@ struct RecorderTypedInputTests {
         // An uncommitted run is not in the committed timeline; startup failure
         // must still find and preserve it rather than discarding typed prose.
         #expect(engine.contains("session.liveSelectionReferencesForRecovery.contains(where: \\.isTypedText)"))
-        // Finish releases the editor without sealing at the last partial; every
-        // release site must end capture, which commits the run after all speech.
+        // The early release acknowledges Stop without sealing. Every subsequent
+        // release remains beside actual capture end, which commits after all speech.
         #expect(editor.contains("editor.isReleasingForCaptureEnd = true"))
-        let releases = engine.components(separatedBy: "RecorderTypingTextView.releaseKeyboardBeforeFinish()").dropFirst()
+        let releases = engine[stopRelease.lowerBound...].components(separatedBy: "RecorderTypingTextView.releaseKeyboardBeforeFinish()").dropFirst()
         #expect(!releases.isEmpty)
         for following in releases {
             // Bound by the end of the immediate synchronous block rather than
