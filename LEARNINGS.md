@@ -1,5 +1,31 @@
 # Learnings
 
+## 2026-11-24 — Spoken backspace edits speech before final delivery
+
+Ethan's “backspace, backspace” means remove one preceding dictated word per
+command, rather than paste those command words. `SpokenBackspace` is a pure local
+reducer shared by the recorder preview and final pipeline. It recomputes from the
+complete provider partial, so revised or repeated callbacks cannot execute an edit
+twice. It never sends a deletion key to another app. Standalone case/punctuation
+variants are commands; “literal backspace” retains the word for ordinary discussion.
+Raw/skip and personal-note output remain literal, as do keyboard text and selections.
+
+Retain original provider partials and capture anchors as recovery evidence. Remap
+copies of the context anchors to the surviving speech words before preview,
+enhancement input, archive and delivery; otherwise deleting words shifts a captured
+selection or typed run into later speech. Capture-end typing still follows all
+speech. A command-only result is empty and must not paste or auto-send.
+
+Native source `ed783433` / build 540 passed all 1,015 named tests in 49 suites
+through the canonical Xcode action on the Mini. This includes the four spoken-edit
+fixtures, the full production pipeline across all three routes and raw mode, the
+HUD revision/cache case, and existing Primary/Next/HUD-only/YouTube ordering guards.
+The Developer ID build was installed through the five-second warning and cooperative
+all-session idle quit, preserving the 600 ms tail, media preference, Scarlett input
+and disabled dictated-text queue. Actual spoken user acceptance remains unverified.
+Public binary qualification is pending the independently owned hosted-signing
+migration; do not silently start the superseded personal-Mac release workflow.
+
 ## 2026-11-24 — Disable the automatic Voice recap producer, not the recipient monitor
 
 Ethan asked at 12:48 UTC to turn off the queued "Recording stopped" messages.
@@ -58,6 +84,13 @@ build was installed through the cooperative idle guard. Its separate universal
 public release was notarized and downloaded back with SHA-256
 `c0c0469a209cbde2d248c2b98ca094b48ba5a36658b544ba8a85c124b66ac3e6`.
 Actual browser-resume timing during a natural capture remains unverified.
+
+A later read-only check of four natural recordings on build 539 confirmed that
+the same paused YouTube tab resumed on the first attempt 19, 8, 13 and 13 ms after
+the bridge received recordingStopped. Both the bridge and the actual player
+reported playing; the content script awaited `video.play()` and checked player
+state. This verifies prompt playback after capture ends, not at the physical Stop
+press, and preserves the separately requested real 600 ms capture tail.
 
 Ethan then explicitly kept the real 600 ms microphone tail. His reason is the
 observed improvement at the END of transcripts when he leaves capture running
