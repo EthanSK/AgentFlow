@@ -405,7 +405,13 @@ struct RecorderCaptureOutlineTests {
                     .map { alpha(x: middleX, y: $0) }.max() ?? 0
                 let top = (0..<Int(4 * sy)).map { alpha(x: middleX, y: $0) }.max() ?? 0
                 let edges = style == "mini" ? [left, right, top, bottom] : [left, right, bottom]
-                #expect((edges.min() ?? 0) > 0.9, "\(style) scale=\(scale) edges=\(edges)")
+                // The fractional host can resample every edge to the same 85% alpha.
+                // Compare coverage across orientations, independently of hue; the
+                // reported defect was strong horizontal rows and faint side columns.
+                // Found by Ethan. Fixed by GPT-6.1 Sol.
+                #expect((edges.min() ?? 0) > 0.8, "\(style) scale=\(scale) edges=\(edges)")
+                #expect((edges.max() ?? 0) - (edges.min() ?? 0) < 0.02,
+                        "\(style) scale=\(scale) edges=\(edges)")
                 if let directory = ProcessInfo.processInfo.environment["VIPP_OUTLINE_SNAPSHOT_DIR"] {
                     let data = try #require(bitmap.representation(using: .png, properties: [:]))
                     try data.write(to: URL(fileURLWithPath: directory).appendingPathComponent(
