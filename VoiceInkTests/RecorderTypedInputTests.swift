@@ -947,7 +947,6 @@ struct RecorderTypedInputTests {
         for scale: CGFloat in [0.5, 0.85, 1] {
             var stopped = 0
             var cancelled = 0
-            var skipped = false
             var micStates: [Bool] = []
             var pauseStates: [RecordingState] = []
             let session = RecordingSession()
@@ -966,7 +965,7 @@ struct RecorderTypedInputTests {
             // The old fifth Unfocus control was removed at Ethan's request.
             // Keep real click regression coverage for all remaining controls.
             let panel = MiniRecorderPanel(contentRect: NSRect(x: 100, y: 100,
-                width: 400 * scale, height: 100 * scale))
+                width: 320 * scale, height: 100 * scale))
             let originalKeyWindow = NSApp.keyWindow
             defer { panel.close(); session.onMicrophoneToggle = nil; session.onPauseToggle = nil }
             let host = ScaledRecorderHostingView(rootView: AnyView(
@@ -974,8 +973,6 @@ struct RecorderTypedInputTests {
                     RecorderRecordButton(recordingState: .recording, action: { stopped += 1 })
                         .frame(width: 80, height: 40)
                     RecorderCancelButton(action: { cancelled += 1 }).frame(width: 80, height: 40)
-                    RecorderSkipProcessingButton(isEngaged: Binding(get: { skipped }, set: { skipped = $0 }))
-                        .frame(width: 80, height: 40)
                     RecorderMicrophoneButton(stateProvider: session).frame(width: 80, height: 40)
                     RecorderPauseButton(stateProvider: session).frame(width: 80, height: 40)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
@@ -1000,14 +997,14 @@ struct RecorderTypedInputTests {
                 NSApp.sendEvent(up)
                 RunLoop.current.run(until: Date().addingTimeInterval(0.05))
             }
-            try click(40); try click(120); try click(200); try click(280); try click(280)
-            #expect(stopped == 1 && cancelled == 1 && skipped)
+            try click(40); try click(120); try click(200); try click(200)
+            #expect(stopped == 1 && cancelled == 1)
             #expect(micStates == [false, true])
             #expect(RecorderPauseButton(stateProvider: session).symbolName == "pause.fill")
-            try click(360)
+            try click(280)
             #expect(RecorderPauseButton(stateProvider: session).symbolName == "play.fill")
             #expect(RecorderPauseButton(stateProvider: session).actionTitle == String(localized: "Resume recording"))
-            try click(360)
+            try click(280)
             #expect(RecorderPauseButton(stateProvider: session).symbolName == "pause.fill")
             #expect(pauseStates == [.paused, .recording])
             #expect(session.id == sessionID && session.phase == .recording)

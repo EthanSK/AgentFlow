@@ -10,12 +10,10 @@ enum RecorderPanelAppearance {
 
 // MARK: - App Version
 
-/// The two-line release identifier shown immediately before Stop. Keeping its
-/// presentation separate from Bundle lookup makes the exact split testable:
-/// `v2.0` is the product version and `.206` is the uniquely released build.
+/// Ethan's "version number text ... on one line": product version and unique
+/// build stay together immediately before Stop, for example `v2.0.546`.
 struct RecorderVersionPresentation: Equatable {
-    let topLine: String
-    let bottomLine: String?
+    let text: String
     let accessibilityLabel: String
 
     init(marketingVersion: String?, buildNumber: String?) {
@@ -24,28 +22,23 @@ struct RecorderVersionPresentation: Equatable {
 
         switch (marketing, build) {
         case let (marketing?, build?) where !marketing.isEmpty && !build.isEmpty:
-            topLine = "v\(marketing)"
-            bottomLine = ".\(build)"
+            text = "v\(marketing).\(build)"
             accessibilityLabel = "Agent Flow version \(marketing), build \(build)"
         case let (marketing?, _) where !marketing.isEmpty:
-            topLine = "v\(marketing)"
-            bottomLine = nil
+            text = "v\(marketing)"
             accessibilityLabel = "Agent Flow version \(marketing)"
         case let (_, build?) where !build.isEmpty:
-            topLine = "v?"
-            bottomLine = ".\(build)"
+            text = "v?.\(build)"
             accessibilityLabel = "Agent Flow build \(build)"
         default:
-            topLine = "v?"
-            bottomLine = nil
+            text = "v?"
             accessibilityLabel = "Agent Flow version unavailable"
         }
     }
 }
 
-/// The build number increments for every installed VoiceInk++ release, while
-/// the marketing version changes only for product milestones. The two rows use
-/// the recorder's otherwise unused vertical space to stay legible at a glance.
+/// The build increments for every installed release; keep the whole identifier
+/// in one unwrapped label in both recorder layouts.
 struct RecorderVersionLabel: View {
     private static let marketingVersion = Bundle.main.object(
         forInfoDictionaryKey: "CFBundleShortVersionString"
@@ -60,13 +53,7 @@ struct RecorderVersionLabel: View {
     )
 
     var body: some View {
-        VStack(spacing: -2) {
-            Text(Self.presentation.topLine)
-
-            if let bottomLine = Self.presentation.bottomLine {
-                Text(bottomLine)
-            }
-        }
+        Text(Self.presentation.text)
             .font(.system(size: 10, weight: .semibold, design: .monospaced))
             .foregroundStyle(Color.white.opacity(0.48))
             .lineLimit(1)
@@ -314,83 +301,6 @@ struct RecorderCancelButton: View {
         .buttonStyle(.plain)
         .help("Stop and save draft (no paste)")
         .accessibilityLabel(Text("Stop and save recording draft"))
-    }
-}
-
-// MARK: - Skip Mode Processing (Raw Transcript) Toggle Button
-//
-// VIPP (skip-mode-processing feature): a one-shot TOGGLE that sits immediately to the
-// RIGHT of the red Cancel ("X") button on the recorder, available WHILE a recording is
-// live. When ENGAGED for the current recording, that single dictation skips the active
-// Mode's post-transcription processing — both the AI enhancement AND any custom-command/
-// script the Mode would run afterward — and pastes the RAW verbatim transcript instead.
-//
-// ── ONE-SHOT, PER-SESSION SEMANTICS ─────────────────────────────────────────────
-// The toggle reads/writes the OBSERVED RecordingSession's `skipPostProcessing` flag
-// (via the RecorderStateProvider protocol). It does NOT change the user's default
-// Mode/settings: it's scoped to THIS recording only, and the next recording starts a
-// fresh RecordingSession with the flag back at false. The user decides DURING the
-// recording that this one should be raw; the engine's pipeline reads the flag at
-// transcribe/deliver time, so toggling any time before that step is honored.
-//
-// ── STATE MODEL (clear ON/OFF) ──────────────────────────────────────────────────
-// The button has a deliberate at-a-glance on/off look so the user can see whether THIS
-// session will skip processing:
-//   • OFF (default) → subdued: faint white fill + dimmed "bolt.slash" glyph. Reads as
-//     "available but not engaged".
-//   • ON (engaged)  → active: amber-tinted fill + bordered + solid amber filled glyph
-//     ("bolt.slash.fill"). Reads unambiguously as "this recording WILL skip processing".
-// Amber (warningStrong / systemOrange) is intentionally distinct from the red Cancel
-// button beside it (they must not be confused) and from the neutral record control.
-//
-// ── SF SYMBOL CHOICE ────────────────────────────────────────────────────────────
-// VoiceInk Modes are branded "Power Mode" / ⚡, so `bolt.slash` = "disable the mode's
-// power for this one recording". We swap to the `.fill` variant when engaged to amplify
-// the on-state.
-//
-// ── BINDING ─────────────────────────────────────────────────────────────────────
-// Driven by a SwiftUI Binding<Bool> the parent view derives from its observed
-// stateProvider's skipPostProcessing (see Mini/NotchRecorderView). Because the card
-// observes its own RecordingSession (@ObservedObject), flipping the flag re-renders this
-// button immediately — same per-session-observation pattern the rest of the recorder uses.
-struct RecorderSkipProcessingButton: View {
-    @Binding var isEngaged: Bool
-
-    // Amber accent for the engaged state — matches the "power mode disabled" intent and is
-    // visually separate from the adjacent red Cancel button.
-    private let engagedAccent = AppTheme.Status.warningStrong
-
-    var body: some View {
-        Button(action: { isEngaged.toggle() }) {
-            ZStack {
-                Circle()
-                    // ON → amber-tinted fill; OFF → the same faint neutral fill the
-                    // close/processing controls use, so an un-engaged button is quiet.
-                    .fill(isEngaged ? engagedAccent.opacity(0.22) : Color.white.opacity(0.13))
-                    .overlay(
-                        Circle()
-                            .strokeBorder(
-                                isEngaged ? engagedAccent.opacity(0.85) : Color.white.opacity(0.18),
-                                lineWidth: 0.6
-                            )
-                    )
-
-                // Filled bolt.slash when engaged (loud), outline when not (subdued).
-                Image(systemName: isEngaged ? "bolt.slash.fill" : "bolt.slash")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundColor(isEngaged ? engagedAccent : .white.opacity(0.55))
-            }
-            // Match the 21pt hit-target sizing of the record/cancel/close buttons so it
-            // lines up cleanly to the right of Cancel in both the mini bar and the notch.
-            .frame(width: 21, height: 21)
-            .contentShape(Circle())
-        }
-        .buttonStyle(.plain)
-        .help(isEngaged
-            ? "Skip mode processing for this recording is ON — raw transcript (tap to turn off)"
-            : "Skip mode processing for this recording (raw transcript)")
-        .accessibilityLabel(Text("Skip mode processing for this recording (raw transcript)"))
-        .accessibilityValue(Text(isEngaged ? "On" : "Off"))
     }
 }
 

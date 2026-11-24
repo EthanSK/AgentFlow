@@ -87,18 +87,6 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
         return stateProvider.partialTranscript
     }
 
-    // VIPP (skip-mode-processing feature): a Binding that reads/writes the OBSERVED
-    // session's one-shot `skipPostProcessing` flag. The skip-processing toggle button uses
-    // it to flip the flag in place. Because `stateProvider` is @ObservedObject (the live
-    // RecordingSession), the get re-evaluates and the button's amber/subdued state updates
-    // the instant it changes. Per-session + one-shot: see RecordingSession.skipPostProcessing.
-    private var skipPostProcessingBinding: Binding<Bool> {
-        Binding(
-            get: { stateProvider.skipPostProcessing },
-            set: { stateProvider.skipPostProcessing = $0 }
-        )
-    }
-
     private var controlBar: some View {
         HStack(spacing: 0) {
             HStack(spacing: 6) {
@@ -125,14 +113,6 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                     RecorderCancelButton(action: onCancelTapped)
                         .transition(.opacity)
 
-                    // VIPP (skip-mode-processing feature): the one-shot raw-transcript toggle
-                    // sits immediately to the RIGHT of Cancel. Reuses the SAME visibility
-                    // condition (shouldShowCancelButton) so it's available throughout the
-                    // recording/in-flight window — the user can engage it DURING recording —
-                    // and collapses out at idle/busy along with Cancel. Bound directly to the
-                    // observed session's skipPostProcessing flag (no closure threading needed).
-                    RecorderSkipProcessingButton(isEngaged: skipPostProcessingBinding)
-                        .transition(.opacity)
                     if stateProvider.recordingState.isRecordingOrPaused {
                         RecorderPauseButton(stateProvider: stateProvider)
                     }
@@ -149,13 +129,6 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                 .background(RecorderPanelDragSurface())
 
             HStack(spacing: 6) {
-                // Mode belongs immediately to the LEFT of the waveform. The slot it
-                // previously occupied on the right now shows the currently focused app.
-                RecorderModeButton(
-                    buttonSize: 22,
-                    padding: EdgeInsets()
-                )
-
                 RecorderStatusDisplay(
                     currentState: stateProvider.recordingState,
                     completionDisposition: stateProvider.completionDisposition,
@@ -172,10 +145,15 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                 .frame(maxHeight: .infinity)
                 .background(RecorderPanelDragSurface())
 
-            // Show current focus only; never relabel this icon as a saved Next target.
-            CurrentFocusApplicationIndicator(
-                actionPulseID: stateProvider.currentFocusIconActionPulseID
-            )
+            // Ethan's "cloud icon" is the current Mode chooser. It moved from
+            // beside the waveform to the right controls; the middle stays status-only.
+            HStack(spacing: 6) {
+                RecorderModeButton(buttonSize: 22, padding: EdgeInsets())
+                // Current focus is not a saved Next target.
+                CurrentFocusApplicationIndicator(
+                    actionPulseID: stateProvider.currentFocusIconActionPulseID
+                )
+            }
             .padding(.trailing, 12)
         }
         .frame(height: chatBanner.flatMap { $0.separateRow ? nil : $0.height } ?? MiniRecorderLayoutMetrics.controlBarHeight)

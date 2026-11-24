@@ -6569,14 +6569,13 @@ struct VoiceInkTests {
         ))
     }
 
-    @Test func recorderVersionSplitsMarketingAndBuildAcrossTwoRows() {
+    @Test func recorderVersionKeepsMarketingAndBuildOnOneLine() {
         let presentation = RecorderVersionPresentation(
             marketingVersion: "2.0",
             buildNumber: "236"
         )
 
-        #expect(presentation.topLine == "v2.0")
-        #expect(presentation.bottomLine == ".236")
+        #expect(presentation.text == "v2.0.236")
         #expect(presentation.accessibilityLabel == "Agent Flow version 2.0, build 236")
     }
 

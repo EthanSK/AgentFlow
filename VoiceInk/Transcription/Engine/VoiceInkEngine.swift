@@ -207,16 +207,6 @@ class VoiceInkEngine: NSObject, ObservableObject {
     // recording UI observes RecordingSession, which owns the per-action pulse.
     var iconActionPulse: RecorderIconActionPulse? { nil }
 
-    // VIPP (skip-mode-processing feature): RecorderStateProvider now requires a settable
-    // `skipPostProcessing`. The REAL per-session flag lives on each RecordingSession (that's
-    // what the live recorder card binds to). The engine only conforms to RecorderStateProvider
-    // for the "assistant-only fallback card" (rendered after the producing session is gone),
-    // where a per-recording bypass is meaningless. So this is an inert stub: it satisfies the
-    // protocol but is never consumed by the pipeline (the pipeline reads session.skipPostProcessing
-    // directly). Kept settable + harmless so the generic view's toggle compiles on the fallback
-    // card without affecting any real recording.
-    var skipPostProcessing: Bool = false
-
     // ── Pipeline cancel-poisoning ──
     // Set of Transcription ids whose pipeline result must be DISCARDED (per-session cancel).
     // Keyed by RecordingSession.pipelineTranscriptionID so cancelling one session can never
