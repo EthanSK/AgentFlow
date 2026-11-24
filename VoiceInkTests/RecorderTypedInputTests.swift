@@ -1763,14 +1763,24 @@ struct RecorderTypedInputTests {
 
     @Test @MainActor func typingStopGraceKeepsFastResultsSelectableAndSealsBeforeEffects() async throws {
         let stopped = RecordingSession()
-        stopped.armTypingClipboardOnlyCompletion(minimumInterval: 0.06)
+        stopped.armTypingClipboardOnlyCompletion()
         stopped.phase = .transcribing
         #expect(await stopped.freezeCompletionPolicy() == .normal)
         #expect(!stopped.acceptsCompletionDispositionChanges)
-        let commit = Task { @MainActor in await stopped.commitTypingCompletion() }
-        try await Task.sleep(for: .milliseconds(10))
+        // Hold genuine preparation explicitly. Sleeping inside a 60 ms fixture
+        // deadline raced the irreversible boundary under the full hosted suite.
+        let (preparation, completion) = AsyncStream<Void>.makeStream()
+        var preparing = false
+        let commit = Task { @MainActor in
+            preparing = true
+            for await _ in preparation { }
+            return await stopped.commitTypingCompletion()
+        }
+        defer { completion.finish() }
+        try await waitForCompletion { preparing }
         #expect(stopped.acceptsTypingClipboardOnlyCompletion)
         #expect(stopped.selectTypingClipboardOnlyCompletion())
+        completion.finish()
         #expect(await commit.value)
         #expect(!stopped.acceptsTypingClipboardOnlyCompletion)
         #expect(!stopped.selectTypingClipboardOnlyCompletion())
@@ -2899,7 +2909,7 @@ struct RecorderTypedInputTests {
         // The keyboard typing shortcut is an explicit request, not the disabled
         // automatic return after selecting text or taking a screenshot.
         focus.requestInitialFocus()
-        try await Task.sleep(nanoseconds: 20_000_000)
+        try await waitForCompletion { window.focusRequests == 1 && !focus.initialFocusPending }
         #expect(window.focusRequests == 1 && !focus.initialFocusPending)
         focus.returnAfterContext()
         try await Task.sleep(nanoseconds: 20_000_000)
@@ -2921,10 +2931,10 @@ struct RecorderTypedInputTests {
         #expect(window.focusRequests == 0)
         session.typingFocus.enable(editor)
         session.recordLiveSelection(selection)
-        try await Task.sleep(nanoseconds: 20_000_000)
+        try await waitForCompletion { window.focusRequests == 1 }
         #expect(window.focusRequests == 1)
         session.recordLiveSelection(screenshot)
-        try await Task.sleep(nanoseconds: 20_000_000)
+        try await waitForCompletion { window.focusRequests == 2 }
         #expect(window.focusRequests == 2)
         session.typingFocus.disable(releaseKeyboard: false)
         session.recordLiveSelection(selection)
@@ -2945,7 +2955,7 @@ struct RecorderTypedInputTests {
         #expect(window.focusRequests == 0)
         // Explicit click/shortcut intent is separate from automatic context return.
         session.typingFocus.requestInitialFocus(preferredEditor: editor)
-        try await Task.sleep(nanoseconds: 30_000_000)
+        try await waitForCompletion { window.focusRequests == 1 }
         #expect(window.focusRequests == 1)
         session.typingFocus.disable(releaseKeyboard: false)
     }
@@ -2981,7 +2991,7 @@ struct RecorderTypedInputTests {
         #expect(window.focusRequests == 0)
         enabled = true
         focus.returnAfterContext()
-        try await Task.sleep(nanoseconds: 20_000_000)
+        try await waitForCompletion { window.focusRequests == 1 }
         #expect(window.focusRequests == 1)
         focus.returnAfterContext()
         focus.disable(releaseKeyboard: false)
@@ -2991,17 +3001,21 @@ struct RecorderTypedInputTests {
 
     @Test @MainActor func contextReturnWaitsForMouseReleaseAndVerifiesKeyboardOwnership() async throws {
         var held = true
-        let focus = RecorderTypingFocus(mouseButtonsPressed: { held }, retryDelay: 5_000_000)
+        var heldChecks = 0
+        let focus = RecorderTypingFocus(mouseButtonsPressed: {
+            heldChecks += 1
+            return held
+        }, retryDelay: 5_000_000)
         let window = TypingFocusProbeWindow()
         window.refusedFocusAttempts = 1
         let editor = RecorderTypingTextView()
         window.contentView = editor
         focus.enable(editor)
         focus.returnAfterContext()
-        try await Task.sleep(nanoseconds: 20_000_000)
+        try await waitForCompletion { heldChecks > 0 }
         #expect(window.focusRequests == 0)
         held = false
-        try await Task.sleep(nanoseconds: 40_000_000)
+        try await waitForCompletion { window.focusRequests == 2 && window.isKeyWindow && window.firstResponder === editor }
         #expect(window.focusRequests == 2)
         #expect(window.isKeyWindow && window.firstResponder === editor)
         try await Task.sleep(nanoseconds: 20_000_000)
@@ -3023,7 +3037,7 @@ struct RecorderTypedInputTests {
         try await Task.sleep(nanoseconds: 20_000_000)
         #expect(window.focusRequests == 0 && focus.initialFocusPending)
         completion.finish()
-        try await Task.sleep(nanoseconds: 40_000_000)
+        try await waitForCompletion { window.focusRequests == 1 && window.firstResponder === editor }
         #expect(window.focusRequests == 1 && window.firstResponder === editor)
         focus.disable(releaseKeyboard: false)
     }
@@ -3053,7 +3067,7 @@ struct RecorderTypedInputTests {
         let editor = RecorderTypingTextView()
         window.contentView = editor
         focus.register(editor)
-        try await Task.sleep(nanoseconds: 30_000_000)
+        try await waitForCompletion { window.focusRequests == 1 && !focus.initialFocusPending }
         #expect(window.focusRequests == 1 && !focus.initialFocusPending)
         #expect(window.firstResponder === editor)
         focus.disable(releaseKeyboard: false)

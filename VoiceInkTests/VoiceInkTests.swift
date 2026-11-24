@@ -3510,7 +3510,7 @@ struct VoiceInkTests {
     }
 
     @MainActor
-    @Test func duplicatePrimaryChordCannotBecomeClipboardFinishInHandler() async {
+    @Test func duplicatePrimaryChordCannotBecomeClipboardFinishInHandler() async throws {
         let state = PrimaryShortcutHandlerTestState(
             recordingState: .recording,
             isRecorderVisible: true
@@ -3583,7 +3583,7 @@ struct VoiceInkTests {
         #expect(state.pauseCallCount == 0)
         #expect(finishCallCount == 0)
         #expect(state.completionDispositions == [.clipboardOnly])
-        try? await Task.sleep(nanoseconds: 80_000_000)
+        try await waitForCompletion { finishCallCount == 1 && state.recordingState == .idle }
         #expect(finishCallCount == 1)
         #expect(state.recordingState == .idle)
         handler.reset()
@@ -3680,7 +3680,7 @@ struct VoiceInkTests {
     }
 
     @MainActor
-    @Test func pausedPrimaryDoubleClickSelectsWontPasteWithoutResuming() async {
+    @Test func pausedPrimaryDoubleClickSelectsWontPasteWithoutResuming() async throws {
         let state = PrimaryShortcutHandlerTestState(
             recordingState: .paused,
             isRecorderVisible: true
@@ -3728,7 +3728,7 @@ struct VoiceInkTests {
         #expect(state.pauseCallCount == 0)
         #expect(state.toggleDestinations.isEmpty)
         #expect(state.completionDispositions == [.clipboardOnly])
-        try? await Task.sleep(nanoseconds: 130_000_000)
+        try await waitForCompletion { finishCallCount == 1 }
         #expect(finishCallCount == 1)
         handler.reset()
     }
