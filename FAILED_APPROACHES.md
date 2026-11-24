@@ -1,5 +1,22 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-24 — Counting scheduler yields as a test completion deadline — REJECTED
+
+In the 1,061-function hosted build 545 suite, two Voice spacing fixtures exhausted
+10,000 `Task.yield` attempts in 22–24 ms before required actor work completed.
+Other positive completion assertions raced fixed 40/80 ms sleeps, and a simulated
+60 ms typing window expired during a 405 ms scheduling gap. Passing alone did not
+make those assumptions valid under the release workload. Do not lengthen product
+timers or weaken route, ownership, post-count or final-state assertions to fix
+this test scheduling problem.
+
+Use an elapsed monotonic deadline with a cancellable suspension between false
+observations, or hold genuine preparation with an explicit gate. Source
+`3970fe7d` passed all 237 selected named functions with those test-only changes.
+Reconsider a fixed-duration positive wait only when elapsed time itself is the
+behavior under test and the fixture controls the relevant clock; keep negative
+timer/cancellation checks and the exact-source full public gate.
+
 ## 2026-11-24 — Serializing the typing suite did not repair its scroll fixture
 
 The combined Mini suite's synthetic scroll forwarding assertion still failed after

@@ -1,5 +1,30 @@
 # Learnings
 
+## 2026-11-24 — Bound asynchronous test completion by elapsed time
+
+The hosted build 545 full suite ran 1,061 functions in 54 suites. All six
+previously failing build 544 functions passed, including actual recorder scrolling
+at all three scales. Five other functions exposed short positive-completion
+assumptions: a 10,000-yield budget ended after 22–24 ms, fixed 40/80 ms sleeps
+preceded focus/finish completion, and an artificial 60 ms typing window expired
+while the loaded runner resumed after 405 ms. These observations do not establish
+a product timing defect.
+
+Source `3970fe7df5bad4566ee68674e330e39999dac733` changes tests only. The existing
+main-actor completion helper is shared, uses a five-second monotonic deadline and
+suspends for 5 ms only while the required condition is false. The separate async
+Voice predicate helper follows the same deadline contract and returns false on
+cancellation. Genuine typing preparation is held by an explicit completion gate,
+with the production-default zero artificial interval. Exact policy, call identity,
+post counts, virtual 300 ms spacing, focus and cancellation assertions remain.
+Negative checks that exercise a canceled timer keep their observation interval.
+
+The canonical Mini action passed all 237 selected named functions: the complete
+121-function typing suite, all 13 new Voice cases, existing Voice/paired ownership
+and selected Primary/Next/HUD-only/YouTube guards. Every newly failing hosted
+function passed. Production build 545 and its installed settings were unchanged;
+the exact-source hosted full release gate remains separate.
+
 ## 2026-11-24 — Space Voice commands and keep the chosen microphone reader dormant
 
 Ethan explicitly chose a 300 ms gap between paired speaker/microphone shortcuts at
