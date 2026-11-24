@@ -404,7 +404,8 @@ struct RecorderTypedInputTests {
             // through WindowServer. Keep its location in that receiver's window
             // coordinates; CGEvent's public window-under-pointer hints do not bind
             // NSEvent.windowNumber. — GPT-6.1 Sol
-            wheel.location = point
+            let mainScreen = try #require(NSScreen.screens.first)
+            wheel.location = CGPoint(x: point.x, y: mainScreen.frame.maxY - point.y)
             wheel.flags = []
             let event = try #require(NSEvent(cgEvent: wheel))
             drag.scrollWheel(with: event)
