@@ -319,6 +319,7 @@ struct RecorderCaptureOutlineTests {
                 panel.contentView = host
                 panel.orderFrontRegardless()
                 defer { panel.orderOut(nil); panel.close() }
+                host.layoutSubtreeIfNeeded()
                 try await Task.sleep(for: .milliseconds(500))
                 host.layoutSubtreeIfNeeded()
                 let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
