@@ -403,7 +403,8 @@ struct RecorderTypedInputTests {
             let event = try #require(NSEvent(cgEvent: wheel))
             drag.scrollWheel(with: event)
             RunLoop.current.run(until: Date().addingTimeInterval(0.1))
-            #expect(scroll.contentView.bounds.origin.y != before)
+            #expect(scroll.contentView.bounds.origin.y != before,
+                "scale=\(scale) flags=\(event.modifierFlags.rawValue) deltaY=\(event.scrollingDeltaY) deltaX=\(event.scrollingDeltaX) phase=\(event.phase.rawValue) documentHeight=\(scroll.documentView?.frame.height ?? 0)")
             #expect(panel.frame.origin.x == 130 && clicks == 1)
         }
     }
