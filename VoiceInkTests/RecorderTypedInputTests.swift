@@ -1,5 +1,3 @@
-// Exercises typed/voice recorder state, native editor controls and exact delivery
-// boundaries without starting live microphone capture. — GPT-6.1 Sol
 import AppKit
 import Foundation
 import SwiftUI
@@ -7,7 +5,6 @@ import SwiftData
 import Testing
 @testable import VoiceInkPlusPlus
 
-@Suite(.serialized)
 struct RecorderTypedInputTests {
     @Test @MainActor func contextColorsWaitForRecognizedSpeechNotTypingOrCaptureIntent() throws {
         let session = RecordingSession()
