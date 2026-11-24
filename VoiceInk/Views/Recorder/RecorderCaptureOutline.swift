@@ -26,6 +26,7 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
     var reduceMotionForPreview: Bool? = nil
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     private var reduceMotion: Bool { reduceMotionForPreview ?? systemReduceMotion }
+    @Environment(\.displayScale) private var displayScale
     @State private var trace = RecorderCaptureOutlineTrace()
 
     /// Forwards the card shape's own animation, so the tube follows the clip through
@@ -47,8 +48,13 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
             paused: reduceMotion
         )) { timeline in
             let phase = reduceMotion ? 0 : RecorderCaptureOutlineStyle.flowPhase(at: timeline.date)
-            Canvas { context, size in
-                drawBorder(in: context, size: size, phase: phase)
+            GeometryReader { geometry in
+                let frame = geometry.frame(in: .global)
+                Canvas { context, size in
+                    let pixels = RecorderCaptureOutlinePixels(
+                        localSize: size, frame: frame, displayScale: displayScale)
+                    drawBorder(in: context, size: size, phase: phase, pixels: pixels)
+                }
             }
         }
         .allowsHitTesting(false)
@@ -56,15 +62,16 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
     }
 
     // Former `drawNeonTube`: one stroke replaces its bloom and pale core.
-    private func drawBorder(in context: GraphicsContext, size: CGSize, phase: Double) {
+    private func drawBorder(in context: GraphicsContext, size: CGSize, phase: Double,
+                            pixels: RecorderCaptureOutlinePixels) {
         let style = RecorderCaptureOutlineStyle.self
         let bounds = CGRect(origin: .zero, size: size)
         guard bounds.width > style.tubeInset * 4, bounds.height > style.tubeInset * 4 else { return }
 
-        let cardPath = shape.path(in: bounds)
         // The same shape in a slightly smaller rect keeps the tube parallel to the
         // card edge, including the Notch flares, without needing an insettable shape.
-        let tubePath = shape.path(in: bounds.insetBy(dx: style.tubeInset, dy: style.tubeInset))
+        let tubePath = pixels.aligned(shape.path(in: bounds.insetBy(
+            dx: pixels.width / 2, dy: pixels.width / 2)))
         let center = CGPoint(x: bounds.midX, y: bounds.midY)
         let samples = trace.samples(along: tubePath, around: center)
         guard !samples.isEmpty else { return }
@@ -79,14 +86,53 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
             center: center
         )
         context.drawLayer { layer in
-            layer.clip(to: cardPath)
             if omitsTopEdge {
-                let top = style.tubeInset + style.tubeWidth / 2
+                let top = pixels.width
                 layer.clip(to: Path(CGRect(x: 0, y: top, width: size.width,
                                           height: max(0, size.height - top))))
             }
-            layer.stroke(tubePath, with: tube, lineWidth: style.tubeWidth)
+            layer.stroke(tubePath, with: tube, lineWidth: pixels.width)
         }
+    }
+}
+
+/// Fits the thin stroke to whole backing pixels after the HUD's scaleEffect.
+/// A 1pt line at 85% can otherwise split across two faint side columns while a
+/// horizontal edge lands on one solid row. Geometry's global frame includes that
+/// transform; displayScale accounts for Retina. The caller still owns its clip,
+/// so an extra antialiased silhouette mask cannot dim the edge a second time.
+/// Found and fixed by GPT-6.1 Sol.
+struct RecorderCaptureOutlinePixels {
+    let width: CGFloat
+    private let scale: CGFloat
+    private let origin: CGPoint
+
+    init(localSize: CGSize, frame: CGRect, displayScale: CGFloat) {
+        let hudScale = localSize.width > 0 ? frame.width / localSize.width : 1
+        scale = max(0.01, hudScale * displayScale)
+        width = max(1, (RecorderCaptureOutlineStyle.tubeWidth * scale).rounded()) / scale
+        origin = CGPoint(x: frame.minX * displayScale, y: frame.minY * displayScale)
+    }
+
+    func aligned(_ path: Path) -> Path {
+        let halfPixels = width * scale / 2
+        func point(_ value: CGPoint) -> CGPoint {
+            CGPoint(
+                x: ((value.x * scale + origin.x - halfPixels).rounded() + halfPixels - origin.x) / scale,
+                y: ((value.y * scale + origin.y - halfPixels).rounded() + halfPixels - origin.y) / scale)
+        }
+        var result = Path()
+        path.forEach { element in
+            switch element {
+            case .move(let p): result.move(to: point(p))
+            case .line(let p): result.addLine(to: point(p))
+            case .quadCurve(let p, let c): result.addQuadCurve(to: point(p), control: point(c))
+            case .curve(let p, let c1, let c2):
+                result.addCurve(to: point(p), control1: point(c1), control2: point(c2))
+            case .closeSubpath: result.closeSubpath()
+            }
+        }
+        return result
     }
 }
 

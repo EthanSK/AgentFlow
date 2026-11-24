@@ -400,17 +400,12 @@ struct RecorderTypedInputTests {
             let before = scroll.contentView.bounds.origin.y
             let wheel = try #require(CGEvent(scrollWheelEvent2Source: nil, units: .pixel,
                 wheelCount: 1, wheel1: 80, wheel2: 0, wheel3: 0))
-            // Bind the synthetic wheel to the same test window as the mouse
-            // gestures above. Its default global pointer position can be outside
-            // a scaled panel; no event is posted and the real pointer never moves.
-            let screenPoint = panel.convertPoint(toScreen: point)
-            let mainScreen = try #require(NSScreen.screens.first)
-            wheel.location = CGPoint(x: screenPoint.x, y: mainScreen.frame.maxY - screenPoint.y)
+            // This event is delivered directly to the known receiver, not posted
+            // through WindowServer. Keep its location in that receiver's window
+            // coordinates; CGEvent's public window-under-pointer hints do not bind
+            // NSEvent.windowNumber. — GPT-6.1 Sol
+            wheel.location = point
             wheel.flags = []
-            wheel.setIntegerValueField(.mouseEventWindowUnderMousePointer,
-                value: Int64(panel.windowNumber))
-            wheel.setIntegerValueField(.mouseEventWindowUnderMousePointerThatCanHandleThisEvent,
-                value: Int64(panel.windowNumber))
             let event = try #require(NSEvent(cgEvent: wheel))
             drag.scrollWheel(with: event)
             RunLoop.current.run(until: Date().addingTimeInterval(0.1))

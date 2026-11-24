@@ -341,6 +341,54 @@ struct RecorderCaptureOutlineTests {
         }
     }
 
+    @Test @MainActor func scaledOutlinePaintsEveryStraightEdgeEvenly() async throws {
+        for scale: CGFloat in [0.5, 0.85, 1] {
+            for style in ["mini", "notch"] {
+                let sourceSize = CGSize(width: 640, height: 100)
+                let size = CGSize(width: sourceSize.width * scale, height: sourceSize.height * scale)
+                let outline: AnyView = style == "mini"
+                    ? AnyView(RecorderCaptureOutline(shape: RoundedRectangle(cornerRadius: 14),
+                        reduceMotionForPreview: true))
+                    : AnyView(RecorderCaptureOutline(shape: NotchShape(topCornerRadius: 12, bottomCornerRadius: 22),
+                        omitsTopEdge: true, reduceMotionForPreview: true))
+                let panel = NSPanel(contentRect: NSRect(origin: .zero, size: size),
+                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+                panel.isOpaque = false
+                panel.backgroundColor = .clear
+                let host = ScaledRecorderHostingView(rootView: outline, scale: scale)
+                panel.contentView = host
+                panel.orderFrontRegardless()
+                defer { panel.orderOut(nil); panel.close() }
+                host.layoutSubtreeIfNeeded()
+                try await Task.sleep(for: .milliseconds(250))
+                let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                let sx = CGFloat(bitmap.pixelsWide) / size.width
+                let sy = CGFloat(bitmap.pixelsHigh) / size.height
+                func alpha(x: Int, y: Int) -> CGFloat {
+                    bitmap.colorAt(x: x, y: y)?.alphaComponent ?? 0
+                }
+                let middleX = bitmap.pixelsWide / 2
+                let middleY = bitmap.pixelsHigh / 2
+                let sideInset = Int((style == "notch" ? 12 : 0) * scale * sx)
+                let band = max(4, Int(4 * sx))
+                let left = (sideInset..<(sideInset + band)).map { alpha(x: $0, y: middleY) }.max() ?? 0
+                let right = ((bitmap.pixelsWide - sideInset - band)..<(bitmap.pixelsWide - sideInset))
+                    .map { alpha(x: $0, y: middleY) }.max() ?? 0
+                let bottom = ((bitmap.pixelsHigh - Int(4 * sy))..<bitmap.pixelsHigh)
+                    .map { alpha(x: middleX, y: $0) }.max() ?? 0
+                let top = (0..<Int(4 * sy)).map { alpha(x: middleX, y: $0) }.max() ?? 0
+                let edges = style == "mini" ? [left, right, top, bottom] : [left, right, bottom]
+                #expect((edges.min() ?? 0) > 0.9, "\(style) scale=\(scale) edges=\(edges)")
+                if let directory = ProcessInfo.processInfo.environment["VIPP_OUTLINE_SNAPSHOT_DIR"] {
+                    let data = try #require(bitmap.representation(using: .png, properties: [:]))
+                    try data.write(to: URL(fileURLWithPath: directory).appendingPathComponent(
+                        "\(style)-scaled-\(scale).png"))
+                }
+            }
+        }
+    }
+
     private func source(_ path: String) throws -> String {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
         return try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
