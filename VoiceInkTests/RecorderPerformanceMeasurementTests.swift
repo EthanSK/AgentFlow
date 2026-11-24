@@ -50,6 +50,8 @@ struct RecorderPerformanceMeasurementTests {
             ("still-baseline", false, false, false),
             ("waveform", true, false, false),
             ("waveform-and-outline", true, true, false),
+            ("long-draft-baseline", false, false, true),
+            ("long-draft-waveform", true, false, true),
             ("long-growing-draft", true, true, true)
         ] {
             settings.set(outline, forKey: RecorderCaptureOutlinePreference.preferenceKey)
@@ -92,8 +94,54 @@ struct RecorderPerformanceMeasurementTests {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let data = try JSONSerialization.data(withJSONObject: ["configuration": ProcessInfo.processInfo.environment["VIPP_RECORDER_PERFORMANCE_CONFIGURATION"] ?? "Debug native test host",
             "limits": "Synthetic microphone levels, three real hosted cards; no hardware capture, API/provider or physical playback timing. CPU includes the test host's other work. No fixed performance gate on a shared runner.",
+            "outlineGeometry": measureOutlineGeometry(),
             "scenarios": reports], options: [.prettyPrinted, .sortedKeys])
         try data.write(to: folder.appendingPathComponent("recorder-performance.json"))
+    }
+
+    // Time the actual cache-miss path during shape changes separately from GPU
+    // compositing. Covers three cards at both HUD-scale extremes and Retina geometry;
+    // keeps today's path sampler and appearance intact. — GPT-6.1 Sol
+    private func measureOutlineGeometry() -> [[String: Any]] {
+        var results: [[String: Any]] = []
+        for scale: CGFloat in [0.5, 1] {
+            for resizing in [false, true] {
+                let traces = (0..<3).map { _ in RecorderCaptureOutlineTrace() }
+                var times: [Double] = []
+                var count = 0
+                for frame in 0..<240 {
+                    let started = ProcessInfo.processInfo.systemUptime
+                    let fraction = resizing ? CGFloat(frame % 60) / 59 : 1
+                    let size = CGSize(width: 324 + 776 * fraction, height: 40 + 280 * fraction)
+                    let pixels = RecorderCaptureOutlinePixels(localSize: size,
+                        frame: CGRect(x: 0.3, y: 0.7, width: size.width * scale, height: size.height * scale),
+                        displayScale: 2)
+                    let bounds = CGRect(origin: .zero, size: pixels.bounds.size)
+                    let center = CGPoint(x: bounds.midX, y: bounds.midY)
+                    for index in 0..<3 {
+                        let rect = bounds.insetBy(dx: pixels.width / 2, dy: pixels.width / 2)
+                        let path = index == 2
+                            ? NotchShape(topCornerRadius: 8 + 4 * fraction, bottomCornerRadius: 16 + 6 * fraction).path(in: rect)
+                            : RoundedRectangle(cornerRadius: 20 - 6 * fraction, style: .continuous).path(in: rect)
+                        let aligned = pixels.aligned(path)
+                        let samples = traces[index].samples(along: aligned, around: center)
+                        let gradient = Gradient(stops: samples.map {
+                            Gradient.Stop(color: RecorderNeonSpectrum.color(at: $0.clockwiseFraction - Double(frame) / 240),
+                                          location: $0.angularLocation)
+                        })
+                        if index == 2 { _ = pixels.aligned(path, omittingTopEdge: true) }
+                        count += gradient.stops.count
+                    }
+                    times.append((ProcessInfo.processInfo.systemUptime - started) * 1_000)
+                }
+                let sorted = times.sorted()
+                #expect(count == 240 * 3 * (RecorderCaptureOutlineTrace.sampleCount + 2))
+                results.append(["scenario": resizing ? "resizing" : "cached", "hudScale": scale,
+                    "panels": 3, "frames": times.count, "p95MillisecondsForThreeCards": sorted[227],
+                    "maxMillisecondsForThreeCards": sorted.last!])
+            }
+        }
+        return results
     }
 
     private func cpuSeconds() -> Double {
