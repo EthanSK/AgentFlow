@@ -67,7 +67,7 @@ if [ -f "$LEARNINGS_FILE" ]; then
     if (index(tolower($0), tolower(kw)) > 0) modern_matched = 1
     next
   }
-  after_marker && /^---$/ {
+  (after_marker || !modern_entry) && /^---$/ {
     if (inside_entry) {
       if (matched) {
         print "---"
@@ -83,7 +83,7 @@ if [ -f "$LEARNINGS_FILE" ]; then
     }
     next
   }
-  after_marker && inside_entry {
+  (after_marker || !modern_entry) && inside_entry {
     buffer = buffer $0 "\n"
     if (index(tolower($0), tolower(kw)) > 0) {
       matched = 1

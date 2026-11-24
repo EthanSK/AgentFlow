@@ -120,7 +120,7 @@ Create an [OpenAI API key](https://platform.openai.com/api-keys), enable API bil
 
 The extra voice-model hints are bounded. Dictionary terms can help recognition; recent Codex chat hints are optional and currently off in Ethan's setup. Selected text and screenshot references are assembled into the final message after recognition, not sent to the speech model. [Full setup](SETUP.md) distinguishes the app, key, macOS grants, optional browser bridge, context skill and mouse mapping.
 
-The recorder appears on every connected monitor, anchored to the screen bottom by default. A two-row version/build marker identifies the running release. Recordings can overlap with earlier transcriptions without mixing their text. A visible pause/resume button, typed-input undo/redo, History recovery and retry controls let you manage a session. Normal delivery uses the current keyboard-focused input; genuine delivery errors remain visible.
+The recorder appears on every connected monitor, anchored to the screen bottom by default. Version and build number appear on one line. Recordings can overlap with earlier transcriptions without mixing their text. A visible pause/resume button, typed-input undo/redo, History recovery and retry controls let you manage a session. Normal delivery uses the current keyboard-focused input; genuine delivery errors remain visible.
 
 ## YouTube and Chrome companion
 

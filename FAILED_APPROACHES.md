@@ -1,5 +1,17 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-24 — Keeping the old minimum frame outside a one-line version label — REJECTED
+
+The uninstalled initial546 layout at98c42107 combined the correct version/build
+text but retained the old28pt minimum frame outside fixedSize. The real compact
+Mini render clipped the final digit beneath Stop. Source958714b3 moves fixedSize
+outside that frame;13 affected native cases passed, and compact Mini/expanded
+Notch renders show the complete identifier separate from Stop. Keep the full
+identifier’s reported width; do not accept text correctness alone as proof of
+visible layout. Reconsider a narrower slot only with actual nonoverlapping
+rendered glyphs and control hit regions at the supported HUD sizes.
+
+
 ## 2026-11-24 — Treating queued synthetic wheel routing as a reliable full-suite fix — REJECTED
 
 The owned public window-associated wheel, normal AppKit queue and verified

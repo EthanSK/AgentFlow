@@ -1,5 +1,16 @@
 # Learnings
 
+---
+**Date:** 2026-11-24T22:25:09Z
+**Trigger:** Ethan requested removal of the crossed-out skip button, one-line version/build and a right-side Mode chooser.
+**Symptom:** The one-line recorder version painted under Stop in the compact native render.
+**Root cause:** The old28pt minimum frame remained outside fixedSize, so the full identifier could paint beyond its assigned slot. A single modifier-order change corrected the controlled render.
+**Fix:** Source958714b3 reserves the whole identifier with fixedSize outside its minimum frame. The same batch removes the skip-processing component and its HUD-only bindings/protocol shim, preserves real session/pipeline bypass, and moves the existing Mode chooser right. Ethan’s cloud icon is the configured Mode icon, not a separate voice/provider control.
+**Commit:** 958714b32b63e3b58c1a0a693985cfe7a2426c9c
+**Guard:** Source98c42107 passed270 named canonical native functions, including the entire121-function typing suite,22 waveform and10 outline cases. Final958714b3 passed13 affected layout/version functions and inspected compact Mini/expanded Notch renders. Signed universal546 was safely installed through the real5s warning, all-session cooperative Quit and verified rollback; entitlements, updater key, canonical readiness and protected settings passed. Exact-source hosted public qualification remains a separate pending gate.
+---
+
+
 ## 2026-11-24 — Bound asynchronous test completion by elapsed time
 
 The hosted build 545 full suite ran 1,061 functions in 54 suites. All six

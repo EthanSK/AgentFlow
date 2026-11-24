@@ -38,6 +38,28 @@ class CheckTests(unittest.TestCase):
         result = self.run_search("## Entry\nA plain fact.\n", "", "[a]")
         self.assertIn('no matching prior learnings for "[a]"', result)
 
+    def test_recorded_entry_before_modern_headings_is_searchable(self):
+        with tempfile.TemporaryDirectory(prefix="agentflow-learnings-test-") as folder:
+            root = pathlib.Path(folder)
+            (root / "LEARNINGS.md").write_text(
+                "# Learnings\n\n## Previous decision\nKeep this old fact.\n\n"
+                "(newest first)\n\n---\nAnother historical entry.\n---\n"
+            )
+            scripts = pathlib.Path(__file__).parent
+            subprocess.run([
+                "bash", str(scripts / "record.sh"), "--repo", folder,
+                "--symptom", "A unique [one-line] recorder decision.",
+                "--cause", "New verified evidence.", "--fix", "Keep the whole version visible.",
+                "--commit", "fixture",
+            ], check=True, capture_output=True, text=True)
+            result = subprocess.run([
+                "bash", str(scripts / "check.sh"), "[one-line]", folder,
+            ], check=True, capture_output=True, text=True).stdout
+            self.assertIn("New verified evidence.", result)
+            self.assertIn("Found 1 matching LEARNINGS.md entries", result)
+            self.assertNotIn("Keep this old fact.", result)
+            self.assertNotIn("Another historical entry.", result)
+
 
 if __name__ == "__main__":
     unittest.main()

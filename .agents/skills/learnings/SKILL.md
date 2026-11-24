@@ -158,9 +158,14 @@ test both Telegram identities, ordinary/unknown apps and complete archives throu
 the production pipeline, not a classifier fixture that endorses the regression.
 
 The keyword helper supports current `##`-headed entries and older delimited entries
-after `(newest first)`. Retest both with `python3 scripts/test-check.py` from this
+after `(newest first)`, plus new delimited entries before the first heading.
+Retest both layouts and the writer-to-search round trip with
+`python3 scripts/test-check.py` from this
 skill folder when changing its parser. Self-improved — 2026-09-27: the old parser
 silently skipped all newer headings; mixed-layout and literal-keyword fixtures now cover it.
+Self-improved — 2026-11-24: `record.sh` placed the newest one-line-version decision
+before the modern headings, but the lookup ignored it and returned only older
+evidence. The real writer/search regression now requires that new entry to be found.
 
 For upstream work, read `UPDATING.md` and treat upstream as a feature source, never a branch to merge wholesale. Audit in a disposable clone/worktree, obtain Ethan's approval for one user-visible feature, and manually port only that feature while preserving VoiceInk++'s destination, delivery, vocabulary, identity, and release guards.
 
