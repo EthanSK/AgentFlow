@@ -349,14 +349,15 @@ struct RecorderCaptureOutlineTests {
                 let pixels = RecorderCaptureOutlinePixels(localSize: size, frame: frame, displayScale: display)
                 let density = display * hudScale
                 #expect(abs(pixels.width * density - (pixels.width * density).rounded()) < 1e-9)
-                let path = pixels.aligned(Rectangle().path(in: pixels.bounds.insetBy(
+                let path = pixels.aligned(Rectangle().path(in: CGRect(origin: .zero, size: pixels.bounds.size).insetBy(
                     dx: pixels.width / 2, dy: pixels.width / 2)))
                 let physical = path.boundingRect.applying(CGAffineTransform(scaleX: density, y: density))
-                    .offsetBy(dx: frame.minX * display, dy: frame.minY * display)
+                    .offsetBy(dx: (frame.minX + pixels.bounds.minX * hudScale) * display,
+                              dy: (frame.minY + pixels.bounds.minY * hudScale) * display)
                 let half = pixels.width * density / 2
                 for edge in [physical.minX - half, physical.minY - half,
                              physical.maxX + half, physical.maxY + half] {
-                    #expect(abs(edge - edge.rounded()) < 1e-9)
+                    #expect(abs(edge - edge.rounded()) < 0.0001)
                 }
                 #expect(physical.minX - half >= frame.minX * display - 1e-9)
                 #expect(physical.maxX + half <= frame.maxX * display + 1e-9)

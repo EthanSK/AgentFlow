@@ -400,18 +400,11 @@ struct RecorderTypedInputTests {
             let before = scroll.contentView.bounds.origin.y
             let wheel = try #require(CGEvent(scrollWheelEvent2Source: nil, units: .pixel,
                 wheelCount: 1, wheel1: 80, wheel2: 0, wheel3: 0))
-            // This event is delivered directly to the known receiver, not posted
-            // through WindowServer. Keep its location in that receiver's window
-            // coordinates; CGEvent's public window-under-pointer hints do not bind
-            // NSEvent.windowNumber. — GPT-6.1 Sol
-            let mainScreen = try #require(NSScreen.screens.first)
-            wheel.location = CGPoint(x: point.x, y: mainScreen.frame.maxY - point.y)
-            wheel.flags = []
             let event = try #require(NSEvent(cgEvent: wheel))
             drag.scrollWheel(with: event)
             RunLoop.current.run(until: Date().addingTimeInterval(0.1))
             #expect(scroll.contentView.bounds.origin.y != before,
-                "scale=\(scale) flags=\(event.modifierFlags.rawValue) deltaY=\(event.scrollingDeltaY) deltaX=\(event.scrollingDeltaX) phase=\(event.phase.rawValue) eventWindow=\(event.windowNumber) location=\(event.locationInWindow) documentHeight=\(scroll.documentView?.frame.height ?? 0)")
+                "scale=\(scale) flags=\(event.modifierFlags.rawValue) deltaY=\(event.scrollingDeltaY) deltaX=\(event.scrollingDeltaX) phase=\(event.phase.rawValue) documentHeight=\(scroll.documentView?.frame.height ?? 0)")
             #expect(panel.frame.origin.x == 130 && clicks == 1)
         }
     }

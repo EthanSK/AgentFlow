@@ -52,11 +52,13 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
             let phase = reduceMotion ? 0 : RecorderCaptureOutlineStyle.flowPhase(at: timeline.date)
             GeometryReader { geometry in
                 let frame = geometry.frame(in: .global)
+                let pixels = RecorderCaptureOutlinePixels(
+                    localSize: geometry.size, frame: frame, displayScale: displayScale)
                 Canvas { context, size in
-                    let pixels = RecorderCaptureOutlinePixels(
-                        localSize: size, frame: frame, displayScale: displayScale)
                     drawBorder(in: context, size: size, phase: phase, pixels: pixels)
                 }
+                .frame(width: pixels.bounds.width, height: pixels.bounds.height)
+                .offset(x: pixels.bounds.minX, y: pixels.bounds.minY)
             }
         }
         .allowsHitTesting(false)
@@ -72,7 +74,7 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
 
         // The same shape in a slightly smaller rect keeps the tube parallel to the
         // card edge, including the Notch flares, without needing an insettable shape.
-        let tubePath = pixels.aligned(shape.path(in: pixels.bounds.insetBy(
+        let tubePath = pixels.aligned(shape.path(in: bounds.insetBy(
             dx: pixels.width / 2, dy: pixels.width / 2)))
         let center = CGPoint(x: bounds.midX, y: bounds.midY)
         let samples = trace.samples(along: tubePath, around: center)
@@ -108,13 +110,12 @@ struct RecorderCaptureOutlinePixels {
     let width: CGFloat
     let bounds: CGRect
     private let scale: CGFloat
-    private let origin: CGPoint
 
     init(localSize: CGSize, frame: CGRect, displayScale: CGFloat) {
         let hudScale = localSize.width > 0 ? frame.width / localSize.width : 1
         scale = max(0.01, hudScale * displayScale)
         width = max(1, (RecorderCaptureOutlineStyle.tubeWidth * scale).rounded()) / scale
-        origin = CGPoint(x: frame.minX * displayScale, y: frame.minY * displayScale)
+        let origin = CGPoint(x: frame.minX * displayScale, y: frame.minY * displayScale)
         let minimum = CGPoint(x: origin.x.rounded(.up), y: origin.y.rounded(.up))
         let maximum = CGPoint(x: (origin.x + localSize.width * scale).rounded(.down),
                               y: (origin.y + localSize.height * scale).rounded(.down))
@@ -127,8 +128,8 @@ struct RecorderCaptureOutlinePixels {
         let halfPixels = width * scale / 2
         func point(_ value: CGPoint) -> CGPoint {
             CGPoint(
-                x: ((value.x * scale + origin.x - halfPixels).rounded() + halfPixels - origin.x) / scale,
-                y: ((value.y * scale + origin.y - halfPixels).rounded() + halfPixels - origin.y) / scale)
+                x: ((value.x * scale - halfPixels).rounded() + halfPixels) / scale,
+                y: ((value.y * scale - halfPixels).rounded() + halfPixels) / scale)
         }
         var result = Path()
         path.forEach { element in
