@@ -6,75 +6,46 @@ import Testing
 @testable import VoiceInkPlusPlus
 
 private actor FakeVoiceSpeakerTransport: ChatGPTVoiceSpeakerTransport {
-    struct State: Sendable {
-        let call: ChatGPTVoiceCall
-        let isMuted: Bool?
-        var hasLiveControl = true
-    }
-
-    private var current: State?
-    private var posts: [Bool] = []
-    private var postChangesState = true
+    private var currentCall: ChatGPTVoiceCall?
+    private var posts: [ChatGPTVoiceCall] = []
     private var callReads = 0
+    private var shortcutConfigured: Bool
+    let attemptedAt = Date(timeIntervalSince1970: 42)
 
-    init(_ snapshot: State?) {
-        current = snapshot
+    init(_ call: ChatGPTVoiceCall?, shortcutConfigured: Bool = true) {
+        currentCall = call
+        self.shortcutConfigured = shortcutConfigured
     }
 
     func activeSpeakerCall() -> ChatGPTVoiceCall? {
         callReads += 1
-        return current?.call
+        return currentCall
     }
 
-    func postSpeakerToggle(for call: ChatGPTVoiceCall, mute: Bool) -> ChatGPTVoiceSpeakerPost {
-        guard let current, current.call == call, current.hasLiveControl,
-              current.isMuted != mute
-        else { return .skipped }
-        posts.append(mute)
-        if postChangesState, current.isMuted != nil {
-            self.current = .init(call: call, isMuted: mute)
-        }
-        return .posted(priorStateReadable: current.isMuted != nil)
+    func postSpeakerToggle(for call: ChatGPTVoiceCall) -> Date? {
+        guard currentCall == call, shortcutConfigured else { return nil }
+        posts.append(call)
+        return attemptedAt
     }
 
-    func setCurrent(_ snapshot: State?) { current = snapshot }
-    func ignorePostedShortcut() { postChangesState = false }
-    func postedStates() -> [Bool] { posts }
+    func setCurrentCall(_ call: ChatGPTVoiceCall?) { currentCall = call }
+    func configureShortcut() { shortcutConfigured = true }
+    func postedCalls() -> [ChatGPTVoiceCall] { posts }
     func callReadCount() -> Int { callReads }
 }
 
 struct ChatGPTVoiceCaptureSpeakerTests {
     private let call = ChatGPTVoiceCall(applicationPID: 42, sessionID: UUID())
 
-    @Test func readableManualSpeakerStateIsReportedWithoutAcquiringRestoreOwnership() async {
-        actor ObservedTransport: ChatGPTVoiceSpeakerTransport {
-            let observation: ChatGPTVoiceSpeakerObservation
-            private var calls = 0
-            init(_ observation: ChatGPTVoiceSpeakerObservation) { self.observation = observation }
-            func activeSpeakerCall() -> ChatGPTVoiceCall? { observation.call }
-            func postSpeakerToggle(for call: ChatGPTVoiceCall, mute: Bool) -> ChatGPTVoiceSpeakerPost {
-                calls += 1
-                return .observed(observation)
-            }
-            func count() -> Int { calls }
-        }
-        let observation = ChatGPTVoiceSpeakerObservation(call: call, isMuted: true, observedAt: Date())
-        let transport = ObservedTransport(observation)
-        let speaker = ChatGPTVoiceCaptureSpeaker(transport: transport)
-        #expect(await speaker.silenceForCapture() == .observed(observation))
-        #expect(await speaker.restoreAfterCapture() == .skipped)
-        #expect(await transport.count() == 1)
-    }
-
     @Test func disabledAutomaticSpeakerControlNeverReadsOrPosts() async {
-        let transport = FakeVoiceSpeakerTransport(.init(call: call, isMuted: false))
+        let transport = FakeVoiceSpeakerTransport(call)
         let speaker = ChatGPTVoiceCaptureSpeaker(transport: transport, automaticControlEnabled: false)
         for _ in 0..<3 {
             await speaker.silenceForCapture()
             await speaker.restoreAfterCapture()
         }
         #expect(await transport.callReadCount() == 0)
-        #expect(await transport.postedStates().isEmpty)
+        #expect(await transport.postedCalls().isEmpty)
     }
 
     @Test func productionEnablesRecordingOwnedAutomaticSpeakerControl() throws {
@@ -88,62 +59,53 @@ struct ChatGPTVoiceCaptureSpeakerTests {
         #expect(composition.contains("transport: transport"))
     }
 
-    @Test func aSingleRecordingOwnsAndRestoresItsSpeakerChange() async {
-        let transport = FakeVoiceSpeakerTransport(.init(call: call, isMuted: false))
-        let speaker = ChatGPTVoiceCaptureSpeaker(transport: transport)
-        await speaker.silenceForCapture()
-        await speaker.silenceForCapture()
-        await speaker.restoreAfterCapture()
-        await speaker.restoreAfterCapture()
-        #expect(await transport.postedStates() == [true, false])
-    }
-
-    @Test func alreadyMutedOrUnverifiedCallsAreLeftAlone() async {
-        for snapshot in [
-            FakeVoiceSpeakerTransport.State(call: call, isMuted: true),
-            FakeVoiceSpeakerTransport.State(call: call, isMuted: nil, hasLiveControl: false),
-            nil
-        ] {
-            let transport = FakeVoiceSpeakerTransport(snapshot)
-            let speaker = ChatGPTVoiceCaptureSpeaker(transport: transport)
-            await speaker.silenceForCapture()
-            await speaker.restoreAfterCapture()
-            #expect(await transport.postedStates().isEmpty)
+    @Test func productionSpeakerToggleOnlyUsesTheConfiguredShortcutAndSameCall() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent(
+            "VoiceInk/Services/ChatGPTVoiceCaptureMuteCoordinator.swift"), encoding: .utf8)
+        let start = try #require(source.range(of: "    func activeSpeakerCall()"))
+        let end = try #require(source.range(of: "    /// Reuses the existing bounded reader",
+                                            range: start.upperBound..<source.endIndex))
+        let dispatch = source[start.lowerBound..<end.lowerBound]
+        #expect(dispatch.contains("Self.configuredSpeakerShortcut()"))
+        #expect(dispatch.contains("Self.voiceCall(for: application) == call"))
+        #expect(dispatch.components(separatedBy: "Self.postTargetedShortcut(").count == 2)
+        for forbidden in ["readVoiceControls(", "speakerObservation(", "snapshot(", "activate("] {
+            #expect(!dispatch.contains(forbidden))
         }
     }
 
-    @Test func replacedCallOrManualUnsilenceDoesNotReceiveRestore() async {
-        for snapshot in [
-            FakeVoiceSpeakerTransport.State(call: .init(applicationPID: call.applicationPID, sessionID: UUID()), isMuted: true),
-            FakeVoiceSpeakerTransport.State(call: call, isMuted: false),
-            nil
-        ] {
-            let transport = FakeVoiceSpeakerTransport(.init(call: call, isMuted: false))
+    @Test func backgroundCallWithNoControlsGetsOneTogglePerCaptureBoundary() async {
+        let transport = FakeVoiceSpeakerTransport(call)
+        let speaker = ChatGPTVoiceCaptureSpeaker(transport: transport)
+        let posted = ChatGPTVoiceSpeakerPost.postedDirectly(call: call, attemptedAt: transport.attemptedAt)
+        #expect(await speaker.silenceForCapture() == posted)
+        #expect(await speaker.silenceForCapture() == .skipped)
+        #expect(await speaker.restoreAfterCapture() == posted)
+        #expect(await speaker.restoreAfterCapture() == .skipped)
+        #expect(await transport.postedCalls() == [call, call])
+    }
+
+    @Test func replacedOrEndedCallDoesNotReceiveRestore() async {
+        for nextCall in [ChatGPTVoiceCall(applicationPID: call.applicationPID, sessionID: UUID()), nil] {
+            let transport = FakeVoiceSpeakerTransport(call)
             let speaker = ChatGPTVoiceCaptureSpeaker(transport: transport)
             await speaker.silenceForCapture()
-            await transport.setCurrent(snapshot)
-            await speaker.restoreAfterCapture()
-            #expect(await transport.postedStates() == [true])
+            await transport.setCurrentCall(nextCall)
+            #expect(await speaker.restoreAfterCapture() == .skipped)
+            await transport.setCurrentCall(call)
+            #expect(await speaker.restoreAfterCapture() == .skipped)
+            #expect(await transport.postedCalls() == [call])
         }
     }
 
-    @Test func ignoredSilenceDoesNotSendAnInverseToggle() async {
-        let transport = FakeVoiceSpeakerTransport(.init(call: call, isMuted: false))
+    @Test func aMissingBindingDoesNotPostOrAcquireRestoreOwnership() async {
+        let transport = FakeVoiceSpeakerTransport(call, shortcutConfigured: false)
         let speaker = ChatGPTVoiceCaptureSpeaker(transport: transport)
-        await transport.ignorePostedShortcut()
-        await speaker.silenceForCapture()
-        await speaker.restoreAfterCapture()
-        #expect(await transport.postedStates() == [true])
-    }
-
-    @Test func unreadableSpeakersOnTheSameLiveCallGetOnePairedAttempt() async {
-        let transport = FakeVoiceSpeakerTransport(.init(call: call, isMuted: nil))
-        let speaker = ChatGPTVoiceCaptureSpeaker(transport: transport)
-        await speaker.silenceForCapture()
-        await speaker.silenceForCapture()
-        await speaker.restoreAfterCapture()
-        await speaker.restoreAfterCapture()
-        #expect(await transport.postedStates() == [true, false])
+        #expect(await speaker.silenceForCapture() == .skipped)
+        await transport.configureShortcut()
+        #expect(await speaker.restoreAfterCapture() == .skipped)
+        #expect(await transport.postedCalls().isEmpty)
     }
 
     @Test func speakerControlLabelsDescribeTheCurrentState() {

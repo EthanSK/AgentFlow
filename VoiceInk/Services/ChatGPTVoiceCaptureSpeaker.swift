@@ -17,6 +17,7 @@ struct ChatGPTVoiceSpeakerObservation: Equatable, Sendable, Codable {
 
 enum ChatGPTVoiceSpeakerPost: Equatable, Sendable, Codable {
     case skipped
+    case postedDirectly(call: ChatGPTVoiceCall, attemptedAt: Date)
     case observed(ChatGPTVoiceSpeakerObservation)
     case posted(priorStateReadable: Bool, attemptedAt: Date = .now,
                 observation: ChatGPTVoiceSpeakerObservation? = nil)
@@ -24,11 +25,7 @@ enum ChatGPTVoiceSpeakerPost: Equatable, Sendable, Codable {
 
 protocol ChatGPTVoiceSpeakerTransport: Sendable {
     func activeSpeakerCall() async -> ChatGPTVoiceCall?
-    // Check the current state at the action boundary. Another actor may
-    // already have reached the requested state.
-    func postSpeakerToggle(
-        for call: ChatGPTVoiceCall, mute: Bool
-    ) async -> ChatGPTVoiceSpeakerPost
+    func postSpeakerToggle(for call: ChatGPTVoiceCall) async -> Date?
 }
 
 actor ChatGPTVoiceCaptureSpeaker {
@@ -50,19 +47,14 @@ actor ChatGPTVoiceCaptureSpeaker {
         guard let call = await transport.activeSpeakerCall() else {
             return .skipped
         }
-        // Preserve manual unsilence and avoid another toggle after a rapid
-        // successor takes over the same still-owned call.
+        // A rapid successor inherits the outstanding toggle on the same call.
         if ownedCall == call { return .skipped }
         ownedCall = nil
-        // Ethan wants one attempt even if Voice hides its speaker control.
-        // Own only our own dispatch to a proven call. Unknown state is never
-        // evidence that the toggle applied in the intended direction.
-        let posted = await transport.postSpeakerToggle(for: call, mute: true)
-        guard case .posted(let readable, _, _) = posted else { return posted }
+        guard let attemptedAt = await transport.postSpeakerToggle(for: call) else { return .skipped }
 
         ownedCall = call
-        logger.notice("Posted one Codex Voice speaker silence attempt; prior state readable=\(readable, privacy: .public)")
-        return posted
+        logger.notice("Posted one Codex Voice speaker toggle for capture start")
+        return .postedDirectly(call: call, attemptedAt: attemptedAt)
     }
 
     @discardableResult
@@ -70,13 +62,10 @@ actor ChatGPTVoiceCaptureSpeaker {
         guard automaticControlEnabled else { return .skipped }
         guard let call = ownedCall else { return .skipped }
         ownedCall = nil
-        let posted = await transport.postSpeakerToggle(for: call, mute: false)
-        guard case .posted(let readable, _, _) = posted else {
-            logger.notice("Codex Voice speaker restore skipped; call changed, output already on, or shortcut unavailable")
-            return posted
-        }
-        logger.notice("Posted one Codex Voice speaker restore attempt; prior state readable=\(readable, privacy: .public)")
-        return posted
+        guard let attemptedAt = await transport.postSpeakerToggle(for: call) else { return .skipped }
+
+        logger.notice("Posted one Codex Voice speaker toggle for capture end")
+        return .postedDirectly(call: call, attemptedAt: attemptedAt)
     }
 }
 

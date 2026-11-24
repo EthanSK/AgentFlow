@@ -99,8 +99,8 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
             localPairedSourceID: PairedVoiceMuteBroadcaster.shared.sourceID,
             pairedActivity: .shared,
             // Ethan explicitly asked to turn automatic speaker mute/restore back on
-            // on 2026-11-22. Reuse the recording-owned same-call service and its
-            // manual-state checks. A dispatched shortcut is still only an attempt.
+            // on 2026-11-22. The recording-owned service pairs direct toggles
+            // on the same call. A dispatched shortcut is still only an attempt.
             speaker: ChatGPTVoiceCaptureSpeaker(transport: transport, automaticControlEnabled: true),
             events: CodexVoiceCaptureEventSender.shared
         )
@@ -373,11 +373,7 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
 
     private func beginCapture(_ lease: ChatGPTVoiceCaptureMuteLease) async {
         appliedLease = lease
-        // Read the microphone before either channel changes. Codex can stop
-        // answering AX just after its mic shortcut; racing that shortcut with
-        // the speaker check made the real speaker attempt disappear. Finishing
-        // the speaker operation first avoids that race. Carry the existing
-        // microphone snapshot through this one transition so a speaker repaint
+        // Keep the microphone snapshot before either toggle so a repaint
         // cannot turn an already-muted mic into the unknown-state fallback.
         let before = await transport.snapshot()
         let speakerPost = await speaker?.silenceForCapture()
@@ -393,8 +389,7 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
         guard appliedLease == lease else { return }
         appliedLease = nil
         // Preserve a readable manual mic-unmute before the speaker action can
-        // repaint Voice, and restore speakers before the mic shortcut can make
-        // their controls unreadable. This is one fresh transition snapshot,
+        // repaint Voice. This is one fresh microphone snapshot,
         // never cached state for a later capture/call. Paired owners still own
         // only the microphone and keep the same last-owner restoration rule.
         let before = appliedPairedOwners.isEmpty && ownedMicrophoneMute != nil
@@ -623,53 +618,30 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTV
     }
 
     func activeSpeakerCall() async -> ChatGPTVoiceCall? {
-        await Task.detached(priority: .userInitiated) { [logger] () -> ChatGPTVoiceCall? in
-            guard AXIsProcessTrusted(),
-                  await Self.configuredSpeakerShortcut() != nil,
-                  let application = Self.expectedApplication()
-            else {
-                logger.notice("Speaker preflight skipped: application, Accessibility or configured shortcut unavailable")
-                return nil
-            }
-            let call = Self.voiceCall(for: application)
-            if call == nil { logger.notice("Speaker preflight skipped: no uniquely identified Voice call") }
-            return call
+        await Task.detached(priority: .userInitiated) {
+            Self.expectedApplication().flatMap { Self.voiceCall(for: $0) }
         }.value
     }
 
-    func postSpeakerToggle(
-        for call: ChatGPTVoiceCall, mute: Bool
-    ) async -> ChatGPTVoiceSpeakerPost {
-        await Task.detached(priority: .userInitiated) { [logger] () -> ChatGPTVoiceSpeakerPost in
-            // Resolve layout before the fresh controls/call checks, so awaiting the
-            // main-thread input-source API cannot open a gap after those checks.
+    func postSpeakerToggle(for call: ChatGPTVoiceCall) async -> Date? {
+        await Task.detached(priority: .userInitiated) { [logger] () -> Date? in
+            // Ethan asked to send the configured speaker shortcut directly.
+            // The Voice chat can be in the background with no visible controls.
+            // Resolve the chord first, then recheck the call at dispatch: a new
+            // call can reuse this PID. Accessibility permission is checked by the sender.
             guard let shortcut = await Self.configuredSpeakerShortcut(),
                   let application = Self.expectedApplication(),
-                  application.processIdentifier == call.applicationPID,
-                  mute || Self.voiceCall(for: application) == call
-            else { return .skipped }
-            let controls = Self.readVoiceControls(applicationPID: call.applicationPID, channel: .speaker)
-            let observedAt = Date()
-            logger.notice("Speaker control read: mic=\(controls.microphoneFound, privacy: .public) end=\(controls.endFound, privacy: .public) speaker=\(controls.speakerFound, privacy: .public) disabledSpeaker=\(controls.disabledSpeakerFound, privacy: .public) readable=\(controls.isMuted != nil, privacy: .public) nodes=\(controls.visitedCount, privacy: .public) nativeSearches=\(controls.nativeSearchCount, privacy: .public) truncated=\(controls.truncated, privacy: .public) hostHidden=\(application.isHidden, privacy: .public)")
-            // A saved call alone is insufficient. For hidden speaker state,
-            // require independent evidence from a live native Voice control.
-            guard Self.voiceCall(for: application) == call else { return .skipped }
-            let observation = controls.isMuted.map {
-                ChatGPTVoiceSpeakerObservation(call: call, isMuted: $0, observedAt: observedAt)
+                  Self.voiceCall(for: application) == call
+            else {
+                logger.notice("Codex Voice speaker shortcut skipped: binding unavailable or call no longer matches")
+                return nil
             }
-            guard controls.voiceControlFound, controls.isMuted != mute else {
-                logger.notice("Speaker shortcut skipped: liveControl=\(controls.voiceControlFound, privacy: .public) matchingState=\(controls.isMuted == mute, privacy: .public) nodes=\(controls.visitedCount, privacy: .public) nativeSearches=\(controls.nativeSearchCount, privacy: .public) truncated=\(controls.truncated, privacy: .public)")
-                return observation.map(ChatGPTVoiceSpeakerPost.observed) ?? .skipped
-            }
-            // Check session identity again after the AX read. A new Voice call
-            // can appear in the same desktop process.
             let attemptedAt = Date()
-            guard Self.voiceCall(for: application) == call,
-                  Self.postTargetedShortcut(shortcut, applicationPID: call.applicationPID)
-            else { return .skipped }
-            logger.notice("Posted one Codex Voice speaker shortcut toward muted=\(mute, privacy: .public) call=\(call.sessionID.uuidString, privacy: .public) pid=\(call.applicationPID, privacy: .public); applied state is unverified")
-            return .posted(priorStateReadable: controls.isMuted != nil, attemptedAt: attemptedAt,
-                           observation: observation)
+            guard Self.postTargetedShortcut(shortcut, applicationPID: call.applicationPID) else {
+                logger.error("Could not post the targeted Codex Voice speaker shortcut pid=\(call.applicationPID, privacy: .public)")
+                return nil
+            }
+            return attemptedAt
         }.value
     }
 

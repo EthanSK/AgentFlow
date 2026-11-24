@@ -6,17 +6,15 @@ import Testing
 // These transports exercise real coordinator ownership without touching a Voice call.
 private actor CaptureBoundarySpeakerTransport: ChatGPTVoiceSpeakerTransport {
     let call: ChatGPTVoiceCall
-    private var muted = false
-    private var posts: [Bool] = []
+    private var posts: [ChatGPTVoiceCall] = []
     init(call: ChatGPTVoiceCall) { self.call = call }
     func activeSpeakerCall() -> ChatGPTVoiceCall? { call }
-    func postSpeakerToggle(for call: ChatGPTVoiceCall, mute: Bool) -> ChatGPTVoiceSpeakerPost {
-        guard call == self.call, muted != mute else { return .skipped }
-        muted = mute
-        posts.append(mute)
-        return .posted(priorStateReadable: true)
+    func postSpeakerToggle(for call: ChatGPTVoiceCall) -> Date? {
+        guard call == self.call else { return nil }
+        posts.append(call)
+        return Date()
     }
-    func postedStates() -> [Bool] { posts }
+    func postCount() -> Int { posts.count }
 }
 
 private actor FakeChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport {
@@ -76,19 +74,17 @@ private actor FakeChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport {
     }
 }
 
-// Models the real failure: a successful toggle can temporarily hide both AX
-// controls. Read both channels before the microphone action, without a timer,
-// retry, live call or a second source of mute state in the coordinator.
+// A successful toggle can temporarily hide the microphone control. Keep its
+// original snapshot protection even though speaker dispatch uses no controls.
 private actor RepaintingVoiceTransport: ChatGPTVoiceMuteTransport, ChatGPTVoiceSpeakerTransport {
     let call = ChatGPTVoiceCall(applicationPID: 42, sessionID: UUID())
     private var microphoneMuted: Bool
-    private var speakerMuted: Bool
+    private var nextSpeakerToggleIsStart = true
     private var controlsReadable = true
     private var commands: [String] = []
 
-    init(microphoneMuted: Bool = false, speakerMuted: Bool = false) {
+    init(microphoneMuted: Bool = false) {
         self.microphoneMuted = microphoneMuted
-        self.speakerMuted = speakerMuted
     }
 
     func snapshot() -> ChatGPTVoiceInputSnapshot? {
@@ -115,12 +111,12 @@ private actor RepaintingVoiceTransport: ChatGPTVoiceMuteTransport, ChatGPTVoiceS
 
     func activeSpeakerCall() -> ChatGPTVoiceCall? { call }
 
-    func postSpeakerToggle(for call: ChatGPTVoiceCall, mute: Bool) -> ChatGPTVoiceSpeakerPost {
-        guard self.call == call, controlsReadable, speakerMuted != mute else { return .skipped }
-        commands.append(mute ? "speaker mute" : "speaker restore")
-        speakerMuted.toggle()
+    func postSpeakerToggle(for call: ChatGPTVoiceCall) -> Date? {
+        guard self.call == call else { return nil }
+        commands.append(nextSpeakerToggleIsStart ? "speaker mute" : "speaker restore")
+        nextSpeakerToggleIsStart.toggle()
         controlsReadable = false
-        return .posted(priorStateReadable: true)
+        return Date()
     }
 
     func revealControls(manualMicrophoneMuted: Bool? = nil) {
@@ -274,13 +270,12 @@ struct ChatGPTVoiceCaptureMuteCoordinatorTests {
         }
     }
 
-    @Test func speakerChecksAndRestorationPrecedeTheMicrophoneRepaint() async {
+    @Test func speakerShortcutsPairEvenWhenTheMicrophoneRepaintHidesControls() async {
         let transport = RepaintingVoiceTransport()
         let coordinator = ChatGPTVoiceCaptureMuteCoordinator(
             transport: transport, speaker: ChatGPTVoiceCaptureSpeaker(transport: transport))
         let lease = await coordinator.prepareForCapture()
         #expect(await transport.postedCommands() == ["speaker mute", "mic mute"])
-        await transport.revealControls()
         await coordinator.releaseCapture(lease)
         await coordinator.waitForPendingTransitionsForTesting()
         #expect(await transport.postedCommands() == ["speaker mute", "mic mute", "speaker restore", "mic restore"])
@@ -308,17 +303,6 @@ struct ChatGPTVoiceCaptureMuteCoordinatorTests {
         #expect(await transport.postedCommands() == ["speaker mute", "mic mute", "speaker restore"])
     }
 
-    @Test func manualSpeakerMuteRemainsUnownedAcrossTheOrderedTransition() async {
-        let transport = RepaintingVoiceTransport(speakerMuted: true)
-        let coordinator = ChatGPTVoiceCaptureMuteCoordinator(
-            transport: transport, speaker: ChatGPTVoiceCaptureSpeaker(transport: transport))
-        let lease = await coordinator.prepareForCapture()
-        await transport.revealControls()
-        await coordinator.releaseCapture(lease)
-        await coordinator.waitForPendingTransitionsForTesting()
-        #expect(await transport.postedCommands() == ["mic mute", "mic restore"])
-    }
-
     @Test func speakerRestoresAcrossCaptureOffResumeAndFinalCompletion() async {
         let transport = FakeChatGPTVoiceMuteTransport(snapshot: voice(.listening))
         let speakers = CaptureBoundarySpeakerTransport(call: .init(applicationPID: pid, sessionID: sessionID))
@@ -331,7 +315,7 @@ struct ChatGPTVoiceCaptureMuteCoordinatorTests {
             await coordinator.releaseCapture(lease)
             await coordinator.waitForPendingTransitionsForTesting()
         }
-        #expect(await speakers.postedStates() == [true, false, true, false, true, false])
+        #expect(await speakers.postCount() == 6)
     }
 
     @Test func staleCaptureOffCannotRestoreSpeakersDuringANewerCapture() async {
@@ -343,10 +327,10 @@ struct ChatGPTVoiceCaptureMuteCoordinatorTests {
         let current = await coordinator.prepareForCapture()
         await coordinator.releaseCapture(older)
         await coordinator.waitForPendingTransitionsForTesting()
-        #expect(await speakers.postedStates() == [true])
+        #expect(await speakers.postCount() == 1)
         await coordinator.releaseCapture(current)
         await coordinator.waitForPendingTransitionsForTesting()
-        #expect(await speakers.postedStates() == [true, false])
+        #expect(await speakers.postCount() == 2)
     }
 
     @Test func activeVoiceIsMutedAndOwnedThenRestored() async {
