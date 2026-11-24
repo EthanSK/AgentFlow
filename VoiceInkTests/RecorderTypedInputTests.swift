@@ -418,12 +418,12 @@ struct RecorderTypedInputTests {
             let event = try #require(NSEvent(cgEvent: wheel))
             try #require(event.windowNumber == panel.windowNumber)
             // Pump this owned event through AppKit's queue, as a physical wheel
-            // arrives. Direct dispatch leaves NSApp.currentEvent on a prior key
-            // or drag from another fixture.
+            // arrives, so dispatch has this wheel as the application's current event.
             NSApp.postEvent(event, atStart: true)
             let queued = try #require(NSApp.nextEvent(matching: .scrollWheel,
                 until: Date().addingTimeInterval(1), inMode: .default, dequeue: true))
             try #require(queued.windowNumber == panel.windowNumber)
+            try #require(NSApp.currentEvent === queued)
             NSApp.sendEvent(queued)
             RunLoop.current.run(until: Date().addingTimeInterval(0.1))
             #expect(scroll.contentView.bounds.origin.y != before,
