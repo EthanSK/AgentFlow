@@ -350,7 +350,7 @@ struct RecorderTypedInputTests {
         #expect(session.liveSelectionReferences.filter(\.isTypedText).count == 1)
     }
 
-    @Test @MainActor func transcriptDragMovesPanelWithoutBreakingClickOrScroll() async throws {
+    @Test @MainActor func transcriptDragMovesPanelWithoutBreakingClickOrScroll() throws {
         @MainActor func dragView(in view: NSView) -> RecorderPanelDragView? {
             if let drag = view as? RecorderPanelDragView { return drag }
             for child in view.subviews {
@@ -370,7 +370,7 @@ struct RecorderTypedInputTests {
             panel.contentView = host
             panel.orderFrontRegardless()
             host.layoutSubtreeIfNeeded()
-            try await Task.sleep(for: .milliseconds(100))
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
             host.layoutSubtreeIfNeeded()
             let drag = try #require(dragView(in: host))
             let scroll = try #require(drag.enclosingScrollView)
@@ -402,13 +402,7 @@ struct RecorderTypedInputTests {
                 wheelCount: 1, wheel1: 80, wheel2: 0, wheel3: 0))
             let event = try #require(NSEvent(cgEvent: wheel))
             drag.scrollWheel(with: event)
-            // Let AppKit finish real scroll work while yielding the test's main
-            // actor. The assertion still requires the same actual clip-view move.
-            // — GPT-6.1 Sol
-            let deadline = ContinuousClock.now + .seconds(1)
-            while scroll.contentView.bounds.origin.y == before && ContinuousClock.now < deadline {
-                try await Task.sleep(for: .milliseconds(10))
-            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
             #expect(scroll.contentView.bounds.origin.y != before,
                 "scale=\(scale) flags=\(event.modifierFlags.rawValue) deltaY=\(event.scrollingDeltaY) deltaX=\(event.scrollingDeltaX) phase=\(event.phase.rawValue) documentHeight=\(scroll.documentView?.frame.height ?? 0)")
             #expect(panel.frame.origin.x == 130 && clicks == 1)
