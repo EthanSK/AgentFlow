@@ -17,12 +17,18 @@ jobs:
     permissions:
       contents: write
     env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
       GH_TOKEN: ${{ github.token }}
       AGENTFLOW_NOTARY_PROFILE: ReleaseCI
       SPARKLE_ACCOUNT: com.ethansk.AgentFlow
     steps:
       - uses: actions/checkout@v4
         with: {persist-credentials: false}
+      - name: Show the selected Swift toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          uname -m
       - name: Prepare pinned speech dependency
         run: make check whisper
       - name: Fetch verified Sparkle tools
