@@ -539,9 +539,10 @@ struct MicrophoneWaveformTests {
             #expect(reference.samples.count > 3 && reference.samples.count < 10_000)
             return reference
         }
-        let samples = (0..<80).map { index in
-            WaveformReplayReference.Sample(at: Double(index) * 0.03,
-                rmsDb: index % 20 < 8 ? -70 : (index % 20 < 14 ? -34 : -15))
+        let samples: [WaveformReplayReference.Sample] = (0..<80).map { index in
+            let phase = index % 20
+            let decibels: Float = phase < 8 ? -70 : (phase < 14 ? -34 : -15)
+            return WaveformReplayReference.Sample(at: Double(index) * 0.03, rmsDb: decibels)
         }
         return WaveformReplayReference(seconds: 2.4, samples: samples)
     }
