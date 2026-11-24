@@ -17,7 +17,7 @@ import SwiftUI
 /// — GPT-6.1 Sol
 struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
     var shape: OutlineShape
-    /// Formerly `topEdgeFade`: the Notch keeps its open top with a sharp clip,
+    /// Formerly `topEdgeFade`: the Notch omits its closing top segment,
     /// without an opacity gradient into the black surface. Mini stays a closed ring. — GPT-6.1 Sol
     var omitsTopEdge = false
 
@@ -74,8 +74,8 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
 
         // The same shape in a slightly smaller rect keeps the tube parallel to the
         // card edge, including the Notch flares, without needing an insettable shape.
-        let tubePath = pixels.aligned(shape.path(in: bounds.insetBy(
-            dx: pixels.width / 2, dy: pixels.width / 2)))
+        let insetPath = shape.path(in: bounds.insetBy(dx: pixels.width / 2, dy: pixels.width / 2))
+        let tubePath = pixels.aligned(insetPath)
         let center = CGPoint(x: bounds.midX, y: bounds.midY)
         let samples = trace.samples(along: tubePath, around: center)
         guard !samples.isEmpty else { return }
@@ -89,14 +89,8 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
             }),
             center: center
         )
-        context.drawLayer { layer in
-            if omitsTopEdge {
-                let top = pixels.width
-                layer.clip(to: Path(CGRect(x: 0, y: top, width: size.width,
-                                          height: max(0, size.height - top))))
-            }
-            layer.stroke(tubePath, with: tube, lineWidth: pixels.width)
-        }
+        let strokePath = omitsTopEdge ? pixels.aligned(insetPath, omittingTopEdge: true) : tubePath
+        context.stroke(strokePath, with: tube, lineWidth: pixels.width)
     }
 }
 
@@ -124,18 +118,28 @@ struct RecorderCaptureOutlinePixels {
                         height: max(0, maximum.y - minimum.y) / scale)
     }
 
-    func aligned(_ path: Path) -> Path {
+    func aligned(_ path: Path, omittingTopEdge: Bool = false) -> Path {
         let halfPixels = width * scale / 2
         func point(_ value: CGPoint) -> CGPoint {
             CGPoint(
                 x: ((value.x * scale - halfPixels).rounded() + halfPixels) / scale,
                 y: ((value.y * scale - halfPixels).rounded() + halfPixels) / scale)
         }
+        let top = path.boundingRect.minY
         var result = Path()
         path.forEach { element in
             switch element {
             case .move(let p): result.move(to: point(p))
-            case .line(let p): result.addLine(to: point(p))
+            case .line(let p):
+                // NotchShape closes its U with one explicit line back to the top.
+                // Omit that segment rather than clipping its antialiased pixels,
+                // which leaked a faint horizontal line after HUD resampling.
+                // Found and fixed by GPT-6.1 Sol.
+                if omittingTopEdge && abs(p.y - top) < 0.0001 {
+                    result.move(to: point(p))
+                } else {
+                    result.addLine(to: point(p))
+                }
             case .quadCurve(let p, let c): result.addQuadCurve(to: point(p), control: point(c))
             case .curve(let p, let c1, let c2):
                 result.addCurve(to: point(p), control1: point(c1), control2: point(c2))

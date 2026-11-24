@@ -412,6 +412,7 @@ struct RecorderCaptureOutlineTests {
                 #expect((edges.min() ?? 0) > 0.8, "\(style) scale=\(scale) edges=\(edges)")
                 #expect((edges.max() ?? 0) - (edges.min() ?? 0) < 0.02,
                         "\(style) scale=\(scale) edges=\(edges)")
+                if style == "notch" { #expect(top < 0.01, "Top must stay open at scale=\(scale): \(top)") }
                 if let directory = ProcessInfo.processInfo.environment["VIPP_OUTLINE_SNAPSHOT_DIR"] {
                     let data = try #require(bitmap.representation(using: .png, properties: [:]))
                     try data.write(to: URL(fileURLWithPath: directory).appendingPathComponent(
