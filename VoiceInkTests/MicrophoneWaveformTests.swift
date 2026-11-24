@@ -601,8 +601,12 @@ struct MicrophoneWaveformTests {
             for x in stride(from: 0, to: min(first.pixelsWide, second.pixelsWide), by: 2) {
                 guard let a = first.colorAt(x: x, y: y)?.usingColorSpace(.sRGB),
                       let b = second.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
-                let difference = abs(a.redComponent - b.redComponent) + abs(a.greenComponent - b.greenComponent)
-                    + abs(a.blueComponent - b.blueComponent) + abs(a.alphaComponent - b.alphaComponent)
+                // Transparent pixels can retain different hidden RGB after a redraw.
+                // Compare visible, premultiplied colour and alpha. — GPT-6.1 Sol
+                let difference = abs(a.redComponent * a.alphaComponent - b.redComponent * b.alphaComponent)
+                    + abs(a.greenComponent * a.alphaComponent - b.greenComponent * b.alphaComponent)
+                    + abs(a.blueComponent * a.alphaComponent - b.blueComponent * b.alphaComponent)
+                    + abs(a.alphaComponent - b.alphaComponent)
                 if difference > 0.3 {
                     region.include(x: CGFloat(x) / scaleX, y: CGFloat(y) / scaleY)
                 }
