@@ -417,10 +417,10 @@ struct RecorderTypedInputTests {
             wheel.setIntegerValueField(.scrollWheelEventDeltaAxis1, value: 80)
             let event = try #require(NSEvent(cgEvent: wheel))
             try #require(event.windowNumber == panel.windowNumber)
-            drag.scrollWheel(with: event)
+            NSApp.sendEvent(event)
             RunLoop.current.run(until: Date().addingTimeInterval(0.1))
             #expect(scroll.contentView.bounds.origin.y != before,
-                "scale=\(scale) flags=\(event.modifierFlags.rawValue) deltaY=\(event.scrollingDeltaY) deltaX=\(event.scrollingDeltaX) phase=\(event.phase.rawValue) documentHeight=\(scroll.documentView?.frame.height ?? 0)")
+                "scale=\(scale) window=\(event.windowNumber) location=\(event.locationInWindow) scrollFrame=\(scroll.convert(scroll.bounds, to: nil)) flags=\(event.modifierFlags.rawValue) deltaY=\(event.scrollingDeltaY) deltaX=\(event.scrollingDeltaX) phase=\(event.phase.rawValue) documentHeight=\(scroll.documentView?.frame.height ?? 0)")
             #expect(panel.frame.origin.x == 130 && clicks == 1)
         }
     }
