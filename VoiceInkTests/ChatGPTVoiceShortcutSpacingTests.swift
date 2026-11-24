@@ -25,7 +25,7 @@ private actor ShortcutTestGap {
             try Task.checkCancellation()
             waits.append(seconds)
             if heldNumbers.remove(waits.count) != nil {
-                try await withCheckedThrowingContinuation { continuation in
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                     if Task.isCancelled { continuation.resume(throwing: CancellationError()) }
                     else { pending = (seconds, continuation) }
                 }
