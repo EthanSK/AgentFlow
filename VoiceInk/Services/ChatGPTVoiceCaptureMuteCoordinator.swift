@@ -633,7 +633,7 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
                     logger.notice("Voice shortcut gap cancelled; no second command posted")
                     return false
                 }
-                logger.notice("Voice shortcut gap target=\(String(describing: target), privacy: .public) requestedMs=\(remaining * 1000, privacy: .public) waitedMs=\((shortcutUptime() - started) * 1000, privacy: .public)")
+                logger.notice("Voice shortcut gap target=\(String(describing: target), privacy: .public) requestedMs=\(remaining * 1000, privacy: .public) waitedMs=\((self.shortcutUptime() - started) * 1000, privacy: .public)")
             }
         }
         return !Task.isCancelled
