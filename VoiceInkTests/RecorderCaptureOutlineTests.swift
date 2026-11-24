@@ -247,11 +247,10 @@ struct RecorderCaptureOutlineTests {
         let size = CGSize(width: 500, height: 80)
         for reduced in [false, true] {
             let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
-            let root = RecorderCaptureOutline(shape: shape)
+            let root = RecorderCaptureOutline(shape: shape, reduceMotionForPreview: reduced)
                 .frame(width: size.width, height: size.height)
                 .background(Color.black)
                 .clipShape(shape)
-                .environment(\.accessibilityReduceMotion, reduced)
             let panel = NSPanel(contentRect: NSRect(origin: .zero, size: size),
                 styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
             let host = NSHostingView(rootView: root)
@@ -269,8 +268,8 @@ struct RecorderCaptureOutlineTests {
                 if let directory = ProcessInfo.processInfo.environment["VIPP_OUTLINE_SNAPSHOT_DIR"] {
                     let folder = URL(fileURLWithPath: directory, isDirectory: true)
                     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                    try #require(bitmap.representation(using: .png, properties: [:])).write(to:
-                        folder.appendingPathComponent("\(reduced ? "reduced-motion" : "flow")-frame-\(frame).png"))
+                    let data = try #require(bitmap.representation(using: .png, properties: [:]))
+                    try data.write(to: folder.appendingPathComponent("\(reduced ? "reduced-motion" : "flow")-frame-\(frame).png"))
                 }
             }
             var changed = 0
@@ -316,8 +315,7 @@ struct RecorderCaptureOutlineTests {
                     styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
                 panel.isOpaque = false
                 panel.backgroundColor = .clear
-                let host = NSHostingView(rootView: card.frame(width: width, height: 300)
-                    .environment(\.accessibilityReduceMotion, true))
+                let host = NSHostingView(rootView: card.frame(width: width, height: 300))
                 panel.contentView = host
                 panel.orderFrontRegardless()
                 defer { panel.orderOut(nil); panel.close() }
@@ -329,8 +327,8 @@ struct RecorderCaptureOutlineTests {
                 if let directory = ProcessInfo.processInfo.environment["VIPP_OUTLINE_SNAPSHOT_DIR"] {
                     let folder = URL(fileURLWithPath: directory, isDirectory: true)
                     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-                    try #require(bitmap.representation(using: .png, properties: [:])).write(to:
-                        folder.appendingPathComponent("\(style)-\(name)-appearance.png"))
+                    let data = try #require(bitmap.representation(using: .png, properties: [:]))
+                    try data.write(to: folder.appendingPathComponent("\(style)-\(name)-appearance.png"))
                 }
             }
         }

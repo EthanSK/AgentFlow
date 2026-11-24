@@ -27,7 +27,12 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
     /// The Mini card floats freely, so it keeps a closed ring. — Claude Opus 5.5
     var topEdgeFade: CGFloat = 0
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    // macOS exposes Reduce Motion as a read-only environment value. Hosted
+    // appearance previews can exercise its static branch without changing the
+    // user's system accessibility preference; real panels leave this nil.
+    var reduceMotionForPreview: Bool? = nil
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    private var reduceMotion: Bool { reduceMotionForPreview ?? systemReduceMotion }
     @State private var trace = RecorderCaptureOutlineTrace()
     @State private var ignition: Double = 0
     @State private var ignitionTask: Task<Void, Never>?
