@@ -20,7 +20,7 @@
 
 The app includes an Intel build, but local models are not reliable on Intel Macs; use a cloud transcription provider there. Cloud providers require your own account, key and any usage charges. Apple-silicon Macs can use the downloaded local model without a provider key.
 
-Updates are manual. Optional daily checks read this repository's Agent Flow releases, not upstream VoiceInk; they never replace a running app.
+Updates are manual. Optional daily checks read this repository's Agent Flow releases; they never replace a running app.
 
 ## Real-time context
 
@@ -84,7 +84,7 @@ The **Primary button** means your normal recording shortcut. The **Next button**
 
 | Press | When | Text goes to |
 | --- | --- | --- |
-| Primary | While recording | The input focused when the text arrives, like base VoiceInk |
+| Primary | While recording | The input focused when the text arrives |
 | Next | While recording | No action; recording-start input capture is disabled |
 | Next | While transcribing, after a Primary stop | **Second chance:** the input focused when you press Next |
 
@@ -146,8 +146,6 @@ cd AgentFlow
 
 The first-use installer turns off macOS **Show Floating Thumbnail** so screenshots save immediately, builds an ad-hoc signed app in `~/Applications`, opens it, and refuses to overwrite an existing Agent Flow installation. `./scripts/install-first-use.sh --all` also installs the included YouTube helper, its login LaunchAgent, and the shared Codex/Claude Code context skill. Chrome extension loading, macOS permissions, provider keys, physical mouse mapping and Agentic Mouse remain separate user choices; see the [full setup and verification guide](SETUP.md). `make local` builds to `build.noindex/AgentFlow.app`; it refuses an existing output. [BUILDING.md](BUILDING.md) covers prerequisites and troubleshooting.
 
-The upstream `voiceink` Homebrew cask and downloads install VoiceInk, not Agent Flow.
-
 ## Documentation
 
 - [Install the complete, optional-component setup](SETUP.md)
@@ -161,10 +159,8 @@ The upstream `voiceink` Homebrew cask and downloads install VoiceInk, not Agent 
 - [Review update guidance](UPDATING.md)
 - [Agent Flow on GitHub](https://github.com/EthanSK/AgentFlow)
 
-## Origin and license
+## License
 
-Agent Flow is Ethan SK's personal fork of [VoiceInk](https://github.com/Beingpax/VoiceInk) by [Pax/Beingpax](https://github.com/Beingpax), shared in public. The native macOS foundation, model integrations and much of the app come from VoiceInk; Agent Flow adds interleaved context, destination controls, overlapping recordings and recorder UI changes. Contributor constraints live in [AGENTS.md](AGENTS.md).
+Agent Flow has no purchase, trial, license validation, affiliate promotion or remote promotional announcements. Paid transcription and AI providers you configure bill you directly. Contributor constraints live in [AGENTS.md](AGENTS.md).
 
-This fork has no Pro purchase, trial, license validation, affiliate promotion or remote promotional announcements. Paid transcription and AI providers you configure bill you directly.
-
-Licensed under the [GNU General Public License v3.0](LICENSE). VoiceInk and related names belong to their respective owners; Agent Flow is Ethan's independent fork.
+Licensed under the [GNU General Public License v3.0](LICENSE).
