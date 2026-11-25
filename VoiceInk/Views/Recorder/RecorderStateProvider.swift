@@ -19,6 +19,7 @@ protocol RecorderStateProvider: AnyObject {
     var microphoneTransitionPending: Bool { get }
     var captureFinishRequested: Bool { get }
     var outlineProcessingStartedAt: Date? { get }
+    var outlineActivity: RecorderOutlineActivity? { get }
     func liveContextEditorHeight(width: CGFloat, contextHeight: CGFloat) -> CGFloat
     func toggleMicrophone()
     func togglePause()
@@ -73,11 +74,13 @@ extension RecorderStateProvider {
     /// Ethan's rainbow now follows live microphone capture AND the small loading
     /// card until transcription/processing finishes. During the real stop tail the
     /// small card keeps the actual waveform; only capture end changes it to loading.
-    /// Starting, Pause, microphone-off typing and idle remain unlit. This replaces
+    /// Microphone-off typing now shares the live outline and its text momentum;
+    /// voice startup, Pause and idle remain unlit. This replaces
     /// the old showsLiveCaptureOutline gate; it is never a hardware or route signal.
     /// Original design by Claude Opus 5.5. Found and fixed by GPT-6.1 Sol.
     var showsRecordingActivityOutline: Bool {
-        (recordingState == .recording && !microphoneOff) || recordingState.isProcessing
+        recordingState == .recording || recordingState.isProcessing
+            || (recordingState == .starting && microphoneOff && canTypeInHUD)
     }
 
     // Context colors acknowledge provider words, not microphone intent, a moving
@@ -109,6 +112,7 @@ extension RecorderStateProvider {
     var microphoneTransitionPending: Bool { false }
     var captureFinishRequested: Bool { false }
     var outlineProcessingStartedAt: Date? { nil }
+    var outlineActivity: RecorderOutlineActivity? { nil }
     var contextAcceptancePulse: RecorderContextAcceptancePulse? { nil }
     func toggleMicrophone() {}
     func togglePause() {}

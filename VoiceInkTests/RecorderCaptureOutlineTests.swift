@@ -19,7 +19,9 @@ struct RecorderCaptureOutlineTests {
         #expect(restored.recorderCaptureOutlineEnabled == false)
     }
 
-    @Test @MainActor func outlineFollowsLiveCaptureAndProcessingButNotPauseOrTyping() {
+    // Formerly outlineFollowsLiveCaptureAndProcessingButNotPauseOrTyping:
+    // Ethan now explicitly wants the same outline while typing. — GPT-6.1 Sol
+    @Test @MainActor func outlineFollowsLiveCaptureTypingAndProcessingButNotPause() {
         let session = RecordingSession()
         #expect(session.showsRecordingActivityOutline)
 
@@ -29,7 +31,10 @@ struct RecorderCaptureOutlineTests {
 
         // Microphone-off typing keeps the recording state but captures no audio.
         session.microphoneOff = true
-        #expect(!session.showsRecordingActivityOutline)
+        #expect(session.showsRecordingActivityOutline)
+        session.liveRecordingState = .starting
+        #expect(session.showsRecordingActivityOutline)
+        session.liveRecordingState = .recording
         session.microphoneOff = false
 
         // Won't paste is a delivery choice; capture continues through its gesture
@@ -222,7 +227,7 @@ struct RecorderCaptureOutlineTests {
                     // come from sampling empty space beside it.
                     #expect(edge.sampled > 0 && edge.opaqueFraction > 0.9, "\(label)")
 
-                    let lit = switchOn && (name == "recording" || name == "resumed" || name == "wont-paste")
+                    let lit = switchOn && (name == "recording" || name == "typing" || name == "resumed" || name == "wont-paste")
                     if lit {
                         #expect(edge.saturatedFraction > 0.6, "\(label): \(edge.saturatedFraction)")
                         #expect(edge.hueBuckets.count >= 2, "\(label): \(edge.hueBuckets)")
@@ -333,8 +338,8 @@ struct RecorderCaptureOutlineTests {
         }
     }
 
-    @Test(arguments: [false, true]) @MainActor
-    func coloursActuallyMoveAndReduceMotionHoldsThemStill(processing: Bool) async throws {
+    @Test(arguments: [false, true], [false, true]) @MainActor
+    func coloursActuallyMoveAndReduceMotionHoldsThemStill(processing: Bool, charged: Bool) async throws {
         // Render only the decorative leaf. No capture, session, meter, media or
         // focus-sensitive recorder action is involved. — GPT-6.1 Sol
         let size = CGSize(width: 500, height: 80)
@@ -346,9 +351,12 @@ struct RecorderCaptureOutlineTests {
             // wall-clock samples of an intentionally extreme speed must differ.
             // The separate derivative/clock tests still require uncapped growth.
             let frameDates = [firstFrame, firstFrame.addingTimeInterval(processing ? 0.01 : 0.75)]
+            var activity = RecorderOutlineActivity(at: started)
+            activity.addText(units: 32, at: firstFrame)
             let root = { (date: Date) in
                 RecorderCaptureOutline(shape: shape, isProcessing: processing,
                     processingStartedAt: processing ? started : nil,
+                    activity: charged ? activity : nil,
                     reduceMotionForPreview: reduced, frameDateForPreview: date)
                     .frame(width: size.width, height: size.height)
                     .background(Color.black)
@@ -383,7 +391,7 @@ struct RecorderCaptureOutlineTests {
                     let folder = URL(fileURLWithPath: directory, isDirectory: true)
                     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
                     let data = try #require(bitmap.representation(using: .png, properties: [:]))
-                    try data.write(to: folder.appendingPathComponent("\(processing ? "processing" : "recording")-\(reduced ? "reduced-motion" : "flow")-frame-\(frame).png"))
+                    try data.write(to: folder.appendingPathComponent("\(processing ? "processing" : "recording")-\(charged ? "charged" : "baseline")-\(reduced ? "reduced-motion" : "flow")-frame-\(frame).png"))
                 }
             }
             var changed = 0

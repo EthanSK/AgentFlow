@@ -77,9 +77,9 @@ struct RecorderContextSweepTests {
         #expect(session.liveSelectionReferences.first?.isSelection == true)
         #expect(session.contextAcceptancePulse == nil)
 
-        // Pause, microphone-off typing and startup show no outline. Capture still
+        // Pause and voice startup show no outline. Capture still
         // stores each highlight, but no lap can surface later as a stale fragment.
-        for (state, microphoneOff) in [(RecordingState.paused, false), (.recording, true), (.starting, false)] {
+        for (state, microphoneOff) in [(RecordingState.paused, false), (.starting, false)] {
             session.liveRecordingState = state
             session.microphoneOff = microphoneOff
             let before = session.liveSelectionReferences.count
@@ -110,6 +110,14 @@ struct RecorderContextSweepTests {
             fileURLWithPath: "/tmp/AgentFlowTests/\(UUID().uuidString).png")))
         #expect(session.attachLiveSelectionImage(picture, after: textID, spokenAnchor: ""))
         #expect(session.contextAcceptancePulse == lap)
+
+        // Microphone-off typing now has the rainbow, so a real accepted highlight
+        // can answer with its colour too. Typing prose above still cannot launch it.
+        // — GPT-6.1 Sol
+        session.microphoneOff = true
+        session.recordLiveSelection(try #require(LiveSelectionReference("typing highlight"))
+            .identifiedForCapture(UUID()))
+        #expect(session.contextAcceptancePulse?.id != lap.id)
 
         // Retry hydration restores old context into a transcribing session silently.
         let retry = RecordingSession(phase: .transcribing)

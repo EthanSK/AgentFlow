@@ -31,6 +31,7 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
     /// the same leaf clock; the real capture tail keeps recording motion.
     var isProcessing = false
     var processingStartedAt: Date? = nil
+    var activity: RecorderOutlineActivity? = nil
 
     // macOS exposes Reduce Motion as a read-only environment value. Hosted
     // appearance previews can exercise its static branch without changing the
@@ -70,7 +71,7 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
         )) { timeline in
             let frameDate = frameDateForPreview ?? timeline.date
             let acknowledgementPhase = reduceMotion ? 0 : RecorderCaptureOutlineStyle.flowPhase(at: frameDate)
-            let phase = reduceMotion ? 0 : RecorderCaptureOutlineStyle.flowPhase(at: frameDate, isProcessing: isProcessing, processingStartedAt: processingStartedAt)
+            let phase = reduceMotion ? 0 : RecorderCaptureOutlineStyle.flowPhase(at: frameDate, isProcessing: isProcessing, processingStartedAt: processingStartedAt, activity: activity)
             // The lap reads the same wall-clock frame as the rainbow, so mirrored
             // panels match, and it never shifts the rainbow's phase. — Claude Opus 5.5
             let acknowledgement = reduceMotion
@@ -251,15 +252,20 @@ enum RecorderCaptureOutlineStyle {
 
     /// Phase uses the session's one timestamp, never a per-window start/reset.
     /// Missing timing (legacy/preview providers) retains the existing2x fallback.
-    static func flowPhase(at date: Date, isProcessing: Bool = false, processingStartedAt: Date? = nil) -> Double {
+    /// Live text charge supplies the colour at the processing boundary, so reversing
+    /// never jumps to a different rainbow. — GPT-6.1 Sol
+    static func flowPhase(at date: Date, isProcessing: Bool = false, processingStartedAt: Date? = nil,
+                          activity: RecorderOutlineActivity? = nil) -> Double {
         guard isProcessing else {
-            return (date.timeIntervalSinceReferenceDate / lapDuration).truncatingRemainder(dividingBy: 1)
+            return activity?.phase(at: date)
+                ?? (date.timeIntervalSinceReferenceDate / lapDuration).truncatingRemainder(dividingBy: 1)
         }
         guard let processingStartedAt else {
             return (-2 * date.timeIntervalSinceReferenceDate / lapDuration).truncatingRemainder(dividingBy: 1)
         }
         // Start from the exact recording colour at the boundary, then reverse.
-        let origin = processingStartedAt.timeIntervalSinceReferenceDate / lapDuration
+        let origin = activity?.phase(at: processingStartedAt)
+            ?? processingStartedAt.timeIntervalSinceReferenceDate / lapDuration
         return (origin - processingTravel(elapsed: date.timeIntervalSince(processingStartedAt)))
             .truncatingRemainder(dividingBy: 1)
     }
