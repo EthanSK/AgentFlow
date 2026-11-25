@@ -13,7 +13,7 @@ import SwiftUI
 ///
 /// Callers place it in a `.background` above the card fill and beneath content, and
 /// the card's own clip bounds it, so it changes no geometry, hit target, drag
-/// surface, scroll view or keyboard focus. This is recording activity only. It never
+/// surface, scroll view or keyboard focus. It shows composing/capture/processing activity. It never
 /// marks a saved destination, a Next route or the current-focus icon.
 /// Original design by Claude Opus 5.5; border-only refinement by GPT-6.1 Sol.
 /// — GPT-6.1 Sol
@@ -27,10 +27,11 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
     /// from this leaf's existing clock and simply stops being drawn when it ends.
     /// — Claude Opus 5.5
     var acceptancePulse: RecorderContextAcceptancePulse? = nil
-    /// Transcription starts at its existing reverse pace, then accelerates on
-    /// the same leaf clock; the real capture tail keeps recording motion.
+    /// Transcription reverses with the existing input momentum, then accelerates
+    /// on the same leaf clock; the real capture tail keeps recording motion. — GPT-6.1 Sol
     var isProcessing = false
     var processingStartedAt: Date? = nil
+    var activity: RecorderOutlineActivity? = nil
 
     // macOS exposes Reduce Motion as a read-only environment value. Hosted
     // appearance previews can exercise its static branch without changing the
@@ -42,10 +43,14 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
     /// an occluded test window need not receive animation ticks. Real cards leave
     /// this nil and use the existing TimelineView date. — GPT-6.1 Sol
     var frameDateForPreview: Date? = nil
+    /// Exact introduction frames for native previews; production mounts only after
+    /// yielding the presentation turn and uses its own leaf clock. — GPT-6.1 Sol
+    var introductionStartedAtForPreview: Date? = nil
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     private var reduceMotion: Bool { reduceMotionForPreview ?? systemReduceMotion }
     @Environment(\.displayScale) private var displayScale
     @State private var trace = RecorderCaptureOutlineTrace()
+    @State private var introductionStartedAt: Date? = nil
     /// Reduce Motion pauses the clock, so its still acknowledgement is held by one
     /// bounded task instead. — Claude Opus 5.5
     @State private var stillAcknowledgement: RecorderContextAcceptancePulse? = nil
@@ -59,6 +64,34 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
     }
 
     var body: some View {
+        // A real transparent leaf owns the task even before the Canvas exists.
+        // An empty Group distributes modifiers to no children, so its mounting
+        // task never began and the border stayed absent in actual panel checks.
+        // Found and fixed by GPT-6.1 Sol.
+        Color.clear.overlay {
+            if let started = frameDateForPreview.map({ _ in introductionStartedAtForPreview ?? .distantPast })
+                ?? introductionStartedAt {
+                border(introducedAt: started)
+            }
+        }
+        .task {
+            // Ethan wants input ready before the outline grows around it. Typing
+            // mounts this leaf after a real edit or context gesture; yielding keeps the
+            // first Canvas/path work outside the panel's mounting turn. Nothing in
+            // keyboard focus, capture or delivery awaits this decorative task.
+            // — GPT-6.1 Sol
+            await Task.yield()
+            guard !Task.isCancelled, introductionStartedAt == nil else { return }
+            introductionStartedAt = Date()
+        }
+        // A newer pulse or the outline's removal cancels this task, so no hold can
+        // outlive its pulse or clear a newer one. — Claude Opus 5.5
+        .task(id: acceptancePulse?.id) { await holdStillAcknowledgement() }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private func border(introducedAt started: Date) -> some View {
         // Only this leaf redraws per frame. The schedule exists only while the
         // outline is lit (callers remove the view otherwise), caps at 30 Hz and is
         // paused under Reduce Motion. Earlier recorder lag came from an independent
@@ -69,13 +102,21 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
             paused: reduceMotion
         )) { timeline in
             let frameDate = frameDateForPreview ?? timeline.date
-            let acknowledgementPhase = reduceMotion ? 0 : RecorderCaptureOutlineStyle.flowPhase(at: frameDate)
-            let phase = reduceMotion ? 0 : RecorderCaptureOutlineStyle.flowPhase(at: frameDate, isProcessing: isProcessing, processingStartedAt: processingStartedAt)
+            let phase = reduceMotion ? 0 : RecorderCaptureOutlineStyle.flowPhase(at: frameDate, isProcessing: isProcessing, processingStartedAt: processingStartedAt, activity: activity)
+            let introduction = reduceMotion ? 1 : RecorderCaptureOutlineStyle.introductionFraction(
+                elapsed: frameDate.timeIntervalSince(started))
             // The lap reads the same wall-clock frame as the rainbow, so mirrored
             // panels match, and it never shifts the rainbow's phase. — Claude Opus 5.5
             let acknowledgement = reduceMotion
                 ? stillAcknowledgement.map { RecorderContextSweep.Acknowledgement(kind: $0.kind, form: .still) }
                 : RecorderContextSweep.acknowledgement(for: acceptancePulse, at: frameDate)
+            // Follow the live charged colour band; if loading begins mid-lap,
+            // its mask keeps that live frame while the rainbow beneath reverses.
+            // With no pulse, no second phase calculation is needed.
+            // Found and fixed by GPT-6.1 Sol.
+            let acknowledgementPhase = !reduceMotion && acknowledgement != nil
+                ? (isProcessing ? RecorderCaptureOutlineStyle.flowPhase(at: frameDate, activity: activity) : phase)
+                : 0
             GeometryReader { geometry in
                 let frame = geometry.frame(in: .global)
                 let pixels = RecorderCaptureOutlinePixels(
@@ -83,17 +124,13 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
                 Canvas { context, size in
                     drawBorder(in: context, size: size, phase: phase,
                                acknowledgementPhase: acknowledgementPhase,
-                               acknowledgement: acknowledgement, pixels: pixels)
+                               acknowledgement: acknowledgement, pixels: pixels,
+                               introduction: introduction)
                 }
                 .frame(width: pixels.bounds.width, height: pixels.bounds.height)
                 .offset(x: pixels.bounds.minX, y: pixels.bounds.minY)
             }
         }
-        // A newer pulse or the outline's removal cancels this task, so no hold can
-        // outlive its pulse or clear a newer one. — Claude Opus 5.5
-        .task(id: acceptancePulse?.id) { await holdStillAcknowledgement() }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
 
     /// Reduce Motion's acknowledgement: the whole border takes the context colour
@@ -116,10 +153,11 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
     private func drawBorder(in context: GraphicsContext, size: CGSize, phase: Double,
                             acknowledgementPhase: Double,
                             acknowledgement: RecorderContextSweep.Acknowledgement?,
-                            pixels: RecorderCaptureOutlinePixels) {
+                            pixels: RecorderCaptureOutlinePixels, introduction: Double) {
         let style = RecorderCaptureOutlineStyle.self
         let bounds = CGRect(origin: .zero, size: size)
-        guard bounds.width > style.tubeInset * 4, bounds.height > style.tubeInset * 4 else { return }
+        guard introduction > 0,
+              bounds.width > style.tubeInset * 4, bounds.height > style.tubeInset * 4 else { return }
 
         // The same shape in a slightly smaller rect keeps the tube parallel to the
         // card edge, including the Notch flares, without needing an insettable shape.
@@ -140,11 +178,12 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
             Gradient(stops: samples.map { sample in
                 let position = sample.clockwiseFraction - phase
                 return Gradient.Stop(
-                    // Keep the accepted-context lap's original moving frame if
-                    // processing starts before that one-second lap has ended.
-                    // The underlying loading rainbow still advances independently.
-                    // — GPT-6.1 Sol
-                    color: paint?.color(at: sample.clockwiseFraction - acknowledgementPhase)
+                    // The pulse mask and underlying rainbow can have different
+                    // motion. A zero-strength or uncovered pulse must return the
+                    // actual rainbow, never reset it to the mask's old clock.
+                    // Found and fixed by GPT-6.1 Sol.
+                    color: paint?.color(at: sample.clockwiseFraction - acknowledgementPhase,
+                                        rainbowPosition: position)
                         ?? RecorderNeonSpectrum.color(at: position),
                     location: sample.angularLocation
                 )
@@ -152,7 +191,11 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
             center: center
         )
         let strokePath = omitsTopEdge ? pixels.aligned(insetPath, omittingTopEdge: true) : tubePath
-        context.stroke(strokePath, with: tube, lineWidth: pixels.width)
+        // Grow one continuous sharp edge, then retain the same full path and flow.
+        // The mask never changes layout, border width or the black interior.
+        // — GPT-6.1 Sol
+        context.stroke(introduction < 1 ? strokePath.trimmedPath(from: 0, to: introduction) : strokePath,
+                       with: tube, lineWidth: pixels.width)
     }
 }
 
@@ -231,6 +274,15 @@ enum RecorderCaptureOutlineStyle {
     static let lapDuration: TimeInterval = 5
     static let frameInterval: TimeInterval = 1.0 / 30.0
 
+    /// One quick draw-around entrance on the existing clock, not a wait before
+    /// typing or capture. Reduce Motion bypasses it completely. — GPT-6.1 Sol
+    static let introductionDuration: TimeInterval = 0.45
+
+    static func introductionFraction(elapsed: TimeInterval) -> Double {
+        let fraction = min(1, max(0, elapsed / introductionDuration))
+        return fraction * fraction * (3 - 2 * fraction)
+    }
+
     /// Ethan explicitly rejected a top speed: both speed and its rate of change
     /// keep growing. Cubic travel gives quadratic speed and increasing acceleration,
     /// rather than small constant speed increments that become hard to notice.
@@ -251,16 +303,27 @@ enum RecorderCaptureOutlineStyle {
 
     /// Phase uses the session's one timestamp, never a per-window start/reset.
     /// Missing timing (legacy/preview providers) retains the existing2x fallback.
-    static func flowPhase(at date: Date, isProcessing: Bool = false, processingStartedAt: Date? = nil) -> Double {
+    /// Live text charge supplies the colour at the processing boundary, so reversing
+    /// never jumps to a different rainbow. — GPT-6.1 Sol
+    static func flowPhase(at date: Date, isProcessing: Bool = false, processingStartedAt: Date? = nil,
+                          activity: RecorderOutlineActivity? = nil) -> Double {
         guard isProcessing else {
-            return (date.timeIntervalSinceReferenceDate / lapDuration).truncatingRemainder(dividingBy: 1)
+            return activity?.phase(at: date)
+                ?? (date.timeIntervalSinceReferenceDate / lapDuration).truncatingRemainder(dividingBy: 1)
         }
         guard let processingStartedAt else {
             return (-2 * date.timeIntervalSinceReferenceDate / lapDuration).truncatingRemainder(dividingBy: 1)
         }
         // Start from the exact recording colour at the boundary, then reverse.
-        let origin = processingStartedAt.timeIntervalSinceReferenceDate / lapDuration
-        return (origin - processingTravel(elapsed: date.timeIntervalSince(processingStartedAt)))
+        let origin = activity?.phase(at: processingStartedAt)
+            ?? processingStartedAt.timeIntervalSinceReferenceDate / lapDuration
+        // Keep accumulated input speed instead of suddenly dropping to2x at Stop.
+        // The original uncapped loading acceleration still adds to that baseline.
+        // Found and fixed by GPT-6.1 Sol.
+        let carriedSpeed = max(initialProcessingSpeed, activity?.speed(at: processingStartedAt) ?? initialProcessingSpeed)
+        let elapsed = max(0, date.timeIntervalSince(processingStartedAt))
+        return (origin - processingTravel(elapsed: elapsed)
+            - (carriedSpeed - initialProcessingSpeed) * elapsed / lapDuration)
             .truncatingRemainder(dividingBy: 1)
     }
 

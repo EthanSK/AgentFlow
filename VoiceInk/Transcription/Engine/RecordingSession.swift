@@ -265,6 +265,9 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
             } else if !liveRecordingState.isProcessing {
                 outlineProcessingStartedAt = nil
             }
+            if liveRecordingState == .paused || liveRecordingState == .idle {
+                outlineActivity = RecorderOutlineActivity(at: now)
+            }
             updateAnnotationCaptureState(at: now)
         }
     }
@@ -273,6 +276,11 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     // and enhancement. The real600ms capture tail cannot start it early. This
     // changes only alongside the already-published state; no new ticking observer.
     private(set) var outlineProcessingStartedAt: Date?
+    // Plain snapshots travel with existing text/state publications; no per-frame
+    // session update or transcript diff. Raw microphone noise cannot charge it.
+    // — GPT-6.1 Sol
+    private(set) var outlineActivity: RecorderOutlineActivity? = RecorderOutlineActivity()
+    private var outlineSpeechHighWaterBytes = 0
 
     // Keyboard mode remains an active composing session, not gesture-Pause:
     // one Primary press must finish, never unexpectedly turn the microphone on.
@@ -587,6 +595,7 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         // edit, so it must not move the run's latest-edit time to the commit.
         guard canTypeInHUD, value != typedInput else { return }
         if !typingUndo.isReplaying { undoneTypedRuns.removeAll() }
+        outlineActivity?.addText(units: max(1, abs(value.utf8.count - typedInput.utf8.count)), at: date)
         typedInput = value
         if typedRunStartedAt == nil { typedRunStartedAt = date }
         typedRunLatestEditAt = date
@@ -644,6 +653,15 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     func recordSpeechActivity(_ transcript: String, at date: Date = Date()) {
         guard canTypeInHUD, !microphoneOff, transcript != partialTranscript,
               !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        // Count new cumulative provider text once. Revisions, repeats and shrinking
+        // partials do not repeatedly charge the same words. Share the typing input,
+        // rather than equating a loud meter (including room noise) with speech.
+        // — GPT-6.1 Sol
+        let bytes = transcript.utf8.count
+        if liveRecordingState == .recording, bytes > outlineSpeechHighWaterBytes {
+            outlineActivity?.addText(units: bytes - outlineSpeechHighWaterBytes, at: date)
+            outlineSpeechHighWaterBytes = bytes
+        }
         if speechRunStartedAt == nil { speechRunStartedAt = date }
         lastSpeechActivityAt = date
         pendingSpeechAnchor = transcript
@@ -1068,10 +1086,13 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         if let last = lastAcknowledgedContext, Self.isSameAcceptance(reference, last) { return }
         lastAcknowledgedContext = reference
         // A highlight or screenshot made before Start was already in view when
-        // Ethan pressed it; the lap answers gestures made while recording. Pause,
-        // microphone-off typing and startup show no outline, so a lap launched
+        // Ethan pressed it; the lap answers gestures made while recording. Pause
+        // and voice startup show no outline, so a lap launched
         // there would only surface later as a stale partial lap.
-        guard !precedesSpeech, showsRecordingActivityOutline else { return }
+        // Empty typing defers the border until input/context, so checking its
+        // display gate here would prevent the first real gesture from lighting it.
+        // Found by GPT-6.2 Astra. Fixed by GPT-6.1 Sol.
+        guard !precedesSpeech, isEligibleForRecordingActivityOutline else { return }
         contextAcceptancePulse = pulse
     }
 

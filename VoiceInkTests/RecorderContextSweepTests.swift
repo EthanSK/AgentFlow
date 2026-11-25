@@ -15,15 +15,28 @@ struct RecorderContextSweepTests {
     private let blue = RecorderNeonSpectrum.Components(red: 0.39, green: 0.82, blue: 1.0)
     private let magenta = RecorderNeonSpectrum.Components(red: 0.75, green: 0.35, blue: 0.95)
 
+    @Test func pulseMaskPreservesTheActualRainbowWhenItsClockDiffers() {
+        let paint = RecorderContextSweepPaint(tint: blue,
+            form: .lap(.init(head: 0, tail: 0, strength: 0)))
+        for position in stride(from: 0.0, to: 1.0, by: 0.01) {
+            let actual = position + 0.35
+            #expect(paint.components(at: position, rainbowPosition: actual)
+                == RecorderNeonSpectrum.components(at: actual))
+        }
+    }
+
     @Test @MainActor func acceptedHighlightsAndScreenshotsEachLaunchOneLapOfTheirColour() throws {
         let session = RecordingSession()
+        session.microphoneOff = true
         #expect(session.contextAcceptancePulse == nil)
+        #expect(session.canTypeInHUD && !session.showsRecordingActivityOutline)
 
         let highlight = try #require(LiveSelectionReference("highlighted words"))
             .timed(at: Date(timeIntervalSince1970: 10)).identifiedForCapture(UUID())
         session.recordLiveSelection(highlight, spokenAnchor: "before")
         let first = try #require(session.contextAcceptancePulse)
         #expect(first.kind == .selection)
+        #expect(session.showsRecordingActivityOutline)
 
         // The generic cards read the pulse through the protocol requirement, not a
         // statically dispatched extension default.
@@ -77,9 +90,9 @@ struct RecorderContextSweepTests {
         #expect(session.liveSelectionReferences.first?.isSelection == true)
         #expect(session.contextAcceptancePulse == nil)
 
-        // Pause, microphone-off typing and startup show no outline. Capture still
+        // Pause and voice startup show no outline. Capture still
         // stores each highlight, but no lap can surface later as a stale fragment.
-        for (state, microphoneOff) in [(RecordingState.paused, false), (.recording, true), (.starting, false)] {
+        for (state, microphoneOff) in [(RecordingState.paused, false), (.starting, false)] {
             session.liveRecordingState = state
             session.microphoneOff = microphoneOff
             let before = session.liveSelectionReferences.count
@@ -110,6 +123,14 @@ struct RecorderContextSweepTests {
             fileURLWithPath: "/tmp/AgentFlowTests/\(UUID().uuidString).png")))
         #expect(session.attachLiveSelectionImage(picture, after: textID, spokenAnchor: ""))
         #expect(session.contextAcceptancePulse == lap)
+
+        // Microphone-off typing now has the rainbow, so a real accepted highlight
+        // can answer with its colour too. Typing prose above still cannot launch it.
+        // — GPT-6.1 Sol
+        session.microphoneOff = true
+        session.recordLiveSelection(try #require(LiveSelectionReference("typing highlight"))
+            .identifiedForCapture(UUID()))
+        #expect(session.contextAcceptancePulse?.id != lap.id)
 
         // Retry hydration restores old context into a transcribing session silently.
         let retry = RecordingSession(phase: .transcribing)

@@ -1,5 +1,19 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-25 — Using visual braking debounce as the stored-charge deadline — REJECTED
+
+The first uninstalled555 draftda4e6c9b used200ms for both visual braking and retained charge. Fast10cps checks passed, but slower continuous3cps typing would lose charge between every key and plateau below1x. Sourceee47ab5d separates the existing800ms charge-retention allowance from200ms visible braking; a new1000-key3cps guard exceeds250x while the fast chain still exceeds780x. All51 focused native functions passed. The signedda4 candidate was never installed. Reconsider combining those deadlines only with explicit behavior approval and both slower/faster continuous-chain guards preserving the accepted uncapped build-up.
+
+## 2026-11-25 — Starting a deferred SwiftUI leaf from an empty Group — REJECTED
+
+The first554 candidate504d0626 put an asynchronous mounting task on a Group whose conditional Canvas was initially absent. Controlled leaf previews passed because their explicit frame override bypassed mounting, but actual Mini/Notch on/off image checks found no border:16 edge expectations failed in one of48 named functions. Do not weaken those checks or treat a preview as lifecycle proof.980c2221 uses a persistent transparent leaf to own the same cancellable task, and all48 functions then passed with unchanged pixel thresholds and fixture waits. Reconsider an initially empty wrapper only with an actual native host proving its task starts and both real card styles paint after mounting.
+
+
+## 2026-11-25 — Using a context pulse's mask phase as the rainbow colour phase — REJECTED
+
+Charging exposed a previously implicit assumption that both positions were the same. In361e5705 the live rainbow used text-driven phase, while the pulse painter still produced every underlying colour from the old clock, even at zero pulse strength. Reverse loading could also separate these clocks. This is source-proven; no pre-fix physical screen episode was claimed. Source8590c2b5 passes the actual background position separately and keeps the live mask frame through loading. Native initial-frame equality in both branches and independent paint assertions now protect this boundary;36 functions passed, then38 after the gentler velocity update. Retain those frame-identity checks when changing either clock. Reconsider a single position only if all consumers provably use the same phase for the whole pulse lifetime.
+
+
 ## 2026-11-25 — Requiring arbitrary high-speed animation snapshots to differ — REJECTED
 
 Hosted550 had one failed processing image expectation among1079 functions/55 suites. Its filtered output did not retain the reduced-motion branch or changed-pixel count; do not attribute that observed failure specifically to aliasing or claim a production rendering defect. Independently, the fixture's assumption was invalid: at an intentionally uncapped speed, two wall-clock samples can land on the same colour after multiple complete laps. Source46dee6de uses exact frame times in the actual decorative leaf for the native pixel check, without lowering thresholds, skipping static motion/interior assertions or capping speed. Every real card still uses TimelineView's date, and independent derivatives/session-lifecycle guards remain. Reconsider a wall-clock visual-difference requirement only with a phase-aware sampling contract that cannot confuse complete laps with stopped animation and a native host whose repaint behavior is controlled.

@@ -19,7 +19,9 @@ struct RecorderCaptureOutlineTests {
         #expect(restored.recorderCaptureOutlineEnabled == false)
     }
 
-    @Test @MainActor func outlineFollowsLiveCaptureAndProcessingButNotPauseOrTyping() {
+    // Formerly outlineFollowsLiveCaptureAndProcessingButNotPauseOrTyping:
+    // Ethan now explicitly wants the same outline while typing. — GPT-6.1 Sol
+    @Test @MainActor func outlineFollowsLiveCaptureTypingAndProcessingButNotPause() {
         let session = RecordingSession()
         #expect(session.showsRecordingActivityOutline)
 
@@ -29,7 +31,13 @@ struct RecorderCaptureOutlineTests {
 
         // Microphone-off typing keeps the recording state but captures no audio.
         session.microphoneOff = true
+        #expect(session.canTypeInHUD)
         #expect(!session.showsRecordingActivityOutline)
+        session.updateTypedInput("first actual edit")
+        #expect(session.showsRecordingActivityOutline)
+        session.liveRecordingState = .starting
+        #expect(session.showsRecordingActivityOutline)
+        session.liveRecordingState = .recording
         session.microphoneOff = false
 
         // Won't paste is a delivery choice; capture continues through its gesture
@@ -48,6 +56,99 @@ struct RecorderCaptureOutlineTests {
         }
         session.liveRecordingState = .recording
         #expect(session.showsRecordingActivityOutline)
+    }
+
+    @Test @MainActor func typingIsReadyBeforeOutlineAndCommittedTextKeepsItLit() {
+        let session = RecordingSession()
+        session.microphoneOff = true
+        session.liveRecordingState = .starting
+        #expect(session.canTypeInHUD)
+        #expect(!session.showsRecordingActivityOutline)
+        session.updateTypedInput("ready before the border")
+        #expect(session.typedInput == "ready before the border")
+        #expect(session.showsRecordingActivityOutline)
+        session.endTypingRun()
+        #expect(session.typedInput.isEmpty)
+        #expect(session.showsRecordingActivityOutline)
+        session.liveRecordingState = .paused
+        #expect(!session.showsRecordingActivityOutline)
+        session.liveRecordingState = .recording
+        #expect(session.canTypeInHUD)
+        #expect(!session.showsRecordingActivityOutline)
+        session.updateTypedInput("resume")
+        #expect(session.showsRecordingActivityOutline)
+        session.acknowledgeCaptureFinish()
+        #expect(session.showsRecordingActivityOutline)
+        session.liveRecordingState = .transcribing
+        #expect(session.showsRecordingActivityOutline)
+    }
+
+    @Test func introductionGrowsOnceWithoutChangingTheFlowClock() {
+        let style = RecorderCaptureOutlineStyle.self
+        #expect(style.introductionFraction(elapsed: -1) == 0)
+        #expect(style.introductionFraction(elapsed: 0) == 0)
+        #expect(style.introductionFraction(elapsed: style.introductionDuration / 2) == 0.5)
+        #expect(style.introductionFraction(elapsed: style.introductionDuration) == 1)
+        #expect(style.introductionFraction(elapsed: 100) == 1)
+        #expect(style.frameInterval == 1.0 / 30.0)
+    }
+
+    @Test(arguments: [false, true]) @MainActor
+    func nativeIntroductionDrawsAroundBothShapesAndReducedMotionSkipsIt(reduced: Bool) async throws {
+        let size = CGSize(width: 500, height: 80)
+        let started = Date(timeIntervalSinceReferenceDate: 12_345.125)
+        for notch in [false, true] {
+            func root(_ progress: Double) -> some View {
+                let date = started.addingTimeInterval(progress * RecorderCaptureOutlineStyle.introductionDuration)
+                let outline: AnyView = notch
+                    ? AnyView(RecorderCaptureOutline(shape: NotchShape(topCornerRadius: 8, bottomCornerRadius: 16),
+                        omitsTopEdge: true, reduceMotionForPreview: reduced, frameDateForPreview: date,
+                        introductionStartedAtForPreview: started))
+                    : AnyView(RecorderCaptureOutline(shape: RoundedRectangle(cornerRadius: 20, style: .continuous),
+                        reduceMotionForPreview: reduced, frameDateForPreview: date,
+                        introductionStartedAtForPreview: started))
+                return outline.background(.black).frame(width: size.width, height: size.height)
+            }
+            let panel = NSPanel(contentRect: NSRect(origin: .zero, size: size),
+                styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+            let host = NSHostingView(rootView: root(0))
+            panel.contentView = host
+            panel.orderFrontRegardless()
+            defer { panel.orderOut(nil); panel.close() }
+            var counts: [Int] = []
+            for progress in [0.0, 0.5, 1.0] {
+                host.rootView = root(progress)
+                try await Task.sleep(for: .milliseconds(500))
+                host.layoutSubtreeIfNeeded()
+                let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                var coloured = 0
+                for y in 0..<bitmap.pixelsHigh {
+                    for x in 0..<bitmap.pixelsWide {
+                        guard let rgb = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                        let channels = [rgb.redComponent, rgb.greenComponent, rgb.blueComponent]
+                        if channels.max()! - channels.min()! > 0.25 && rgb.alphaComponent > 0.5 { coloured += 1 }
+                    }
+                }
+                counts.append(coloured)
+                let middle = try #require(bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh / 2))
+                #expect(max(middle.redComponent, middle.greenComponent, middle.blueComponent) < 0.02)
+                if let directory = ProcessInfo.processInfo.environment["VIPP_OUTLINE_SNAPSHOT_DIR"] {
+                    let url = URL(fileURLWithPath: directory, isDirectory: true)
+                        .appendingPathComponent("intro-\(notch ? "notch" : "mini")-\(reduced ? "still" : "moving")-\(progress).png")
+                    let image = try #require(bitmap.representation(using: .png, properties: [:]))
+                    try image.write(to: url)
+                }
+            }
+            #expect(counts[2] > 300, "notch=\(notch) reduced=\(reduced) counts=\(counts)")
+            if reduced {
+                #expect(counts[0] == counts[1] && counts[1] == counts[2])
+            } else {
+                #expect(counts[0] == 0)
+                #expect(counts[1] > counts[2] / 4 && counts[1] < counts[2] * 3 / 4,
+                    "notch=\(notch) counts=\(counts)")
+            }
+        }
     }
 
     @Test @MainActor func acceptedStopHidesEditorWithoutEndingAudioOrSealingItsFinalWords() {
@@ -183,6 +284,7 @@ struct RecorderCaptureOutlineTests {
                     session.microphoneOff = microphoneOff
                     session.completionDisposition = disposition
                     session.liveRecordingState = state
+                    if microphoneOff { session.updateTypedInput("typing") }
                     host.layoutSubtreeIfNeeded()
                     // Let the real native card finish laying out before reading pixels.
                     try await Task.sleep(for: .milliseconds(500))
@@ -222,7 +324,7 @@ struct RecorderCaptureOutlineTests {
                     // come from sampling empty space beside it.
                     #expect(edge.sampled > 0 && edge.opaqueFraction > 0.9, "\(label)")
 
-                    let lit = switchOn && (name == "recording" || name == "resumed" || name == "wont-paste")
+                    let lit = switchOn && (name == "recording" || name == "typing" || name == "resumed" || name == "wont-paste")
                     if lit {
                         #expect(edge.saturatedFraction > 0.6, "\(label): \(edge.saturatedFraction)")
                         #expect(edge.hueBuckets.count >= 2, "\(label): \(edge.hueBuckets)")
@@ -333,8 +435,8 @@ struct RecorderCaptureOutlineTests {
         }
     }
 
-    @Test(arguments: [false, true]) @MainActor
-    func coloursActuallyMoveAndReduceMotionHoldsThemStill(processing: Bool) async throws {
+    @Test(arguments: [false, true], [false, true]) @MainActor
+    func coloursActuallyMoveAndReduceMotionHoldsThemStill(processing: Bool, charged: Bool) async throws {
         // Render only the decorative leaf. No capture, session, meter, media or
         // focus-sensitive recorder action is involved. — GPT-6.1 Sol
         let size = CGSize(width: 500, height: 80)
@@ -346,9 +448,12 @@ struct RecorderCaptureOutlineTests {
             // wall-clock samples of an intentionally extreme speed must differ.
             // The separate derivative/clock tests still require uncapped growth.
             let frameDates = [firstFrame, firstFrame.addingTimeInterval(processing ? 0.01 : 0.75)]
+            var activity = RecorderOutlineActivity(at: started)
+            activity.addText(units: 32, at: firstFrame)
             let root = { (date: Date) in
                 RecorderCaptureOutline(shape: shape, isProcessing: processing,
                     processingStartedAt: processing ? started : nil,
+                    activity: charged ? activity : nil,
                     reduceMotionForPreview: reduced, frameDateForPreview: date)
                     .frame(width: size.width, height: size.height)
                     .background(Color.black)
@@ -383,7 +488,7 @@ struct RecorderCaptureOutlineTests {
                     let folder = URL(fileURLWithPath: directory, isDirectory: true)
                     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
                     let data = try #require(bitmap.representation(using: .png, properties: [:]))
-                    try data.write(to: folder.appendingPathComponent("\(processing ? "processing" : "recording")-\(reduced ? "reduced-motion" : "flow")-frame-\(frame).png"))
+                    try data.write(to: folder.appendingPathComponent("\(processing ? "processing" : "recording")-\(charged ? "charged" : "baseline")-\(reduced ? "reduced-motion" : "flow")-frame-\(frame).png"))
                 }
             }
             var changed = 0
@@ -402,6 +507,52 @@ struct RecorderCaptureOutlineTests {
                 #expect(changed > 100, "Reduce Motion=false, changed sampled pixels=\(changed)")
             }
         }
+    }
+
+    // A context pulse starts with zero strength: its first native frame must be
+    // pixel-identical to the charged/live or reverse-loading rainbow beneath it.
+    // This catches using the mask's old phase for the whole border. — GPT-6.1 Sol
+    @Test(arguments: [false, true]) @MainActor
+    func startingContextPulseDoesNotJumpTheChargedRainbow(processing: Bool) async throws {
+        let size = CGSize(width: 500, height: 80)
+        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+        let started = Date(timeIntervalSinceReferenceDate: 12_345.125)
+        let date = started.addingTimeInterval(8)
+        var activity = RecorderOutlineActivity(at: started)
+        activity.addText(units: 32, at: started)
+        let reference = try #require(LiveSelectionReference("selected"))
+        let pulse = try #require(RecorderContextAcceptancePulse(accepting: reference, at: date))
+        let root = { (pulse: RecorderContextAcceptancePulse?) in
+            RecorderCaptureOutline(shape: shape, acceptancePulse: pulse,
+                isProcessing: processing, processingStartedAt: processing ? started : nil,
+                activity: activity, reduceMotionForPreview: false, frameDateForPreview: date)
+                .frame(width: size.width, height: size.height).background(Color.black).clipShape(shape)
+        }
+        let panel = NSPanel(contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        let host = NSHostingView(rootView: root(nil))
+        panel.contentView = host
+        panel.orderFrontRegardless()
+        defer { panel.orderOut(nil); panel.close() }
+        var frames: [NSBitmapImageRep] = []
+        for value in [nil, pulse] {
+            host.rootView = root(value)
+            try await Task.sleep(for: .milliseconds(550))
+            host.layoutSubtreeIfNeeded()
+            let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            frames.append(bitmap)
+        }
+        var changed = 0
+        for y in stride(from: 0, to: frames[0].pixelsHigh, by: 2) {
+            for x in stride(from: 0, to: frames[0].pixelsWide, by: 2) {
+                let a = try #require(frames[0].colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
+                let b = try #require(frames[1].colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
+                if abs(a.redComponent - b.redComponent) + abs(a.greenComponent - b.greenComponent)
+                    + abs(a.blueComponent - b.blueComponent) > 0.03 { changed += 1 }
+            }
+        }
+        #expect(changed < 8, "processing=\(processing), zero-strength pulse changed pixels=\(changed)")
     }
 
     @Test @MainActor func compactExpandedAndFinishingPanelAppearance() async throws {

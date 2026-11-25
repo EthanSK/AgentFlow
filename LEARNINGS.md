@@ -1,6 +1,47 @@
 # Learnings
 
 ---
+**Date:** 2026-11-25T15:52:45Z
+**Trigger:** Canonical073d825b: decelerate soon after stopping typing, a little faster than acceleration but smoothly enough to continue.
+**Symptom:** Ethan wanted the shared typing/recognised-text rainbow to coast promptly after a pause and retain the chance to continue its chain.
+**Root cause:** Visual speed and stored charge need different quiet-time policies. The first uninstalled555 draft reused a200ms brake threshold for retained charge, which would make slower continuous3cps typing plateau below1x.
+**Fix:** ee47ab5d keeps the existing800ms charge-retention allowance, starts visible exponential braking after200ms at3/s versus2/s acceleration, and analytically integrates travel. New input keeps exact visible speed/phase plus remaining charge. Existing gains, one30Hz leaf, uncapped reverse processing and input/capture timing are unchanged.
+**Commit:** ee47ab5db644f578447e348b174f79a4a5f6d1c7
+**Guard:** All51 selected canonical Mini functions passed, including3cps and10cps long-chain bounds, speed/phase continuity and resumed charge, actual Mini/Notch render/off/Reduce Motion checks, startup/focus/context, real600ms tail/media order and Primary/Next/HUD-only delivery. Final source native snapshots were visually inspected: sharp thin edge, black interior and controls preserved. No manufactured recording, Voice toggle or message was sent. Physical taste and whole-machine GPU/battery are not established by these checks. Ordinary universal555 fromee47ab5d then built, Developer ID signed and installed through the five-second warning, cooperative all-session veto, kernel exit wait and atomic swap. Canonical running binary, hash/CDHash/signature, audio+Automation, updater key, icon, all eight protected preference values and untouched legacy VoiceInk verified. Exact-sourceee47ab5d public45649846366 then passed all1096 named functions/56 suites, signing, Apple acceptance/staple, immutable publication and download qualification. Independent ZIP/feed/checksum/native verification passed; extracted app removed without launch/install. Public ZIP SHA256 326aa5f88c7db9b1ded5c7603e1317e9733499e853b6e7a49010c8060b20d93f.
+---
+
+
+---
+**Date:** 2026-11-25
+**Trigger:** Ethan requested the fastest possible startup without losing functionality, an asynchronously introduced border that grows around the panel after typing starts, and an Astra startup audit.
+**Verified:** Three natural installed553 focus requests took941,984 and1059ms. They succeeded on attempt2; associated Codex selection reads finished later. This does not isolate rainbow drawing as the cause, prove a Code-preselection wait, or establish a one-second timer.
+**Fix:** 504d0626 keeps empty typing ready without mounting decorative geometry until actual text or an accepted context gesture. The outline yields its own mounting task, then grows one sharp path over0.45s on its existing30Hz clock; Reduce Motion stays still and the saved off switch removes the whole leaf. Capture-state eligibility remains separate from deferred display eligibility, so the first blue/magenta context pulse can create itself. The same source removes one identical .starting/recompute publication before audio startup; the first synchronous handoff, Mode, selection, journal and router setup remain.
+**Guard:** 980c2221 fixes an actual native failure of the first draft: task modifiers on an empty Group had no child to mount, so the real panels had no border. A persistent transparent leaf owns that task. All48 named canonical Mini functions passed afterward, including actual full-card on/off and context pulses, controlled introduction/Reduce Motion frames for both silhouettes, real editor mounting/Code-preselection ordering, idle no-debounce, capture-tail/media and Primary/Next/HUD-only guards. Finished synthetic Mini/Notch frames were inspected: sharp edge, black interior, one-line version and unchanged controls. No live capture, Voice toggle, media action or message probe was generated. Physical startup speedup remains unmeasured. Local installation and exact-source hosted release follow separately.
+---
+
+
+---
+**Date:** 2026-11-25T13:43:18Z
+**Trigger:** Shared typing/recognised-speech outline momentum, followed by requests for gradual starts and a small, gentler speed increase.
+**Symptom:** Source review found that a context pulse could replace the charged rainbow with its old clock. Ethan separately reported occasional fast starts/slowdowns; the exact reported phase was not independently observed.
+**Root cause:** Pulse masking and underlying colour shared one coordinate despite different clocks. Input bursts also changed visible speed instantly, and loading reset accumulated speed to2x.
+**Fix:** 8590c2b5 separates pulse-mask coordinates from actual rainbow colours and retains its live frame through loading. 01844023 analytically eases visible speed toward text-driven charge, with15-percent gentler input gains, preserving phase and speed at each input. Loading inherits accumulated speed before adding its existing uncapped acceleration. All timing remains value arithmetic on the same30Hz decorative leaf, not an input/capture wait. Voice and typing still share one value; the saved outline switch removes the whole leaf and its flashes in both styles.
+**Commit:** 01844023605bcaa9f5c9c51e5349cfaf102994db
+**Guard:** 38 named canonical native functions passed, including zero-strength pulse frame identity in live/loading branches, controlled moving/static frames, velocity/phase continuity, quiet decay, and real600ms/Primary/Next/HUD-only safeguards. 69ac4f6c then strengthened the long-chain bound to780x and reran that named function successfully; production is byte-identical in source to01844023. Ordinary universal553 built, Developer ID signed and installed through the five-second warning/cooperative all-session guard. PID13175, executable hash/CDHash, audio+Automation, updater key, protected preferences and untouched legacy VoiceInk verified. Public552 was cancelled during dependency preparation before publication; the earlier0d209fe1 candidate was never installed. No live capture, Voice toggle or message probe was generated. Physical feel and whole-machine GPU/battery performance are not established by synthetic tests. Exact-source hosted/public qualification follows separately.
+---
+
+
+---
+**Date:** 2026-11-25T13:04:46Z
+**Trigger:** Ethan requested a rainbow while typing that charges through continuous input, with recognised voice text using the same system.
+**Root cause:** The outline excluded microphone-off composing and its recording motion had no relationship to accepted text activity.
+**Fix:** 361e5705 adds one session-owned RecorderOutlineActivity value. Actual editor changes and new cumulative ASR byte growth feed the same charge; repeats/shrinking revisions and internal text clears do not add charge. Analytically integrated phase preserves colour at each input and at the existing reverse-loading boundary. A small per-event burst limit bounds large pastes/catch-up events without capping sustained input. Quiet time decays charge. Both mirrored styles receive the same plain snapshot on existing publications; no new timer, per-frame session update, transcript diff, geometry calculation or retained text history. Typing now lights the outline and can acknowledge real captured context; Pause remains unlit. Reduce Motion and the saved opt-out still win.
+**Commit:** 361e570514057c84ca772d4cee789172fdc6f2f5
+**Guard:** 34 named canonical Mini checks passed, including all7 new momentum functions, native moving/static charged frames, both typing panel styles, accepted context, real600ms tail/media ordering and Primary/Next/HUD-only invariants. Ordinary universal552 built separately, then Developer ID signed and installed through the five-second warning/cooperative all-session quit. Running PID/hash/signature/audio+Automation/updater key, protected preferences and untouched legacy VoiceInk verified. No live recording, Voice toggle or test delivery was generated. Whole-machine GPU/battery performance and Ethan's physical feel are not established by these checks. Exact-source hosted/public qualification follows separately.
+---
+
+
+---
 **Date:** 2026-11-25T02:55:23Z
 **Trigger:** Exact-source hosted550 qualification reported a pixel expectation failure before signing/publication.
 **Symptom:** Hosted550 failed one processing-outline image expectation among1079 functions/55 suites, despite24 and191 focused checks passing.
@@ -7713,3 +7754,7 @@ not attach an external client to the desktop-owned live Voice session. A
 separate server, ordinary agent-turn message or durable queue cannot establish
 that the speaking frontend received a capture event. Preserve the live call and
 keep original-chat queuing disabled while identifying a supported shared path.
+
+## 2026-11-25 — Startup554 installed and public-qualified
+
+Source159fc2d9 was signed and installed through the existing all-session guard. Existing natural initial keyboard-focus requests measured127.994,167.958 and149.517ms versus the earlier uncontrolled553 samples941–1059ms; these are not button-to-first-character timings or proof that the border caused the earlier delay. Exact-source hosted45638933639 passed1093 named functions/56 suites, signing, notarization, staple, publication and download qualification. Independent public ZIP/feed/checksum/native verification passed, and the extracted app was removed without launch/install. Preserve the distinction between useful focus evidence, synthetic border lifecycle checks and physical/GPU/battery acceptance.
