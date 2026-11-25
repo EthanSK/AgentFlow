@@ -949,6 +949,17 @@ Keep each field concise but specific enough to prevent rediscovery. Name the sym
    `quick_validate.py` belongs to the system `skill-creator`; it is not duplicated inside this repository skill.
 6. If no durable verified lesson emerged, do not add noise.
 
+## Recorder outline changes
+
+Keep text momentum and loading phase on the existing decorative leaf clock. When a
+context pulse and its background move differently, preserve the actual rainbow
+colour separately from the pulse mask. Retain controlled-date native frame checks
+that a zero-strength pulse changes no pixels in both live and loading states,
+alongside RecorderOutlineActivityTests, RecorderCaptureOutlineTests and
+RecorderContextSweepTests. Self-improved — 2026-11-25: a source-proven phase mismatch
+survived ordinary motion tests; the new frame-identity checks passed. See the
+shared-momentum/context-pulse entry in LEARNINGS.md.
+
 ## VS Code terminal selection
 
 For integrated-terminal highlight capture, use a separate explicit terminal snapshot,

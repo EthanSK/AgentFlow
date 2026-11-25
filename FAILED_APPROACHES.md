@@ -1,5 +1,10 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-25 — Using a context pulse's mask phase as the rainbow colour phase — REJECTED
+
+Charging exposed a previously implicit assumption that both positions were the same. In361e5705 the live rainbow used text-driven phase, while the pulse painter still produced every underlying colour from the old clock, even at zero pulse strength. Reverse loading could also separate these clocks. This is source-proven; no pre-fix physical screen episode was claimed. Source8590c2b5 passes the actual background position separately and keeps the live mask frame through loading. Native initial-frame equality in both branches and independent paint assertions now protect this boundary;36 functions passed, then38 after the gentler velocity update. Retain those frame-identity checks when changing either clock. Reconsider a single position only if all consumers provably use the same phase for the whole pulse lifetime.
+
+
 ## 2026-11-25 — Requiring arbitrary high-speed animation snapshots to differ — REJECTED
 
 Hosted550 had one failed processing image expectation among1079 functions/55 suites. Its filtered output did not retain the reduced-motion branch or changed-pixel count; do not attribute that observed failure specifically to aliasing or claim a production rendering defect. Independently, the fixture's assumption was invalid: at an intentionally uncapped speed, two wall-clock samples can land on the same colour after multiple complete laps. Source46dee6de uses exact frame times in the actual decorative leaf for the native pixel check, without lowering thresholds, skipping static motion/interior assertions or capping speed. Every real card still uses TimelineView's date, and independent derivatives/session-lifecycle guards remain. Reconsider a wall-clock visual-difference requirement only with a phase-aware sampling contract that cannot confuse complete laps with stopped animation and a native host whose repaint behavior is controlled.

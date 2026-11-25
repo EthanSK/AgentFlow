@@ -1,6 +1,17 @@
 # Learnings
 
 ---
+**Date:** 2026-11-25T13:43:18Z
+**Trigger:** Shared typing/recognised-speech outline momentum, followed by requests for gradual starts and a small, gentler speed increase.
+**Symptom:** Source review found that a context pulse could replace the charged rainbow with its old clock. Ethan separately reported occasional fast starts/slowdowns; the exact reported phase was not independently observed.
+**Root cause:** Pulse masking and underlying colour shared one coordinate despite different clocks. Input bursts also changed visible speed instantly, and loading reset accumulated speed to2x.
+**Fix:** 8590c2b5 separates pulse-mask coordinates from actual rainbow colours and retains its live frame through loading. 01844023 analytically eases visible speed toward text-driven charge, with15-percent gentler input gains, preserving phase and speed at each input. Loading inherits accumulated speed before adding its existing uncapped acceleration. All timing remains value arithmetic on the same30Hz decorative leaf, not an input/capture wait. Voice and typing still share one value; the saved outline switch removes the whole leaf and its flashes in both styles.
+**Commit:** 01844023605bcaa9f5c9c51e5349cfaf102994db
+**Guard:** 38 named canonical native functions passed, including zero-strength pulse frame identity in live/loading branches, controlled moving/static frames, velocity/phase continuity, quiet decay, and real600ms/Primary/Next/HUD-only safeguards. 69ac4f6c then strengthened the long-chain bound to780x and reran that named function successfully; production is byte-identical in source to01844023. Ordinary universal553 built, Developer ID signed and installed through the five-second warning/cooperative all-session guard. PID13175, executable hash/CDHash, audio+Automation, updater key, protected preferences and untouched legacy VoiceInk verified. Public552 was cancelled during dependency preparation before publication; the earlier0d209fe1 candidate was never installed. No live capture, Voice toggle or message probe was generated. Physical feel and whole-machine GPU/battery performance are not established by synthetic tests. Exact-source hosted/public qualification follows separately.
+---
+
+
+---
 **Date:** 2026-11-25T13:04:46Z
 **Trigger:** Ethan requested a rainbow while typing that charges through continuous input, with recognised voice text using the same system.
 **Root cause:** The outline excluded microphone-off composing and its recording motion had no relationship to accepted text activity.
