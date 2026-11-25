@@ -263,13 +263,31 @@ struct RecorderCaptureOutlineTests {
         #expect(settings.contains("Toggle(\"Recording Outline\""))
     }
 
-    @Test @MainActor func coloursActuallyMoveAndReduceMotionHoldsThemStill() async throws {
+    @Test func processingFlowRunsAnticlockwiseAtTwiceRecordingSpeed() throws {
+        let date = Date(timeIntervalSinceReferenceDate: 12_345.125)
+        let next = date.addingTimeInterval(0.25)
+        let recording = RecorderCaptureOutlineTrace.wrapped(
+            RecorderCaptureOutlineStyle.flowPhase(at: next) - RecorderCaptureOutlineStyle.flowPhase(at: date))
+        let processing = RecorderCaptureOutlineTrace.wrapped(
+            RecorderCaptureOutlineStyle.flowPhase(at: next, isProcessing: true)
+                - RecorderCaptureOutlineStyle.flowPhase(at: date, isProcessing: true))
+        #expect(abs(recording - 0.05) < 0.000_000_001)
+        #expect(abs(processing + 2 * recording) < 0.000_000_001)
+        #expect(RecorderCaptureOutlineStyle.frameInterval == 1.0 / 30.0)
+        for file in ["MiniRecorderView.swift", "NotchRecorderView.swift"] {
+            #expect(try source("VoiceInk/Views/Recorder/" + file)
+                .contains("isProcessing: stateProvider.recordingState.isProcessing"))
+        }
+    }
+
+    @Test(arguments: [false, true]) @MainActor
+    func coloursActuallyMoveAndReduceMotionHoldsThemStill(processing: Bool) async throws {
         // Render only the decorative leaf. No capture, session, meter, media or
         // focus-sensitive recorder action is involved. — GPT-6.1 Sol
         let size = CGSize(width: 500, height: 80)
         for reduced in [false, true] {
             let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
-            let root = RecorderCaptureOutline(shape: shape, reduceMotionForPreview: reduced)
+            let root = RecorderCaptureOutline(shape: shape, isProcessing: processing, reduceMotionForPreview: reduced)
                 .frame(width: size.width, height: size.height)
                 .background(Color.black)
                 .clipShape(shape)
@@ -301,7 +319,7 @@ struct RecorderCaptureOutlineTests {
                     let folder = URL(fileURLWithPath: directory, isDirectory: true)
                     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
                     let data = try #require(bitmap.representation(using: .png, properties: [:]))
-                    try data.write(to: folder.appendingPathComponent("\(reduced ? "reduced-motion" : "flow")-frame-\(frame).png"))
+                    try data.write(to: folder.appendingPathComponent("\(processing ? "processing" : "recording")-\(reduced ? "reduced-motion" : "flow")-frame-\(frame).png"))
                 }
             }
             var changed = 0

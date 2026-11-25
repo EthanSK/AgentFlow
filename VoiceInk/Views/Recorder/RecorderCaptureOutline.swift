@@ -27,6 +27,9 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
     /// from this leaf's existing clock and simply stops being drawn when it ends.
     /// — Claude Opus 5.5
     var acceptancePulse: RecorderContextAcceptancePulse? = nil
+    /// Transcription/loading reverses the rainbow and doubles its pace on the
+    /// same leaf clock; the real capture tail keeps recording motion. — GPT-6.1 Sol
+    var isProcessing = false
 
     // macOS exposes Reduce Motion as a read-only environment value. Hosted
     // appearance previews can exercise its static branch without changing the
@@ -59,7 +62,8 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
             minimumInterval: RecorderCaptureOutlineStyle.frameInterval,
             paused: reduceMotion
         )) { timeline in
-            let phase = reduceMotion ? 0 : RecorderCaptureOutlineStyle.flowPhase(at: timeline.date)
+            let acknowledgementPhase = reduceMotion ? 0 : RecorderCaptureOutlineStyle.flowPhase(at: timeline.date)
+            let phase = reduceMotion ? 0 : RecorderCaptureOutlineStyle.flowPhase(at: timeline.date, isProcessing: isProcessing)
             // The lap reads the same wall-clock frame as the rainbow, so mirrored
             // panels match, and it never shifts the rainbow's phase. — Claude Opus 5.5
             let acknowledgement = reduceMotion
@@ -71,6 +75,7 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
                     localSize: geometry.size, frame: frame, displayScale: displayScale)
                 Canvas { context, size in
                     drawBorder(in: context, size: size, phase: phase,
+                               acknowledgementPhase: acknowledgementPhase,
                                acknowledgement: acknowledgement, pixels: pixels)
                 }
                 .frame(width: pixels.bounds.width, height: pixels.bounds.height)
@@ -102,6 +107,7 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
 
     // Former `drawNeonTube`: one stroke replaces its bloom and pale core. — GPT-6.1 Sol
     private func drawBorder(in context: GraphicsContext, size: CGSize, phase: Double,
+                            acknowledgementPhase: Double,
                             acknowledgement: RecorderContextSweep.Acknowledgement?,
                             pixels: RecorderCaptureOutlinePixels) {
         let style = RecorderCaptureOutlineStyle.self
@@ -127,7 +133,12 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
             Gradient(stops: samples.map { sample in
                 let position = sample.clockwiseFraction - phase
                 return Gradient.Stop(
-                    color: paint?.color(at: position) ?? RecorderNeonSpectrum.color(at: position),
+                    // Keep the accepted-context lap's original moving frame if
+                    // processing starts before that one-second lap has ended.
+                    // The underlying loading rainbow still advances independently.
+                    // — GPT-6.1 Sol
+                    color: paint?.color(at: sample.clockwiseFraction - acknowledgementPhase)
+                        ?? RecorderNeonSpectrum.color(at: position),
                     location: sample.angularLocation
                 )
             }),
@@ -214,9 +225,11 @@ enum RecorderCaptureOutlineStyle {
     static let frameInterval: TimeInterval = 1.0 / 30.0
 
     /// Phase comes from the wall clock rather than per-view state, so every mirrored
-    /// monitor shows the same colours at the same moment. — Claude Opus 5.5
-    static func flowPhase(at date: Date) -> Double {
-        (date.timeIntervalSinceReferenceDate / lapDuration).truncatingRemainder(dividingBy: 1)
+    /// monitor shows the same colours at the same moment. Loading runs backwards
+    /// at twice the recording pace without another clock. — Claude Opus 5.5; GPT-6.1 Sol
+    static func flowPhase(at date: Date, isProcessing: Bool = false) -> Double {
+        let rate = isProcessing ? -2.0 : 1.0
+        return (date.timeIntervalSinceReferenceDate / lapDuration * rate).truncatingRemainder(dividingBy: 1)
     }
 }
 

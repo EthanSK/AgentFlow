@@ -172,7 +172,8 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
         .background {
             if captureOutlineEnabled && stateProvider.showsRecordingActivityOutline {
                 RecorderCaptureOutline(shape: pillShape, omitsTopEdge: true,
-                                       acceptancePulse: stateProvider.contextAcceptancePulse)
+                                       acceptancePulse: stateProvider.contextAcceptancePulse,
+                                       isProcessing: stateProvider.recordingState.isProcessing)
                     .transition(.identity)
             }
         }
