@@ -258,8 +258,22 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     // reads it to show the right spinner/waveform. Conforms to RecorderStateProvider so the
     // existing MiniRecorderView / NotchRecorderView can render a single session unchanged.
     @Published var liveRecordingState: RecordingState {
-        didSet { updateAnnotationCaptureState(at: Date()) }
+        didSet {
+            let now = Date()
+            if liveRecordingState.isProcessing && !oldValue.isProcessing {
+                outlineProcessingStartedAt = now
+            } else if !liveRecordingState.isProcessing {
+                outlineProcessingStartedAt = nil
+            }
+            updateAnnotationCaptureState(at: now)
+        }
     }
+    // Ethan's loading rainbow accelerates from this session-owned presentation
+    // boundary. Every mirror gets one timestamp, retained across transcription
+    // and enhancement. The real600ms capture tail cannot start it early. This
+    // changes only alongside the already-published state; no new ticking observer.
+    private(set) var outlineProcessingStartedAt: Date?
+
     // Keyboard mode remains an active composing session, not gesture-Pause:
     // one Primary press must finish, never unexpectedly turn the microphone on.
     @Published var microphoneOff = false {

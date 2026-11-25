@@ -18,6 +18,7 @@ protocol RecorderStateProvider: AnyObject {
     var potentialTTSActive: Bool { get }
     var microphoneTransitionPending: Bool { get }
     var captureFinishRequested: Bool { get }
+    var outlineProcessingStartedAt: Date? { get }
     func toggleMicrophone()
     func togglePause()
     func updateTypedInput(_ value: String)
@@ -101,6 +102,7 @@ extension RecorderStateProvider {
     var potentialTTSActive: Bool { false }
     var microphoneTransitionPending: Bool { false }
     var captureFinishRequested: Bool { false }
+    var outlineProcessingStartedAt: Date? { nil }
     var contextAcceptancePulse: RecorderContextAcceptancePulse? { nil }
     func toggleMicrophone() {}
     func togglePause() {}

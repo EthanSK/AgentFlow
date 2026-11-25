@@ -27,9 +27,10 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
     /// from this leaf's existing clock and simply stops being drawn when it ends.
     /// — Claude Opus 5.5
     var acceptancePulse: RecorderContextAcceptancePulse? = nil
-    /// Transcription/loading reverses the rainbow and doubles its pace on the
-    /// same leaf clock; the real capture tail keeps recording motion. — GPT-6.1 Sol
+    /// Transcription starts at its existing reverse pace, then accelerates on
+    /// the same leaf clock; the real capture tail keeps recording motion.
     var isProcessing = false
+    var processingStartedAt: Date? = nil
 
     // macOS exposes Reduce Motion as a read-only environment value. Hosted
     // appearance previews can exercise its static branch without changing the
@@ -63,7 +64,7 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
             paused: reduceMotion
         )) { timeline in
             let acknowledgementPhase = reduceMotion ? 0 : RecorderCaptureOutlineStyle.flowPhase(at: timeline.date)
-            let phase = reduceMotion ? 0 : RecorderCaptureOutlineStyle.flowPhase(at: timeline.date, isProcessing: isProcessing)
+            let phase = reduceMotion ? 0 : RecorderCaptureOutlineStyle.flowPhase(at: timeline.date, isProcessing: isProcessing, processingStartedAt: processingStartedAt)
             // The lap reads the same wall-clock frame as the rainbow, so mirrored
             // panels match, and it never shifts the rainbow's phase. — Claude Opus 5.5
             let acknowledgement = reduceMotion
@@ -224,13 +225,46 @@ enum RecorderCaptureOutlineStyle {
     static let lapDuration: TimeInterval = 5
     static let frameInterval: TimeInterval = 1.0 / 30.0
 
-    /// Phase comes from the wall clock rather than per-view state, so every mirrored
-    /// monitor shows the same colours at the same moment. Loading runs backwards
-    /// at twice the recording pace without another clock. — Claude Opus 5.5; GPT-6.1 Sol
-    static func flowPhase(at date: Date, isProcessing: Bool = false) -> Double {
-        let rate = isProcessing ? -2.0 : 1.0
-        return (date.timeIntervalSinceReferenceDate / lapDuration * rate).truncatingRemainder(dividingBy: 1)
+    /// Ethan's "gets faster and faster": current2x reverse motion builds smoothly
+    /// through3x to a bounded6x over12s. Integrate speed, rather than multiplying
+    /// elapsed time by today's rate, so colours never jump as speed changes.
+    /// This is presentation time, never a progress estimate or a new timer.
+    static let processingAccelerationDuration: TimeInterval = 12
+    static let initialProcessingSpeed = 2.0
+    static let maximumProcessingSpeed = 6.0
+
+    static func processingSpeed(elapsed: TimeInterval) -> Double {
+        let t = min(max(elapsed / processingAccelerationDuration, 0), 1)
+        return initialProcessingSpeed + (maximumProcessingSpeed - initialProcessingSpeed) * t * t * (3 - 2 * t)
     }
+
+    static func processingTravel(elapsed: TimeInterval) -> Double {
+        let seconds = max(0, elapsed)
+        let ramp = min(seconds, processingAccelerationDuration)
+        let t = ramp / processingAccelerationDuration
+        // Integral of smoothstep(t): t³ - t⁴/2. Beyond the ramp, hold the
+        // maximum; increasing visual speed never increases the30Hz draw budget.
+        let accelerated = (maximumProcessingSpeed - initialProcessingSpeed)
+            * processingAccelerationDuration * (t * t * t - t * t * t * t / 2)
+        return (initialProcessingSpeed * ramp + accelerated
+            + maximumProcessingSpeed * max(0, seconds - ramp)) / lapDuration
+    }
+
+    /// Phase uses the session's one timestamp, never a per-window start/reset.
+    /// Missing timing (legacy/preview providers) retains the existing2x fallback.
+    static func flowPhase(at date: Date, isProcessing: Bool = false, processingStartedAt: Date? = nil) -> Double {
+        guard isProcessing else {
+            return (date.timeIntervalSinceReferenceDate / lapDuration).truncatingRemainder(dividingBy: 1)
+        }
+        guard let processingStartedAt else {
+            return (-2 * date.timeIntervalSinceReferenceDate / lapDuration).truncatingRemainder(dividingBy: 1)
+        }
+        // Start from the exact recording colour at the boundary, then reverse.
+        let origin = processingStartedAt.timeIntervalSinceReferenceDate / lapDuration
+        return (origin - processingTravel(elapsed: date.timeIntervalSince(processingStartedAt)))
+            .truncatingRemainder(dividingBy: 1)
+    }
+
 }
 
 /// Neon tube colours rather than a mathematical HSV wheel, whose dark blue and

@@ -222,7 +222,8 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
             if captureOutlineEnabled && stateProvider.showsRecordingActivityOutline {
                 RecorderCaptureOutline(shape: cardShape,
                                        acceptancePulse: stateProvider.contextAcceptancePulse,
-                                       isProcessing: stateProvider.recordingState.isProcessing)
+                                       isProcessing: stateProvider.recordingState.isProcessing,
+                                       processingStartedAt: stateProvider.outlineProcessingStartedAt)
                     .transition(.identity)
             }
         }
