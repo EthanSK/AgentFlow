@@ -263,6 +263,8 @@ struct RecorderCaptureOutlineTests {
         #expect(settings.contains("Toggle(\"Recording Outline\""))
     }
 
+    // A provider without a processing timestamp keeps the historical2x fallback;
+    // real sessions use the accelerating path tested separately below.
     @Test func processingFlowRunsAnticlockwiseAtTwiceRecordingSpeed() throws {
         let date = Date(timeIntervalSinceReferenceDate: 12_345.125)
         let next = date.addingTimeInterval(0.25)
@@ -280,6 +282,57 @@ struct RecorderCaptureOutlineTests {
         }
     }
 
+    @Test func processingFlowAcceleratesWithoutASpeedCapOrAnExtraDrawClock() {
+        let style = RecorderCaptureOutlineStyle.self
+        let started = Date(timeIntervalSinceReferenceDate: 12_345.125)
+        #expect(style.processingSpeed(elapsed: 0) == 2)
+        #expect(style.processingSpeed(elapsed: 2) == 8)
+        #expect(style.processingSpeed(elapsed: 4) == 26)
+        #expect(style.processingSpeed(elapsed: 20) > 600)
+        #expect(style.processingSpeed(elapsed: 60) > 5_000)
+        #expect(style.processingSpeed(elapsed: 3_600) > 19_000_000)
+        #expect(style.processingTravel(elapsed: -1) == 0)
+        #expect(style.flowPhase(at: started, isProcessing: true, processingStartedAt: started)
+            == style.flowPhase(at: started))
+        var previousGain = 0.0
+        for elapsed in [0.0, 1, 2, 4, 8, 12, 60, 3_600, 86_400] {
+            let gain = style.processingSpeed(elapsed: elapsed + 1) - style.processingSpeed(elapsed: elapsed)
+            #expect(gain > previousGain)
+            previousGain = gain
+            let phase = style.flowPhase(at: started.addingTimeInterval(elapsed), isProcessing: true, processingStartedAt: started)
+            #expect(phase.isFinite && abs(phase) < 1)
+        }
+        for elapsed in [0.0, 1, 2, 4, 8] {
+            let date = started.addingTimeInterval(elapsed)
+            let interval = 0.0001
+            let delta = RecorderCaptureOutlineTrace.wrapped(
+                style.flowPhase(at: date.addingTimeInterval(interval), isProcessing: true, processingStartedAt: started)
+                    - style.flowPhase(at: date, isProcessing: true, processingStartedAt: started))
+            let rate = -delta * style.lapDuration / interval
+            #expect(abs(rate - style.processingSpeed(elapsed: elapsed)) < 0.002)
+        }
+        #expect(style.frameInterval == 1.0 / 30.0)
+    }
+
+    @Test @MainActor func processingClockBelongsToTheSessionAndDoesNotStartDuringStopTail() throws {
+        let session = RecordingSession()
+        let provider: any RecorderStateProvider = session
+        session.acknowledgeCaptureFinish()
+        #expect(provider.outlineProcessingStartedAt == nil && session.liveRecordingState == .recording)
+        session.liveRecordingState = .transcribing
+        let start = try #require(provider.outlineProcessingStartedAt)
+        session.liveRecordingState = .enhancing
+        #expect(provider.outlineProcessingStartedAt == start)
+        let other = RecordingSession()
+        #expect(other.outlineProcessingStartedAt == nil)
+        session.liveRecordingState = .idle
+        #expect(provider.outlineProcessingStartedAt == nil)
+        for file in ["MiniRecorderView.swift", "NotchRecorderView.swift"] {
+            #expect(try source("VoiceInk/Views/Recorder/" + file)
+                .contains("processingStartedAt: stateProvider.outlineProcessingStartedAt"))
+        }
+    }
+
     @Test(arguments: [false, true]) @MainActor
     func coloursActuallyMoveAndReduceMotionHoldsThemStill(processing: Bool) async throws {
         // Render only the decorative leaf. No capture, session, meter, media or
@@ -287,7 +340,8 @@ struct RecorderCaptureOutlineTests {
         let size = CGSize(width: 500, height: 80)
         for reduced in [false, true] {
             let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
-            let root = RecorderCaptureOutline(shape: shape, isProcessing: processing, reduceMotionForPreview: reduced)
+            let root = RecorderCaptureOutline(shape: shape, isProcessing: processing,
+                processingStartedAt: processing ? Date().addingTimeInterval(-8) : nil, reduceMotionForPreview: reduced)
                 .frame(width: size.width, height: size.height)
                 .background(Color.black)
                 .clipShape(shape)

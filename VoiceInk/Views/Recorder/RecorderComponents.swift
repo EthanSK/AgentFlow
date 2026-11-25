@@ -463,76 +463,21 @@ struct LiveTranscriptView: View {
         )
     }
 
-    private func previewText(_ parts: [LiveSelectionReference.PreviewPart]) -> Text {
-        let amber = Color(red: 251.0/255, green: 191.0/255, blue: 36.0/255)
-        // Keep waiting context readable but achromatic for peripheral feedback.
-        // Only recolor the bounded display, never rewrite/crop its source refs.
-        let waitingContext = Color.white.opacity(0.45)
-        guard !parts.isEmpty else {
-            return potentialTTSActive ? Text("Potential ignore").foregroundColor(amber) : Text("…")
-        }
-        let hasAnnotatedWords = parts.contains {
-            if case .potentialTTS = $0 { return true }
-            return false
-        }
-        // Playback feedback must appear before the next provider callback. The
-        // historical amber phrase remains after playback, but the live prefix
-        // disappears as soon as the bounded playback/tail ends.
-        let prefix = potentialTTSActive && !hasAnnotatedWords
-            ? Text("Potential ignore · ").foregroundColor(amber) : Text("")
-        return parts.enumerated().reduce(prefix) { result, entry in
-            let part: Text
-            switch entry.element {
-            case .speech(let speech):
-                part = Text(speech)
-            case .potentialTTS(let speech):
-                part = Text("Potential ignore: " + speech)
-                    .foregroundColor(amber)
-            case .selection(let preview):
-                // RecorderContextColor mirrors this cyan and the screenshot purple
-                // below for the Recording Outline's acceptance lap. — Claude Opus 5.5
-                part = Text("\(String(localized: "Selected Text")): \(preview)")
-                    .foregroundColor(dimsContextUntilSpeechArrives ? waitingContext : RecorderContextColor.selection.opacity(0.8))
-            case .screenshot(let filename):
-                part = Text("\(String(localized: "Screenshot")): \(filename)")
-                    .foregroundColor(dimsContextUntilSpeechArrives ? waitingContext : RecorderContextColor.screenshot.opacity(0.95))
-            }
-            return result + (entry.offset == 0 ? Text("") : Text("  ")) + part
-        }
-    }
-
     var body: some View {
-        // One snapshot per body evaluation: both Text construction and scrolling
-        // use the same ordered parts. Rebuilding it four times per partial crowded
+        // One snapshot per body evaluation feeds the native preview and its follow
+        // policy. Rebuilding it four times per partial crowded
         // the main thread and delayed the independently observed audio meter.
         let parts = cachedPreviewParts ?? LiveSelectionReference.previewParts(selectionReferences, with: text)
         // Both frames use one TextKit measurement, including long typed runs.
         // Found and fixed by GPT-6.1 Sol.
         let editorHeight = self.editorHeight
         VStack(spacing: 0) {
-        ScrollViewReader { proxy in
-            ScrollView(.vertical, showsIndicators: false) {
-                // One chronological stream keeps each highlight between the
-                // speech before and after it. The old pinned latest-selection
-                // strip lost earlier highlights and made new ones jump to top.
-                previewText(parts)
-                    .font(.system(size: MiniRecorderLayoutMetrics.liveTranscriptFontSize))
-                    .foregroundColor(.white.opacity(0.8))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 6)
-                    .overlay {
-                        if dragsWindow {
-                            // The read-only preview is a drag handle, not the
-                            // editable NSTextView below. Keep this INSIDE the
-                            // scroll document so wheel input still scrolls it.
-                            RecorderPanelDragSurface(onClick: {
-                                if typedInput != nil { typingFocusRequest = UUID() }
-                            })
-                        }
-                    }
-                    .id("bottom")
-            }
+        RecorderTranscriptPreview(content: RecorderTranscriptPreviewContent(
+            parts: parts, potentialTTSActive: potentialTTSActive,
+            dimsContextUntilSpeechArrives: dimsContextUntilSpeechArrives),
+            width: width, dragsWindow: dragsWindow, onClick: {
+                if typedInput != nil { typingFocusRequest = UUID() }
+            })
             .frame(height: max(0, height - editorHeight))
             .contentShape(Rectangle())
             .onTapGesture {
@@ -549,11 +494,6 @@ struct LiveTranscriptView: View {
                     endPoint: .bottom
                 )
             )
-            .onAppear { proxy.scrollTo("bottom", anchor: .bottom) }
-            .onChange(of: parts) {
-                proxy.scrollTo("bottom", anchor: .bottom)
-            }
-        }
         if let typedInput {
             ZStack(alignment: .topLeading) {
                 if typedInput.wrappedValue.isEmpty {

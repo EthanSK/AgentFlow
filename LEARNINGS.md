@@ -1,6 +1,61 @@
 # Learnings
 
 ---
+**Date:** 2026-11-25T01:42:50Z
+**Trigger:** Canonical prompts8d7fc9f7,46d4388b ande41e0695 successively requested more energy, acceleration and then no top-speed cap.
+**Symptom:** Ethan wanted loading motion to keep accelerating beyond what a display can resolve and explicitly rejected the proposed6x cap.
+**Root cause:** A bounded smoothstep ramp intentionally plateaued, which no longer matched his corrected request.
+**Fix:** Source43a0ddf2 uses quadratic speed2+1.5t² and its integrated cubic travel, with no chosen top speed. A session-owned processing timestamp is shared by Mini/Notch and retained across transcription/enhancement, never begun by Stop acknowledgement or the real microphone tail. The existing30Hz leaf and static Reduce Motion remain; faster colour travel does not request more redraws or imply actual transcription progress. The capped9e23b313 candidate was never installed.
+**Commit:** 43a0ddf23344af45db7041c52dec01e9c47c7052
+**Guard:** Source9e23b313 passed193 named canonical functions covering the shared session timing, entire typing/native preview and relevant capture/routes/media. After the explicit no-cap correction,43a0ddf2 passed24 focused functions including uncapped/increasing-rate math through long waits, session timestamp lifetime, actual moving/static native frames, context acknowledgement and600ms/media guards. No live capture/control test was generated. Final signed installation and exact-source hosted release remain separate.
+---
+
+
+---
+**Date:** 2026-11-25T01:29:30Z
+**Trigger:** Ethan requested faster anti-clockwise rainbow motion while transcribing.
+**Symptom:** Transcription activity used the same clockwise rainbow pace as recording.
+**Root cause:** The outline leaf had one normal flow rate.
+**Fix:** Processing passes a copied state into the existing outline leaf: a2.5s anti-clockwise lap versus the existing5s clockwise recording lap. Reuse the same30Hz clock, preserve static Reduce Motion, and keep context acknowledgement timing in its original moving frame if processing begins mid-lap.
+**Commit:** b47ee6f56655ad2d37fb746211ee70119df7d0ee
+**Guard:** Direction/speed math and actual moving/static native frames passed in the57-function exact-source548 gate and191-function549 follow-up. Signed548 is installed with600ms real tail, reader OFF and transcript auto-queue OFF preserved. The548 public gate failed before signing/publication (1075 functions/55 suites; scroll fixture plus outdated notification source signature), so public547 remains the last qualified release at this entry.
+---
+
+
+---
+**Date:** 2026-11-25T01:29:30Z
+**Trigger:** Ethan asked to deep-dive growing-text lag with Opus while preserving the appearance he likes.
+**Symptom:** Very long changing drafts still stalled the read-only preview after geometry measurements were shared.
+**Root cause:** The whole SwiftUI Text preview was rebuilt and re-typeset on each changed draft. Native three-window ABBA prototype comparisons found a substantial long-draft cost beyond cached geometry.
+**Fix:** 0bfe1cfa replaces only the read-only preview with a persistent TextKit2 NSTextView, retaining full chronological text, shared context colours, TTS annotations, native scrolling, drag/click surface inside its document and the separate typing editor. Unchanged content does not replace native storage or snap manual scrollback. Never access its legacy layoutManager, which switches engines.
+**Commit:** 0bfe1cfa22c885424c483c76ec799c309d6c997d
+**Guard:** Final7921f6c6 passed191 canonical Mini functions: all four new preview cases, complete typing suite, unchanged real drag/wheel assertion, appearance/colour, Stop/IME/focus, Primary/Next/HUD-only and media guards. Async tail/resize fixtures use the existing monotonic completion helper, releasing the main actor for queued AppKit work; nested synchronous RunLoop waits blocked that work. A finite optimized component prototype at75k characters measured about78ms p95 intervals versus255ms for SwiftUI; this is not a whole-app/GPU or physical acceptance claim.
+---
+
+
+---
+**Date:** 2026-11-25T01:29:30Z
+**Trigger:** Ethan and Opus investigated growing-text resize lag; do not treat a visual height cap as a CPU bound.
+**Symptom:** Text height measurement grew more expensive with long paragraphs despite a220pt display cap; mirrored cards repeated identical measurements.
+**Root cause:** TextKit still shaped the full paragraph; returning a capped height did not cap layout CPU. Repeated callers measured before a later window-resize guard.
+**Fix:** b65b495a memoizes exact numeric context heights per session and geometry (maximum16 entries), invalidates for speech/typing/context changes, and shares the result across cards, host and warning reservation. Editor frames share one measurement. Existing warning window repositions on visible envelope changes, including those inside the host minimum, without resetting its timer or replaying sound.
+**Commit:** b65b495ae8a9790ff90f8d7861848c3703ac38dd
+**Guard:** Cold extracted production measurements scaled from about0.2ms at500 prose characters to15ms at50k and62ms at200k. Isolated real-card diagnostic at b47ee6f5 measured three identical75k reads around68ms uncached versus below0.01ms cached. Native geometry equivalence, growth/shrink/invalidation, warning identity/position and capture/delivery guards passed. CPU/update intervals from diagnostics run alongside interaction fixtures are contaminated; keep timing diagnostics separate from native event fixtures and distinguish cadence from GPU frame time.
+---
+
+
+---
+**Date:** 2026-11-25T01:29:29Z
+**Trigger:** Ethan requested immediate compact Stop with real600ms waveform tail, readable Transcribing and less repetitive Telegram paste.
+**Symptom:** Stop waited for the real microphone tail before visibly shrinking; retained assistant context could still reserve a hidden panel.
+**Root cause:** Presentation followed hardware capture state, while assistant visibility and recorder envelope consumers had separate gates.
+**Fix:** Accepted Stop uses a presentation flag shared by Mini/Notch context, controls, host height and warning reservation. Flush IME/editor state without sealing the final typed run, keep actual waveform during real capture tail, and seal only at hardware close. Processing labels reserve readable width instead of shrinking text. Telegram automatic formatting keeps one full inline timeline because a remote recipient cannot be assumed to read a Mac-local file.
+**Commit:** ea0bf7b7b649fdcd25b100539a383889131d2b09
+**Guard:** Public547 at exact source passed1070 named functions/55 suites in45512942895, Developer ID signing, Apple Accepted/stapling, immutable publication and hosted download gate. Independently downloaded ZIP hash and native verifier passed without opening the app. Retained-assistant Stop geometry follow-up b65b495a and final549 native guards passed. Earlier546 also completed1061/54 and independent public validation.
+---
+
+
+---
 **Date:** 2026-11-24T22:25:09Z
 **Trigger:** Ethan requested removal of the crossed-out skip button, one-line version/build and a right-side Mode chooser.
 **Symptom:** The one-line recorder version painted under Stop in the compact native render.
