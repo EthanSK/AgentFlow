@@ -340,20 +340,30 @@ struct RecorderCaptureOutlineTests {
         let size = CGSize(width: 500, height: 80)
         for reduced in [false, true] {
             let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
-            let root = RecorderCaptureOutline(shape: shape, isProcessing: processing,
-                processingStartedAt: processing ? Date().addingTimeInterval(-8) : nil, reduceMotionForPreview: reduced)
-                .frame(width: size.width, height: size.height)
-                .background(Color.black)
-                .clipShape(shape)
+            let started = Date(timeIntervalSinceReferenceDate: 12_345.125)
+            let firstFrame = started.addingTimeInterval(8)
+            // Pixel checks use known distinct phases rather than assuming two
+            // wall-clock samples of an intentionally extreme speed must differ.
+            // The separate derivative/clock tests still require uncapped growth.
+            let frameDates = [firstFrame, firstFrame.addingTimeInterval(processing ? 0.01 : 0.75)]
+            let root = { (date: Date) in
+                RecorderCaptureOutline(shape: shape, isProcessing: processing,
+                    processingStartedAt: processing ? started : nil,
+                    reduceMotionForPreview: reduced, frameDateForPreview: date)
+                    .frame(width: size.width, height: size.height)
+                    .background(Color.black)
+                    .clipShape(shape)
+            }
             let panel = NSPanel(contentRect: NSRect(origin: .zero, size: size),
                 styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-            let host = NSHostingView(rootView: root)
+            let host = NSHostingView(rootView: root(firstFrame))
             panel.contentView = host
             panel.orderFrontRegardless()
             defer { panel.orderOut(nil); panel.close() }
 
             var frames: [NSBitmapImageRep] = []
             for frame in 0..<2 {
+                host.rootView = root(frameDates[frame])
                 try await Task.sleep(for: .milliseconds(550))
                 host.layoutSubtreeIfNeeded()
                 let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
@@ -386,8 +396,11 @@ struct RecorderCaptureOutlineTests {
                     if difference > 0.12 { changed += 1 }
                 }
             }
-            #expect(reduced ? changed < 8 : changed > 100,
-                "Reduce Motion=\(reduced), changed sampled pixels=\(changed)")
+            if reduced {
+                #expect(changed < 8, "Reduce Motion=true, changed sampled pixels=\(changed)")
+            } else {
+                #expect(changed > 100, "Reduce Motion=false, changed sampled pixels=\(changed)")
+            }
         }
     }
 

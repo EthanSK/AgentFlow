@@ -37,6 +37,11 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
     // user's system accessibility preference; real panels leave this nil.
     // Found and fixed by GPT-6.1 Sol.
     var reduceMotionForPreview: Bool? = nil
+    /// Native image tests supply exact frame times: two arbitrary wall-clock
+    /// samples may legitimately alias at Ethan's uncapped loading speeds, and
+    /// an occluded test window need not receive animation ticks. Real cards leave
+    /// this nil and use the existing TimelineView date. — GPT-6.1 Sol
+    var frameDateForPreview: Date? = nil
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     private var reduceMotion: Bool { reduceMotionForPreview ?? systemReduceMotion }
     @Environment(\.displayScale) private var displayScale
@@ -63,13 +68,14 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
             minimumInterval: RecorderCaptureOutlineStyle.frameInterval,
             paused: reduceMotion
         )) { timeline in
-            let acknowledgementPhase = reduceMotion ? 0 : RecorderCaptureOutlineStyle.flowPhase(at: timeline.date)
-            let phase = reduceMotion ? 0 : RecorderCaptureOutlineStyle.flowPhase(at: timeline.date, isProcessing: isProcessing, processingStartedAt: processingStartedAt)
+            let frameDate = frameDateForPreview ?? timeline.date
+            let acknowledgementPhase = reduceMotion ? 0 : RecorderCaptureOutlineStyle.flowPhase(at: frameDate)
+            let phase = reduceMotion ? 0 : RecorderCaptureOutlineStyle.flowPhase(at: frameDate, isProcessing: isProcessing, processingStartedAt: processingStartedAt)
             // The lap reads the same wall-clock frame as the rainbow, so mirrored
             // panels match, and it never shifts the rainbow's phase. — Claude Opus 5.5
             let acknowledgement = reduceMotion
                 ? stillAcknowledgement.map { RecorderContextSweep.Acknowledgement(kind: $0.kind, form: .still) }
-                : RecorderContextSweep.acknowledgement(for: acceptancePulse, at: timeline.date)
+                : RecorderContextSweep.acknowledgement(for: acceptancePulse, at: frameDate)
             GeometryReader { geometry in
                 let frame = geometry.frame(in: .global)
                 let pixels = RecorderCaptureOutlinePixels(
