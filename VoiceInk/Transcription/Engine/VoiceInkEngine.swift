@@ -1434,9 +1434,11 @@ class VoiceInkEngine: NSObject, ObservableObject {
             session.startupAudioRouter = startupAudioRouter
             self.recorder.onAudioChunk = startupAudioRouter.receive
 
-            session.liveRecordingState = .starting
-            recomputeDerivedState()
-
+            // The synchronous handoff above already published this exact starting
+            // session. Republishing here repeats HUD/annotation/service work before
+            // capture without changing state. Keep the first handoff and all Mode,
+            // selection, journal and router setup intact.
+            // Found by GPT-6.2 Astra. Fixed by GPT-6.1 Sol.
             let startedWithMicrophoneOff = session.microphoneOff
             session.recordingInputDevice = try await self.recorder.startRecording(
                 toOutputFile: permanentURL, initiallyPaused: startedWithMicrophoneOff

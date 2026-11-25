@@ -27,13 +27,16 @@ struct RecorderContextSweepTests {
 
     @Test @MainActor func acceptedHighlightsAndScreenshotsEachLaunchOneLapOfTheirColour() throws {
         let session = RecordingSession()
+        session.microphoneOff = true
         #expect(session.contextAcceptancePulse == nil)
+        #expect(session.canTypeInHUD && !session.showsRecordingActivityOutline)
 
         let highlight = try #require(LiveSelectionReference("highlighted words"))
             .timed(at: Date(timeIntervalSince1970: 10)).identifiedForCapture(UUID())
         session.recordLiveSelection(highlight, spokenAnchor: "before")
         let first = try #require(session.contextAcceptancePulse)
         #expect(first.kind == .selection)
+        #expect(session.showsRecordingActivityOutline)
 
         // The generic cards read the pulse through the protocol requirement, not a
         // statically dispatched extension default.

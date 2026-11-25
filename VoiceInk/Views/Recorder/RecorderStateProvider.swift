@@ -71,16 +71,27 @@ extension RecorderStateProvider {
         realtimeStreamSleeping && !microphoneOff && recordingState == .recording
     }
 
+    /// Capture-state eligibility also lets the first accepted context gesture create
+    /// its pulse before empty typing has mounted any decorative view. Keep pulse
+    /// production independent from the deferred display gate. — GPT-6.1 Sol
+    var isEligibleForRecordingActivityOutline: Bool {
+        recordingState == .recording || recordingState.isProcessing
+            || (recordingState == .starting && microphoneOff && canTypeInHUD)
+    }
+
     /// Ethan's rainbow now follows live microphone capture AND the small loading
     /// card until transcription/processing finishes. During the real stop tail the
     /// small card keeps the actual waveform; only capture end changes it to loading.
-    /// Microphone-off typing now shares the live outline and its text momentum;
-    /// voice startup, Pause and idle remain unlit. This replaces
+    /// Microphone-off typing shares the outline after its first actual edit or
+    /// accepted context gesture, so decorative geometry stays out of empty typing
+    /// startup without suppressing the blue/magenta acknowledgement. Voice startup,
+    /// Pause and idle remain unlit. This replaces
     /// the old showsLiveCaptureOutline gate; it is never a hardware or route signal.
     /// Original design by Claude Opus 5.5. Found and fixed by GPT-6.1 Sol.
     var showsRecordingActivityOutline: Bool {
-        recordingState == .recording || recordingState.isProcessing
-            || (recordingState == .starting && microphoneOff && canTypeInHUD)
+        if microphoneOff && canTypeInHUD && !captureFinishRequested,
+           outlineActivity?.hasTextActivity == false && contextAcceptancePulse == nil { return false }
+        return isEligibleForRecordingActivityOutline
     }
 
     // Context colors acknowledge provider words, not microphone intent, a moving

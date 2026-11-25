@@ -1089,7 +1089,10 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         // Ethan pressed it; the lap answers gestures made while recording. Pause
         // and voice startup show no outline, so a lap launched
         // there would only surface later as a stale partial lap.
-        guard !precedesSpeech, showsRecordingActivityOutline else { return }
+        // Empty typing defers the border until input/context, so checking its
+        // display gate here would prevent the first real gesture from lighting it.
+        // Found by GPT-6.2 Astra. Fixed by GPT-6.1 Sol.
+        guard !precedesSpeech, isEligibleForRecordingActivityOutline else { return }
         contextAcceptancePulse = pulse
     }
 

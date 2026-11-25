@@ -31,6 +31,9 @@ struct RecorderCaptureOutlineTests {
 
         // Microphone-off typing keeps the recording state but captures no audio.
         session.microphoneOff = true
+        #expect(session.canTypeInHUD)
+        #expect(!session.showsRecordingActivityOutline)
+        session.updateTypedInput("first actual edit")
         #expect(session.showsRecordingActivityOutline)
         session.liveRecordingState = .starting
         #expect(session.showsRecordingActivityOutline)
@@ -53,6 +56,99 @@ struct RecorderCaptureOutlineTests {
         }
         session.liveRecordingState = .recording
         #expect(session.showsRecordingActivityOutline)
+    }
+
+    @Test @MainActor func typingIsReadyBeforeOutlineAndCommittedTextKeepsItLit() {
+        let session = RecordingSession()
+        session.microphoneOff = true
+        session.liveRecordingState = .starting
+        #expect(session.canTypeInHUD)
+        #expect(!session.showsRecordingActivityOutline)
+        session.updateTypedInput("ready before the border")
+        #expect(session.typedInput == "ready before the border")
+        #expect(session.showsRecordingActivityOutline)
+        session.endTypingRun()
+        #expect(session.typedInput.isEmpty)
+        #expect(session.showsRecordingActivityOutline)
+        session.liveRecordingState = .paused
+        #expect(!session.showsRecordingActivityOutline)
+        session.liveRecordingState = .recording
+        #expect(session.canTypeInHUD)
+        #expect(!session.showsRecordingActivityOutline)
+        session.updateTypedInput("resume")
+        #expect(session.showsRecordingActivityOutline)
+        session.acknowledgeCaptureFinish()
+        #expect(session.showsRecordingActivityOutline)
+        session.liveRecordingState = .transcribing
+        #expect(session.showsRecordingActivityOutline)
+    }
+
+    @Test func introductionGrowsOnceWithoutChangingTheFlowClock() {
+        let style = RecorderCaptureOutlineStyle.self
+        #expect(style.introductionFraction(elapsed: -1) == 0)
+        #expect(style.introductionFraction(elapsed: 0) == 0)
+        #expect(style.introductionFraction(elapsed: style.introductionDuration / 2) == 0.5)
+        #expect(style.introductionFraction(elapsed: style.introductionDuration) == 1)
+        #expect(style.introductionFraction(elapsed: 100) == 1)
+        #expect(style.frameInterval == 1.0 / 30.0)
+    }
+
+    @Test(arguments: [false, true]) @MainActor
+    func nativeIntroductionDrawsAroundBothShapesAndReducedMotionSkipsIt(reduced: Bool) async throws {
+        let size = CGSize(width: 500, height: 80)
+        let started = Date(timeIntervalSinceReferenceDate: 12_345.125)
+        for notch in [false, true] {
+            func root(_ progress: Double) -> some View {
+                let date = started.addingTimeInterval(progress * RecorderCaptureOutlineStyle.introductionDuration)
+                let outline: AnyView = notch
+                    ? AnyView(RecorderCaptureOutline(shape: NotchShape(topCornerRadius: 8, bottomCornerRadius: 16),
+                        omitsTopEdge: true, reduceMotionForPreview: reduced, frameDateForPreview: date,
+                        introductionStartedAtForPreview: started))
+                    : AnyView(RecorderCaptureOutline(shape: RoundedRectangle(cornerRadius: 20, style: .continuous),
+                        reduceMotionForPreview: reduced, frameDateForPreview: date,
+                        introductionStartedAtForPreview: started))
+                return outline.background(.black).frame(width: size.width, height: size.height)
+            }
+            let panel = NSPanel(contentRect: NSRect(origin: .zero, size: size),
+                styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+            let host = NSHostingView(rootView: root(0))
+            panel.contentView = host
+            panel.orderFrontRegardless()
+            defer { panel.orderOut(nil); panel.close() }
+            var counts: [Int] = []
+            for progress in [0.0, 0.5, 1.0] {
+                host.rootView = root(progress)
+                try await Task.sleep(for: .milliseconds(500))
+                host.layoutSubtreeIfNeeded()
+                let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                var coloured = 0
+                for y in 0..<bitmap.pixelsHigh {
+                    for x in 0..<bitmap.pixelsWide {
+                        guard let rgb = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                        let channels = [rgb.redComponent, rgb.greenComponent, rgb.blueComponent]
+                        if channels.max()! - channels.min()! > 0.25 && rgb.alphaComponent > 0.5 { coloured += 1 }
+                    }
+                }
+                counts.append(coloured)
+                let middle = try #require(bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh / 2))
+                #expect(max(middle.redComponent, middle.greenComponent, middle.blueComponent) < 0.02)
+                if let directory = ProcessInfo.processInfo.environment["VIPP_OUTLINE_SNAPSHOT_DIR"] {
+                    let url = URL(fileURLWithPath: directory, isDirectory: true)
+                        .appendingPathComponent("intro-\(notch ? "notch" : "mini")-\(reduced ? "still" : "moving")-\(progress).png")
+                    let image = try #require(bitmap.representation(using: .png, properties: [:]))
+                    try image.write(to: url)
+                }
+            }
+            #expect(counts[2] > 300, "notch=\(notch) reduced=\(reduced) counts=\(counts)")
+            if reduced {
+                #expect(counts[0] == counts[1] && counts[1] == counts[2])
+            } else {
+                #expect(counts[0] == 0)
+                #expect(counts[1] > counts[2] / 4 && counts[1] < counts[2] * 3 / 4,
+                    "notch=\(notch) counts=\(counts)")
+            }
+        }
     }
 
     @Test @MainActor func acceptedStopHidesEditorWithoutEndingAudioOrSealingItsFinalWords() {
@@ -188,6 +284,7 @@ struct RecorderCaptureOutlineTests {
                     session.microphoneOff = microphoneOff
                     session.completionDisposition = disposition
                     session.liveRecordingState = state
+                    if microphoneOff { session.updateTypedInput("typing") }
                     host.layoutSubtreeIfNeeded()
                     // Let the real native card finish laying out before reading pixels.
                     try await Task.sleep(for: .milliseconds(500))
