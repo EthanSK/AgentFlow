@@ -1,5 +1,10 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-25 — TextKit flags as a cure for long-paragraph measurement — REJECTED
+
+The production height helper still shaped a full prose paragraph despite its220pt return cap. A finite native comparison found no material benefit from allowsNonContiguousLayout. Replacing boundingRect/usedRect with ensureLayout plus firstUnlaidCharacterIndex also did not improve the measured cost and returned205pt instead of the required220pt overflow height. Do not substitute those flags/queries for exact measurement reuse or silently change clipping geometry. Reconsider only with equivalent geometry across the supported widths/text shapes and isolated native measurements showing an actual improvement. Source b65b495a uses a bounded invalidated per-session numeric cache instead.
+
+
 ## 2026-11-24 — Keeping the old minimum frame outside a one-line version label — REJECTED
 
 The uninstalled initial546 layout at98c42107 combined the correct version/build

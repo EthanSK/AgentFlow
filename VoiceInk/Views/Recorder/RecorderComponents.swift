@@ -464,8 +464,8 @@ struct LiveTranscriptView: View {
     }
 
     var body: some View {
-        // One snapshot per body evaluation: both Text construction and scrolling
-        // use the same ordered parts. Rebuilding it four times per partial crowded
+        // One snapshot per body evaluation feeds the native preview and its follow
+        // policy. Rebuilding it four times per partial crowded
         // the main thread and delayed the independently observed audio meter.
         let parts = cachedPreviewParts ?? LiveSelectionReference.previewParts(selectionReferences, with: text)
         // Both frames use one TextKit measurement, including long typed runs.
