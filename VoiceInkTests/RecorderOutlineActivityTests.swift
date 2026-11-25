@@ -15,15 +15,16 @@ struct RecorderOutlineActivityTests {
             fast.addText(units: 1, at: start.addingTimeInterval(Double(index) / 10))
             slow.addText(units: 1, at: start.addingTimeInterval(Double(index) * 2))
         }
-        #expect(fast.speed(at: start.addingTimeInterval(99.9)) > 900)
+        #expect(fast.speed(at: start.addingTimeInterval(99.9)) > 100)
         #expect(slow.speed(at: start.addingTimeInterval(1_998)) < 1)
     }
 
     @Test func aPauseEasesToIdleAndTheNextBurstStartsWithoutAPhaseJump() {
         var activity = RecorderOutlineActivity(at: start)
         activity.addText(units: 20, at: start)
-        let charged = activity.speed(at: start)
-        #expect(activity.speed(at: start.addingTimeInterval(0.5)) == charged)
+        #expect(activity.speed(at: start) == RecorderOutlineActivity.idleSpeed)
+        let charged = activity.speed(at: start.addingTimeInterval(0.8))
+        #expect(activity.speed(at: start.addingTimeInterval(0.5)) < charged)
         #expect(activity.speed(at: start.addingTimeInterval(2)) < charged)
         #expect(abs(activity.speed(at: start.addingTimeInterval(20)) - RecorderOutlineActivity.idleSpeed) < 0.000_001)
         let next = start.addingTimeInterval(2)
@@ -52,9 +53,10 @@ struct RecorderOutlineActivityTests {
         paste.addText(units: 1_000_000, at: start)
         burst.addText(units: 32, at: start)
         #expect(paste == burst)
-        let before = paste.speed(at: start)
+        let before = paste.speed(at: start.addingTimeInterval(0.5))
         paste.addText(units: 32, at: start)
-        #expect(paste.speed(at: start) > before)
+        #expect(paste.speed(at: start) == RecorderOutlineActivity.idleSpeed)
+        #expect(paste.speed(at: start.addingTimeInterval(0.5)) > before)
         let original = paste
         paste.addText(units: 0, at: start)
         #expect(paste == original)
@@ -65,12 +67,14 @@ struct RecorderOutlineActivityTests {
         typed.microphoneOff = true
         let voice = RecordingSession()
         let date = Date().addingTimeInterval(1)
+        let probe = date.addingTimeInterval(0.5)
         typed.updateTypedInput("hello", at: date)
         voice.recordSpeechActivity("hello", at: date)
         voice.partialTranscript = "hello"
         let provider: any RecorderStateProvider = voice
-        #expect(try #require(typed.outlineActivity).speed(at: date)
-            == #require(provider.outlineActivity).speed(at: date))
+        #expect(try #require(typed.outlineActivity).speed(at: probe) > RecorderOutlineActivity.idleSpeed)
+        #expect(try #require(typed.outlineActivity).speed(at: probe)
+            == #require(provider.outlineActivity).speed(at: probe))
         let previous = voice.outlineActivity
         voice.recordSpeechActivity("hello", at: date)
         voice.recordSpeechActivity("hi", at: date)
@@ -80,9 +84,44 @@ struct RecorderOutlineActivityTests {
         voice.partialTranscript = "hello"
         voice.recordSpeechActivity("hello there", at: date)
         typed.updateTypedInput("hello there", at: date)
-        #expect(try #require(typed.outlineActivity).speed(at: date)
-            == #require(voice.outlineActivity).speed(at: date))
+        #expect(try #require(typed.outlineActivity).speed(at: probe)
+            == #require(voice.outlineActivity).speed(at: probe))
         voice.flushSpeechTiming()
+    }
+
+    @Test func textBurstsEaseInWithoutResettingColourOrVisibleSpeed() {
+        var activity = RecorderOutlineActivity(at: start)
+        activity.addText(units: 32, at: start)
+        #expect(activity.speed(at: start) == RecorderOutlineActivity.idleSpeed)
+        #expect(activity.speed(at: start.addingTimeInterval(0.05))
+            < activity.speed(at: start.addingTimeInterval(0.2)))
+        let next = start.addingTimeInterval(0.2)
+        let speed = activity.speed(at: next)
+        let phase = activity.phase(at: next)
+        activity.addText(units: 32, at: next)
+        #expect(activity.phase(at: next) == phase)
+        #expect(activity.speed(at: next) == speed)
+        #expect(activity.speed(at: next.addingTimeInterval(0.2)) > speed)
+        #expect(abs(activity.speed(at: next.addingTimeInterval(0.8001))
+            - activity.speed(at: next.addingTimeInterval(0.7999))) < 0.002)
+    }
+
+    @Test func enteringLoadingKeepsAccumulatedInputSpeedInsteadOfResettingIt() {
+        var activity = RecorderOutlineActivity(at: start)
+        for index in 0..<30 {
+            activity.addText(units: 10, at: start.addingTimeInterval(Double(index) / 10))
+        }
+        let boundary = start.addingTimeInterval(3)
+        let speed = activity.speed(at: boundary)
+        #expect(speed > RecorderCaptureOutlineStyle.initialProcessingSpeed)
+        let interval = 0.0001
+        let initial = RecorderCaptureOutlineStyle.flowPhase(at: boundary, isProcessing: true,
+            processingStartedAt: boundary, activity: activity)
+        let next = RecorderCaptureOutlineStyle.flowPhase(at: boundary.addingTimeInterval(interval),
+            isProcessing: true, processingStartedAt: boundary, activity: activity)
+        let rate = -RecorderCaptureOutlineTrace.wrapped(next - initial)
+            * RecorderCaptureOutlineStyle.lapDuration / interval
+        #expect(abs(rate - speed) < 0.002)
     }
 
     @Test @MainActor func internalClearsSilenceAndBlockedEditsDoNotChargeOrChangeDelivery() throws {

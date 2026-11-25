@@ -27,8 +27,8 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
     /// from this leaf's existing clock and simply stops being drawn when it ends.
     /// — Claude Opus 5.5
     var acceptancePulse: RecorderContextAcceptancePulse? = nil
-    /// Transcription starts at its existing reverse pace, then accelerates on
-    /// the same leaf clock; the real capture tail keeps recording motion.
+    /// Transcription reverses with the existing input momentum, then accelerates
+    /// on the same leaf clock; the real capture tail keeps recording motion. — GPT-6.1 Sol
     var isProcessing = false
     var processingStartedAt: Date? = nil
     var activity: RecorderOutlineActivity? = nil
@@ -273,7 +273,13 @@ enum RecorderCaptureOutlineStyle {
         // Start from the exact recording colour at the boundary, then reverse.
         let origin = activity?.phase(at: processingStartedAt)
             ?? processingStartedAt.timeIntervalSinceReferenceDate / lapDuration
-        return (origin - processingTravel(elapsed: date.timeIntervalSince(processingStartedAt)))
+        // Keep accumulated input speed instead of suddenly dropping to2x at Stop.
+        // The original uncapped loading acceleration still adds to that baseline.
+        // Found and fixed by GPT-6.1 Sol.
+        let carriedSpeed = max(initialProcessingSpeed, activity?.speed(at: processingStartedAt) ?? initialProcessingSpeed)
+        let elapsed = max(0, date.timeIntervalSince(processingStartedAt))
+        return (origin - processingTravel(elapsed: elapsed)
+            - (carriedSpeed - initialProcessingSpeed) * elapsed / lapDuration)
             .truncatingRemainder(dividingBy: 1)
     }
 
