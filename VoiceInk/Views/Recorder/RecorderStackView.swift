@@ -129,6 +129,11 @@ struct MiniRecorderStackView: View {
         ordered.isEmpty && assistantSession.isVisible
     }
 
+    private var showsAssistantContext: Bool {
+        baseSession?.showsAssistantContext(isVisible: assistantSession.isVisible)
+            ?? assistantSession.isVisible
+    }
+
     private var liveTranscriptWidth: CGFloat {
         MiniRecorderLayoutMetrics.contextWidth(screenWidth: screenWidth, scale: CGFloat(hudScale.scale))
     }
@@ -142,17 +147,11 @@ struct MiniRecorderStackView: View {
         guard let baseSession, baseSession.showsLiveContext else {
             return MiniRecorderLayoutMetrics.liveTranscriptHeight
         }
-        let parts = baseSession.liveContextPreviewParts
-        return MiniRecorderLayoutMetrics.contextHeight(
-            parts: parts,
-            typedText: baseSession.canTypeInHUD ? baseSession.typedInput : nil,
-            width: liveTranscriptWidth,
-            maxHeight: maximumContextHeight
-        )
+        return baseSession.liveContextHeight(width: liveTranscriptWidth, maxHeight: maximumContextHeight)
     }
 
     private var controlsHeight: CGFloat {
-        let width = assistantSession.isVisible ? min(liveTranscriptWidth, MiniRecorderLayoutMetrics.assistantPanelWidth) : liveTranscriptWidth
+        let width = showsAssistantContext ? min(liveTranscriptWidth, MiniRecorderLayoutMetrics.assistantPanelWidth) : liveTranscriptWidth
         return baseSession?.codexBanner.map { RecorderChatBannerLayout($0, availableWidth: width).height }
             ?? MiniRecorderLayoutMetrics.controlBarHeight
     }
@@ -162,7 +161,7 @@ struct MiniRecorderStackView: View {
     }
 
     private var baseCardHeight: CGFloat {
-        if assistantSession.isVisible {
+        if showsAssistantContext {
             return min(MiniRecorderLayoutMetrics.assistantPanelHeight, maximumContextHeight) + controlsHeight + MiniRecorderLayoutMetrics.separatorHeight
         }
         if let baseSession, baseSession.showsLiveContext {
@@ -340,6 +339,11 @@ struct NotchRecorderStackView: View {
         pillSession == nil && assistantSession.isVisible
     }
 
+    private var showsAssistantContext: Bool {
+        pillSession?.showsAssistantContext(isVisible: assistantSession.isVisible)
+            ?? assistantSession.isVisible
+    }
+
     private var liveTranscriptWidth: CGFloat {
         MiniRecorderLayoutMetrics.contextWidth(screenWidth: screenWidth, scale: CGFloat(hudScale.scale))
     }
@@ -353,17 +357,12 @@ struct NotchRecorderStackView: View {
         guard let pillSession, pillSession.showsLiveContext else {
             return MiniRecorderLayoutMetrics.liveTranscriptHeight
         }
-        return MiniRecorderLayoutMetrics.contextHeight(
-            parts: pillSession.liveContextPreviewParts,
-            typedText: pillSession.canTypeInHUD ? pillSession.typedInput : nil,
-            width: liveTranscriptWidth - 16,
-            maxHeight: maximumContextHeight
-        )
+        return pillSession.liveContextHeight(width: liveTranscriptWidth - 16, maxHeight: maximumContextHeight)
     }
 
     private var desiredPanelHeight: CGFloat {
         let pill: CGFloat
-        if assistantSession.isVisible {
+        if showsAssistantContext {
             pill = notchHeight + 6 + min(320, maximumContextHeight)
         } else if let session = pillSession, session.showsLiveContext {
             pill = notchHeight + 6 + liveTranscriptHeight + 1

@@ -506,6 +506,9 @@ struct LiveTranscriptView: View {
         // use the same ordered parts. Rebuilding it four times per partial crowded
         // the main thread and delayed the independently observed audio meter.
         let parts = cachedPreviewParts ?? LiveSelectionReference.previewParts(selectionReferences, with: text)
+        // Both frames use one TextKit measurement, including long typed runs.
+        // Found and fixed by GPT-6.1 Sol.
+        let editorHeight = self.editorHeight
         VStack(spacing: 0) {
         ScrollViewReader { proxy in
             ScrollView(.vertical, showsIndicators: false) {

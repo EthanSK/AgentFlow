@@ -33,7 +33,7 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
 
     private var displayState: DisplayState {
         if stateProvider.captureFinishRequested { return .active }
-        if assistantSession.isVisible {
+        if stateProvider.showsAssistantContext(isVisible: assistantSession.isVisible) {
             return .assistant
         }
 

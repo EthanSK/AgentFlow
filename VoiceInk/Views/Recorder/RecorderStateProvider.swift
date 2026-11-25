@@ -43,6 +43,13 @@ protocol RecorderStateProvider: AnyObject {
 
 extension RecorderStateProvider {
     var codexBanner: String? { nil }
+    // The small Stop card hides context without closing the assistant conversation.
+    // The visible card, its host window and warning placement share this gate so
+    // a retained response cannot leave a large invisible panel above it.
+    // Found and fixed by GPT-6.1 Sol. — GPT-6.1 Sol
+    func showsAssistantContext(isVisible: Bool) -> Bool {
+        isVisible && !captureFinishRequested
+    }
     // The editor disappears at finish. Do not measure its now-hidden transcript
     // while showing the loading card; all mirrored layouts use this same gate.
     var showsLiveContext: Bool {

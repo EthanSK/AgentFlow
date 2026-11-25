@@ -32,7 +32,7 @@ class NotificationManager {
     private var presentationIdentity = NotificationPresentationIdentity()
     private weak var recorderPlacementProvider: NotificationRecorderPlacementProviding?
 
-    private init() {}
+    init() {}
 
     @MainActor
     func setRecorderPlacementProvider(
@@ -44,6 +44,16 @@ class NotificationManager {
     @MainActor
     func isNotificationWindow(_ window: NSWindow) -> Bool {
         notificationWindow === window
+    }
+
+    /// Keep an existing warning above the growing/shrinking recorder on its
+    /// original screen, without replaying its fade, sound or dismissal timer.
+    /// Found by Claude Opus 5.5. Fixed by GPT-6.1 Sol. — GPT-6.1 Sol
+    @MainActor
+    func recorderLayoutDidChange(on screen: NSScreen) {
+        guard let window = notificationWindow, window.isVisible,
+              window.screen == screen else { return }
+        _ = positionWindow(window, on: screen)
     }
 
     @MainActor
@@ -178,8 +188,8 @@ class NotificationManager {
     }
 
     @MainActor
-    private func positionWindow(_ window: NSWindow) -> Bool {
-        guard let activeScreen = NSApp.keyWindow?.screen
+    private func positionWindow(_ window: NSWindow, on screen: NSScreen? = nil) -> Bool {
+        guard let activeScreen = screen ?? NSApp.keyWindow?.screen
             ?? NSScreen.main
             ?? NSScreen.screens.first else {
             return false

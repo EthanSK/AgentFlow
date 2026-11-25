@@ -163,7 +163,7 @@ struct RecorderResponsivenessTests {
         let stacks = try source("VoiceInk/Views/Recorder/RecorderStackView.swift")
         for session in ["baseSession", "pillSession"] {
             let gate = try #require(stacks.range(of: "guard let \(session), \(session).showsLiveContext else"))
-            let measured = try #require(stacks.range(of: "MiniRecorderLayoutMetrics.contextHeight(", range: gate.upperBound..<stacks.endIndex))
+            let measured = try #require(stacks.range(of: "\(session).liveContextHeight(", range: gate.upperBound..<stacks.endIndex))
             #expect(gate.lowerBound < measured.lowerBound)
         }
         let mini = try source("VoiceInk/Views/Recorder/MiniRecorderView.swift")
@@ -188,16 +188,22 @@ struct RecorderResponsivenessTests {
         #expect(body.contains("stoppedReferences, with: stoppedTranscript, includeTiming: true"))
     }
 
-    @Test(arguments: [false, true]) @MainActor
-    func miniFinishCollapsesOnFirstUpdateWithoutMovingBottomEdge(captureTail: Bool) async throws {
+    @Test(arguments: [false, true], [false, true]) @MainActor
+    func miniFinishCollapsesOnFirstUpdateWithoutMovingBottomEdge(captureTail: Bool, assistantVisible: Bool) async throws {
         let screen = try #require(NSScreen.main)
         let session = RecordingSession()
         session.microphoneOff = true
         session.updateTypedInput(String(repeating: "Long typed draft with context ", count: 400))
         session.microphoneOff = !captureTail
         let panel = MiniRecorderPanel(contentRect: NSRect(x: 100, y: 100, width: 640, height: 240))
+        let assistant = AssistantSession()
+        if assistantVisible {
+            assistant.beginInitialResponse(transcript: "Previous context", provider: nil,
+                modelName: nil, modeName: nil, modeEmoji: nil, promptName: nil)
+            assistant.finishInitialResponse("Previous response", systemPrompt: nil)
+        }
         let view = MiniRecorderView(stateProvider: session, liveTranscriptHeight: 180, liveTranscriptWidth: 640,
-            recorder: Recorder(), assistantSession: AssistantSession(), onRecordButtonTapped: {},
+            recorder: Recorder(), assistantSession: assistant, onRecordButtonTapped: {},
             onCloseTapped: {}, onCancelTapped: {}, onAssistantFollowUp: { _ in })
         let host = NSHostingView(rootView: view)
         panel.contentView = host
@@ -207,8 +213,9 @@ struct RecorderResponsivenessTests {
         defer { panel.orderOut(nil); panel.close() }
         host.layoutSubtreeIfNeeded()
         let bottom = panel.frame.minY
+        session.acknowledgeCaptureFinish()
+        #expect(!session.showsAssistantContext(isVisible: assistant.isVisible))
         if captureTail {
-            session.acknowledgeCaptureFinish()
             #expect(session.phase == .recording && session.recordingState == .recording)
         } else {
             session.phase = .transcribing
@@ -319,6 +326,97 @@ struct RecorderResponsivenessTests {
                 #expect(reserved == max(0, (200 + 1 + 40 + 92) * scale - dockHeight))
             }
         }
+    }
+
+    @Test @MainActor func cachedContextHeightTracksSpeechTypingGeometryAndShrink() throws {
+        let session = RecordingSession()
+        session.microphoneOff = true
+        func check() {
+            for width: CGFloat in [300, 640, 1100] {
+                for limit: CGFloat in [180, 500] {
+                    let expected = MiniRecorderLayoutMetrics.contextHeight(
+                        parts: session.liveContextPreviewParts,
+                        typedText: session.canTypeInHUD ? session.typedInput : nil,
+                        width: width, maxHeight: limit)
+                    // A repeated consumer must get the same exact geometry.
+                    #expect(session.liveContextHeight(width: width, maxHeight: limit) == expected)
+                    #expect(session.liveContextHeight(width: width, maxHeight: limit) == expected)
+                }
+            }
+        }
+        check()
+        session.partialTranscript = String(repeating: "Growing speech and context. ", count: 200)
+        check()
+        session.updateTypedInput(String(repeating: "Typed words\n", count: 40))
+        check()
+        session.partialTranscript = "Short again."
+        session.updateTypedInput("One line")
+        check()
+        session.recordLiveSelection(try #require(LiveSelectionReference("A newly accepted selection changes the shared preview.")))
+        check()
+        session.liveRecordingState = .transcribing
+        session.phase = .transcribing
+        check()
+        // Cycling more geometries than the cache retains must preserve each size.
+        for width in stride(from: CGFloat(300), through: 660, by: 10) {
+            #expect(session.liveContextHeight(width: width, maxHeight: 500)
+                == MiniRecorderLayoutMetrics.contextHeight(parts: session.liveContextPreviewParts,
+                    typedText: nil, width: width, maxHeight: 500))
+        }
+    }
+
+    @Test @MainActor func warningFollowsGrowingAndShrinkingRecorderWithoutReplacement() async throws {
+        let screen = try #require(NSScreen.main)
+        let placement = RecorderWarningPlacementProbe()
+        let manager = NotificationManager()
+        manager.setRecorderPlacementProvider(placement)
+        manager.showNotification(title: "Recorder layout fixture", type: .error,
+            playSound: false, dismissesAutomatically: false)
+        let warning = try #require(NSApp.windows.first(where: { manager.isNotificationWindow($0) }))
+        let panel = MiniRecorderPanel(contentRect: NSRect(
+            x: screen.visibleFrame.midX - 200, y: screen.frame.minY, width: 400, height: 120))
+        func content(_ height: CGFloat) -> some View {
+            Color.clear.background(RecorderPanelHeightSync(
+                desiredHeight: height + 12, edge: .bottom, scale: 1,
+                onLayoutChange: { manager.recorderLayoutDidChange(on: $0) }))
+        }
+        let host = NSHostingView(rootView: content(placement.height))
+        panel.contentView = host
+        panel.orderFrontRegardless()
+        defer { manager.dismissNotification(); panel.orderOut(nil); panel.close() }
+        for height: CGFloat in [40, 60, 220, 40] {
+            placement.height = height
+            host.rootView = content(height)
+            host.layoutSubtreeIfNeeded()
+            let origin = NotificationManager.notificationOrigin(screenRect: screen.visibleFrame,
+                notificationSize: warning.frame.size, bottomReservedHeight: height)
+            try await waitForCompletion { abs(warning.frame.minY - origin.y) < 1 }
+            #expect(manager.isNotificationWindow(warning) && warning.isVisible)
+            #expect(abs(warning.frame.minX - origin.x) < 1)
+            // 40→60 changes the card envelope but not its minimum host height.
+            if height <= 60 { #expect(panel.frame.height == 120) }
+        }
+    }
+
+    @Test @MainActor func stoppedAssistantContextDoesNotReserveHiddenPanelHeight() throws {
+        let session = RecordingSession()
+        #expect(session.showsAssistantContext(isVisible: true))
+        session.acknowledgeCaptureFinish()
+        for scale: CGFloat in [0.5, 0.85, 1] {
+            let height = MiniRecorderLayoutMetrics.notificationBottomReservedHeight(
+                showsAssistant: session.showsAssistantContext(isVisible: true),
+                showsRealtimeTranscript: session.showsLiveContext, sessionCount: 1,
+                realtimeTranscriptHeight: 700, assistantHeight: 320, scale: scale)
+            #expect(height == MiniRecorderLayoutMetrics.controlBarHeight * scale)
+        }
+        // A fresh/assistant-only card still shows the retained response normally.
+        #expect(RecordingSession().showsAssistantContext(isVisible: true))
+        let stacks = try source("VoiceInk/Views/Recorder/RecorderStackView.swift")
+        #expect(stacks.contains("baseSession?.showsAssistantContext(isVisible:"))
+        #expect(stacks.contains("pillSession?.showsAssistantContext(isVisible:"))
+        #expect(stacks.components(separatedBy: "if showsAssistantContext {").count == 3)
+        let manager = try source("VoiceInk/Transcription/Engine/RecorderUIManager.swift")
+        #expect(manager.contains("baseSession?.showsAssistantContext(isVisible:"))
     }
 
     @Test @MainActor func disabledRecordingStartWarningDoesNotPresentNotification() {
@@ -715,6 +813,11 @@ struct RecorderResponsivenessTests {
         referenceReads += 1
         return [LiveSelectionReference("selected context")!]
     }
+}
+
+@MainActor private final class RecorderWarningPlacementProbe: NotificationRecorderPlacementProviding {
+    var height: CGFloat = 40
+    func notificationBottomReservedHeight(on screen: NSScreen) -> CGFloat? { height }
 }
 
 private final class PriorityObservations: @unchecked Sendable {

@@ -62,7 +62,7 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
     }
 
     private var hasAssistantResponse: Bool {
-        assistantSession.isVisible && !stateProvider.captureFinishRequested
+        stateProvider.showsAssistantContext(isVisible: assistantSession.isVisible)
     }
 
     private var shouldShowCloseButton: Bool {

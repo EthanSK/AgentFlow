@@ -226,7 +226,8 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
         }
 
         let baseSession = engine.activeRecordingSession ?? engine.sessions.last
-        let showsAssistant = engine.assistantSession.isVisible
+        let showsAssistant = baseSession?.showsAssistantContext(isVisible: engine.assistantSession.isVisible)
+            ?? engine.assistantSession.isVisible
         let showsStartup = engine.startupPresentation.shouldShow(
             sessionCount: engine.sessions.count, assistantVisible: showsAssistant
         )
@@ -246,12 +247,7 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
         }
         let transcriptHeight: CGFloat
         if let baseSession, showsRealtimeTranscript {
-            transcriptHeight = MiniRecorderLayoutMetrics.contextHeight(
-                parts: baseSession.liveContextPreviewParts,
-                typedText: baseSession.canTypeInHUD ? baseSession.typedInput : nil,
-                width: width,
-                maxHeight: contextLimit
-            )
+            transcriptHeight = baseSession.liveContextHeight(width: width, maxHeight: contextLimit)
         } else {
             transcriptHeight = MiniRecorderLayoutMetrics.liveTranscriptHeight
         }

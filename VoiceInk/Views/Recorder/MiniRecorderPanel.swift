@@ -164,11 +164,13 @@ struct RecorderPanelHeightSync: NSViewRepresentable {
     let desiredHeight: CGFloat
     let edge: Edge
     let scale: CGFloat
+    var onLayoutChange: (NSScreen) -> Void = { NotificationManager.shared.recorderLayoutDidChange(on: $0) }
 
     final class Coordinator {
         var desiredHeight: CGFloat = 430
         var scale: CGFloat = 1
         var scheduled = false
+        var reportedPlacementHeight: CGFloat?
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -208,8 +210,19 @@ struct RecorderPanelHeightSync: NSViewRepresentable {
                 visibleFrame: screen.visibleFrame,
                 wasDraggedByUser: (panel as? MiniRecorderPanel)?.wasDraggedByUser == true
             )
-            guard abs(panel.frame.height - frame.height) > 1 else { return }
-            panel.setFrame(frame, display: true)
+            if abs(panel.frame.height - frame.height) > 1 {
+                panel.setFrame(frame, display: true)
+            }
+            // The visible card can grow inside the host's 120pt minimum, so
+            // warning placement follows content geometry even without a resize.
+            // Same geometry is a no-op; no new presentation, timer or polling.
+            // Found by Claude Opus 5.5. Fixed by GPT-6.1 Sol.
+            let placementHeight = coordinator.desiredHeight * coordinator.scale
+            if edge == .bottom,
+               coordinator.reportedPlacementHeight.map({ abs($0 - placementHeight) > 1 }) ?? true {
+                coordinator.reportedPlacementHeight = placementHeight
+                onLayoutChange(screen)
+            }
         }
     }
 }

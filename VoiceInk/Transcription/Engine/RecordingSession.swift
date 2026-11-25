@@ -373,7 +373,9 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     // observed speech decides where it lands. Ethan corrected the old first-edit
     // anchor on 2026-10-10: prose typed while speaking appeared before speech he
     // had already said. Only first/latest edit times are tracked while editing.
-    @Published private(set) var typedInput = ""
+    @Published private(set) var typedInput = "" {
+        didSet { hudContextHeightCache.removeAll(keepingCapacity: true) }
+    }
     private var typedRunStartedAt: Date?
     private var typedRunLatestEditAt: Date?
     private var undoneTypedRuns: [(index: Int, reference: LiveSelectionReference)] = []
@@ -388,7 +390,17 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     private var pendingSpeechAnchor = "" { didSet { hudContextPreviewCache = nil } }
     private var speechTimingTask: Task<Void, Never>?
     private var contextCaptureEndedAt: Date?
-    private var hudContextPreviewCache: (references: [LiveSelectionReference], parts: [LiveSelectionReference.PreviewPart])?
+    private struct HUDContextHeightKey: Hashable {
+        let width: CGFloat
+        let maxHeight: CGFloat
+        let includesEditor: Bool
+    }
+    private var hudContextHeightCache: [HUDContextHeightKey: CGFloat] = [:]
+    private var hudContextPreviewCache: (references: [LiveSelectionReference], parts: [LiveSelectionReference.PreviewPart])? {
+        didSet {
+            if case nil = hudContextPreviewCache { hudContextHeightCache.removeAll(keepingCapacity: true) }
+        }
+    }
     @Published private(set) var potentialTTSActive = false
 
     private func updateAnnotationCaptureState(at date: Date) {
@@ -446,6 +458,24 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
 
     var liveContextPreviewParts: [LiveSelectionReference.PreviewPart] {
         hudContextPreview().parts
+    }
+
+    /// Ethan's "resize layout" shares one exact measurement among the card,
+    /// stack offsets, host window and warnings at the same display geometry.
+    /// Preview/typing edits invalidate it; source text and delivery stay untouched.
+    /// Found by GPT-6.1 Sol and Claude Opus 5.5. Fixed by GPT-6.1 Sol. — GPT-6.1 Sol
+    func liveContextHeight(width: CGFloat, maxHeight: CGFloat) -> CGFloat {
+        let key = HUDContextHeightKey(width: width, maxHeight: maxHeight, includesEditor: canTypeInHUD)
+        if let height = hudContextHeightCache[key] { return height }
+        let height = MiniRecorderLayoutMetrics.contextHeight(
+            parts: liveContextPreviewParts, typedText: canTypeInHUD ? typedInput : nil,
+            width: width, maxHeight: maxHeight)
+        // Retain only a small set of recent geometries, never transcript copies.
+        // Eviction only remeasures; it cannot clip text or change the result.
+        // Found and fixed by GPT-6.1 Sol.
+        if hudContextHeightCache.count >= 16 { hudContextHeightCache.removeAll(keepingCapacity: true) }
+        hudContextHeightCache[key] = height
+        return height
     }
 
     private func hudContextPreview() -> (references: [LiveSelectionReference], parts: [LiveSelectionReference.PreviewPart]) {

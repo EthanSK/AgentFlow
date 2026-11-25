@@ -99,6 +99,109 @@ struct RecorderPerformanceMeasurementTests {
         try data.write(to: folder.appendingPathComponent("recorder-performance.json"))
     }
 
+    @Test @MainActor func measureGrowingTextLayoutWhenRequested() async throws {
+        guard let directory = ProcessInfo.processInfo.environment["VIPP_RECORDER_RESIZE_PERFORMANCE_DIR"] else { return }
+        let folder = URL(fileURLWithPath: directory, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let session = RecordingSession(phase: .recording)
+        session.liveRecordingState = .recording
+        var measurements: [[String: Any]] = []
+        for count in [500, 5_000, 20_000, 75_000] {
+            let text = String(repeating: "Measured growing text. ", count: count / 23 + 1)
+            for typed in [false, true] {
+                session.partialTranscript = typed ? "Speech before typing." : text
+                session.updateTypedInput(typed ? text : "")
+                for width: CGFloat in [640, 1100] {
+                    let coldStart = ProcessInfo.processInfo.systemUptime
+                    let expected = session.liveContextHeight(width: width, maxHeight: 220)
+                    let coldMs = (ProcessInfo.processInfo.systemUptime - coldStart) * 1_000
+                    var cached: [Double] = []
+                    var uncached: [Double] = []
+                    for iteration in 0..<11 {
+                        // Alternate ordering. Timings are diagnostic, not a flaky
+                        // shared-runner pass threshold. — GPT-6.1 Sol
+                        for useCache in iteration.isMultiple(of: 2) ? [false, true] : [true, false] {
+                            let start = ProcessInfo.processInfo.systemUptime
+                            for _ in 0..<3 {
+                                let height = useCache
+                                    ? session.liveContextHeight(width: width, maxHeight: 220)
+                                    : MiniRecorderLayoutMetrics.contextHeight(parts: session.liveContextPreviewParts,
+                                        typedText: session.typedInput, width: width, maxHeight: 220)
+                                #expect(height == expected)
+                            }
+                            let elapsed = (ProcessInfo.processInfo.systemUptime - start) * 1_000
+                            if useCache { cached.append(elapsed) } else { uncached.append(elapsed) }
+                        }
+                    }
+                    cached.sort(); uncached.sort()
+                    measurements.append(["characters": text.count, "typed": typed, "width": width,
+                        "coldMilliseconds": coldMs, "reads": 3,
+                        "cachedP50Milliseconds": cached[5], "uncachedP50Milliseconds": uncached[5]])
+                }
+            }
+        }
+        let suite = "AgentFlowTests.Resize.\(UUID().uuidString)"
+        let settings = try #require(UserDefaults(suiteName: suite))
+        defer { settings.removePersistentDomain(forName: suite) }
+        settings.set(false, forKey: RecorderCaptureOutlinePreference.preferenceKey)
+        let recorder = Recorder()
+        let assistant = AssistantSession()
+        var panels: [NSPanel] = []
+        var hosts: [NSView] = []
+        for index in 0..<3 {
+            let width: CGFloat = index == 0 ? 640 : 1100
+            let panel = MiniRecorderPanel(contentRect: NSRect(x: CGFloat(index * 30), y: 0, width: width, height: 120))
+            let host = NSHostingView(rootView: RecorderGrowingLayoutProbe(
+                session: session, recorder: recorder, assistant: assistant,
+                width: width, notch: index == 2).defaultAppStorage(settings))
+            panel.contentView = host
+            panel.orderFrontRegardless()
+            panels.append(panel); hosts.append(host)
+        }
+        defer { for panel in panels { panel.orderOut(nil); panel.close() } }
+        var frames: [[String: Any]] = []
+        for count in [500, 5_000, 20_000, 75_000] {
+            for typed in [false, true] {
+                for growing in [false, true] {
+                    session.microphoneOff = typed
+                    session.partialTranscript = typed ? "Speech before typing." : String(repeating: "Growing spoken words. ", count: count / 22 + 1)
+                    session.updateTypedInput(typed ? String(repeating: "Growing typed words. ", count: count / 21 + 1) : "")
+                    var intervals: [Double] = []
+                    var previous = ProcessInfo.processInfo.systemUptime
+                    let cpuStart = cpuSeconds()
+                    let start = previous
+                    for tick in 0..<30 {
+                        // The existing provider-cadence diagnostic yields instead
+                        // of replaying missed ticks; no production wait is added.
+                        // Fixed and growing controls share this cadence. — GPT-6.1 Sol
+                        try await Task.sleep(for: .milliseconds(33))
+                        if growing && tick.isMultiple(of: 3) {
+                            if typed { session.updateTypedInput(session.typedInput + " word") }
+                            else { session.partialTranscript += " word" }
+                        }
+                        for host in hosts { host.layoutSubtreeIfNeeded() }
+                        let now = ProcessInfo.processInfo.systemUptime
+                        intervals.append((now - previous) * 1_000); previous = now
+                    }
+                    let elapsed = ProcessInfo.processInfo.systemUptime - start
+                    let cpu = cpuSeconds() - cpuStart
+                    intervals.sort()
+                    frames.append(["startingCharacters": count, "typed": typed, "growing": growing,
+                        "cpuPercentOfOneCore": 100 * cpu / elapsed,
+                        "intervalP50Milliseconds": intervals[15], "intervalP95Milliseconds": intervals[27],
+                        "panels": 3, "ticks": intervals.count])
+                    #expect(intervals.count == 30)
+                }
+            }
+        }
+        let report: [String: Any] = ["configuration": "Debug native test host",
+            "limits": "Synthetic growing speech/typing in three real recorder cards with actual height measurement and host sync. No microphone, provider, physical multi-display or GPU timing. Interval includes the33ms cadence and shared-host scheduling. Not a performance pass threshold.",
+            "geometry": measurements, "hostedCards": frames]
+        try JSONSerialization.data(withJSONObject: report, options: [.prettyPrinted, .sortedKeys])
+            .write(to: folder.appendingPathComponent("recorder-resize-performance.json"))
+        print("Recorder growing-text diagnostic completed: \(measurements.count) geometry and \(frames.count) hosted scenarios")
+    }
+
     // Time the actual cache-miss path during shape changes separately from GPU
     // compositing. Covers three cards at both HUD-scale extremes and Retina geometry;
     // keeps today's path sampler and appearance intact. — GPT-6.1 Sol
@@ -149,5 +252,34 @@ struct RecorderPerformanceMeasurementTests {
         getrusage(RUSAGE_SELF, &usage)
         return Double(usage.ru_utime.tv_sec + usage.ru_stime.tv_sec)
             + Double(usage.ru_utime.tv_usec + usage.ru_stime.tv_usec) / 1_000_000
+    }
+}
+
+/// Exercise the actual card and host-height sync without an engine, capture or
+/// notification lifecycle; each panel owns its normal session observation.
+/// The cached measurement is the production stack's shared entry. — GPT-6.1 Sol
+@MainActor private struct RecorderGrowingLayoutProbe: View {
+    @ObservedObject var session: RecordingSession
+    let recorder: Recorder
+    let assistant: AssistantSession
+    let width: CGFloat
+    let notch: Bool
+    var body: some View {
+        let height = session.liveContextHeight(width: notch ? width - 16 : width, maxHeight: 220)
+        Group {
+            if notch {
+                NotchRecorderView(stateProvider: session, recorder: recorder, assistantSession: assistant,
+                    notchWidth: 180, notchHeight: 32, liveTranscriptHeight: height,
+                    onRecordButtonTapped: {}, onCloseTapped: {}, onCancelTapped: {}, onAssistantFollowUp: { _ in })
+            } else {
+                MiniRecorderView(stateProvider: session, liveTranscriptHeight: height,
+                    liveTranscriptWidth: width, recorder: recorder, assistantSession: assistant,
+                    onRecordButtonTapped: {}, onCloseTapped: {}, onCancelTapped: {}, onAssistantFollowUp: { _ in })
+            }
+        }
+        .frame(width: width)
+        .frame(maxHeight: .infinity, alignment: notch ? .top : .bottom)
+        .background(RecorderPanelHeightSync(desiredHeight: height + 52,
+            edge: notch ? .top : .bottom, scale: 1, onLayoutChange: { _ in }))
     }
 }
