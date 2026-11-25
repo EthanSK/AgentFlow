@@ -394,7 +394,7 @@ struct RecorderTypedInputTests {
             #expect(NSApp.keyWindow === originalKeyWindow)
 
             // Start in the middle so either wheel direction can prove that the
-            // real enclosing SwiftUI scroll view received the forwarded event.
+            // real enclosing preview scroll view received the forwarded event.
             scroll.contentView.scroll(to: NSPoint(x: 0, y: 200))
             scroll.reflectScrolledClipView(scroll.contentView)
             let before = scroll.contentView.bounds.origin.y
@@ -1154,7 +1154,8 @@ struct RecorderTypedInputTests {
         let viewEnd = try #require(components.range(of: "struct RecorderPauseButton", range: viewStart.upperBound..<components.endIndex))
         let transcriptView = String(components[viewStart.lowerBound..<viewEnd.lowerBound])
         #expect(transcriptView.components(separatedBy: "LiveSelectionReference.previewParts(").count == 2)
-        #expect(transcriptView.contains("previewText(parts)") && transcriptView.contains(".onChange(of: parts)"))
+        #expect(transcriptView.contains("RecorderTranscriptPreview(content: RecorderTranscriptPreviewContent(")
+            && transcriptView.contains("parts: parts, potentialTTSActive: potentialTTSActive"))
         #expect(transcriptView.contains("cachedPreviewParts ?? LiveSelectionReference.previewParts"))
         for style in ["Mini", "Notch"] {
             #expect(try source("VoiceInk/Views/Recorder/\(style)RecorderView.swift")
