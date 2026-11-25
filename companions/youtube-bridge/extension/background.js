@@ -516,7 +516,7 @@ const recordTabPlayState = (tabId, playing, title, url, isPiP, reason, contentTi
  * targeting a genuinely-paused PiP tab is a safe reported no-op.
  * @returns {Promise<Array<{ tabId: number, lastPlayedAt: number, why: string }>>}
  */
-const orderedDictationCandidates = async () => {
+const orderedDictationCandidates = async (includeViewed = false) => {
   const now = Date.now();
   let liveTabs = [];
   let lastFocusedWindowId = null;
@@ -570,6 +570,7 @@ const orderedDictationCandidates = async () => {
   const toCandidate = (why) => (entry) => ({
     tabId: entry.tabId,
     lastPlayedAt: entry.lastPlayedAt,
+    lastAccessed: entry.liveTab?.lastAccessed ?? 0,
     why,
   });
   const byRecency = (a, b) => b.lastPlayedAt - a.lastPlayedAt;
@@ -644,6 +645,8 @@ const orderedDictationCandidates = async () => {
     ...currentlyPlaying,
     ...pipEligible,
     ...recentlyPlayed,
+    ...(includeViewed ? entries.filter(entry => Number.isFinite(entry.liveTab?.lastAccessed) && entry.liveTab.lastAccessed > 0)
+      .sort(byLiveAttention).map(toCandidate('recently-viewed')) : []),
   ]) {
     if (seen.has(candidate.tabId)) {
       continue;
@@ -873,10 +876,18 @@ const controlVideoForHelloChat = async (requestId, action, issuedAt) => {
   }
   const expiresAt = issuedAt + HELLO_CHAT_VIDEO_MAX_AGE_MS;
   await hydrateFromStorage();
-  const ranked = await orderedDictationCandidates();
+  const ranked = await orderedDictationCandidates(action === 'play');
   const attention = ranked.filter(({ why }) => why === 'pip-playing' || why === 'last-focused-active-live-check');
   const remembered = helloChatPausedTarget ? [helloChatPausedTarget] : [];
-  const candidates = [...attention, ...remembered, ...ranked.filter(candidate => !attention.includes(candidate))];
+  // Explicit Play uses the last video actually viewed when the selected tab has
+  // no video; another playing tab must not satisfy it with "already-playing".
+  // Automatic recording pause/resume keeps its ranking and ownership. — GPT-6.1 Sol
+  const recentlyViewed = action === 'play'
+    ? ranked.filter(candidate => Number.isFinite(candidate.lastAccessed) && candidate.lastAccessed > 0)
+      .sort((a, b) => b.lastAccessed - a.lastAccessed)
+    : [];
+  const candidates = [...attention, ...remembered, ...recentlyViewed,
+    ...ranked.filter(candidate => !attention.includes(candidate))];
 
   const tried = new Set();
   for (const candidate of candidates) {

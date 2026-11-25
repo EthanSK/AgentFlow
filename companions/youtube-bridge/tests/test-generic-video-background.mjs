@@ -70,6 +70,7 @@ function setup(stored = {}, initialUrl = 'https://video.example/watch') {
   return { stored, run, commands, injections, report, chrome, nativeReplies,
     native: message => nativeMessages.listeners[0](message),
     blockPlay: () => { playBlocked = true; },
+    setPlaying: value => { playing = value; },
     delayQuery: fn => { queryDelay = fn; },
     advanceClock: milliseconds => { clockOffset += milliseconds; },
     start: () => run("enqueueDictationOp('fixture-start', () => pauseYouTubeForDictation('fixture'))"),
@@ -241,3 +242,30 @@ superseded.chrome.scripting.executeScript = async () => { superseded.run('pendin
 await completes(superseded.run("resumeTabWithConfirmation(7, dictationSessionToken, 'fixture')"));
 assert.equal(superseded.commands.filter(c => c.message.type === 'resume-youtube').length, 0);
 console.log('PASS a new recording during injection prevents stale resume actuation');
+
+// The real incident selected a playing Nuuk tab while the intended Hannah Fry
+// podcast was paused. Fixture URLs/times are synthetic; only the shape is reused. — GPT-6.1 Sol
+const lastViewed = setup({}, 'https://www.youtube.com/watch?v=intended');
+lastViewed.setPlaying(false);
+lastViewed.run("tabPlayState.set(7, { playing: false, lastPlayedAt: Date.now() - 1000, isPiP: false })");
+lastViewed.run("tabPlayState.set(7, { playing: false, lastPlayedAt: 1000, title: 'Intended', url: 'https://www.youtube.com/watch?v=intended' }); tabPlayState.set(8, { playing: true, lastPlayedAt: 2000, title: 'Other', url: 'https://www.youtube.com/watch?v=other' })");
+lastViewed.chrome.tabs.query = async () => [
+  { id: 7, windowId: 1, url: 'https://www.youtube.com/watch?v=intended', active: false, audible: false, lastAccessed: 2000 },
+  { id: 8, windowId: 1, url: 'https://www.youtube.com/watch?v=other', active: false, audible: true, lastAccessed: 1000 },
+];
+const intendedSend = lastViewed.chrome.tabs.sendMessage;
+const wrongTargets = [];
+lastViewed.chrome.tabs.sendMessage = (id, message, options, callback) => {
+  if (id === 8) {
+    wrongTargets.push(message.type);
+    if (typeof options === 'function') callback = options;
+    callback?.({ ok: true, resumed: false, reason: 'already-playing' }); return;
+  }
+  intendedSend(id, message, options, callback);
+};
+request(lastViewed, 'play', 101);
+await idle(lastViewed);
+assert.equal(replies(lastViewed).at(-1)?.tabId, 7, 'Play resumes the most recently viewed paused video rather than acknowledging unrelated background playback');
+assert.equal(replies(lastViewed).at(-1)?.reason, 'played');
+assert.equal(wrongTargets.length, 0, 'The unrelated playing tab gets no command');
+console.log('PASS explicit Play uses actual tab attention when the selected Chrome tab has no video');

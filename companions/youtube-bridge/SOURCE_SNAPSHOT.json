@@ -1,7 +1,14 @@
 {
+  "approvedDelta": {
+    "kind": "explicit-play-most-recently-viewed",
+    "previousPublicBackgroundSHA256": "3dc9e7bb05967c4246e37928aa005e569cb5f9d643f57677bb555cb62c7c5223",
+    "privateSourceAfterSHA256": "397b50a833d149152c92eb9874533efb28436bcf35ac65c465200f94f441b89e",
+    "privateSourceBeforeSHA256": "bac72ce0160479cb2d0b6e1bc6f5a9d3ecb6311a82186c6783b177d0abc1a49d",
+    "unrelatedPrivateChangesExcluded": true
+  },
   "component": "Agent Flow video bridge",
   "files": {
-    "extension/background.js": "3dc9e7bb05967c4246e37928aa005e569cb5f9d643f57677bb555cb62c7c5223",
+    "extension/background.js": "72a83f444039f7e4ab712082c872e84ef117d4b3ee222734fcc18ad82394d92d",
     "extension/content-script.js": "b05bbc6822747cacdd221acc31b7b501749d3c10b9c52b58baffe59a1cc92697",
     "extension/generic-rate-bridge.js": "ffce57fb379503d93ed2c61622bc899411876f398a96b1aa8420c9e2fc16e937",
     "extension/generic-video-router.js": "c1b4af432372aa1658b20074de6288ad30db9b5d50ccad0b1e02fc00ee32be79",
@@ -9,7 +16,7 @@
     "extension/icons/icon-128.png": "82f3c384fd984083c08f7b850bd7503c471322c48dd08f45e73477bfe5e48fff",
     "extension/icons/icon-16.png": "7599a943a464e04f3bb50804e8ba29dc31321dc1ba9f8139e885d5716f1ba803",
     "extension/icons/icon-32.png": "bd946eb000878d5630d26a6daf3939adab0c9a508109f081bb463aecca2c50b0",
-    "extension/manifest.json": "b08e14dee98b31d872a13553c4fefc50bfb1c972df41b475e46d0a53f27b16f1",
+    "extension/manifest.json": "427caa74de161a523d4a7df04f448046cf70e04cbfd24b9df48fb6d3d7939c16",
     "extension/seek-history.js": "3690690df95646e597f62bfd808847ff2783fefc8c96946f5b97ca34b9c38178",
     "extension/status.css": "739dc597a68f590a3bdb0a68448d67239ea5957de4d432f70cbf94adf7d0f85c",
     "extension/status.html": "050d6f90404cab79e3ff4a10e777a17caf67e3aa56bb40d84284e8ece859dc9f",
@@ -28,7 +35,7 @@
     "tests/test-chrome-tab-history.mjs": "7b858662253bb2b226810f6387d76aa3a75f6883951fe0340db857a1a0aeb399",
     "tests/test-chrome-website-opener.mjs": "bce39e0b936235b1158dceaf4b2bbb8885895610c6767f0a9185c90a31e9b810",
     "tests/test-generic-rate-bridge.mjs": "69abb4238733d80dbc87fe3080cb947faf0d06597c5a8b4b40d5671a92d84fe6",
-    "tests/test-generic-video-background.mjs": "40aa3d29ed26e204b0a135dbdf2cb86d4b051a13a14de9cc68ac66c89ca4cb51",
+    "tests/test-generic-video-background.mjs": "92665d953463e0c202945d1af0208b00afa99d0c04dc0e400c78e2d432408835",
     "tests/test-generic-video.mjs": "f19a9b8ed22b54cae650f41e62670989eb2d9fe6cf2413a1fb677a7c6a3ddccf",
     "tests/test-log-retention.mjs": "e1420616f0ef721e8ff6c40aab52a1fb35730ae0dd762fb0cc686af468d8c0ce",
     "tests/test-manual-playback-takeover.mjs": "37e61c043bf3f50112f17574bb5c22dd2a43a2a2165b193d02806af77a38a2f9",
