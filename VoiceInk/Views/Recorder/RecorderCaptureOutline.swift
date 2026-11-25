@@ -13,7 +13,7 @@ import SwiftUI
 ///
 /// Callers place it in a `.background` above the card fill and beneath content, and
 /// the card's own clip bounds it, so it changes no geometry, hit target, drag
-/// surface, scroll view or keyboard focus. This is recording activity only. It never
+/// surface, scroll view or keyboard focus. It shows composing/capture/processing activity. It never
 /// marks a saved destination, a Next route or the current-focus icon.
 /// Original design by Claude Opus 5.5; border-only refinement by GPT-6.1 Sol.
 /// — GPT-6.1 Sol
@@ -76,7 +76,7 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
         }
         .task {
             // Ethan wants input ready before the outline grows around it. Typing
-            // mounts this leaf only after a real edit; yielding here also keeps the
+            // mounts this leaf after a real edit or context gesture; yielding keeps the
             // first Canvas/path work outside the panel's mounting turn. Nothing in
             // keyboard focus, capture or delivery awaits this decorative task.
             // — GPT-6.1 Sol
@@ -84,7 +84,8 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
             guard !Task.isCancelled, introductionStartedAt == nil else { return }
             introductionStartedAt = Date()
         }
-        // A newer pulse or removal cancels its static acknowledgement task.
+        // A newer pulse or the outline's removal cancels this task, so no hold can
+        // outlive its pulse or clear a newer one. — Claude Opus 5.5
         .task(id: acceptancePulse?.id) { await holdStillAcknowledgement() }
         .allowsHitTesting(false)
         .accessibilityHidden(true)

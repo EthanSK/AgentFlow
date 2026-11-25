@@ -1,6 +1,15 @@
 # Learnings
 
 ---
+**Date:** 2026-11-25
+**Trigger:** Ethan requested the fastest possible startup without losing functionality, an asynchronously introduced border that grows around the panel after typing starts, and an Astra startup audit.
+**Verified:** Three natural installed553 focus requests took941,984 and1059ms. They succeeded on attempt2; associated Codex selection reads finished later. This does not isolate rainbow drawing as the cause, prove a Code-preselection wait, or establish a one-second timer.
+**Fix:** 504d0626 keeps empty typing ready without mounting decorative geometry until actual text or an accepted context gesture. The outline yields its own mounting task, then grows one sharp path over0.45s on its existing30Hz clock; Reduce Motion stays still and the saved off switch removes the whole leaf. Capture-state eligibility remains separate from deferred display eligibility, so the first blue/magenta context pulse can create itself. The same source removes one identical .starting/recompute publication before audio startup; the first synchronous handoff, Mode, selection, journal and router setup remain.
+**Guard:** 980c2221 fixes an actual native failure of the first draft: task modifiers on an empty Group had no child to mount, so the real panels had no border. A persistent transparent leaf owns that task. All48 named canonical Mini functions passed afterward, including actual full-card on/off and context pulses, controlled introduction/Reduce Motion frames for both silhouettes, real editor mounting/Code-preselection ordering, idle no-debounce, capture-tail/media and Primary/Next/HUD-only guards. Finished synthetic Mini/Notch frames were inspected: sharp edge, black interior, one-line version and unchanged controls. No live capture, Voice toggle, media action or message probe was generated. Physical startup speedup remains unmeasured. Local installation and exact-source hosted release follow separately.
+---
+
+
+---
 **Date:** 2026-11-25T13:43:18Z
 **Trigger:** Shared typing/recognised-speech outline momentum, followed by requests for gradual starts and a small, gentler speed increase.
 **Symptom:** Source review found that a context pulse could replace the charged rainbow with its old clock. Ethan separately reported occasional fast starts/slowdowns; the exact reported phase was not independently observed.

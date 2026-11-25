@@ -1,5 +1,10 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-25 — Starting a deferred SwiftUI leaf from an empty Group — REJECTED
+
+The first554 candidate504d0626 put an asynchronous mounting task on a Group whose conditional Canvas was initially absent. Controlled leaf previews passed because their explicit frame override bypassed mounting, but actual Mini/Notch on/off image checks found no border:16 edge expectations failed in one of48 named functions. Do not weaken those checks or treat a preview as lifecycle proof.980c2221 uses a persistent transparent leaf to own the same cancellable task, and all48 functions then passed with unchanged pixel thresholds and fixture waits. Reconsider an initially empty wrapper only with an actual native host proving its task starts and both real card styles paint after mounting.
+
+
 ## 2026-11-25 — Using a context pulse's mask phase as the rainbow colour phase — REJECTED
 
 Charging exposed a previously implicit assumption that both positions were the same. In361e5705 the live rainbow used text-driven phase, while the pulse painter still produced every underlying colour from the old clock, even at zero pulse strength. Reverse loading could also separate these clocks. This is source-proven; no pre-fix physical screen episode was claimed. Source8590c2b5 passes the actual background position separately and keeps the live mask frame through loading. Native initial-frame equality in both branches and independent paint assertions now protect this boundary;36 functions passed, then38 after the gentler velocity update. Retain those frame-identity checks when changing either clock. Reconsider a single position only if all consumers provably use the same phase for the whole pulse lifetime.
