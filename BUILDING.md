@@ -68,7 +68,7 @@ Agent Flow needs two macOS permissions for its core workflow:
 
 Follow the in-app permission prompts. You can review the grants later in **System Settings → Privacy & Security**.
 
-An ad-hoc local build is separate from the upstream VoiceInk app. It uses the bundle identifier `com.ethansk.VoiceInkPlusPlus`, so it does not replace `/Applications/VoiceInk.app`.
+An ad-hoc local build uses the bundle identifier `com.ethansk.VoiceInkPlusPlus`.
 
 ## Recommended mouse setup
 
@@ -106,7 +106,7 @@ The ad-hoc local configuration intentionally omits capabilities that require Eth
 
 - No iCloud dictionary sync
 - No automatic install channel. Optional daily checks notify you about this repository's Agent Flow
-  releases, never upstream binaries. Download the reviewed release or pull reviewed source and rebuild.
+  releases. Download the reviewed release or pull reviewed source and rebuild.
 
 Transcription providers may require your own API credentials. Ethan's personal Deepgram local proxy is not part of this repository.
 
@@ -188,10 +188,6 @@ Check the [Agent Flow repository](https://github.com/EthanSK/AgentFlow) for newe
 - whether this was a first build or an update
 
 Do not share API keys, tokens, private proxy URLs, or other credentials in logs.
-
-## Upstream project
-
-Agent Flow is an independent fork of [VoiceInk by Beingpax](https://github.com/Beingpax/VoiceInk). Upstream build and download instructions install VoiceInk, not this Agent Flow fork.
 
 ## Optional YouTube / Chrome companion
 

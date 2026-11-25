@@ -261,7 +261,7 @@
           <p class="note">No API keys, private endpoints or personal settings are bundled. Your key stays in macOS Keychain, and providers bill you directly.</p>
           <p class="note"><strong>On an Intel Mac</strong>, use a cloud transcription provider with your own key, which bills you for usage. Local models aren't reliable on Intel; the on-device model is for Apple silicon.</p>
           <p class="note">Auto-send presses Return after pasting. It starts off; enable it per app in Modes if you want it. For Codex CLI or Claude Code, configure the terminal or editor it runs in.</p>
-          <p class="note">Agent Flow can check for updates daily and offer new versions, which are also on <a href="https://github.com/EthanSK/AgentFlow/releases">GitHub releases</a>. Updates install only when nothing is recording, transcribing or pasting, and the updater never installs upstream VoiceInk, a separate app.</p>
+          <p class="note">Agent Flow can check for updates daily and offer new versions, which are also on <a href="https://github.com/EthanSK/AgentFlow/releases">GitHub releases</a>. Updates install only when nothing is recording, transcribing or pasting.</p>
           <details class="optional" id="pieces">
             <summary>Optional extras</summary>
             <dl class="pieces">
@@ -333,7 +333,6 @@ cd AgentFlow
             <li>Builds Agent Flow, installs it in <code>~/Applications</code> and opens it. It won't replace an existing installation, including a downloaded app.</li>
             <li>On a first install, add <code>--all</code> to also install the context skill and YouTube helper. Chrome still needs its unpacked extension loaded and approved by hand.</li>
             <li>Already using the download? Run only <code>python3 scripts/install-context-skill.py</code> from the checkout to add the skill.</li>
-            <li>The upstream <code>voiceink</code> Homebrew cask installs VoiceInk, not Agent Flow.</li>
           </ul>
           <p class="actions">
             <a class="button" href="https://github.com/EthanSK/AgentFlow/blob/main/SETUP.md">Full setup guide <span aria-hidden="true">↗</span></a>
@@ -349,7 +348,7 @@ cd AgentFlow
 
   <footer class="foot">
     <div class="wrap foot-inner">
-      <p>Agent Flow is Ethan SK's fork of <a href="https://github.com/Beingpax/VoiceInk">VoiceInk by Beingpax</a>, licensed under <a href="https://github.com/EthanSK/AgentFlow/blob/main/LICENSE">GPL-3.0</a>. No Pro purchase, trial or license check; paid transcription and AI providers bill you directly.</p>
+      <p>Agent Flow is licensed under <a href="https://github.com/EthanSK/AgentFlow/blob/main/LICENSE">GPL-3.0</a>. No purchase, trial or license check; paid transcription and AI providers bill you directly.</p>
       <nav class="foot-nav" aria-label="Documentation">
         <a href="https://github.com/EthanSK/AgentFlow">GitHub</a>
         <a href="https://github.com/EthanSK/AgentFlow/blob/main/BUILDING.md">Build guide</a>

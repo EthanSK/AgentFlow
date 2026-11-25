@@ -29,7 +29,7 @@ Download [the latest Agent Flow release](https://github.com/EthanSK/AgentFlow/re
 
 **Intel Macs:** use a supported cloud transcription provider with your own key. The app's Models page warns that local models do not work reliably on Intel. Apple-silicon Macs can use the downloaded local model without a provider key. A universal executable does not guarantee equal local-model support on both architectures.
 
-For an update, finish any recording/transcription, quit the app, and keep a ZIP of the previous app as rollback before replacing it. Do not delete Agent Flow's settings, Keychain entries or recordings. Updates are manual; optional daily checks notify you about this repository's releases, never replace the app or install upstream VoiceInk.
+For an update, finish any recording/transcription, quit the app, and keep a ZIP of the previous app as rollback before replacing it. Do not delete Agent Flow's settings, Keychain entries or recordings. Updates are manual; optional daily checks notify you about this repository's releases and never replace the app.
 
 To check a download, put the ZIP and `SHA256SUMS` from that release in the same folder, then run `shasum -a 256 -c SHA256SUMS` there. A matching checksum verifies the download; macOS separately checks the signature and notarization.
 
@@ -112,8 +112,8 @@ cd AgentFlow
 ```
 
 The script builds a locally signed Agent Flow app, verifies its bundle identity and signature,
-installs it in `~/Applications`, and opens it. It refuses an existing Agent Flow or VoiceInk++ app rather than
-overwrite settings or interrupt a recording. It never touches `/Applications/VoiceInk.app`.
+installs it in `~/Applications`, and opens it. It refuses an existing Agent Flow app, including one under
+its older name, rather than overwrite settings or interrupt a recording.
 It also requires a persistent app process before reporting a successful launch.
 
 For the bundled YouTube companion and Codex context skill too, use
