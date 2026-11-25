@@ -133,10 +133,28 @@ struct RecorderPerformanceMeasurementTests {
                             if useCache { cached.append(elapsed) } else { uncached.append(elapsed) }
                         }
                     }
-                    cached.sort(); uncached.sort()
+                    var editorCached: [Double] = [], editorUncached: [Double] = []
+                    let editorExpected = MiniRecorderLayoutMetrics.typingHeight(text: session.typedInput,
+                        width: width, maxHeight: expected - MiniRecorderLayoutMetrics.singleLineHeight)
+                    for iteration in 0..<11 {
+                        for useCache in iteration.isMultiple(of: 2) ? [false, true] : [true, false] {
+                            let start = ProcessInfo.processInfo.systemUptime
+                            for _ in 0..<3 {
+                                let editor = useCache
+                                    ? session.liveContextEditorHeight(width: width, contextHeight: expected)
+                                    : MiniRecorderLayoutMetrics.typingHeight(text: session.typedInput, width: width,
+                                        maxHeight: expected - MiniRecorderLayoutMetrics.singleLineHeight)
+                                #expect(editor == editorExpected)
+                            }
+                            let elapsed = (ProcessInfo.processInfo.systemUptime - start) * 1_000
+                            if useCache { editorCached.append(elapsed) } else { editorUncached.append(elapsed) }
+                        }
+                    }
+                    cached.sort(); uncached.sort(); editorCached.sort(); editorUncached.sort()
                     measurements.append(["characters": text.count, "typed": typed, "width": width,
                         "coldMilliseconds": coldMs, "reads": 3,
-                        "cachedP50Milliseconds": cached[5], "uncachedP50Milliseconds": uncached[5]])
+                        "cachedP50Milliseconds": cached[5], "uncachedP50Milliseconds": uncached[5],
+                        "cachedEditorP50Milliseconds": editorCached[5], "uncachedEditorP50Milliseconds": editorUncached[5]])
                 }
             }
         }
@@ -149,7 +167,10 @@ struct RecorderPerformanceMeasurementTests {
         var panels: [NSPanel] = []
         var hosts: [NSView] = []
         for index in 0..<3 {
-            let width: CGFloat = index == 0 ? 640 : 1100
+            // Match the actual Notch view's text width as production does;
+            // the earlier diagnostic gave its height probe an extra200pt.
+            let width: CGFloat = index == 0 ? 640 : index == 1 ? 1100
+                : 180 + MiniRecorderLayoutMetrics.notchTranscriptSideExpansion * 2
             let panel = MiniRecorderPanel(contentRect: NSRect(x: CGFloat(index * 30), y: 0, width: width, height: 120))
             let host = NSHostingView(rootView: RecorderGrowingLayoutProbe(
                 session: session, recorder: recorder, assistant: assistant,

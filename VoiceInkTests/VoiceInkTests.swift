@@ -993,8 +993,7 @@ struct VoiceInkTests {
         let components = try repositorySource("VoiceInk/Views/Recorder/RecorderComponents.swift")
         // Screenshot color now acknowledges live recognition; preserve its
         // normal purple/pink style without requiring it before provider words.
-        #expect(try repositorySource("VoiceInk/Views/Recorder/RecorderTranscriptPreview.swift")
-            .contains("? waiting : NSColor(RecorderContextColor.screenshot).withAlphaComponent(0.95))"))
+        #expect(components.contains(".foregroundColor(dimsContextUntilSpeechArrives ? waitingContext : RecorderContextColor.screenshot.opacity(0.95))"))
         #expect(components.contains(".font(.system(size: MiniRecorderLayoutMetrics.liveTranscriptFontSize))"))
     }
 

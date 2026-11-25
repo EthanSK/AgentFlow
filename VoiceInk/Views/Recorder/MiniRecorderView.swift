@@ -173,6 +173,8 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                     selectionReferences: stateProvider.liveContextPreviewReferences,
                     cachedPreviewParts: stateProvider.liveContextPreviewParts,
                     height: liveTranscriptHeight,
+                    cachedEditorHeight: stateProvider.liveContextEditorHeight(
+                        width: liveTranscriptWidth, contextHeight: liveTranscriptHeight),
                     typedInput: stateProvider.canTypeInHUD ? Binding(
                         get: { stateProvider.typedInput },
                         set: { stateProvider.updateTypedInput($0) }

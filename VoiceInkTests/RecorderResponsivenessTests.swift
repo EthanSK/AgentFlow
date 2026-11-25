@@ -328,6 +328,55 @@ struct RecorderResponsivenessTests {
         }
     }
 
+    @Test @MainActor func sharedEditorHeightMatchesOriginalLayoutAcrossTextAndGeometry() {
+        let session = RecordingSession()
+        let provider: any RecorderStateProvider = session
+        let texts = ["", "one", "one\n", String(repeating: "long typed words ", count: 300),
+            String(repeating: "👩🏽‍💻 e\u{301} العربية ", count: 80), String(repeating: "\n", count: 30)]
+        for text in texts {
+            session.updateTypedInput(text)
+            for speech in ["Short speech.", String(repeating: "Spoken context grows too. ", count: 100)] {
+                session.partialTranscript = speech
+                for width: CGFloat in [320, 640, 1084] {
+                    for cap: CGFloat in [80, 220, 660] {
+                        let total = session.liveContextHeight(width: width, maxHeight: cap)
+                        let original = MiniRecorderLayoutMetrics.typingHeight(text: text, width: width,
+                            maxHeight: total - MiniRecorderLayoutMetrics.singleLineHeight)
+                        #expect(provider.liveContextEditorHeight(width: width, contextHeight: total) == original)
+                        #expect(session.liveContextHeight(width: width, maxHeight: cap) == total)
+                    }
+                }
+            }
+        }
+    }
+
+    @Test @MainActor func sharedEditorHeightRejectsStaleSnapshotsAndUnsupportedGeometry() throws {
+        let session = RecordingSession()
+        let provider: any RecorderStateProvider = session
+        session.updateTypedInput(String(repeating: "long typing ", count: 200))
+        let oldHeight = session.liveContextHeight(width: 640, maxHeight: 220)
+        session.updateTypedInput("Short again")
+        #expect(provider.liveContextEditorHeight(width: 640, contextHeight: oldHeight)
+            == MiniRecorderLayoutMetrics.typingHeight(text: session.typedInput, width: 640,
+                maxHeight: oldHeight - MiniRecorderLayoutMetrics.singleLineHeight))
+        let current = session.liveContextHeight(width: 640, maxHeight: 220)
+        #expect(provider.liveContextEditorHeight(width: 640, contextHeight: current)
+            == MiniRecorderLayoutMetrics.typingHeight(text: session.typedInput, width: 640,
+                maxHeight: current - MiniRecorderLayoutMetrics.singleLineHeight))
+        session.updateTypedInput(String(repeating: "words wrap at a narrower width ", count: 4))
+        let prepared = session.liveContextHeight(width: 640, maxHeight: 220)
+        #expect(provider.liveContextEditorHeight(width: 180, contextHeight: prepared)
+            == MiniRecorderLayoutMetrics.typingHeight(text: session.typedInput, width: 180,
+                maxHeight: prepared - MiniRecorderLayoutMetrics.singleLineHeight))
+        session.liveRecordingState = .transcribing
+        session.phase = .transcribing
+        #expect(provider.liveContextEditorHeight(width: 640, contextHeight: prepared) == 0)
+        for file in ["MiniRecorderView.swift", "NotchRecorderView.swift"] {
+            #expect(try source("VoiceInk/Views/Recorder/" + file)
+                .contains("cachedEditorHeight: stateProvider.liveContextEditorHeight("))
+        }
+    }
+
     @Test @MainActor func cachedContextHeightTracksSpeechTypingGeometryAndShrink() throws {
         let session = RecordingSession()
         session.microphoneOff = true

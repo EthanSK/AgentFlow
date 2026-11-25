@@ -19,6 +19,7 @@ protocol RecorderStateProvider: AnyObject {
     var microphoneTransitionPending: Bool { get }
     var captureFinishRequested: Bool { get }
     var outlineProcessingStartedAt: Date? { get }
+    func liveContextEditorHeight(width: CGFloat, contextHeight: CGFloat) -> CGFloat
     func toggleMicrophone()
     func togglePause()
     func updateTypedInput(_ value: String)
@@ -43,6 +44,11 @@ protocol RecorderStateProvider: AnyObject {
 }
 
 extension RecorderStateProvider {
+    func liveContextEditorHeight(width: CGFloat, contextHeight: CGFloat) -> CGFloat {
+        guard canTypeInHUD else { return 0 }
+        return MiniRecorderLayoutMetrics.typingHeight(text: typedInput, width: width,
+            maxHeight: contextHeight - MiniRecorderLayoutMetrics.singleLineHeight)
+    }
     var codexBanner: String? { nil }
     // The small Stop card hides context without closing the assistant conversation.
     // The visible card, its host window and warning placement share this gate so

@@ -409,7 +409,7 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         let maxHeight: CGFloat
         let includesEditor: Bool
     }
-    private var hudContextHeightCache: [HUDContextHeightKey: CGFloat] = [:]
+    private var hudContextHeightCache: [HUDContextHeightKey: MiniRecorderLayoutMetrics.ContextLayout] = [:]
     private var hudContextPreviewCache: (references: [LiveSelectionReference], parts: [LiveSelectionReference.PreviewPart])? {
         didSet {
             if case nil = hudContextPreviewCache { hudContextHeightCache.removeAll(keepingCapacity: true) }
@@ -480,16 +480,35 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     /// Found by GPT-6.1 Sol and Claude Opus 5.5. Fixed by GPT-6.1 Sol. — GPT-6.1 Sol
     func liveContextHeight(width: CGFloat, maxHeight: CGFloat) -> CGFloat {
         let key = HUDContextHeightKey(width: width, maxHeight: maxHeight, includesEditor: canTypeInHUD)
-        if let height = hudContextHeightCache[key] { return height }
-        let height = MiniRecorderLayoutMetrics.contextHeight(
+        if let layout = hudContextHeightCache[key] { return layout.height }
+        let layout = MiniRecorderLayoutMetrics.contextLayout(
             parts: liveContextPreviewParts, typedText: canTypeInHUD ? typedInput : nil,
             width: width, maxHeight: maxHeight)
         // Retain only a small set of recent geometries, never transcript copies.
         // Eviction only remeasures; it cannot clip text or change the result.
         // Found and fixed by GPT-6.1 Sol.
         if hudContextHeightCache.count >= 16 { hudContextHeightCache.removeAll(keepingCapacity: true) }
-        hudContextHeightCache[key] = height
-        return height
+        hudContextHeightCache[key] = layout
+        return layout.height
+    }
+
+    /// Reuse contextHeight's editor measurement in this exact current snapshot.
+    /// A child can render before its parent's new geometry arrives; a missing or
+    /// ambiguous match deliberately falls back to the old measurement, not a stale
+    /// editor size. The cache holds at most16 pairs of numbers, never source text.
+    func liveContextEditorHeight(width: CGFloat, contextHeight: CGFloat) -> CGFloat {
+        guard canTypeInHUD else { return 0 }
+        var match: CGFloat?
+        for (key, layout) in hudContextHeightCache
+            where key.width == width && key.includesEditor && layout.height == contextHeight {
+            if let existing = match, existing != layout.editorHeight {
+                return MiniRecorderLayoutMetrics.typingHeight(text: typedInput, width: width,
+                    maxHeight: contextHeight - MiniRecorderLayoutMetrics.singleLineHeight)
+            }
+            match = layout.editorHeight
+        }
+        return match ?? MiniRecorderLayoutMetrics.typingHeight(text: typedInput, width: width,
+            maxHeight: contextHeight - MiniRecorderLayoutMetrics.singleLineHeight)
     }
 
     private func hudContextPreview() -> (references: [LiveSelectionReference], parts: [LiveSelectionReference.PreviewPart]) {

@@ -289,6 +289,8 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
                     selectionReferences: stateProvider.liveContextPreviewReferences,
                     cachedPreviewParts: stateProvider.liveContextPreviewParts,
                     height: liveTranscriptHeight,
+                    cachedEditorHeight: stateProvider.liveContextEditorHeight(
+                        width: notchWidth + transcriptSideExpansion * 2 - 16, contextHeight: liveTranscriptHeight),
                     typedInput: stateProvider.canTypeInHUD ? Binding(
                         get: { stateProvider.typedInput },
                         set: { stateProvider.updateTypedInput($0) }

@@ -350,7 +350,7 @@ struct RecorderTypedInputTests {
         #expect(session.liveSelectionReferences.filter(\.isTypedText).count == 1)
     }
 
-    @Test @MainActor func transcriptDragMovesPanelWithoutBreakingClickOrScroll() throws {
+    @Test @MainActor func transcriptDragMovesPanelWithoutBreakingClickOrScroll() async throws {
         @MainActor func dragView(in view: NSView) -> RecorderPanelDragView? {
             if let drag = view as? RecorderPanelDragView { return drag }
             for child in view.subviews {
@@ -361,7 +361,7 @@ struct RecorderTypedInputTests {
         for scale: CGFloat in [0.5, 0.85, 1] {
             let panel = MiniRecorderPanel(contentRect: NSRect(x: 100, y: 100,
                 width: 320 * scale, height: 140 * scale))
-            let originalKeyWindow = NSApp.keyWindow
+            let beforePresentationKeyWindow = NSApp.keyWindow
             defer { panel.close() }
             let host = ScaledRecorderHostingView(rootView: AnyView(LiveTranscriptView(
                 text: String(repeating: "Long read-only transcript context.\n", count: 100),
@@ -370,8 +370,13 @@ struct RecorderTypedInputTests {
             panel.contentView = host
             panel.orderFrontRegardless()
             host.layoutSubtreeIfNeeded()
-            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            #expect(NSApp.keyWindow === beforePresentationKeyWindow)
+            try await waitForCompletion {
+                guard let drag = dragView(in: host), let scroll = drag.enclosingScrollView else { return false }
+                return (scroll.documentView?.frame.height ?? 0) > scroll.contentSize.height
+            }
             host.layoutSubtreeIfNeeded()
+            let originalKeyWindow = NSApp.keyWindow
             let drag = try #require(dragView(in: host))
             let scroll = try #require(drag.enclosingScrollView)
             let point = NSPoint(x: 100 * scale, y: 70 * scale)
@@ -421,7 +426,7 @@ struct RecorderTypedInputTests {
             // full suite despite the correct window/current-event identity.
             // Do not bypass this override by calling the scroll view directly.
             drag.scrollWheel(with: queued)
-            RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+            try await waitForCompletion { scroll.contentView.bounds.origin.y != before }
             #expect(scroll.contentView.bounds.origin.y != before,
                 "scale=\(scale) window=\(event.windowNumber) location=\(event.locationInWindow) scrollFrame=\(scroll.convert(scroll.bounds, to: nil)) flags=\(event.modifierFlags.rawValue) deltaY=\(event.scrollingDeltaY) deltaX=\(event.scrollingDeltaX) phase=\(event.phase.rawValue) documentHeight=\(scroll.documentView?.frame.height ?? 0)")
             #expect(panel.frame.origin.x == 130 && clicks == 1)
@@ -1154,8 +1159,7 @@ struct RecorderTypedInputTests {
         let viewEnd = try #require(components.range(of: "struct RecorderPauseButton", range: viewStart.upperBound..<components.endIndex))
         let transcriptView = String(components[viewStart.lowerBound..<viewEnd.lowerBound])
         #expect(transcriptView.components(separatedBy: "LiveSelectionReference.previewParts(").count == 2)
-        #expect(transcriptView.contains("RecorderTranscriptPreview(content: RecorderTranscriptPreviewContent(")
-            && transcriptView.contains("parts: parts, potentialTTSActive: potentialTTSActive"))
+        #expect(transcriptView.contains("previewText(parts)") && transcriptView.contains(".onChange(of: parts)"))
         #expect(transcriptView.contains("cachedPreviewParts ?? LiveSelectionReference.previewParts"))
         for style in ["Mini", "Notch"] {
             #expect(try source("VoiceInk/Views/Recorder/\(style)RecorderView.swift")

@@ -62,8 +62,8 @@ enum MiniRecorderLayoutMetrics {
     /// A character count cannot establish that the HUD is full: at the same
     /// font and width, 3,001 characters measured 919pt but the old shortcut
     /// jumped straight to a 1,450pt panel. TextKit's height-bounded container
-    /// avoids that discontinuity without laying out an unbounded transcript
-    /// on every live provider update.
+    /// avoids that discontinuity. It still shapes a whole paragraph, so a long
+    /// single paragraph is not a CPU-bounded operation; reuse exact measurements.
     private static func measuredHeight(_ text: String, width: CGFloat, limit: CGFloat) -> CGFloat {
         let storage = NSTextStorage(string: text, attributes: [
             .font: NSFont.systemFont(ofSize: liveTranscriptFontSize)
@@ -92,10 +92,24 @@ enum MiniRecorderLayoutMetrics {
         ))
     }
 
+    struct ContextLayout {
+        let height: CGFloat
+        let editorHeight: CGFloat
+    }
+
     static func contextHeight(
         parts: [LiveSelectionReference.PreviewPart], typedText: String?,
         width: CGFloat, maxHeight: CGFloat
     ) -> CGFloat {
+        contextLayout(parts: parts, typedText: typedText, width: width, maxHeight: maxHeight).height
+    }
+
+    /// Extraction of existing contextHeight measurement, now retaining its numeric
+    /// editor component so the rendered editor does not shape the same text again.
+    static func contextLayout(
+        parts: [LiveSelectionReference.PreviewPart], typedText: String?,
+        width: CGFloat, maxHeight: CGFloat
+    ) -> ContextLayout {
         // With the editor present, the preview row above it only needs one line
         // at minimum. Reserve exactly that line when capping a long editor, and
         // keep LiveTranscriptView's editor cap on the same reserve so the rendered
@@ -105,9 +119,9 @@ enum MiniRecorderLayoutMetrics {
         let editor = typedText.map {
             typingHeight(text: $0, width: width, maxHeight: maxHeight - previewMinimum)
         } ?? 0
-        return editor + transcriptHeight(
+        return ContextLayout(height: editor + transcriptHeight(
             parts: parts, width: width, maxHeight: maxHeight - editor, minimumHeight: previewMinimum
-        )
+        ), editorHeight: editor)
     }
 
     static func transcriptHeight(
