@@ -70,13 +70,19 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
             paused: reduceMotion
         )) { timeline in
             let frameDate = frameDateForPreview ?? timeline.date
-            let acknowledgementPhase = reduceMotion ? 0 : RecorderCaptureOutlineStyle.flowPhase(at: frameDate)
             let phase = reduceMotion ? 0 : RecorderCaptureOutlineStyle.flowPhase(at: frameDate, isProcessing: isProcessing, processingStartedAt: processingStartedAt, activity: activity)
             // The lap reads the same wall-clock frame as the rainbow, so mirrored
             // panels match, and it never shifts the rainbow's phase. — Claude Opus 5.5
             let acknowledgement = reduceMotion
                 ? stillAcknowledgement.map { RecorderContextSweep.Acknowledgement(kind: $0.kind, form: .still) }
                 : RecorderContextSweep.acknowledgement(for: acceptancePulse, at: frameDate)
+            // Follow the live charged colour band; if loading begins mid-lap,
+            // its mask keeps that live frame while the rainbow beneath reverses.
+            // With no pulse, no second phase calculation is needed.
+            // Found and fixed by GPT-6.1 Sol.
+            let acknowledgementPhase = !reduceMotion && acknowledgement != nil
+                ? (isProcessing ? RecorderCaptureOutlineStyle.flowPhase(at: frameDate, activity: activity) : phase)
+                : 0
             GeometryReader { geometry in
                 let frame = geometry.frame(in: .global)
                 let pixels = RecorderCaptureOutlinePixels(
@@ -141,11 +147,12 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
             Gradient(stops: samples.map { sample in
                 let position = sample.clockwiseFraction - phase
                 return Gradient.Stop(
-                    // Keep the accepted-context lap's original moving frame if
-                    // processing starts before that one-second lap has ended.
-                    // The underlying loading rainbow still advances independently.
-                    // — GPT-6.1 Sol
-                    color: paint?.color(at: sample.clockwiseFraction - acknowledgementPhase)
+                    // The pulse mask and underlying rainbow can have different
+                    // motion. A zero-strength or uncovered pulse must return the
+                    // actual rainbow, never reset it to the mask's old clock.
+                    // Found and fixed by GPT-6.1 Sol.
+                    color: paint?.color(at: sample.clockwiseFraction - acknowledgementPhase,
+                                        rainbowPosition: position)
                         ?? RecorderNeonSpectrum.color(at: position),
                     location: sample.angularLocation
                 )

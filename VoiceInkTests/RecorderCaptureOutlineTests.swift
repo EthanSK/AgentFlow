@@ -412,6 +412,52 @@ struct RecorderCaptureOutlineTests {
         }
     }
 
+    // A context pulse starts with zero strength: its first native frame must be
+    // pixel-identical to the charged/live or reverse-loading rainbow beneath it.
+    // This catches using the mask's old phase for the whole border. — GPT-6.1 Sol
+    @Test(arguments: [false, true]) @MainActor
+    func startingContextPulseDoesNotJumpTheChargedRainbow(processing: Bool) async throws {
+        let size = CGSize(width: 500, height: 80)
+        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
+        let started = Date(timeIntervalSinceReferenceDate: 12_345.125)
+        let date = started.addingTimeInterval(8)
+        var activity = RecorderOutlineActivity(at: started)
+        activity.addText(units: 32, at: started)
+        let pulse = try #require(RecorderContextAcceptancePulse(
+            accepting: #require(LiveSelectionReference("selected")), at: date))
+        let root = { (pulse: RecorderContextAcceptancePulse?) in
+            RecorderCaptureOutline(shape: shape, acceptancePulse: pulse,
+                isProcessing: processing, processingStartedAt: processing ? started : nil,
+                activity: activity, reduceMotionForPreview: false, frameDateForPreview: date)
+                .frame(width: size.width, height: size.height).background(Color.black).clipShape(shape)
+        }
+        let panel = NSPanel(contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        let host = NSHostingView(rootView: root(nil))
+        panel.contentView = host
+        panel.orderFrontRegardless()
+        defer { panel.orderOut(nil); panel.close() }
+        var frames: [NSBitmapImageRep] = []
+        for value in [nil, pulse] {
+            host.rootView = root(value)
+            try await Task.sleep(for: .milliseconds(550))
+            host.layoutSubtreeIfNeeded()
+            let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            frames.append(bitmap)
+        }
+        var changed = 0
+        for y in stride(from: 0, to: frames[0].pixelsHigh, by: 2) {
+            for x in stride(from: 0, to: frames[0].pixelsWide, by: 2) {
+                let a = try #require(frames[0].colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
+                let b = try #require(frames[1].colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
+                if abs(a.redComponent - b.redComponent) + abs(a.greenComponent - b.greenComponent)
+                    + abs(a.blueComponent - b.blueComponent) > 0.03 { changed += 1 }
+            }
+        }
+        #expect(changed < 8, "processing=\(processing), zero-strength pulse changed pixels=\(changed)")
+    }
+
     @Test @MainActor func compactExpandedAndFinishingPanelAppearance() async throws {
         // The regular session owns a typing editor from start. This presentation-
         // only fixture also exercises batch/compact layouts without that editor.

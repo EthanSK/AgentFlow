@@ -183,11 +183,12 @@ struct RecorderContextSweepPaint {
         origin = RecorderContextSweep.origin(nearest: tint)
     }
 
-    /// `position` is the same spectrum position the rainbow uses, the stop's
-    /// clockwise fraction minus the flow phase. Outside the lap's arc this returns
-    /// the rainbow's own colour unchanged.
-    func components(at position: Double) -> RecorderNeonSpectrum.Components {
-        let rainbow = RecorderNeonSpectrum.components(at: position)
+    /// `position` locates the pulse mask. Loading can move the rainbow beneath it
+    /// differently, so the caller supplies that actual colour position separately.
+    /// Uncovered/zero-strength pixels then keep their real rainbow colour.
+    /// Found and fixed by GPT-6.1 Sol. — GPT-6.1 Sol
+    func components(at position: Double, rainbowPosition: Double? = nil) -> RecorderNeonSpectrum.Components {
+        let rainbow = RecorderNeonSpectrum.components(at: rainbowPosition ?? position)
         guard case .lap(let lap) = form else { return tint }
 
         let sweep = RecorderContextSweep.self
@@ -207,8 +208,8 @@ struct RecorderContextSweepPaint {
         return Self.mix(tinted, .init(red: 1, green: 1, blue: 1), spark * sweep.sparkWhiteness * lap.strength)
     }
 
-    func color(at position: Double) -> Color {
-        let value = components(at: position)
+    func color(at position: Double, rainbowPosition: Double? = nil) -> Color {
+        let value = components(at: position, rainbowPosition: rainbowPosition)
         return Color(.sRGB, red: value.red, green: value.green, blue: value.blue)
     }
 

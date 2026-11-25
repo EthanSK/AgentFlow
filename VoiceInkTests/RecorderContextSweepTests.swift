@@ -15,6 +15,16 @@ struct RecorderContextSweepTests {
     private let blue = RecorderNeonSpectrum.Components(red: 0.39, green: 0.82, blue: 1.0)
     private let magenta = RecorderNeonSpectrum.Components(red: 0.75, green: 0.35, blue: 0.95)
 
+    @Test func pulseMaskPreservesTheActualRainbowWhenItsClockDiffers() {
+        let paint = RecorderContextSweepPaint(tint: blue,
+            form: .lap(.init(head: 0, tail: 0, strength: 0)))
+        for position in stride(from: 0.0, to: 1.0, by: 0.01) {
+            let actual = position + 0.35
+            #expect(paint.components(at: position, rainbowPosition: actual)
+                == RecorderNeonSpectrum.components(at: actual))
+        }
+    }
+
     @Test @MainActor func acceptedHighlightsAndScreenshotsEachLaunchOneLapOfTheirColour() throws {
         let session = RecordingSession()
         #expect(session.contextAcceptancePulse == nil)
