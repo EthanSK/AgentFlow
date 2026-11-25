@@ -1,5 +1,9 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-25 — Using visual braking debounce as the stored-charge deadline — REJECTED
+
+The first uninstalled555 draftda4e6c9b used200ms for both visual braking and retained charge. Fast10cps checks passed, but slower continuous3cps typing would lose charge between every key and plateau below1x. Sourceee47ab5d separates the existing800ms charge-retention allowance from200ms visible braking; a new1000-key3cps guard exceeds250x while the fast chain still exceeds780x. All51 focused native functions passed. The signedda4 candidate was never installed. Reconsider combining those deadlines only with explicit behavior approval and both slower/faster continuous-chain guards preserving the accepted uncapped build-up.
+
 ## 2026-11-25 — Starting a deferred SwiftUI leaf from an empty Group — REJECTED
 
 The first554 candidate504d0626 put an asynchronous mounting task on a Group whose conditional Canvas was initially absent. Controlled leaf previews passed because their explicit frame override bypassed mounting, but actual Mini/Notch on/off image checks found no border:16 edge expectations failed in one of48 named functions. Do not weaken those checks or treat a preview as lifecycle proof.980c2221 uses a persistent transparent leaf to own the same cancellable task, and all48 functions then passed with unchanged pixel thresholds and fixture waits. Reconsider an initially empty wrapper only with an actual native host proving its task starts and both real card styles paint after mounting.

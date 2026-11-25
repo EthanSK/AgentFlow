@@ -1,6 +1,17 @@
 # Learnings
 
 ---
+**Date:** 2026-11-25T15:52:45Z
+**Trigger:** Canonical073d825b: decelerate soon after stopping typing, a little faster than acceleration but smoothly enough to continue.
+**Symptom:** Ethan wanted the shared typing/recognised-text rainbow to coast promptly after a pause and retain the chance to continue its chain.
+**Root cause:** Visual speed and stored charge need different quiet-time policies. The first uninstalled555 draft reused a200ms brake threshold for retained charge, which would make slower continuous3cps typing plateau below1x.
+**Fix:** ee47ab5d keeps the existing800ms charge-retention allowance, starts visible exponential braking after200ms at3/s versus2/s acceleration, and analytically integrates travel. New input keeps exact visible speed/phase plus remaining charge. Existing gains, one30Hz leaf, uncapped reverse processing and input/capture timing are unchanged.
+**Commit:** ee47ab5db644f578447e348b174f79a4a5f6d1c7
+**Guard:** All51 selected canonical Mini functions passed, including3cps and10cps long-chain bounds, speed/phase continuity and resumed charge, actual Mini/Notch render/off/Reduce Motion checks, startup/focus/context, real600ms tail/media order and Primary/Next/HUD-only delivery. Final source native snapshots were visually inspected: sharp thin edge, black interior and controls preserved. No manufactured recording, Voice toggle or message was sent. Physical taste and whole-machine GPU/battery are not established by these checks. Ordinary universal555 fromee47ab5d then built, Developer ID signed and installed through the five-second warning, cooperative all-session veto, kernel exit wait and atomic swap. Canonical running binary, hash/CDHash/signature, audio+Automation, updater key, icon, all eight protected preference values and untouched legacy VoiceInk verified. Exact-source public qualification follows separately.
+---
+
+
+---
 **Date:** 2026-11-25
 **Trigger:** Ethan requested the fastest possible startup without losing functionality, an asynchronously introduced border that grows around the panel after typing starts, and an Astra startup audit.
 **Verified:** Three natural installed553 focus requests took941,984 and1059ms. They succeeded on attempt2; associated Codex selection reads finished later. This does not isolate rainbow drawing as the cause, prove a Code-preselection wait, or establish a one-second timer.
@@ -7743,3 +7754,7 @@ not attach an external client to the desktop-owned live Voice session. A
 separate server, ordinary agent-turn message or durable queue cannot establish
 that the speaking frontend received a capture event. Preserve the live call and
 keep original-chat queuing disabled while identifying a supported shared path.
+
+## 2026-11-25 — Startup554 installed and public-qualified
+
+Source159fc2d9 was signed and installed through the existing all-session guard. Existing natural initial keyboard-focus requests measured127.994,167.958 and149.517ms versus the earlier uncontrolled553 samples941–1059ms; these are not button-to-first-character timings or proof that the border caused the earlier delay. Exact-source hosted45638933639 passed1093 named functions/56 suites, signing, notarization, staple, publication and download qualification. Independent public ZIP/feed/checksum/native verification passed, and the extracted app was removed without launch/install. Preserve the distinction between useful focus evidence, synthetic border lifecycle checks and physical/GPU/battery acceptance.
