@@ -1,6 +1,17 @@
 # Learnings
 
 ---
+**Date:** 2026-11-25T02:55:23Z
+**Trigger:** Exact-source hosted550 qualification reported a pixel expectation failure before signing/publication.
+**Symptom:** Hosted550 failed one processing-outline image expectation among1079 functions/55 suites, despite24 and191 focused checks passing.
+**Root cause:** The image fixture compared two arbitrary wall-clock samples while processing was already at extreme uncapped speed. Those samples are not guaranteed to have different phases. The filtered hosted log did not preserve the failed Reduce Motion branch or pixel count, so it does not establish the exact runtime cause or a production animation defect.
+**Fix:** 46dee6de adds one optional fixed frame date for native previews/tests; every production caller leaves it nil and keeps the existing TimelineView clock. The image fixture uses known distinct phase times, retains every pixel/interior/static threshold and its existing host-settling wait, and reports the moving/static branch separately. Build551 preserves uncapped acceleration and all capture behavior.
+**Commit:** 46dee6deb0b7100f372b37d4df0c185da0dd6a8e
+**Guard:** 24 exact-source canonical native functions passed, including both rendered motion/Reduce Motion arguments, the context lap, uncapped numerical derivatives/session timing and real600ms/media ordering safeguards. Ordinary universal551 build passed separately. No live microphone, Voice control or media probe was generated.
+---
+
+
+---
 **Date:** 2026-11-25T02:29:44Z
 **Trigger:** Ethan requested an Opus deep-dive of growing-text resizing without changing the recorder appearance.
 **Symptom:** Long growing drafts remained expensive, and a standalone native preview prototype appeared faster but the real recorder regressed.
