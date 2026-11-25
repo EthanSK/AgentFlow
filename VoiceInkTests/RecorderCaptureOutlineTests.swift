@@ -423,8 +423,8 @@ struct RecorderCaptureOutlineTests {
         let date = started.addingTimeInterval(8)
         var activity = RecorderOutlineActivity(at: started)
         activity.addText(units: 32, at: started)
-        let pulse = try #require(RecorderContextAcceptancePulse(
-            accepting: #require(LiveSelectionReference("selected")), at: date))
+        let reference = try #require(LiveSelectionReference("selected"))
+        let pulse = try #require(RecorderContextAcceptancePulse(accepting: reference, at: date))
         let root = { (pulse: RecorderContextAcceptancePulse?) in
             RecorderCaptureOutline(shape: shape, acceptancePulse: pulse,
                 isProcessing: processing, processingStartedAt: processing ? started : nil,
