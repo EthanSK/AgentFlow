@@ -48,7 +48,7 @@ struct RecorderOutlineActivity: Equatable {
     // Found and fixed by GPT-6.1 Sol. — GPT-6.1 Sol
     private func motion(at date: Date) -> (speed: Double, travel: Double) {
         let elapsed = max(0, date.timeIntervalSince(anchor))
-        let held = min(elapsed, Self.chainInterval)
+        let held = min(elapsed, Self.brakingDelay)
         let linear = Self.linearGain * charge
         let quadratic = Self.quadraticGain * charge * charge
         let target = Self.idleSpeed + linear + quadratic
@@ -77,7 +77,7 @@ struct RecorderOutlineActivity: Equatable {
     }
 
     private func remainingCharge(at date: Date) -> Double {
-        let elapsed = max(0, date.timeIntervalSince(anchor) - Self.chainInterval)
+        let elapsed = max(0, date.timeIntervalSince(anchor) - Self.chargeRetentionInterval)
         return charge * exp(-Self.decayRate * elapsed)
     }
 
@@ -86,13 +86,17 @@ struct RecorderOutlineActivity: Equatable {
     // This changes visual momentum only; input/capture timing is untouched. — GPT-6.1 Sol
     private static let linearGain = 0.034
     private static let quadraticGain = 0.000765
-    // Keep the existing half-second build-up. After200ms without text, braking
-    // responds50% faster, easing most of the added speed away over about a second.
-    // Stored charge fades more slowly, leaving a chance to resume the chain.
+    // Keep the existing half-second build-up. After 200 ms without text, braking
+    // responds 50% faster, easing most of the added speed away over about a second.
+    // Keep the prior 800 ms chaining allowance independent of that visual trigger:
+    // slower continuous typing must not lose charge merely because braking starts.
+    // Found and fixed by GPT-6.1 Sol.
+    // Stored charge then fades more slowly, leaving a chance to resume the chain.
     // No timer, input wait or extra publisher is involved. — GPT-6.1 Sol
     private static let responseRate = 2.0
     private static let brakingRate = 3.0
-    private static let chainInterval = 0.2
+    private static let brakingDelay = 0.2
+    private static let chargeRetentionInterval = 0.8
     private static let decayRate = 1.5
     // One paste/model catch-up is a burst, not thousands of physical keystrokes.
     // Continuous input can still accumulate unlimited charge and speed. — GPT-6.1 Sol

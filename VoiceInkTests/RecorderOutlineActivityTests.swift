@@ -62,6 +62,18 @@ struct RecorderOutlineActivityTests {
             > fresh.speed(at: quiet.addingTimeInterval(0.1)))
     }
 
+    @Test func slowerContinuousTypingStillBuildsAnUncappedChainWhileItCoastsBetweenKeys() {
+        var activity = RecorderOutlineActivity(at: start)
+        for index in 0..<1_000 {
+            activity.addText(units: 1, at: start.addingTimeInterval(Double(index) / 3))
+        }
+        // Three characters per second is a continuous chain under the existing
+        // 800 ms allowance, even though 200 ms visual braking starts between its keys.
+        // A shared 200 ms charge deadline would plateau below 1x here.
+        // Found and fixed by GPT-6.1 Sol.
+        #expect(activity.speed(at: start.addingTimeInterval(999.0 / 3)) > 250)
+    }
+
     @Test func brakingBeginsQuicklyStaysContinuousAndSettlesFasterThanBuildUp() {
         var activity = RecorderOutlineActivity(at: start)
         activity.addText(units: 32, at: start)
