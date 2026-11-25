@@ -263,6 +263,8 @@ struct RecorderCaptureOutlineTests {
         #expect(settings.contains("Toggle(\"Recording Outline\""))
     }
 
+    // A provider without a processing timestamp keeps the historical2x fallback;
+    // real sessions use the accelerating path tested separately below.
     @Test func processingFlowRunsAnticlockwiseAtTwiceRecordingSpeed() throws {
         let date = Date(timeIntervalSinceReferenceDate: 12_345.125)
         let next = date.addingTimeInterval(0.25)

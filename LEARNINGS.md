@@ -1,6 +1,17 @@
 # Learnings
 
 ---
+**Date:** 2026-11-25T01:42:50Z
+**Trigger:** Canonical prompts8d7fc9f7,46d4388b ande41e0695 successively requested more energy, acceleration and then no top-speed cap.
+**Symptom:** Ethan wanted loading motion to keep accelerating beyond what a display can resolve and explicitly rejected the proposed6x cap.
+**Root cause:** A bounded smoothstep ramp intentionally plateaued, which no longer matched his corrected request.
+**Fix:** Source43a0ddf2 uses quadratic speed2+1.5t² and its integrated cubic travel, with no chosen top speed. A session-owned processing timestamp is shared by Mini/Notch and retained across transcription/enhancement, never begun by Stop acknowledgement or the real microphone tail. The existing30Hz leaf and static Reduce Motion remain; faster colour travel does not request more redraws or imply actual transcription progress. The capped9e23b313 candidate was never installed.
+**Commit:** 43a0ddf23344af45db7041c52dec01e9c47c7052
+**Guard:** Source9e23b313 passed193 named canonical functions covering the shared session timing, entire typing/native preview and relevant capture/routes/media. After the explicit no-cap correction,43a0ddf2 passed24 focused functions including uncapped/increasing-rate math through long waits, session timestamp lifetime, actual moving/static native frames, context acknowledgement and600ms/media guards. No live capture/control test was generated. Final signed installation and exact-source hosted release remain separate.
+---
+
+
+---
 **Date:** 2026-11-25T01:29:30Z
 **Trigger:** Ethan requested faster anti-clockwise rainbow motion while transcribing.
 **Symptom:** Transcription activity used the same clockwise rainbow pace as recording.
