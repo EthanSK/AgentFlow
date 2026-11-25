@@ -225,29 +225,22 @@ enum RecorderCaptureOutlineStyle {
     static let lapDuration: TimeInterval = 5
     static let frameInterval: TimeInterval = 1.0 / 30.0
 
-    /// Ethan's "gets faster and faster": current2x reverse motion builds smoothly
-    /// through3x to a bounded6x over12s. Integrate speed, rather than multiplying
-    /// elapsed time by today's rate, so colours never jump as speed changes.
-    /// This is presentation time, never a progress estimate or a new timer.
-    static let processingAccelerationDuration: TimeInterval = 12
+    /// Ethan explicitly rejected a top speed: both speed and its rate of change
+    /// keep growing. Cubic travel gives quadratic speed and increasing acceleration,
+    /// rather than small constant speed increments that become hard to notice.
+    /// Pure arithmetic on the existing30Hz leaf; it never requests more frames.
     static let initialProcessingSpeed = 2.0
-    static let maximumProcessingSpeed = 6.0
+    static let processingAccelerationGain = 1.5
 
     static func processingSpeed(elapsed: TimeInterval) -> Double {
-        let t = min(max(elapsed / processingAccelerationDuration, 0), 1)
-        return initialProcessingSpeed + (maximumProcessingSpeed - initialProcessingSpeed) * t * t * (3 - 2 * t)
+        let seconds = max(0, elapsed)
+        return initialProcessingSpeed + processingAccelerationGain * seconds * seconds
     }
 
     static func processingTravel(elapsed: TimeInterval) -> Double {
         let seconds = max(0, elapsed)
-        let ramp = min(seconds, processingAccelerationDuration)
-        let t = ramp / processingAccelerationDuration
-        // Integral of smoothstep(t): t³ - t⁴/2. Beyond the ramp, hold the
-        // maximum; increasing visual speed never increases the30Hz draw budget.
-        let accelerated = (maximumProcessingSpeed - initialProcessingSpeed)
-            * processingAccelerationDuration * (t * t * t - t * t * t * t / 2)
-        return (initialProcessingSpeed * ramp + accelerated
-            + maximumProcessingSpeed * max(0, seconds - ramp)) / lapDuration
+        return (initialProcessingSpeed * seconds
+            + processingAccelerationGain / 3 * seconds * seconds * seconds) / lapDuration
     }
 
     /// Phase uses the session's one timestamp, never a per-window start/reset.

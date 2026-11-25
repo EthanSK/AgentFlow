@@ -280,31 +280,35 @@ struct RecorderCaptureOutlineTests {
         }
     }
 
-    @Test func processingFlowAcceleratesContinuouslyAndKeepsItsDrawBudget() {
+    @Test func processingFlowAcceleratesWithoutASpeedCapOrAnExtraDrawClock() {
         let style = RecorderCaptureOutlineStyle.self
         let started = Date(timeIntervalSinceReferenceDate: 12_345.125)
         #expect(style.processingSpeed(elapsed: 0) == 2)
-        #expect(style.processingSpeed(elapsed: 4) > 3)
-        #expect(style.processingSpeed(elapsed: 12) == 6)
-        #expect(style.processingSpeed(elapsed: 3_600) == 6)
+        #expect(style.processingSpeed(elapsed: 2) == 8)
+        #expect(style.processingSpeed(elapsed: 4) == 26)
+        #expect(style.processingSpeed(elapsed: 20) > 600)
+        #expect(style.processingSpeed(elapsed: 60) > 5_000)
+        #expect(style.processingSpeed(elapsed: 3_600) > 19_000_000)
         #expect(style.processingTravel(elapsed: -1) == 0)
         #expect(style.flowPhase(at: started, isProcessing: true, processingStartedAt: started)
             == style.flowPhase(at: started))
-        var priorRate = 0.0
-        for elapsed in [0.0, 2, 4, 8, 12, 60, 3_600] {
+        var previousGain = 0.0
+        for elapsed in [0.0, 1, 2, 4, 8, 12, 60, 3_600, 86_400] {
+            let gain = style.processingSpeed(elapsed: elapsed + 1) - style.processingSpeed(elapsed: elapsed)
+            #expect(gain > previousGain)
+            previousGain = gain
+            let phase = style.flowPhase(at: started.addingTimeInterval(elapsed), isProcessing: true, processingStartedAt: started)
+            #expect(phase.isFinite && abs(phase) < 1)
+        }
+        for elapsed in [0.0, 1, 2, 4, 8] {
             let date = started.addingTimeInterval(elapsed)
-            let interval = 0.001
+            let interval = 0.0001
             let delta = RecorderCaptureOutlineTrace.wrapped(
                 style.flowPhase(at: date.addingTimeInterval(interval), isProcessing: true, processingStartedAt: started)
                     - style.flowPhase(at: date, isProcessing: true, processingStartedAt: started))
             let rate = -delta * style.lapDuration / interval
-            #expect(rate >= priorRate - 0.0001 && rate <= 6.0001)
-            #expect(abs(rate - style.processingSpeed(elapsed: elapsed)) < 0.001)
-            priorRate = rate
+            #expect(abs(rate - style.processingSpeed(elapsed: elapsed)) < 0.002)
         }
-        let d = style.processingAccelerationDuration
-        let atCap = style.processingTravel(elapsed: d)
-        #expect(abs((style.processingTravel(elapsed: d + 0.001) - atCap) - 6 * 0.001 / style.lapDuration) < 0.000_000_001)
         #expect(style.frameInterval == 1.0 / 30.0)
     }
 
