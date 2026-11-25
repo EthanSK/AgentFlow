@@ -1,5 +1,9 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-25 — Accepting a standalone native-preview speedup as a recorder improvement — REJECTED
+
+A three-window prototype suggested a persistent TextKit2 preview was faster than SwiftUI Text at75k characters. Actual optimized full-card ABBA comparison at1ed79cc7 rejected that result: native speech p95 intervals were168.97/169.38ms versus125.09/124.16ms for the original preview; typed intervals were essentially unchanged. These include scheduled cadence and host layout, not GPU frame times. The rewrite was briefly installed in549 before this proof;550 sourcefe06ffb6 removes it, and the public549 run was cancelled before publication. Preserve the bounded shared numeric geometry/editor cache, not the rejected native rewrite. Reconsider only with equivalent full-card scrolling, focus, colour, typing and layout behavior plus repeatable controlled whole-card benefit at the actual long-draft workload; a standalone component win is insufficient.
+
 ## 2026-11-25 — TextKit flags as a cure for long-paragraph measurement — REJECTED
 
 The production height helper still shaped a full prose paragraph despite its220pt return cap. A finite native comparison found no material benefit from allowsNonContiguousLayout. Replacing boundingRect/usedRect with ensureLayout plus firstUnlaidCharacterIndex also did not improve the measured cost and returned205pt instead of the required220pt overflow height. Do not substitute those flags/queries for exact measurement reuse or silently change clipping geometry. Reconsider only with equivalent geometry across the supported widths/text shapes and isolated native measurements showing an actual improvement. Source b65b495a uses a bounded invalidated per-session numeric cache instead.

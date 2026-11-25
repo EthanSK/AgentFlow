@@ -1,6 +1,17 @@
 # Learnings
 
 ---
+**Date:** 2026-11-25T02:29:44Z
+**Trigger:** Ethan requested an Opus deep-dive of growing-text resizing without changing the recorder appearance.
+**Symptom:** Long growing drafts remained expensive, and a standalone native preview prototype appeared faster but the real recorder regressed.
+**Root cause:** The optimized same-process full-card ABBA comparison ran24 scenarios: at75k speech characters the native preview took169ms p95 intervals versus124–125ms for the original SwiftUI preview; typing was unchanged. A separate duplicate editor-height measurement also remained after the shared context height calculation.
+**Fix:** fe06ffb6 restores the original SwiftUI preview and removes the native rewrite; retains all appearance and uncapped processing motion. Share both numeric context/editor heights in the bounded16-entry current-session cache; stale, ambiguous or unsupported geometry uses the original fallback. Mini and Notch use their actual logical widths. The actual-wheel fixture now awaits queued AppKit completion without blocking the main actor; all offset, drag, click and focus assertions remain.
+**Commit:** fe06ffb6015f4a2cc55c07f9db653331f809f081
+**Guard:** 191 named native checks passed, including108 text/geometry combinations and stale/protocol dispatch. A separate exact-source finite3-card diagnostic passed:75k repeated context/editor reads ~0.0035ms each versus ~66ms uncached typed measurement. Cold measurement/rendering remains length-dependent; timings are not GPU frames. The diagnostic Notch width was corrected, so separate runs do not establish whole-card timing causality. Signed universal550 installed through cooperative quit with settings preserved.
+---
+
+
+---
 **Date:** 2026-11-25T01:42:50Z
 **Trigger:** Canonical prompts8d7fc9f7,46d4388b ande41e0695 successively requested more energy, acceleration and then no top-speed cap.
 **Symptom:** Ethan wanted loading motion to keep accelerating beyond what a display can resolve and explicitly rejected the proposed6x cap.
