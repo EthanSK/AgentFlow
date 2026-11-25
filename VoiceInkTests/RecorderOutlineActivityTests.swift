@@ -15,7 +15,9 @@ struct RecorderOutlineActivityTests {
             fast.addText(units: 1, at: start.addingTimeInterval(Double(index) / 10))
             slow.addText(units: 1, at: start.addingTimeInterval(Double(index) * 2))
         }
-        #expect(fast.speed(at: start.addingTimeInterval(99.9)) > 100)
+        // The gentler gain and speed easing put this near791x, versus the
+        // original940x target. Keep a strong long-chain assertion. — GPT-6.1 Sol
+        #expect(fast.speed(at: start.addingTimeInterval(99.9)) > 780)
         #expect(slow.speed(at: start.addingTimeInterval(1_998)) < 1)
     }
 
