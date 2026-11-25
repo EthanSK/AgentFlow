@@ -1,6 +1,16 @@
 # Learnings
 
 ---
+**Date:** 2026-11-25T13:04:46Z
+**Trigger:** Ethan requested a rainbow while typing that charges through continuous input, with recognised voice text using the same system.
+**Root cause:** The outline excluded microphone-off composing and its recording motion had no relationship to accepted text activity.
+**Fix:** 361e5705 adds one session-owned RecorderOutlineActivity value. Actual editor changes and new cumulative ASR byte growth feed the same charge; repeats/shrinking revisions and internal text clears do not add charge. Analytically integrated phase preserves colour at each input and at the existing reverse-loading boundary. A small per-event burst limit bounds large pastes/catch-up events without capping sustained input. Quiet time decays charge. Both mirrored styles receive the same plain snapshot on existing publications; no new timer, per-frame session update, transcript diff, geometry calculation or retained text history. Typing now lights the outline and can acknowledge real captured context; Pause remains unlit. Reduce Motion and the saved opt-out still win.
+**Commit:** 361e570514057c84ca772d4cee789172fdc6f2f5
+**Guard:** 34 named canonical Mini checks passed, including all7 new momentum functions, native moving/static charged frames, both typing panel styles, accepted context, real600ms tail/media ordering and Primary/Next/HUD-only invariants. Ordinary universal552 built separately, then Developer ID signed and installed through the five-second warning/cooperative all-session quit. Running PID/hash/signature/audio+Automation/updater key, protected preferences and untouched legacy VoiceInk verified. No live recording, Voice toggle or test delivery was generated. Whole-machine GPU/battery performance and Ethan's physical feel are not established by these checks. Exact-source hosted/public qualification follows separately.
+---
+
+
+---
 **Date:** 2026-11-25T02:55:23Z
 **Trigger:** Exact-source hosted550 qualification reported a pixel expectation failure before signing/publication.
 **Symptom:** Hosted550 failed one processing-outline image expectation among1079 functions/55 suites, despite24 and191 focused checks passing.
