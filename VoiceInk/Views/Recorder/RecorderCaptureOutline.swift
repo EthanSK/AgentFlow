@@ -64,7 +64,11 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
     }
 
     var body: some View {
-        Group {
+        // A real transparent leaf owns the task even before the Canvas exists.
+        // An empty Group distributes modifiers to no children, so its mounting
+        // task never began and the border stayed absent in actual panel checks.
+        // Found and fixed by GPT-6.1 Sol.
+        Color.clear.overlay {
             if let started = frameDateForPreview.map({ _ in introductionStartedAtForPreview ?? .distantPast })
                 ?? introductionStartedAt {
                 border(introducedAt: started)
