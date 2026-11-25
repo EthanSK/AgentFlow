@@ -36,7 +36,7 @@ import Testing
         #expect(RecorderTranscriptPreviewContent(parts: [.speech("words")]).attributedText().string == "words")
     }
 
-    @Test @MainActor func fullLongPreviewFollowsTailAndPreservesManualScrollUntilTextChanges() throws {
+    @Test @MainActor func fullLongPreviewFollowsTailAndPreservesManualScrollUntilTextChanges() async throws {
         let keyWindow = NSApp.keyWindow
         let panel = MiniRecorderPanel(contentRect: NSRect(x: 100, y: 100, width: 640, height: 160))
         let scroll = RecorderTranscriptScrollView(frame: NSRect(x: 0, y: 0, width: 640, height: 160))
@@ -47,7 +47,10 @@ import Testing
         let content = RecorderTranscriptPreviewContent(parts: [.speech(text)])
         scroll.update(content, dragsWindow: true, onClick: nil)
         scroll.layoutSubtreeIfNeeded()
-        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        // Release the main actor for the production coalesced scroll. A nested
+        // RunLoop.run keeps this Swift Testing task on the dispatch main queue.
+        try await waitForCompletion { scroll.preview.bounds.height > scroll.contentSize.height
+            && scroll.preview.visibleRect.maxY >= scroll.preview.bounds.maxY - 2 }
         #expect(scroll.preview.string == text && scroll.preview.textLayoutManager != nil)
         #expect(scroll.preview.bounds.height > scroll.contentSize.height)
         #expect(scroll.preview.visibleRect.maxY >= scroll.preview.bounds.maxY - 2)
@@ -58,19 +61,19 @@ import Testing
         let before = scroll.contentView.bounds.origin.y
         scroll.update(content, dragsWindow: true, onClick: nil)
         scroll.layoutSubtreeIfNeeded()
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        try await Task.sleep(for: .milliseconds(50))
         #expect(scroll.contentView.bounds.origin.y == before)
         scroll.update(.init(parts: [.speech(text + " newest")]), dragsWindow: true, onClick: nil)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        try await waitForCompletion { scroll.preview.visibleRect.maxY >= scroll.preview.bounds.maxY - 2 }
         #expect(scroll.preview.string.hasSuffix("FINAL_TAIL_27 newest"))
         #expect(scroll.preview.visibleRect.maxY >= scroll.preview.bounds.maxY - 2)
         scroll.update(.init(parts: [.speech("replacement")]), dragsWindow: true, onClick: nil)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        try await waitForCompletion { scroll.preview.visibleRect.origin.y == 0 }
         #expect(scroll.preview.string == "replacement")
         #expect(scroll.preview.textLayoutManager != nil && NSApp.keyWindow === keyWindow)
     }
 
-    @Test @MainActor func resizingAndMirrorsKeepCompleteIndependentPreviewDocuments() {
+    @Test @MainActor func resizingAndMirrorsKeepCompleteIndependentPreviewDocuments() async throws {
         let content = RecorderTranscriptPreviewContent(parts: [.speech(String(repeating: "Long context wraps naturally. ", count: 150))])
         let a = RecorderTranscriptScrollView(frame: NSRect(x: 0, y: 0, width: 320, height: 140))
         let b = RecorderTranscriptScrollView(frame: NSRect(x: 0, y: 0, width: 1_100, height: 140))
@@ -80,14 +83,17 @@ import Testing
         defer { pa.close(); pb.close() }
         a.update(content, dragsWindow: true, onClick: nil)
         b.update(content, dragsWindow: true, onClick: nil)
-        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        try await waitForCompletion { a.preview.bounds.height > b.preview.bounds.height
+            && a.preview.visibleRect.maxY >= a.preview.bounds.maxY - 2
+            && b.preview.visibleRect.maxY >= b.preview.bounds.maxY - 2 }
         #expect(a.preview.string == b.preview.string)
         #expect(a.preview.bounds.height > b.preview.bounds.height)
         #expect(a.preview.textStorage !== b.preview.textStorage)
         let narrowHeight = a.preview.bounds.height
         pa.setContentSize(NSSize(width: 1_100, height: 140))
         a.layoutSubtreeIfNeeded()
-        RunLoop.current.run(until: Date().addingTimeInterval(0.1))
+        try await waitForCompletion { a.preview.bounds.height < narrowHeight
+            && a.preview.visibleRect.maxY >= a.preview.bounds.maxY - 2 }
         #expect(a.preview.bounds.height < narrowHeight)
         #expect(a.preview.visibleRect.maxY >= a.preview.bounds.maxY - 2)
         #expect(a.preview.string == content.attributedText().string)
