@@ -25,7 +25,8 @@ struct RecorderOutlineActivityTests {
         var activity = RecorderOutlineActivity(at: start)
         activity.addText(units: 20, at: start)
         #expect(activity.speed(at: start) == RecorderOutlineActivity.idleSpeed)
-        let charged = activity.speed(at: start.addingTimeInterval(0.8))
+        let charged = activity.speed(at: start.addingTimeInterval(0.2))
+        #expect(activity.speed(at: start.addingTimeInterval(0.1)) < charged)
         #expect(activity.speed(at: start.addingTimeInterval(0.5)) < charged)
         #expect(activity.speed(at: start.addingTimeInterval(2)) < charged)
         #expect(abs(activity.speed(at: start.addingTimeInterval(20)) - RecorderOutlineActivity.idleSpeed) < 0.000_001)
@@ -34,6 +35,51 @@ struct RecorderOutlineActivityTests {
         activity.addText(units: 3, at: next)
         #expect(activity.phase(at: next) == phase)
         #expect(activity.phase(at: next.addingTimeInterval(86_400)).isFinite)
+    }
+
+    @Test func shortGapsCoastAndResumedTypingKeepsItsSpeedPhaseAndCharge() {
+        var activity = RecorderOutlineActivity(at: start)
+        for index in 0..<20 {
+            activity.addText(units: 4, at: start.addingTimeInterval(Double(index) / 10))
+        }
+        let lastKey = start.addingTimeInterval(1.9)
+        let brake = lastKey.addingTimeInterval(0.2)
+        #expect(activity.speed(at: brake) > activity.speed(at: lastKey.addingTimeInterval(0.1)))
+        let initial = activity.speed(at: brake) - RecorderOutlineActivity.idleSpeed
+        let quiet = lastKey.addingTimeInterval(0.5)
+        let remaining = activity.speed(at: quiet) - RecorderOutlineActivity.idleSpeed
+        #expect(remaining > initial * 0.35 && remaining < initial * 0.45)
+        #expect(activity.speed(at: quiet) > RecorderOutlineActivity.idleSpeed)
+        let speed = activity.speed(at: quiet)
+        let phase = activity.phase(at: quiet)
+        activity.addText(units: 1, at: quiet)
+        #expect(activity.speed(at: quiet) == speed)
+        #expect(activity.phase(at: quiet) == phase)
+        #expect(activity.speed(at: quiet.addingTimeInterval(0.1)) > speed)
+        var fresh = RecorderOutlineActivity(at: quiet)
+        fresh.addText(units: 1, at: quiet)
+        #expect(activity.speed(at: quiet.addingTimeInterval(0.1))
+            > fresh.speed(at: quiet.addingTimeInterval(0.1)))
+    }
+
+    @Test func brakingBeginsQuicklyStaysContinuousAndSettlesFasterThanBuildUp() {
+        var activity = RecorderOutlineActivity(at: start)
+        activity.addText(units: 32, at: start)
+        let brake = start.addingTimeInterval(0.2)
+        let before = activity.speed(at: brake.addingTimeInterval(-0.000_001))
+        let at = activity.speed(at: brake)
+        let after = activity.speed(at: brake.addingTimeInterval(0.000_001))
+        #expect(abs(at - before) < 0.0001 && abs(after - at) < 0.0001)
+        #expect(activity.speed(at: brake.addingTimeInterval(0.01)) < at)
+        let momentum = at - RecorderOutlineActivity.idleSpeed
+        let halfSecond = activity.speed(at: brake.addingTimeInterval(0.5)) - RecorderOutlineActivity.idleSpeed
+        #expect(halfSecond / momentum < exp(-2 * 0.5))
+        #expect(halfSecond / momentum > 0.2)
+        let oneSecond = activity.speed(at: brake.addingTimeInterval(1)) - RecorderOutlineActivity.idleSpeed
+        #expect(oneSecond > 0 && oneSecond < momentum * 0.06)
+        let phaseBefore = activity.phase(at: brake.addingTimeInterval(-0.000_001))
+        let phaseAfter = activity.phase(at: brake.addingTimeInterval(0.000_001))
+        #expect(abs(RecorderCaptureOutlineTrace.wrapped(phaseAfter - phaseBefore)) < 0.0001)
     }
 
     @Test func phaseDerivativeMatchesSpeedThroughTheDecayAndFramesDoNotMutateIt() {

@@ -58,20 +58,17 @@ struct RecorderOutlineActivity: Equatable {
         let travel = target * held + difference * response / Self.responseRate
         guard elapsed > held else { return (speed, travel) }
 
-        // After the chaining interval, both charge terms decay as before. Solve
-        // the same gentle speed response analytically through that quiet period.
+        // Ethan wants a short typing debounce, then coasting rather than a stop.
+        // Brake the actual visible speed directly: a decaying target could still
+        // accelerate after the last key. Retain separate charge for a resumed
+        // chain, and integrate travel so braking never jumps the rainbow's colour.
+        // This is visual motion only, not a keyboard/capture wait. — GPT-6.1 Sol
         let quiet = elapsed - held
-        let first = Self.responseRate * linear / (Self.responseRate - Self.decayRate)
-        let second = Self.responseRate * quadratic / (Self.responseRate - 2 * Self.decayRate)
-        let settling = speed - Self.idleSpeed - first - second
+        let momentum = speed - Self.idleSpeed
         return (
-            Self.idleSpeed + first * exp(-Self.decayRate * quiet)
-                + second * exp(-2 * Self.decayRate * quiet)
-                + settling * exp(-Self.responseRate * quiet),
+            Self.idleSpeed + momentum * exp(-Self.brakingRate * quiet),
             travel + Self.idleSpeed * quiet
-                + first * Self.decayIntegral(Self.decayRate, quiet)
-                + second * Self.decayIntegral(2 * Self.decayRate, quiet)
-                + settling * Self.decayIntegral(Self.responseRate, quiet)
+                + momentum * Self.decayIntegral(Self.brakingRate, quiet)
         )
     }
 
@@ -89,10 +86,13 @@ struct RecorderOutlineActivity: Equatable {
     // This changes visual momentum only; input/capture timing is untouched. — GPT-6.1 Sol
     private static let linearGain = 0.034
     private static let quadraticGain = 0.000765
-    // A half-second visual response; it never holds a keystroke or audio chunk.
-    // The analytic decay solution needs this distinct from1.5 and3. — GPT-6.1 Sol
+    // Keep the existing half-second build-up. After200ms without text, braking
+    // responds50% faster, easing most of the added speed away over about a second.
+    // Stored charge fades more slowly, leaving a chance to resume the chain.
+    // No timer, input wait or extra publisher is involved. — GPT-6.1 Sol
     private static let responseRate = 2.0
-    private static let chainInterval = 0.8
+    private static let brakingRate = 3.0
+    private static let chainInterval = 0.2
     private static let decayRate = 1.5
     // One paste/model catch-up is a burst, not thousands of physical keystrokes.
     // Continuous input can still accumulate unlimited charge and speed. — GPT-6.1 Sol
