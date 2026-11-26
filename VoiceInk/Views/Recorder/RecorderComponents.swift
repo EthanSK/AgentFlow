@@ -154,7 +154,12 @@ struct RecorderRecordButton: View {
             stateMark
         }
         .frame(width: 21, height: 21)
-        .contentShape(Circle())
+        // Keep the small painted button, but let Stop accept a near-edge click.
+        // The full target participates in layout so it cannot overlap Cancel.
+        // This addresses reproduced edge misses, not a proven main-thread stall.
+        // Found and fixed by GPT-6.1 Sol.
+        .padding(5)
+        .contentShape(Rectangle())
         .animation(.easeOut(duration: 0.16), value: visualState)
     }
 

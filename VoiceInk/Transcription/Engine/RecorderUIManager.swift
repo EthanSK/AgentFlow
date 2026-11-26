@@ -555,7 +555,10 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
         await resetOnLaunch()
         guard let engine = engine else { return }
 
-        vippLog.info("toggleRecorderPanel: enter panelVisible=\(self.isRecorderPanelVisible, privacy: .public) state=\(String(describing: engine.recordingState), privacy: .public) modeId=\(modeId?.uuidString ?? "nil", privacy: .public)")
+        // Keep the user-action receipt in the OS's bounded log history: transient
+        // info messages could not establish whether a reported Stop reached here.
+        // This confirms handler entry, not microphone closure. — GPT-6.1 Sol
+        vippLog.notice("toggleRecorderPanel: enter panelVisible=\(self.isRecorderPanelVisible, privacy: .public) state=\(String(describing: engine.recordingState), privacy: .public) modeId=\(modeId?.uuidString ?? "nil", privacy: .public)")
 
         if let reservedStartRequestID,
            engine.recordingState != .idle {

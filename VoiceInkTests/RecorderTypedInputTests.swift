@@ -1030,16 +1030,23 @@ struct RecorderTypedInputTests {
         // after the host resizes. No microphone or recorder lifecycle is started.
         // A larger click target must retain the gap and Cancel's own action. — GPT-6.1 Sol
         for scale: CGFloat in [0.5, 0.85, 1] {
-            for state: RecordingState in [.recording, .paused] {
+            let cases: [(RecordingState, Bool)] = [
+                (.recording, false), (.paused, false),
+                (.recording, true), (.paused, true), (.starting, false),
+                (.transcribing, false), (.enhancing, false), (.busy, false)
+            ]
+            for (state, finishRequested) in cases {
                 var stopped = 0
                 var cancelled = 0
+                let acceptsStop = state.isRecordingOrPaused && !finishRequested
                 let originalKeyWindow = NSApp.keyWindow
                 let panel = MiniRecorderPanel(contentRect: NSRect(x: 100, y: 100,
                     width: 90 * scale, height: 40 * scale))
                 defer { panel.close() }
                 let host = ScaledRecorderHostingView(rootView: AnyView(
                     HStack(spacing: 6) {
-                        RecorderRecordButton(recordingState: state, action: { stopped += 1 })
+                        RecorderRecordButton(recordingState: state, action: { stopped += 1 },
+                            finishRequested: finishRequested)
                             .frame(width: 31, height: 40)
                         RecorderCancelButton(action: { cancelled += 1 })
                     }
@@ -1070,21 +1077,22 @@ struct RecorderTypedInputTests {
                     NSPoint(x: -14, y: -14), NSPoint(x: -14, y: 14),
                     NSPoint(x: 14, y: -14), NSPoint(x: 14, y: 14)
                 ]
-                for (index, offset) in offsets.enumerated() {
+                let testedOffsets = acceptsStop ? offsets : [offsets[0], offsets[8]]
+                for (index, offset) in testedOffsets.enumerated() {
                     if index == 4 {
                         panel.setContentSize(NSSize(width: 110 * scale, height: 100 * scale))
                         host.layoutSubtreeIfNeeded()
                         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
                     }
                     try click(NSPoint(x: 15.5 + offset.x, y: 20 + offset.y))
-                    #expect(stopped == index + 1,
+                    #expect(stopped == (acceptsStop ? index + 1 : 0),
                         "Stop missed offset \(offset), scale \(scale), state \(state)")
                     #expect(cancelled == 0)
                 }
                 try click(NSPoint(x: 34, y: 20))
-                #expect(stopped == offsets.count && cancelled == 0)
+                #expect(stopped == (acceptsStop ? offsets.count : 0) && cancelled == 0)
                 try click(NSPoint(x: 47.5, y: 20))
-                #expect(stopped == offsets.count && cancelled == 1)
+                #expect(stopped == (acceptsStop ? offsets.count : 0) && cancelled == 1)
                 #expect(NSApp.keyWindow === originalKeyWindow)
             }
         }
