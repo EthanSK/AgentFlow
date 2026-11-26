@@ -433,7 +433,7 @@ struct RecorderContextSweepTests {
             var previous = try #require(RecorderContextAcceptancePulse(accepting: highlight, at: start))
             for index in 0..<6 {
                 let reference = alternating && index.isMultiple(of: 2) ? screenshot : highlight
-                let date = start.addingTimeInterval(1.2 + Double(index) * 0.1)
+                let date = start.addingTimeInterval(1.2 + Double(max(0, index - 1)) * 0.1)
                 let pulse = try #require(RecorderContextAcceptancePulse(accepting: reference, at: date))
                     .replacing(previous)
                 let shown = try #require(RecorderContextSweep.acknowledgement(for: pulse, at: date))
@@ -740,7 +740,7 @@ struct RecorderContextSweepTests {
     }
 
     /// The amount of white mixed into `tint` to give `colour`, or nil when `colour`
-    /// is not on that line: it then contains some other, rainbow colour.
+    /// is not on that line: it then contains some other, rainbow colour. — Claude Opus 5.5
     private func whiteness(of colour: RecorderNeonSpectrum.Components,
                            over tint: RecorderNeonSpectrum.Components) -> Double? {
         let channels = [(colour.red, tint.red), (colour.green, tint.green), (colour.blue, tint.blue)]
@@ -752,11 +752,12 @@ struct RecorderContextSweepTests {
     }
 
     /// The outline's own paint for `shown`, resolving any replaced colour with these
-    /// fixed test colours, exactly as the leaf builds it.
+    /// fixed test colours, exactly as the leaf builds it. — Claude Opus 5.5
     private func paint(for shown: RecorderContextSweep.Acknowledgement,
                        tint: RecorderNeonSpectrum.Components) -> RecorderContextSweepPaint {
-        RecorderContextSweepPaint(tint: tint, form: shown.form, underlay: shown.underlay.map {
-            RecorderContextSweepPaint.Layer(tint: $0.kind == .selection ? blue : magenta, lap: $0.lap)
+        RecorderContextSweepPaint(tint: tint, form: shown.form, underlay: shown.underlay.map { older in
+            RecorderContextSweepPaint.Layer(tint: older.kind == .selection ? blue : magenta, lap: older.lap,
+                backgroundTint: older.backgroundKind.map { $0 == .selection ? blue : magenta })
         })
     }
 

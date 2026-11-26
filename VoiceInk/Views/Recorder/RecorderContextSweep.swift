@@ -44,11 +44,11 @@ struct RecorderContextAcceptancePulse: Equatable {
     let id: UUID
     let kind: Kind
     let startedAt: Date
-    /// The acknowledgement this one replaced, frozen as it looked at `startedAt`.
-    /// It stays beneath the new colour until the new entrance has painted over it,
-    /// so a second highlight during the blue never drops the border back to the
-    /// rainbow first. Only this one frozen value is kept, and nothing waits for it:
-    /// replacement still has no queue. — Claude Opus 5.5
+    /// Previous colour geometry beneath this entrance, plus its last opaque base.
+    /// It stays beneath the new colour until this entrance fills the ring, so rapid
+    /// highlights cannot expose the rainbow again. One bounded value is kept;
+    /// there is no recursive history, animation queue or input wait.
+    /// — Claude Opus 5.5; GPT-6.1 Sol
     private(set) var replaced: RecorderContextSweep.Underlay? = nil
 
     /// Typed prose and internal speech-timing markers are not captured context,
@@ -83,56 +83,67 @@ struct RecorderContextAcceptancePulse: Equatable {
 /// rainbow it would have been anyway. — Claude Opus 5.5
 enum RecorderContextSweep {
     /// Entrance: the head travels once round from the launch band and closes the
-    /// ring, leaving the whole stroke in the context colour.
+    /// ring, leaving the whole stroke in the context colour. — Claude Opus 5.5
     static let entranceDuration: TimeInterval = 0.7
     /// Hold: the entire stroke stays the context colour, with no rainbow anywhere.
     /// Ethan asked for at least a second. The extra fifth keeps that true when the
-    /// outline itself is still drawing its 0.45s mounting entrance.
+    /// outline itself is still drawing its 0.45s mounting entrance. — Claude Opus 5.5
     static let holdDuration: TimeInterval = 1.2
     /// Exit: the rainbow travels back round behind a soft edge, following the
-    /// same direction, and the last of the colour lands in its launch band.
+    /// same direction, and the last of the colour lands in its launch band. — Claude Opus 5.5
     static let exitDuration: TimeInterval = 0.7
     static let duration = entranceDuration + holdDuration + exitDuration
     /// Reduce Motion: the whole border holds the context colour this long, with no
     /// movement or fade, then returns to the still rainbow.
     static let stillDuration: TimeInterval = 1.2
     /// The colour ignites over this long at launch and fades over the landing
-    /// interval, reaching exactly zero at both ends so neither can jump.
+    /// interval, reaching exactly zero at both ends so neither can jump. — Claude Opus 5.5
     static let launchFade: TimeInterval = 0.06
     static let landingFade: TimeInterval = 0.1
     /// Edge softness in laps. The head is crisp so its direction reads clearly;
     /// the returning rainbow dissolves in behind a soft tail. They span about two
-    /// and six of the outline's 72 colour stops, so the edges glide rather than step.
+    /// and six of the outline's 72 colour stops, so the edges glide rather than step. — Claude Opus 5.5
     static let headFeather = 0.025
     static let tailFeather = 0.09
     /// A white-hot spark rides the head. It is a colour along the same 1pt stroke,
     /// never a glow, blur or gradient into the panel.
     static let sparkHalfWidth = 0.035
     static let sparkWhiteness = 0.55
-    /// Once the ring closes, the spark melts into the full colour over this long.
+    /// Once the ring closes, the spark melts into the full colour over this long. — Claude Opus 5.5
     static let sparkSettle: TimeInterval = 0.3
     /// While the colour shows, one soft lighter band in that same colour rides the
     /// rainbow's flow, so the steady colour still visibly travels round. Mixing
-    /// toward white keeps its hue and never shows a rainbow colour.
+    /// toward white keeps its hue and never shows a rainbow colour. — Claude Opus 5.5
     static let sheenWhiteness = 0.2
 
     struct Lap: Equatable {
         /// The colour's leading edge, travelled clockwise from the launch band, in
-        /// laps 0...1. It reaches 1, closing the ring, at the end of the entrance.
+        /// laps 0...1. It reaches 1, closing the ring, at the end of the entrance. — Claude Opus 5.5
         let head: Double
-        /// The returning rainbow's edge, 0...1. It stays 0 until the exit begins.
+        /// The returning rainbow's edge, 0...1. It stays 0 until the exit begins. — Claude Opus 5.5
         let tail: Double
-        /// Fades the colour in at launch and out on landing, 0...1.
+        /// Fades the colour in at launch and out on landing, 0...1. — Claude Opus 5.5
         let strength: Double
         /// The spark on the head, 0...1: lit while the head travels, settling
-        /// away once the ring has closed.
+        /// away once the ring has closed. — Claude Opus 5.5
         let spark: Double
     }
 
-    /// A replaced acknowledgement, frozen in place beneath a newer entrance.
+    /// A previous arc's fixed geometry and optional opaque base beneath the new
+    /// entrance; colour flow still follows the leaf clock. — Claude Opus 5.5; GPT-6.1 Sol
     struct Underlay: Equatable {
         let kind: RecorderContextAcceptancePulse.Kind
         let lap: Lap
+        /// Keep the last fully coloured background beneath rapid replacements.
+        /// One colour plus one frozen arc is bounded; retaining previous pulses
+        /// recursively would grow with every selection. Found and fixed by GPT-6.1 Sol.
+        let backgroundKind: RecorderContextAcceptancePulse.Kind?
+
+        /// The opaque colour this snapshot can safely pass to its replacement.
+        /// A partial arc alone never proves the whole border was filled. — GPT-6.1 Sol
+        var opaqueBackgroundKind: RecorderContextAcceptancePulse.Kind? {
+            lap.head == 1 && lap.tail == 0 && lap.strength == 1 ? kind : backgroundKind
+        }
     }
 
     enum Form: Equatable {
@@ -144,21 +155,24 @@ enum RecorderContextSweep {
     struct Acknowledgement: Equatable {
         let kind: RecorderContextAcceptancePulse.Kind
         let form: Form
-        /// Only during the entrance: what the new colour is painting over.
+        /// Only during the entrance: what the new colour is painting over. — Claude Opus 5.5
         var underlay: Underlay? = nil
     }
 
     /// The acknowledgement at `date`, or nil before it starts and once it has
     /// finished. The outline then draws the plain rainbow, so an expired pulse can
-    /// never leave a colour behind and needs no clock of its own to clear it.
+    /// never leave a colour behind and needs no clock of its own to clear it. — Claude Opus 5.5
     static func acknowledgement(for pulse: RecorderContextAcceptancePulse?, at date: Date) -> Acknowledgement? {
-        guard let pulse else { return nil }
+        // Compare the representable end Date, as the Reduce Motion hold does.
+        // Elapsed subtraction can round down at the fractional2.6s endpoint.
+        // Found and fixed by GPT-6.1 Sol.
+        guard let pulse, date < pulse.startedAt.addingTimeInterval(duration) else { return nil }
         var elapsed = date.timeIntervalSince(pulse.startedAt)
         // A frame may carry a timestamp a moment before the acceptance it now
         // shows. With a colour already on screen, hold that colour rather than
         // flashing the rainbow for that frame.
         if elapsed < 0, pulse.replaced != nil { elapsed = 0 }
-        guard elapsed >= 0, elapsed < duration else { return nil }
+        guard elapsed >= 0 else { return nil }
         // The replaced colour matters only ahead of the new head. Once the ring
         // closes the new colour covers it, and the exit must reveal the rainbow.
         return Acknowledgement(kind: pulse.kind, form: .lap(lap(atElapsed: elapsed)),
@@ -166,7 +180,7 @@ enum RecorderContextSweep {
     }
 
     /// One continuous curve: the head eases once round, the whole stroke holds,
-    /// then the tail eases once round. Neither edge ever reverses or restarts.
+    /// then the tail eases once round. Neither edge ever reverses or restarts. — Claude Opus 5.5
     static func lap(atElapsed elapsed: TimeInterval) -> Lap {
         let exitStarts = entranceDuration + holdDuration
         return Lap(
@@ -178,14 +192,19 @@ enum RecorderContextSweep {
     }
 
     /// `pulse` as it looks at `date`, without its spark, for a newer pulse to paint
-    /// over. Nil once it has finished or while it is still invisible.
+    /// over. Nil once it has finished or while it is still invisible. — Claude Opus 5.5
     static func underlay(freezing pulse: RecorderContextAcceptancePulse, at date: Date) -> Underlay? {
+        guard date >= pulse.startedAt,
+              date < pulse.startedAt.addingTimeInterval(duration) else { return nil }
         let elapsed = date.timeIntervalSince(pulse.startedAt)
-        guard elapsed >= 0, elapsed < duration else { return nil }
         let frozen = lap(atElapsed: elapsed)
-        guard frozen.strength > 0 else { return nil }
+        // An immediate third gesture must retain the colour the second gesture
+        // was just about to cover, even before its own ink appears.
+        // Found and fixed by GPT-6.1 Sol.
+        guard frozen.strength > 0 else { return pulse.replaced }
         return Underlay(kind: pulse.kind,
-                        lap: Lap(head: frozen.head, tail: frozen.tail, strength: frozen.strength, spark: 0))
+                        lap: Lap(head: frozen.head, tail: frozen.tail, strength: frozen.strength, spark: 0),
+                        backgroundKind: pulse.replaced?.opaqueBackgroundKind)
     }
 
     /// How much of Reduce Motion's still acknowledgement remains, or nil once it is
@@ -201,7 +220,7 @@ enum RecorderContextSweep {
     }
 
     /// The spectrum position whose colour is nearest `tint`. The colour launches
-    /// and lands here, so it grows out of and folds back into its own colour band.
+    /// and lands here, so it grows out of and folds back into its own colour band. — Claude Opus 5.5
     static func origin(nearest tint: RecorderNeonSpectrum.Components) -> Double {
         let steps = RecorderNeonSpectrum.anchors.count * 32
         var best = 0.0
@@ -226,7 +245,7 @@ enum RecorderContextSweep {
     }
 
     /// The flowing sheen's brightness at a lap offset from the launch band: one
-    /// soft band, brightest opposite the launch point and zero at it.
+    /// soft band, brightest opposite the launch point and zero at it. — Claude Opus 5.5
     static func sheen(atOffset offset: Double) -> Double {
         let wave = 0.5 + 0.5 * cos(2 * Double.pi * (offset - 0.5))
         return wave * wave * wave
@@ -249,11 +268,14 @@ enum RecorderContextSweep {
 /// Colours the outline while an acknowledgement is showing. It is built once per
 /// frame and queried at each of the outline's colour stops. — Claude Opus 5.5
 struct RecorderContextSweepPaint {
-    /// One context colour laid over whatever is beneath it.
+    /// Extraction of the mask and spark math previously inside
+    /// RecorderContextSweepPaint.components. Adds the flowing sheen and sharing
+    /// with a replaced colour; this is not a behavior-neutral move. — GPT-6.1 Sol
     struct Layer {
         let tint: RecorderNeonSpectrum.Components
         let origin: Double
         let lap: RecorderContextSweep.Lap
+        let backgroundTint: RecorderNeonSpectrum.Components?
 
         func paint(over base: RecorderNeonSpectrum.Components, at position: Double) -> RecorderNeonSpectrum.Components {
             let sweep = RecorderContextSweep.self
@@ -270,7 +292,7 @@ struct RecorderContextSweepPaint {
                 let nearHead = max(0, 1 - abs(x - lap.head) / sweep.sparkHalfWidth)
                 spark = max(spark, nearHead * nearHead)
             }
-            let tinted = RecorderContextSweepPaint.mix(base, tint, cover * lap.strength)
+            let tinted = RecorderContextSweepPaint.mix(backgroundTint ?? base, tint, cover * lap.strength)
             // Spark and sheen only lighten the context colour toward white, so the
             // hold keeps its hue and never shows the rainbow beneath it.
             let sheen = sweep.sheenWhiteness * sweep.sheen(atOffset: lapOffset) * cover
@@ -282,7 +304,7 @@ struct RecorderContextSweepPaint {
     let tint: RecorderNeonSpectrum.Components
     let origin: Double
     let form: RecorderContextSweep.Form
-    /// The replaced acknowledgement still showing ahead of this entrance, if any.
+    /// The replaced acknowledgement still showing ahead of this entrance, if any. — Claude Opus 5.5
     let underlay: Layer?
 
     init(tint: RecorderNeonSpectrum.Components, form: RecorderContextSweep.Form, underlay: Layer? = nil) {
@@ -300,7 +322,7 @@ struct RecorderContextSweepPaint {
         let rainbow = RecorderNeonSpectrum.components(at: rainbowPosition ?? position)
         guard case .lap(let lap) = form else { return tint }
         let base = underlay?.paint(over: rainbow, at: position) ?? rainbow
-        return Layer(tint: tint, origin: origin, lap: lap).paint(over: base, at: position)
+        return Layer(tint: tint, origin: origin, lap: lap, backgroundTint: nil).paint(over: base, at: position)
     }
 
     func color(at position: Double, rainbowPosition: Double? = nil) -> Color {
@@ -322,8 +344,10 @@ struct RecorderContextSweepPaint {
 }
 
 extension RecorderContextSweepPaint.Layer {
-    /// A layer launching from `tint`'s own band.
-    init(tint: RecorderNeonSpectrum.Components, lap: RecorderContextSweep.Lap) {
-        self.init(tint: tint, origin: RecorderContextSweep.origin(nearest: tint), lap: lap)
+    /// A layer launching from `tint`'s own band. — Claude Opus 5.5
+    init(tint: RecorderNeonSpectrum.Components, lap: RecorderContextSweep.Lap,
+         backgroundTint: RecorderNeonSpectrum.Components? = nil) {
+        self.init(tint: tint, origin: RecorderContextSweep.origin(nearest: tint), lap: lap,
+                  backgroundTint: backgroundTint)
     }
 }

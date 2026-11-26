@@ -181,10 +181,13 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
             RecorderContextSweepPaint(
                 tint: RecorderContextSweep.components(of: shown.kind.color, in: context.environment),
                 form: shown.form,
-                underlay: shown.underlay.map {
+                underlay: shown.underlay.map { older in
                     RecorderContextSweepPaint.Layer(
-                        tint: RecorderContextSweep.components(of: $0.kind.color, in: context.environment),
-                        lap: $0.lap)
+                        tint: RecorderContextSweep.components(of: older.kind.color, in: context.environment),
+                        lap: older.lap,
+                        backgroundTint: older.backgroundKind.map {
+                            RecorderContextSweep.components(of: $0.color, in: context.environment)
+                        })
                 })
         }
         let tube = GraphicsContext.Shading.conicGradient(

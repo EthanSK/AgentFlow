@@ -1094,9 +1094,9 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         // display gate here would prevent the first real gesture from lighting it.
         // Found by GPT-6.2 Astra. Fixed by GPT-6.1 Sol.
         guard !precedesSpeech, isEligibleForRecordingActivityOutline else { return }
-        // A newer gesture still replaces the older one at once. It only carries the
-        // older colour's frozen frame, so its entrance paints over that colour
-        // instead of first dropping the border back to the rainbow. — Claude Opus 5.5
+        // A newer gesture still replaces the older one at once. One bounded prior
+        // colour value lets its entrance paint over the earlier colour rather
+        // than first exposing the rainbow. — Claude Opus 5.5; GPT-6.1 Sol
         contextAcceptancePulse = pulse.replacing(contextAcceptancePulse)
     }
 
