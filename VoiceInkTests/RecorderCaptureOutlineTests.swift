@@ -97,14 +97,19 @@ struct RecorderCaptureOutlineTests {
     func nativeIntroductionDrawsAroundBothShapesAndReducedMotionSkipsIt(reduced: Bool) async throws {
         let size = CGSize(width: 500, height: 80)
         let started = Date(timeIntervalSinceReferenceDate: 12_345.125)
+        let reference = try #require(LiveSelectionReference("first context"))
         for notch in [false, true] {
-            func root(_ progress: Double) -> some View {
+            func root(_ progress: Double, acknowledging: Bool = false) -> some View {
                 let date = started.addingTimeInterval(progress * RecorderCaptureOutlineStyle.introductionDuration)
+                let pulse = acknowledging
+                    ? RecorderContextAcceptancePulse(accepting: reference, at: date.addingTimeInterval(-0.2)) : nil
                 let outline: AnyView = notch
                     ? AnyView(RecorderCaptureOutline(shape: NotchShape(topCornerRadius: 8, bottomCornerRadius: 16),
-                        omitsTopEdge: true, reduceMotionForPreview: reduced, frameDateForPreview: date,
+                        omitsTopEdge: true, acceptancePulse: pulse,
+                        reduceMotionForPreview: reduced, frameDateForPreview: date,
                         introductionStartedAtForPreview: started))
                     : AnyView(RecorderCaptureOutline(shape: RoundedRectangle(cornerRadius: 20, style: .continuous),
+                        acceptancePulse: pulse,
                         reduceMotionForPreview: reduced, frameDateForPreview: date,
                         introductionStartedAtForPreview: started))
                 return outline.background(.black).frame(width: size.width, height: size.height)
@@ -116,8 +121,12 @@ struct RecorderCaptureOutlineTests {
             panel.orderFrontRegardless()
             defer { panel.orderOut(nil); panel.close() }
             var counts: [Int] = []
-            for progress in [0.0, 0.5, 1.0] {
-                host.rootView = root(progress)
+            // Preserve every entrance check; also paint the first context while
+            // that entrance would still be empty/partial. — GPT-6.1 Sol
+            let frames = [(0.0, false), (0.5, false), (1.0, false)]
+                + (reduced ? [] : [(0.0, true), (0.5, true)])
+            for (progress, acknowledging) in frames {
+                host.rootView = root(progress, acknowledging: acknowledging)
                 try await Task.sleep(for: .milliseconds(500))
                 host.layoutSubtreeIfNeeded()
                 let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
@@ -135,7 +144,7 @@ struct RecorderCaptureOutlineTests {
                 #expect(max(middle.redComponent, middle.greenComponent, middle.blueComponent) < 0.02)
                 if let directory = ProcessInfo.processInfo.environment["VIPP_OUTLINE_SNAPSHOT_DIR"] {
                     let url = URL(fileURLWithPath: directory, isDirectory: true)
-                        .appendingPathComponent("intro-\(notch ? "notch" : "mini")-\(reduced ? "still" : "moving")-\(progress).png")
+                        .appendingPathComponent("intro-\(notch ? "notch" : "mini")-\(reduced ? "still" : "moving")-\(progress)\(acknowledging ? "-context" : "").png")
                     let image = try #require(bitmap.representation(using: .png, properties: [:]))
                     try image.write(to: url)
                 }
@@ -147,6 +156,8 @@ struct RecorderCaptureOutlineTests {
                 #expect(counts[0] == 0)
                 #expect(counts[1] > counts[2] / 4 && counts[1] < counts[2] * 3 / 4,
                     "notch=\(notch) counts=\(counts)")
+                #expect(counts[3] > counts[2] * 9 / 10 && counts[4] > counts[2] * 9 / 10,
+                    "First context must own the full edge: notch=\(notch) counts=\(counts)")
             }
         }
     }

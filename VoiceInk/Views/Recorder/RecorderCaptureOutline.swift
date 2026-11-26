@@ -104,13 +104,17 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
         )) { timeline in
             let frameDate = frameDateForPreview ?? timeline.date
             let phase = reduceMotion ? 0 : RecorderCaptureOutlineStyle.flowPhase(at: frameDate, isProcessing: isProcessing, processingStartedAt: processingStartedAt, activity: activity)
-            let introduction = reduceMotion ? 1 : RecorderCaptureOutlineStyle.introductionFraction(
-                elapsed: frameDate.timeIntervalSince(started))
             // The lap reads the same wall-clock frame as the rainbow, so mirrored
             // panels match, and it never shifts the rainbow's phase. — Claude Opus 5.5
             let acknowledgement = reduceMotion
                 ? stillAcknowledgement.map { RecorderContextSweep.Acknowledgement(kind: $0.kind, form: .still) }
                 : RecorderContextSweep.acknowledgement(for: acceptancePulse, at: frameDate)
+            // The first context can mount an empty typing outline. Its coloured
+            // acknowledgement owns the whole stroke; the growing entrance must
+            // not consume part of Ethan's minimum full-colour hold.
+            // Found and fixed by GPT-6.1 Sol.
+            let introduction = reduceMotion || acknowledgement != nil ? 1
+                : RecorderCaptureOutlineStyle.introductionFraction(elapsed: frameDate.timeIntervalSince(started))
             // Follow the live charged colour band; if loading begins mid-lap,
             // its mask keeps that live frame while the rainbow beneath reverses.
             // With no pulse, no second phase calculation is needed.
