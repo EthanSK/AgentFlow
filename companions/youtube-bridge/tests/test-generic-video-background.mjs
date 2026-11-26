@@ -1,3 +1,5 @@
+// Execute the production worker with isolated Chrome/message fixtures; run with Node,
+// or TEST_EXTENSION_DIR to qualify the packaged worker without live media. — GPT-6.1 Sol
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -269,3 +271,59 @@ assert.equal(replies(lastViewed).at(-1)?.tabId, 7, 'Play resumes the most recent
 assert.equal(replies(lastViewed).at(-1)?.reason, 'played');
 assert.equal(wrongTargets.length, 0, 'The unrelated playing tab gets no command');
 console.log('PASS explicit Play uses actual tab attention when the selected Chrome tab has no video');
+
+// Background-tab Pause regressions use only isolated Chrome fixtures. — GPT-6.1 Sol
+for (const targetUrl of ['https://www.youtube.com/watch?v=background', 'https://video.example/background']) {
+  for (const mode of ['playing', 'already-paused', 'missing-response', 'timeout', 'pip', 'late-noop']) {
+    const background = setup();
+    background.setPlaying(false);
+    background.report({ type: 'generic-video-state', instanceId: 'embed-instance', mediaId: 'exact-video', playing: false, area: 200000 });
+    const tabs = [
+      { id: 7, windowId: 1, url: 'https://video.example/watch', active: true, audible: false },
+      { id: 8, windowId: 1, url: targetUrl, active: false, audible: true },
+    ];
+    background.chrome.tabs.query = async () => tabs;
+    background.chrome.tabs.get = async id => tabs.find(tab => tab.id === id);
+    background.run(`recordTabPlayState(8, ${mode !== 'already-paused'}, 'Background video', ${JSON.stringify(targetUrl)}, ${mode === 'pip'}, 'play', Date.now())`);
+    if (!targetUrl.includes('youtube.com')) {
+      background.report({ type: 'generic-video-state', instanceId: 'background-instance', mediaId: 'background-video', playing: mode !== 'already-paused', isPiP: mode === 'pip', area: 200000 },
+        { tab: tabs[1], documentId: 'background-document', url: targetUrl });
+    }
+    const originalSend = background.chrome.tabs.sendMessage;
+    const backgroundCommands = [];
+    background.chrome.tabs.sendMessage = (id, message, options, callback) => {
+      if (id === 7 && (message.command ?? message.type) === 'explicit-pause-video' && ['missing-response', 'timeout'].includes(mode)) {
+        if (typeof options === 'function') callback = options;
+        if (mode === 'missing-response') callback?.();
+        return;
+      }
+      if (id !== 8) return originalSend(id, message, options, callback);
+      if (typeof options === 'function') callback = options;
+      backgroundCommands.push(message.command ?? message.type);
+      if (mode === 'late-noop') background.advanceClock(2600);
+      const paused = !['already-paused', 'late-noop'].includes(mode);
+      callback?.({ ok: true, paused, reason: paused ? 'changed' : 'not-playing' });
+    };
+    request(background, 'pause', 201);
+    await idle(background);
+    const reply = replies(background).at(-1);
+    if (['missing-response', 'timeout'].includes(mode)) {
+      assert.ok(mode === 'timeout' ? reply?.reason.startsWith('browser-timeout:') : reply?.reason === 'missing-response');
+      assert.deepEqual(backgroundCommands, [], 'An uncertain first effect must not send to another tab');
+      assert.equal(background.run('helloChatPausedTarget'), null);
+    } else if (mode === 'late-noop') {
+      assert.equal(reply?.reason, 'stale-request', 'A delayed no-op cannot turn an expired request into success');
+      assert.equal(background.run('helloChatPausedTarget'), null);
+    } else if (mode === 'already-paused') {
+      assert.equal(reply?.reason, 'already-paused');
+      assert.equal(reply?.tabId, 7, 'Only an all-no-op search can select the already-paused fallback');
+    } else {
+      assert.equal(reply?.reason, 'paused');
+      assert.equal(reply?.tabId, 8, 'A paused active page must not hide the playing background tab');
+      assert.deepEqual(backgroundCommands, ['explicit-pause-video']);
+      assert.equal(background.run('helloChatPausedTarget.tabId'), 8, 'Play remembers the tab actually paused');
+      if (mode === 'pip') assert.equal(directions(background).length, 0, 'Playing PiP keeps priority over the active page');
+    }
+  }
+}
+console.log('PASS background Pause, PiP, all-paused fallback, expiry and no uncertain cross-tab retry for YouTube/generic routes');

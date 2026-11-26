@@ -1,4 +1,6 @@
 /* global chrome, createChromeTabHistoryController, createChromeWebsiteOpener */
+// Routes recording and spoken video commands in the manifest's background worker,
+// without focusing a tab or changing unrelated playback. — GPT-6.1 Sol
 
 importScripts('tab-history.js', 'website-opener.js', 'generic-video-router.js');
 
@@ -863,7 +865,7 @@ const sendHelloChatVideoCommand = (tabId, action, expiresAt) => sendDirectionalW
 /**
  * Runs inside the dictation queue so it can never interleave with a recording edge.
  * Prefer the watched player, then the video H Chat last paused, then the usual attention order.
- * A player reporting that it already matches the request is the selected player.
+ * Pause searches past confirmed no-ops for a playing tab; Play keeps its selected-player ordering. — GPT-6.1 Sol
  * @param {string} requestId
  * @param {'pause' | 'play'} action
  * @param {number} issuedAt
@@ -890,6 +892,7 @@ const controlVideoForHelloChat = async (requestId, action, issuedAt) => {
     ...ranked.filter(candidate => !attention.includes(candidate))];
 
   const tried = new Set();
+  let alreadyPaused = null;
   for (const candidate of candidates) {
     if (Date.now() >= expiresAt) break;
     if (tried.has(candidate.tabId)) continue;
@@ -899,7 +902,15 @@ const controlVideoForHelloChat = async (requestId, action, issuedAt) => {
     const reason = response.reason ?? result.reason ?? '';
     clog('background', `hellochat-${action} try tab=${candidate.tabId} why=${candidate.why} delivered=${result.delivered} paused=${response.paused} resumed=${response.resumed} reason="${reason}"`);
     const changed = action === 'pause' ? response.paused === true : response.resumed === true;
-    if (changed || reason === 'not-playing' || reason === 'already-playing') {
+    // Ethan's "currently playing video" can be in a background tab. A confirmed
+    // paused active player is only a fallback, never proof that playback elsewhere
+    // is paused. Keep searching without changing Play or retrying uncertain effects.
+    // Found and fixed by GPT-6.1 Sol.
+    if (action === 'pause' && !changed && reason === 'not-playing') {
+      alreadyPaused ??= candidate;
+      continue;
+    }
+    if (changed || (action === 'play' && reason === 'already-playing')) {
       relinquishAutomaticPlaybackForExplicitCommand(action);
       if (action === 'pause') helloChatPausedTarget = { tabId: candidate.tabId, why: 'previously-paused' };
       else if (helloChatPausedTarget?.tabId === candidate.tabId) helloChatPausedTarget = null;
@@ -914,6 +925,12 @@ const controlVideoForHelloChat = async (requestId, action, issuedAt) => {
       postHelloChatVideoResult(requestId, action, false, reason, candidate.tabId);
       return;
     }
+  }
+  if (alreadyPaused && Date.now() < expiresAt) {
+    relinquishAutomaticPlaybackForExplicitCommand(action);
+    helloChatPausedTarget = { tabId: alreadyPaused.tabId, why: 'previously-paused' };
+    postHelloChatVideoResult(requestId, action, false, 'already-paused', alreadyPaused.tabId);
+    return;
   }
   postHelloChatVideoResult(requestId, action, false, Date.now() >= expiresAt ? 'stale-request' : 'no-video');
 };
