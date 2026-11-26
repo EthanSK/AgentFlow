@@ -219,27 +219,34 @@ struct RecorderContextSweepTests {
         let sweep = RecorderContextSweep.self
         #expect(sweep.cycleDuration == 1 && sweep.cycleCount == 2 && sweep.duration == 2)
         let start = Date(timeIntervalSince1970: 1_000)
-        let reference = try #require(LiveSelectionReference("two animated cycles"))
-        let pulse = try #require(RecorderContextAcceptancePulse(accepting: reference, at: start))
-        for cycle in 0..<2 {
-            for step in 0..<100 {
-                let progress = Double(step) / 100
-                let elapsed = Double(cycle) + progress
-                let acknowledgement = try #require(sweep.acknowledgement(
-                    for: pulse, at: start.addingTimeInterval(elapsed)))
-                guard case .lap(let actual) = acknowledgement.form else {
-                    Issue.record("Expected the original travelling lap"); return
+        let references = [
+            try #require(LiveSelectionReference("two animated cycles")),
+            try #require(LiveSelectionReference(screenshotURL: URL(
+                fileURLWithPath: "/tmp/AgentFlowTests/two-animated-cycles.png")))
+        ]
+        for reference in references {
+            let pulse = try #require(RecorderContextAcceptancePulse(accepting: reference, at: start))
+            for cycle in 0..<2 {
+                for step in 0..<100 {
+                    let progress = Double(step) / 100
+                    let elapsed = Double(cycle) + progress
+                    let acknowledgement = try #require(sweep.acknowledgement(
+                        for: pulse, at: start.addingTimeInterval(elapsed)))
+                    #expect(acknowledgement.kind == pulse.kind)
+                    guard case .lap(let actual) = acknowledgement.form else {
+                        Issue.record("Expected the original travelling lap"); return
+                    }
+                    // Original 1s curve, repeated unchanged, including its entrance
+                    // and tail. The extra cycle does not flatten the whole edge.
+                    // — GPT-6.1 Sol
+                    let expected = sweep.lap(atProgress: progress)
+                    #expect(abs(actual.head - expected.head) < 1e-5)
+                    #expect(abs(actual.tail - expected.tail) < 1e-5)
+                    #expect(abs(actual.strength - expected.strength) < 1e-5)
                 }
-                // Original 1s curve, repeated unchanged, including its entrance
-                // and tail. The extra cycle does not flatten the whole edge.
-                // — GPT-6.1 Sol
-                let expected = sweep.lap(atProgress: progress)
-                #expect(abs(actual.head - expected.head) < 1e-5)
-                #expect(abs(actual.tail - expected.tail) < 1e-5)
-                #expect(abs(actual.strength - expected.strength) < 1e-5)
             }
+            #expect(sweep.acknowledgement(for: pulse, at: start.addingTimeInterval(2)) == nil)
         }
-        #expect(sweep.acknowledgement(for: pulse, at: start.addingTimeInterval(2)) == nil)
     }
 
     @Test func reduceMotionHoldsOneStillColourBrieflyAndAlwaysEnds() throws {
