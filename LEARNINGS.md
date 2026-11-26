@@ -1,6 +1,15 @@
 # Learnings
 
 ---
+**Date:** 2026-11-26T19:25:47Z
+**Verified shared motion565:** Ethan’s final choice is the pre-562 slowdown consistently for typing and speech, followed by gentler build-up for both. Native21a6eef2 uses25% lower gains with unchanged2.1/s braking,2/s response,800ms continuation,200ms visual trigger and one integrated decorative clock. All68 named focused native functions passed, including observable build-up bounds, shared producers, phase/resume/loading, red/context rendering and mandatory startup/capture/delivery guards. Review found no other runtime changes.
+**Installed:** Ordinary universal Developer ID565 from that exact source passed the guarded five-second warning, cooperative all-session exit and atomic swap. PID39621, executable SHA256fc14a219e6b08c1f91fc249c7db921414fe2e1ae6d6ada9a3ba617068ecf2572, startup readiness, deep/strict signature, audio+Automation, updater key/icon, eight protected preferences and untouched official VoiceInk were verified. Real600ms microphone capture stays intact. Verified563/564 ZIP rollbacks remain; unused staged apps were recoverably retired after exact LaunchServices checks. No live recording/Voice/media/message probe was generated.
+**Public:** Exact-source GitHub-hosted45878221995/job140110636830 passed1,110 named native functions/56 suites and every build/sign/notary/staple/publication/download/cleanup step on GitHub Actions1000019148/macOS15. Publicv2.0.565 and its tag identify21a6eef24c0a1a2eb0100ff98459e6f51bfecad3. Independent archive/feed/two-checksum/native/Gatekeeper/staple verification passed without launching/installing the extracted app. ZIP SHA2564798a83da8de958bed39ebd99687ad7ad3101e0e512bd0ac42fbd1d875e1b68d; CDHasha62793c573389643ae5852bf0661154789ddb282. Preliminary564 was intentionally cancelled before credentials/publication after the new gain request; cleanup succeeded, not a product failure.
+**Website and limits:** The Opus-authored current site and six real recorder previews are live; all10 HTML/CSS/JS/image files independently byte-match source. These native motion changes do not alter the site’s pictured layout. Actual responsive-browser layout remains unverified because the supported browser helper is unavailable; do not claim that HTTP/static checks establish layout, subjective feel, whole-machine GPU/battery behavior or the original intermittent physical Stop miss.
+---
+
+
+---
 **Date:** 2026-11-26
 **Trigger:** Ethan additionally wants the rainbow speed to build more slowly while typing or speaking, retaining his just-restored earlier shared slowdown.
 **Implementation boundary:** Build565 reduces both visual gains by25% in the existing shared value (0.0255 linear,0.00057375 quadratic), rather than lowering the response rate and accidentally retuning braking through its derived relationship. Preserve2/s response,2.1/s braking,1.05/s charge decay,200ms visual trigger,800ms chaining, burst bound and uncapped sustained speed. Input/capture clocks, one decorative leaf and accepted context/red sweeps are unchanged.
