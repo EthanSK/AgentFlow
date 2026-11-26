@@ -952,8 +952,9 @@ Keep each field concise but specific enough to prevent rediscovery. Name the sym
 ## Recorder outline changes
 
 Ethan's latest 2026-11-26 context clarification: the blue/magenta part should go
-around to fill the outline, remain fully that colour for at least a second, then
-animate back to rainbow. Preserve an attractive growing entrance and exit, with
+around to fill the outline, hold fully that colour, then animate back to rainbow.
+After approving this animation he asked for half its former full-colour duration;
+the earlier one-second minimum is superseded. Preserve the growing entrance and exit, with
 motion during the uninterrupted full-colour hold. Two separate laps with a rainbow
 break between them are rejected. Check the actual rendered sequence and whole-edge
 colour coverage through entrance, hold and exit; a loop-count assertion alone does

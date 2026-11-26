@@ -5,11 +5,11 @@
 //
 // His 2026-11-26 correction defines one continuous entrance and exit, not separate
 // laps: the colour travels round from its own band until it fills the whole
-// outline, the entire stroke then stays that colour for over a second while it
+// outline, the entire stroke then holds that colour briefly while it
 // keeps flowing, and finally the rainbow travels back in behind it. He rejected
 // both a static whole-edge flash without the travelling entrance (build 556) and
 // two replayed one-second laps, whose rainbow break between them looked like a
-// second launch (cf6323cb). Presentation only. — Claude Opus 5.5
+// second launch (cf6323cb). Presentation only. — Claude Opus 5.5; GPT-6.1 Sol
 import SwiftUI
 
 /// One colour source for the HUD context labels and their outline acknowledgement. The HUD
@@ -85,17 +85,17 @@ enum RecorderContextSweep {
     /// Entrance: the head travels once round from the launch band and closes the
     /// ring, leaving the whole stroke in the context colour. — Claude Opus 5.5
     static let entranceDuration: TimeInterval = 0.7
-    /// Hold: the entire stroke stays the context colour, with no rainbow anywhere.
-    /// Ethan asked for at least a second. The extra fifth keeps that true when the
-    /// outline itself is still drawing its 0.45s mounting entrance. — Claude Opus 5.5
-    static let holdDuration: TimeInterval = 1.2
+    /// Ethan approved the animation, then asked for half of the previous 1.2s full
+    /// colour hold. Only this hold shortens; the entrance and exit stay 0.7s.
+    /// This replaces his earlier one-second minimum. — Claude Opus 5.5; GPT-6.1 Sol
+    static let holdDuration: TimeInterval = 0.6
     /// Exit: the rainbow travels back round behind a soft edge, following the
     /// same direction, and the last of the colour lands in its launch band. — Claude Opus 5.5
     static let exitDuration: TimeInterval = 0.7
     static let duration = entranceDuration + holdDuration + exitDuration
     /// Reduce Motion: the whole border holds the context colour this long, with no
     /// movement or fade, then returns to the still rainbow.
-    static let stillDuration: TimeInterval = 1.2
+    static let stillDuration: TimeInterval = holdDuration
     /// The colour ignites over this long at launch and fades over the landing
     /// interval, reaching exactly zero at both ends so neither can jump. — Claude Opus 5.5
     static let launchFade: TimeInterval = 0.06

@@ -234,12 +234,13 @@ struct RecorderContextSweepTests {
         }
     }
 
-    /// Ethan, 2026-11-26: the colour fills the whole outline, stays "a steady blue
-    /// for a sec", then exits. Measured from the production paint's actual output
+    /// Formerly wholeStrokeHoldsTheContextColourForOverASecondWithoutARainbowGap:
+    /// Ethan approved the fill/hold/exit, then requested half its full-colour hold.
+    /// Measured from the production paint's actual output
     /// colours every 2 ms: a stop shows rainbow only if its painted colour changes
     /// when the rainbow beneath it does. The rejected two-lap replay fails here,
-    /// because the rainbow came back between its cycles. — Claude Opus 5.5
-    @Test func wholeStrokeHoldsTheContextColourForOverASecondWithoutARainbowGap() throws {
+    /// because the rainbow came back between its cycles. — Claude Opus 5.5; GPT-6.1 Sol
+    @Test func wholeStrokeHoldsTheContextColourContinuouslyWithoutARainbowGap() throws {
         let sweep = RecorderContextSweep.self
         let start = Date(timeIntervalSince1970: 3_000)
         let exitStarts = sweep.entranceDuration + sweep.holdDuration
@@ -302,7 +303,8 @@ struct RecorderContextSweepTests {
                 }
             }
             #expect(regressions.isEmpty, "\(label): \(regressions)")
-            #expect(longestRun >= 1.0, "\(label): whole-stroke colour lasted only \(longestRun)s")
+            #expect(longestRun >= 0.58 && longestRun < 0.8,
+                    "\(label): shortened whole-stroke colour lasted \(longestRun)s")
             // Feathered edges may finish coverage slightly before the head closes
             // and keep it slightly into exit. Require the entire nominal hold,
             // one uninterrupted run, and genuine partial entrance/exit frames;
@@ -475,7 +477,7 @@ struct RecorderContextSweepTests {
             fileURLWithPath: "/tmp/AgentFlowTests/still.png")))
         let pulse = try #require(RecorderContextAcceptancePulse(accepting: screenshot, at: start))
         #expect(pulse.kind == .screenshot)
-        #expect(sweep.stillDuration == 1.2)
+        #expect(sweep.stillDuration == 0.6 && sweep.stillDuration == sweep.holdDuration)
         #expect(sweep.stillRemaining(of: pulse, at: start) == sweep.stillDuration)
         let partway = try #require(sweep.stillRemaining(of: pulse, at: start.addingTimeInterval(0.3)))
         // Date stores an absolute floating-point value; fractional intervals are
@@ -588,16 +590,16 @@ struct RecorderContextSweepTests {
                 #expect(held.differingFraction < 0.01, "\(label): \(held.differingFraction)")
             }
 
-            // About 1.3s in: the whole stroke holds the screenshot colour. Only the
+            // About 0.95s in: the whole stroke holds the screenshot colour. Only the
             // rainbow's own near-magenta stretch can still match the plain leaf.
-            try await Task.sleep(for: .milliseconds(reduced ? 600 : 900))
+            try await Task.sleep(for: .milliseconds(reduced ? 50 : 600))
             let holdFrame = try acknowledged.capture()
             let hold = try EdgeComparison(plain.capture(), holdFrame)
             #expect(hold.edgePixels > 100, "\(label)")
             #expect(hold.differingFraction > (reduced ? 0.4 : 0.5), "\(label): hold \(hold.differingFraction)")
             try save(holdFrame, "hold")
 
-            // Well after the 2.6s acknowledgement (1.2s still hold): the same rainbow.
+            // After the 2s acknowledgement (0.6s still hold): the same rainbow.
             try await Task.sleep(for: .milliseconds(reduced ? 700 : 1_600))
             let after = try EdgeComparison(plain.capture(), acknowledged.capture())
             #expect(after.edgePixels > 100, "\(label)")
@@ -607,10 +609,10 @@ struct RecorderContextSweepTests {
 
     /// The real outline leaf at exact frame times on the Mini and Notch silhouettes,
     /// for both colours: a travelling entrance, the entire visible stroke in the
-    /// context colour at five moments across more than a second, a travelling exit,
+    /// context colour at five moments across the shortened hold, a travelling exit,
     /// then pixel-identical rainbow. A screenshot replacing a held highlight never
     /// shows the rainbow either. With VIPP_OUTLINE_SNAPSHOT_DIR set it also exports
-    /// a 0.1s frame sequence and a contact sheet for visual review. — Claude Opus 5.5
+    /// a 0.1s frame sequence and a contact sheet for visual review. — Claude Opus 5.5; GPT-6.1 Sol
     @Test(arguments: [false, true]) @MainActor
     func nativeFramesFillTheWholeStrokeHoldItThenReturnTheRainbow(notch: Bool) async throws {
         enum Check { case sequence, partial, full, restored }
@@ -650,7 +652,9 @@ struct RecorderContextSweepTests {
                 ("exit", exitStarts + sweep.exitDuration / 2, .partial),
                 ("after", after, .restored)
             ]
-            frames += [entrance + 0.02, entrance + 0.3, entrance + 0.6, entrance + 0.9, exitStarts - 0.02]
+            frames += [entrance + 0.02, entrance + sweep.holdDuration * 0.25,
+                       entrance + sweep.holdDuration * 0.5, entrance + sweep.holdDuration * 0.75,
+                       exitStarts - 0.02]
                 .map { (name: "hold", elapsed: $0, check: Check.full) }
             if folder != nil {
                 frames += stride(from: 0.0, through: sweep.duration, by: 0.1)

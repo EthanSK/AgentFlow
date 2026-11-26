@@ -9,7 +9,7 @@ import SwiftUI
 /// Colour still flows evenly around the border; there is no bloom, pale core,
 /// opacity flicker or interior shading. Reduce Motion holds the colours still.
 /// An accepted highlight or screenshot grows its transcript colour round the stroke,
-/// holds the whole stroke in it for over a second, then hands the rainbow back
+/// briefly holds the whole stroke in it, then hands the rainbow back
 /// (`RecorderContextSweep`). It never changes width, alignment or rainbow phase.
 /// — Claude Opus 5.5; GPT-6.1 Sol
 ///
