@@ -2,6 +2,14 @@
 
 ---
 **Date:** 2026-11-26
+**Trigger:** Exact-source public563 run45866036841 executed1,110 named functions/56 suites and failed only startupShellClearPathsAndBothLayoutsRemainPresentationOnly at its old notification-envelope source string. Credential cleanup passed; publication/download were skipped.
+**Cause and correction:** The new bounded red retirement receipt legitimately keeps a recorder envelope visible without retaining a real session. The old fixture still required the guard to mention only assistant/session/startup. Its correction preserves all three conditions and explicitly requires both the receipt binding and fourth visibility condition; no startup, capture or output implementation changes. Other1,109 functions passed, including native red views, off/reduced-motion, shared coasting and protected capture/delivery guards.
+**Validation boundary:** The affected native fixture must execute by name again before the exact-source hosted gate retries. The existing local signed563 remains installed; this test/comment-only follow-up does not change its behavior or require another restart. Contributor comments were also corrected to the exact turn's GPT-6.1 Sol metadata; no Swift code/assertion changed in that attribution correction. Website extension stays held until public563 qualifies.
+---
+
+
+---
+**Date:** 2026-11-26
 **Trigger:** Ethan requested the same red entrance/hold/return for Cancel and Won’t paste as blue selections and magenta screenshots.
 **Verified source contract:** Cancellation can remove a real session before a two-second visual acknowledgement finishes. Never retain a real session, transcript/audio or delivery owner for animation; keep one immutable presentation receipt with its original pulse deadline. A newer start/reset suppresses old receipts, and expiry must re-run existing panel-visibility guards rather than hiding a newer capture. Decorative visibility must not consume the next Start as an idle-panel dismiss.
 **Implementation:** Build563 extends the existing shared pulse and renderer with red, including the existing0.6s full-colour hold and Reduce Motion. The session observes only genuine outcome transitions; repeated choices do not restart, normal-delivery reversal clears red, and late context remains saved without overriding the no-paste cue. Capture,600ms normal-stop tail, output policy and media/Voice boundaries stay independent. Native execution/install/public qualification are separate gates, not established by this source review.

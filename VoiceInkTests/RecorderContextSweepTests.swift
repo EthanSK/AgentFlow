@@ -759,7 +759,7 @@ struct RecorderContextSweepTests {
     }
 
     // Red is a visual acknowledgement of the existing outcome, never another
-    // completion policy or a delay in capture/delivery. — GPT-6.2 Sol
+    // completion policy or a delay in capture/delivery. — GPT-6.1 Sol
     @Test @MainActor func noPasteActionsLaunchOnceAndReversalRemovesTheRedPromise() throws {
         let session = RecordingSession(phase: .transcribing)
         #expect(session.selectPendingClipboardOnlyCompletion())
@@ -881,7 +881,7 @@ struct RecorderContextSweepTests {
     /// Exercise the actual retired-card UI, not just its colour shader. These are
     /// isolated nonactivating panels on the test Mac; no engine/capture is started.
     /// Each private defaults suite proves the complete outline switch independently
-    /// of the red status label. — GPT-6.2 Sol
+    /// of the red status label. — GPT-6.1 Sol
     @Test @MainActor func retiredCancelAndNoPasteCardsRenderInBothStylesAndRespectOutlineOff() async throws {
         let suite = "AgentFlowTests.red-feedback.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))

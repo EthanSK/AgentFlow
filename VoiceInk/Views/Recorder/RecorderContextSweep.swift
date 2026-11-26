@@ -2,7 +2,7 @@
 // while recording, the Recording Outline answers in that context's transcript
 // colour, blue for a selection and magenta for a screenshot, so he can tell the
 // context was captured without looking at the HUD. Explicit Cancel / Won’t paste
-// uses the same entrance, hold and return in red. — GPT-6.2 Sol
+// uses the same entrance, hold and return in red. — GPT-6.1 Sol
 //
 // His 2026-11-26 correction defines one continuous entrance and exit, not separate
 // laps: the colour travels round from its own band until it fills the whole

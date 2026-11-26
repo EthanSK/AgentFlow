@@ -342,7 +342,7 @@ struct RecorderCaptureOutlineTests {
                         if name == "wont-paste" {
                             // Explicit no-paste now paints red, rather than promising
                             // ordinary rainbow activity. Full fill/hold/exit is checked
-                            // separately at controlled native frame times. — GPT-6.2 Sol
+                            // separately at controlled native frame times. — GPT-6.1 Sol
                             #expect(edge.hueBuckets.contains(0), "\(label): \(edge.hueBuckets)")
                         } else {
                             #expect(edge.hueBuckets.count >= 2, "\(label): \(edge.hueBuckets)")
