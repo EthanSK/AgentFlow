@@ -21,7 +21,7 @@
   <link rel="icon" href="assets/agentflow-icon.png">
   <link rel="apple-touch-icon" href="assets/agentflow-icon-512.png">
   <link rel="manifest" href="site.webmanifest">
-  <link rel="stylesheet" href="styles.css?v=458-plain-opening">
+  <link rel="stylesheet" href="styles.css?v=561-recorder">
   <script>
     // Pre-hide the demo before first paint so autoplay never flashes the finished
     // example. If script.js hasn't taken over within 2.5 s, show everything.
@@ -45,6 +45,7 @@
     </a>
     <nav class="top-nav" aria-label="Site">
       <a href="#download">Download</a>
+      <a href="#recorder">Recorder</a>
       <a href="#video">Video</a>
       <a href="#setup">Setup</a>
       <a href="#controls">Controls</a>
@@ -116,6 +117,9 @@
               The cyan wash is the selection that
               the HUD's Selected Text cue captures; its data-at reveals it just before
               that cue, and it is fully drawn without JavaScript or with reduced motion.
+              This HUD is the same stylized recorder as promo/scene.html, so it stays in
+              step with the published video rather than with the native panel. The
+              #recorder band below shows the native panel itself. — Claude Opus 5.5
             -->
             <div class="mac">
               <div class="mac-menubar" aria-hidden="true">
@@ -205,6 +209,90 @@
     </section>
 
     <!--
+      The native recorder, as it looks in build 561. Authored by Claude Opus 5.5,
+      2026-11-26.
+
+      Pictures: four PNGs rendered from the production MiniRecorderView and
+      NotchRecorderView SwiftUI views by isolated native tests, with invented example
+      text (the words describe the outline itself). They are not a screen capture of
+      anyone's Mac and contain no real dictation, chat, path or user screenshot. The files
+      are copied byte for byte from the candidates' provenance.json (sha256 in the
+      2026-11-26 website report); never redraw, retouch or re-encode them. Each is a 1x
+      render with a transparent canvas. styles.css crops that canvas with .crop, so the
+      pixels stay untouched and the panel can sit on the right screen edge. Replace them
+      only with new captures of the real views, and update the crop boxes in styles.css.
+
+      Mini and Notch are alternatives (Settings → Interface → Recorder Style), so each
+      gets its own screen and they never share one. Mini sits on the bottom edge and Notch
+      hangs from the top, as the native panels do. Each layout is shown expanded and as
+      the slim bar. Copy checked against build 561 source:
+        - outline: RecorderCaptureOutline.swift (on by default; Settings → Interface →
+          Recording Outline turns it off; Reduce Motion holds it still; processing runs
+          anticlockwise and keeps accelerating);
+        - highlight/screenshot fill: RecorderContextSweep.swift (Color.cyan /
+          Color.purple, travels round, holds, then the rainbow returns);
+        - X: RecorderCancelButton (stops without pasting; audio and live draft are kept
+          in History);
+        - expanding: RecorderStateProvider.showsLiveContext (live words, typing or a
+          captured highlight/screenshot);
+        - Stop: the panel shrinks at once (README "Stop immediately shrinks"). The
+          microphone tail after Stop is a user setting that defaults to 0 ms, so no
+          duration is claimed here.
+      Don't advertise the original-chat auto-send queue, recap notices or external Codex
+      steering here: they're off or unsupported in this build.
+    -->
+    <section class="band" id="recorder" aria-labelledby="recorder-title">
+      <div class="wrap split">
+        <div class="band-head">
+          <h2 id="recorder-title">Recorder</h2>
+          <p>Choose Mini or Notch in Settings. It appears on every connected display.</p>
+        </div>
+        <div class="band-body">
+          <ul class="facts">
+            <li>A thin rainbow outline flows around it while you talk or type, and speeds up as words arrive. While it transcribes, it runs the other way, faster the longer you wait.</li>
+            <li>A highlight fills the outline cyan and a screenshot fills it purple, then the rainbow returns.</li>
+            <li>Stop shrinks it straight away. The X stops without pasting and keeps the audio and live words in History.</li>
+            <li>Turn the outline off in Settings → Interface → Recording Outline. Reduce Motion keeps it still.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="wrap shots">
+        <figure class="shot-group">
+          <div class="shot-row shot-row-mini">
+            <div class="screen screen-bottom">
+              <div class="crop crop-mini-expanded">
+                <img src="assets/recorder-mini-expanded.png?v=561" width="640" height="300" loading="lazy" decoding="async" alt="Mini recorder on the bottom edge of the screen, with two lines of example text above its controls and a thin rainbow outline">
+              </div>
+            </div>
+            <div class="screen screen-bottom">
+              <div class="crop crop-mini-compact">
+                <img src="assets/recorder-mini-compact.png?v=561" width="640" height="300" loading="lazy" decoding="async" alt="Mini recorder as a slim bar with a rainbow outline: version, Stop, X and Pause, the waveform, then the Mode icon and Chrome as the current app">
+              </div>
+            </div>
+          </div>
+          <figcaption class="shot-caption"><strong>Mini</strong> sits at the bottom of the screen and grows upward to show live words, highlights, screenshots and typing. Your Mode and the app you're in are on the right.</figcaption>
+        </figure>
+
+        <figure class="shot-group">
+          <div class="shot-row">
+            <div class="screen screen-top">
+              <div class="crop crop-notch-expanded">
+                <img src="assets/recorder-notch-expanded.png?v=561" width="1100" height="300" loading="lazy" decoding="async" alt="Notch recorder hanging from the top of the screen, with its controls above two lines of example text and a thin rainbow outline">
+              </div>
+            </div>
+            <div class="screen screen-top screen-short">
+              <div class="crop crop-notch-compact">
+                <img src="assets/recorder-notch-compact.png?v=561" width="1100" height="300" loading="lazy" decoding="async" alt="Notch recorder as a slim bar at the top of the screen, with Stop, X and Pause on the left and the waveform, Mode icon and Chrome on the right">
+              </div>
+            </div>
+          </div>
+          <figcaption class="shot-caption"><strong>Notch</strong> hangs from the top of the screen and grows downward.</figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <!--
       Promo video, rendered from promo/scene.html by promo/render.mjs (see promo/README.md).
       It reuses the hero demo's invented example and only states claims this page already
       makes, so re-render it whenever the demo example or those claims change. Speech,
@@ -215,9 +303,11 @@
       the prompt viewer without a "Your words" copy. The MP4 and poster are redrawn by
       render.mjs's reuse-audio mode (see promo/README.md), which keeps the published
       soundtrack packet for packet and the captions byte for byte; their ?v= values were
-      rotated to 513-file-prompt for that redraw, and the captions' value stays. Don't
-      publish this page before that redraw: the old MP4 shows the build 458 message with
-      the timeline underneath.
+      rotated to 513-file-prompt for that redraw, and the captions' value stays. That
+      redraw is published: promo/published-video.json's source and output hashes match
+      the files here (checked 2026-11-26, Claude Opus 5.5). The video keeps the stylized
+      recorder; the #recorder band shows the native one, so the outline added since then
+      doesn't require a re-render.
       Ethan asked for no visible title, subtitle or transcript here (2026-09-27): the video
       sits in the page like a normal embedded promo. The section keeps id="video" for the
       top navigation and takes its accessible name from aria-label. The captions track

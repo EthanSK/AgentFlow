@@ -1,9 +1,11 @@
 /*
   Agent Flow site
 
-  The page is a quiet light desk; the only black object is the recorder HUD.
+  The page is a quiet light desk; the only black objects are recorders: the
+  hero's stylized HUD and the native panels in the Recorder band.
   Its two signal colours are copied from the real HUD: cyan marks selected
-  text, violet marks a screenshot. Nothing else on the page uses them.
+  text, violet marks a screenshot. Nothing else on the page uses them; inside
+  the Recorder band's pictures they are the app's own pixels.
 
   The hero sets that HUD on an abstract Mac screen (wallpaper, menu bar, one
   TextEdit window) so visitors can see it is a floating macOS panel, not a web
@@ -1011,6 +1013,111 @@ main:focus {
   box-shadow: 0 26px 60px -34px rgba(8, 22, 18, 0.45);
 }
 
+/*
+  Recorder band. Authored by Claude Opus 5.5, 2026-11-26.
+
+  The native recorder on dark screens: the hero's wallpaper geometry in night tones,
+  so the black panel and its 1px rainbow edge read as they do on a dark desktop. The
+  night tones stay clear of the cyan and violet signal colours; the only cyan and
+  purple in this band are the app's own pixels. Each screen holds one recorder,
+  because Mini and Notch are alternatives and only one panel shows at a time.
+
+  Every picture is a 1x render on a transparent canvas, used byte for byte. .crop
+  shows only the panel's box, measured from the PNG's alpha bounds plus 2px on the
+  free sides (the anchored side is the canvas edge, so the panel meets the screen
+  edge). The box is capped at one image pixel per CSS pixel, so wide screens show the
+  panel at its rendered point size and nothing is upscaled past it; narrower screens
+  scale it down evenly. --iw is the canvas width; --x/--y/--w/--h is the crop box.
+*/
+
+.shots {
+  display: grid;
+  gap: clamp(2rem, 4vw, 3rem);
+  margin-top: clamp(2.25rem, 5vw, 3.5rem);
+}
+
+.shot-group {
+  margin: 0;
+}
+
+.shot-row {
+  display: grid;
+  gap: 0.75rem;
+}
+
+/* Mini's expanded and slim views side by side once both fit near full size. */
+@media (min-width: 64rem) {
+  .shot-row-mini {
+    grid-template-columns: minmax(0, 7fr) minmax(0, 4fr);
+  }
+}
+
+.screen {
+  display: flex;
+  justify-content: center;
+  min-width: 0;
+  padding-inline: clamp(0.5rem, 3vw, 2rem);
+  overflow: hidden;
+  border: 1px solid rgba(17, 22, 21, 0.14);
+  border-radius: 14px;
+  background:
+    radial-gradient(ellipse 110% 78% at 110% 108%, #23405e 0 43%, #3a6283 44% 51%, transparent 52%),
+    radial-gradient(ellipse 108% 110% at -18% -20%, #3d4d52 0 49%, #33434a 50% 60%, transparent 61%),
+    linear-gradient(145deg, #34495a 14%, #463f4d 53%, #57463b 77%, #3e3a44);
+  box-shadow: 0 30px 60px -42px rgba(8, 22, 18, 0.55);
+}
+
+/* Mini rests on the screen's bottom edge; Notch hangs from its top edge. */
+.screen-bottom {
+  align-items: flex-end;
+  padding-top: clamp(2.5rem, 7vw, 5rem);
+}
+
+.screen-top {
+  align-items: flex-start;
+  padding-bottom: clamp(2.5rem, 6vw, 4.5rem);
+}
+
+.screen-short {
+  padding-bottom: clamp(1.75rem, 4vw, 2.75rem);
+}
+
+.crop {
+  position: relative;
+  flex: 0 1 auto;
+  width: 100%;
+  max-width: calc(var(--w) * 1px);
+  aspect-ratio: var(--w) / var(--h);
+  overflow: hidden;
+}
+
+.crop img {
+  position: absolute;
+  top: calc(var(--y) / var(--h) * -100%);
+  left: calc(var(--x) / var(--w) * -100%);
+  width: calc(var(--iw) / var(--w) * 100%);
+  max-width: none;
+  height: auto;
+}
+
+/* Alpha bounds: mini-expanded (0,79)-(640,300); mini-compact (158,260)-(482,300);
+   notch-expanded (0,0)-(1100,219); notch-compact (220,0)-(880,38). */
+.crop-mini-expanded { --iw: 640; --x: 0; --y: 77; --w: 640; --h: 223; }
+.crop-mini-compact { --iw: 640; --x: 156; --y: 258; --w: 328; --h: 42; }
+.crop-notch-expanded { --iw: 1100; --x: 0; --y: 0; --w: 1100; --h: 221; }
+.crop-notch-compact { --iw: 1100; --x: 218; --y: 0; --w: 664; --h: 40; }
+
+.shot-caption {
+  max-width: 44rem;
+  margin-top: 0.85rem;
+  color: var(--graphite);
+  font-size: 0.95rem;
+}
+
+.shot-caption strong {
+  color: var(--ink);
+}
+
 .setup-steps {
   display: grid;
   gap: 0.85rem;
@@ -1333,6 +1440,7 @@ kbd {
   .mac,
   .mac-window,
   .hud,
+  .screen,
   .composer,
   .routes,
   .commands {

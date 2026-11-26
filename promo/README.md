@@ -144,8 +144,10 @@ Flow's prompt viewer under "…so your agent can see what you were looking at."
   has no "Your words" or "Full source" copy. The Codex Mode shown has auto-send on, so the
   raw paste is visible for an instant before it renders. Every link is a local file; nothing
   is uploaded.
-- The published MP4 and poster must be redrawn from this scene (`--reuse-audio` keeps the
-  soundtrack) before they represent build 513; until then they show the build 458 message
-  with the timeline underneath.
+- The published MP4 and poster were redrawn from this scene with `--reuse-audio`, so they
+  show the build 513 message; `published-video.json` records the source and output hashes.
+- The website's Recorder band shows the native panel (Mini and Notch, with the rainbow
+  outline) from real view renders. The video keeps its stylized recorder, so changes to the
+  native panel's look don't need a re-render unless the scene starts claiming them.
 - When the site's demo or those claims change, update `narration.json` and the scene to match,
   then re-render.

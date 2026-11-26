@@ -6,7 +6,7 @@
 **Symptom:** Build561's exponential coast removed about81% of extra speed during the first second after the last input.
 **Root cause:** Matching the acceleration and braking coefficients does not make an accumulating charge and an exponential coast feel equally long. The prior source used2.1/s braking; the user confirms its feel is still too abrupt.
 **Fix:** Build562 keeps2/s build-up,200ms visual debounce,800ms continuation and the shared typing/speech controller, but uses0.8/s braking. About53% of extra speed remains one second after the last input instead of19%; stored charge retains the existing half-braking-rate relation for smooth resumption. No capture delay, frame clock or publisher changes.
-**Guard:** Focused native execution, signed installation and hosted public qualification are pending. Preserve continuous speed/phase at pause and resume, finite travel, uncapped sustained charge, identical typing/speech producers, loading hand-off and the accepted0.6s context hold/entrance/exit.
+**Guard:** Canonical Mini job20261126-152918-agent-flow-coast562-focus-35962c passed all60 named functions with verified output/cleanup: observable coast, continuous speed/phase at pause/resume, finite travel, uncapped sustained charge, identical typing/speech producers, loading hand-off, native outline/context frames, startup and capture/delivery safeguards. Ordinary universal562 was built froma368e76e; signed installation and exact-source hosted public qualification remain separate gates. The accepted0.6s context hold/entrance/exit remains.
 ---
 
 ---
