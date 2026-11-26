@@ -109,11 +109,10 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
             let acknowledgement = reduceMotion
                 ? stillAcknowledgement.map { RecorderContextSweep.Acknowledgement(kind: $0.kind, form: .still) }
                 : RecorderContextSweep.acknowledgement(for: acceptancePulse, at: frameDate)
-            // The first context can mount an empty typing outline. Its coloured
-            // acknowledgement owns the whole stroke; the growing entrance must
-            // not consume part of Ethan's minimum full-colour hold.
-            // Found and fixed by GPT-6.1 Sol.
-            let introduction = reduceMotion || acknowledgement != nil ? 1
+            // Keep the growing entrance even for the first accepted context.
+            // Ethan wanted the original animation extended by one cycle, not a
+            // full-stroke colour replacement. Found and fixed by GPT-6.1 Sol.
+            let introduction = reduceMotion ? 1
                 : RecorderCaptureOutlineStyle.introductionFraction(elapsed: frameDate.timeIntervalSince(started))
             // Follow the live charged colour band; if loading begins mid-lap,
             // its mask keeps that live frame while the rainbow beneath reverses.

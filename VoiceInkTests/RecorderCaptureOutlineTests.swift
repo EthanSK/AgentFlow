@@ -121,8 +121,8 @@ struct RecorderCaptureOutlineTests {
             panel.orderFrontRegardless()
             defer { panel.orderOut(nil); panel.close() }
             var counts: [Int] = []
-            // Preserve every entrance check; also paint the first context while
-            // that entrance would still be empty/partial. — GPT-6.1 Sol
+            // Context must preserve the same growing entrance at first mount,
+            // as Ethan explicitly requested. — GPT-6.1 Sol
             let frames = [(0.0, false), (0.5, false), (1.0, false)]
                 + (reduced ? [] : [(0.0, true), (0.5, true)])
             for (progress, acknowledging) in frames {
@@ -156,8 +156,9 @@ struct RecorderCaptureOutlineTests {
                 #expect(counts[0] == 0)
                 #expect(counts[1] > counts[2] / 4 && counts[1] < counts[2] * 3 / 4,
                     "notch=\(notch) counts=\(counts)")
-                #expect(counts[3] > counts[2] * 9 / 10 && counts[4] > counts[2] * 9 / 10,
-                    "First context must own the full edge: notch=\(notch) counts=\(counts)")
+                #expect(counts[3] == 0)
+                #expect(counts[4] > counts[2] / 4 && counts[4] < counts[2] * 3 / 4,
+                    "First context keeps the growing entrance: notch=\(notch) counts=\(counts)")
             }
         }
     }
