@@ -1,6 +1,14 @@
 # Learnings
 
 ---
+**Date:** 2026-11-26
+**Trigger:** After trying build562’s longer coast, Ethan first considered faster speech-only braking, then explicitly chose consistent pre-562 deceleration for both speech and typing.
+**Source contract:** Build564 restores the previous2.1/s braking and its derived1.05/s charge decay in the single RecorderOutlineActivity value. It retains2/s build-up,200ms visual trigger,800ms chain allowance, gains, continuous phase/speed, uncapped accumulation and the existing renderer. Do not revive the superseded slower562 curve or fork speech/typing from the interim false start.
+**Boundary:** Only the visual coefficient and build number change in production. The red/blue/magenta fill/hold/exit,600ms live microphone tail, startup, input, media, Voice and three delivery contracts are unchanged. Native execution, signed installation and hosted exact-source qualification remain separate gates.
+---
+
+
+---
 **Date:** 2026-11-26T18:12:00Z
 **Verified follow-through:** The red Cancel / Won’t paste feature is installed as ordinary universal Developer ID563 froma657cf41 (PID64830, executable SHA25641966907403efdd4d989c1d65bd921809e21e29161c6121f3c5e1cf6cae7ecd9). Five-second warning, cooperative all-session quit/kernel exit wait, atomic replacement, startup readiness, audio+Automation entitlements, updater key/icon, eight protected preferences and untouched official VoiceInk were verified. The old562 is retained as a round-trip-verified ZIP, and its unused staged app was recoverably trashed after exact LaunchServices retirement.
 **Native coverage:**68 unique named focused functions have latest Passed results; actual red Mini/Notch fill/hold/exit sequences and all four Cancel/Won’t paste status-card renders were inspected. Outline-off, still Reduce Motion, dedup/reversal, original receipt deadline, new-start ownership, shared typing/speech coasting, startup and capture/delivery safeguards passed. No live recording, Voice, media or message probe was generated. No whole-machine GPU/battery or physical Stop-miss acceptance is inferred.
@@ -27,6 +35,7 @@
 
 ---
 **Date:** 2026-11-26T15:30:00Z
+**Status:** Superseded by Ethan’s later explicit consistent pre-562 preference and build564. Preserve this record as historical evidence, not current tuning.
 **Trigger:** Ethan says the rainbow still returns to base speed too quickly after typing, despite the earlier near-matched rates.
 **Symptom:** Build561's exponential coast removed about81% of extra speed during the first second after the last input.
 **Root cause:** Matching the acceleration and braking coefficients does not make an accumulating charge and an exponential coast feel equally long. The prior source used2.1/s braking; the user confirms its feel is still too abrupt.
