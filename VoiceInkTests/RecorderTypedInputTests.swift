@@ -1103,14 +1103,19 @@ struct RecorderTypedInputTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let recorder = Recorder()
         let assistant = AssistantSession()
-        for presentation in ["recording", "paused", "finishing", "transcribing"] {
-            let paused = presentation == "paused"
+        let presentations: [(name: String, state: RecordingState, finishRequested: Bool)] = [
+            ("recording", .recording, false), ("paused", .paused, false),
+            ("finishing", .recording, true), ("transcribing", .transcribing, true)
+        ]
+        for presentation in presentations {
+            let paused = presentation.state == .paused
             let session = RecordingSession()
-            session.liveRecordingState = paused ? .paused : .recording
+            session.liveRecordingState = presentation.state
             session.partialTranscript = "Every spoken word remains here while capture pauses and resumes."
             session.microphoneOff = true
-            if presentation == "finishing" { session.acknowledgeCaptureFinish() }
-            if presentation == "transcribing" { session.phase = .transcribing }
+            if presentation.finishRequested { session.acknowledgeCaptureFinish() }
+            if presentation.state == .transcribing { session.phase = .transcribing }
+            #expect(session.recordingState == presentation.state)
             for style in ["mini", "notch"] {
                 let view: AnyView
                 if style == "mini" {
@@ -1133,7 +1138,7 @@ struct RecorderTypedInputTests {
                 let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
                 host.cacheDisplay(in: host.bounds, to: bitmap)
                 let png = try #require(bitmap.representation(using: .png, properties: [:]))
-                let path = directory.appendingPathComponent("\(style)-\(presentation).png")
+                let path = directory.appendingPathComponent("\(style)-\(presentation.name).png")
                 try png.write(to: path)
                 print("HUD_LAYOUT_FIXTURE \(path.path)")
                 #expect(RecorderPauseButton(stateProvider: session).symbolName == (paused ? "play.fill" : "pause.fill"))
