@@ -1,6 +1,17 @@
 # Learnings
 
 ---
+**Date:** 2026-11-26T13:58:35Z
+**Trigger:** Ethan clarified blue/magenta must fill the outline, remain fully coloured for at least a second, then animate back; separate replayed laps are rejected.
+**Symptom:** Two separate colour laps returned to rainbow between launches; an earlier whole-edge flash had lost the animated entrance and exit.
+**Root cause:** Loop-count assertions encoded an incorrect interpretation. A travelling arc alone never guaranteed a continuous fully coloured interval.
+**Fix:** Opus5.5 first pass42371fff uses one0.7s fill,1.2s full-colour hold with a faint same-hue moving sheen, and0.7s return to the untouched rainbow. Root1fd00a69 preserves one opaque background plus one prior arc through repeated/simultaneous context replacements, without recursion, timers or a queue, and compares fractional expiry using the representable end Date. Shared559 coasting and all capture/delivery timing are unchanged.
+**Commit:** c8ee5e071275c6b2fe928ee0b3a010286c8aaafd
+**Guard:** Canonical Mini diagnostics first failed both rapid-replacement and exact-expiry checks on42371fff, exposing68/72 stops and a near-zero value at the deadline. Both passed on1fd00a69. That focus executed60 named functions:59 passed, including native Mini/Notch frames for both colours, shared motion/startup and600ms/media/Primary/Next/HUD-only guards. One paint fixture incorrectly required a moving spark to preserve monotonic partial-colour attenuation and feathered coverage to match hard edge timings. Test-onlyc8ee5e07 preserves the full nominal hold, no loss after opacity, partial entrance/exit and at least1s uninterrupted colour; its named native rerun passed. Production is identical across the follow-up. Native coverage was uninterrupted from0.670 to1.936s for both colours; twelve phase PNGs and four full native sequence sheets were inspected. Thin even stroke, open Notch top and black interior remain. No manufactured capture, screenshot, Voice or media control. Human taste/GPU/battery/live three-display acceptance not inferred; signed local install and exact-source public qualification follow separately.
+---
+
+
+---
 **Date:** 2026-11-26T13:17:38Z
 **Trigger:** Ethan reports slowdown still too fast and wants almost the same ramp-down as ramp-up.
 **Symptom:** The visible rainbow lost momentum too quickly after typing; recognised speech uses the same controller.
