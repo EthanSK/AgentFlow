@@ -21,7 +21,7 @@
   <link rel="icon" href="assets/agentflow-icon.png">
   <link rel="apple-touch-icon" href="assets/agentflow-icon-512.png">
   <link rel="manifest" href="site.webmanifest">
-  <link rel="stylesheet" href="styles.css?v=561-recorder">
+  <link rel="stylesheet" href="styles.css?v=recorder-no-paste">
   <script>
     // Pre-hide the demo before first paint so autoplay never flashes the finished
     // example. If script.js hasn't taken over within 2.5 s, show everything.
@@ -240,6 +240,26 @@
           duration is claimed here.
       Don't advertise the original-chat auto-send queue, recap notices or external Codex
       steering here: they're off or unsupported in this build.
+
+      Red no-paste end bars, added later on 2026-11-26 by Claude Opus 5.5 for Ethan's
+      request that Cancel and Won't paste get the same outline animation in red. The two
+      extra PNGs (recorder-mini-cancelled, recorder-notch-wont-paste) are production
+      RecorderNoPasteFeedbackView renders from the build 563 source, made in isolated
+      test panels; they also carry no user content and are used byte for byte (sha256 in
+      the website-red563 report). The four pictures above stay build 561 renders: the
+      red work changed no part of the panels they show. Each red bar has its own screen
+      beside its layout's slim bar, so no screen ever shows two recorders. Copy checked
+      against source:
+        - RecorderContextSweep.swift: Kind.noPaste uses RecorderContextColor.noPaste
+          (AppTheme.Status.error) on the same entrance, hold and rainbow return as a
+          highlight or screenshot;
+        - RecordingSession.swift: shouldCancel launches it as Cancelled, a clipboardOnly
+          finish as Won't paste, and a fourth press that restores paste removes it;
+        - VoiceInkEngine.retainNoPasteOutlineFeedback: when the session ends first, the
+          non-interactive end bar finishes only the original animation; nothing shows
+          with Recording Outline off.
+      The site's word for the clipboardOnly finish stays "finish without pasting", as in
+      Controls; the pictures carry the app's own "Won't paste" label.
     -->
     <section class="band" id="recorder" aria-labelledby="recorder-title">
       <div class="wrap split">
@@ -250,8 +270,8 @@
         <div class="band-body">
           <ul class="facts">
             <li>A thin rainbow outline flows around it while you talk or type, and speeds up as words arrive. While it transcribes, it runs the other way, faster the longer you wait.</li>
-            <li>A highlight fills the outline cyan and a screenshot fills it purple, then the rainbow returns.</li>
-            <li>Stop shrinks it straight away. The X stops without pasting and keeps the audio and live words in History.</li>
+            <li>A highlight fills the outline cyan and a screenshot fills it purple, then the rainbow returns. Cancelling or finishing without pasting does the same in red.</li>
+            <li>Stop shrinks it straight away. The X cancels without pasting and keeps the audio and live words in History.</li>
             <li>Turn the outline off in Settings → Interface → Recording Outline. Reduce Motion keeps it still.</li>
           </ul>
         </div>
@@ -265,13 +285,20 @@
                 <img src="assets/recorder-mini-expanded.png?v=561" width="640" height="300" loading="lazy" decoding="async" alt="Mini recorder on the bottom edge of the screen, with two lines of example text above its controls and a thin rainbow outline">
               </div>
             </div>
-            <div class="screen screen-bottom">
-              <div class="crop crop-mini-compact">
-                <img src="assets/recorder-mini-compact.png?v=561" width="640" height="300" loading="lazy" decoding="async" alt="Mini recorder as a slim bar with a rainbow outline: version, Stop, X and Pause, the waveform, then the Mode icon and Chrome as the current app">
+            <div class="shot-stack">
+              <div class="screen screen-bottom">
+                <div class="crop crop-mini-compact">
+                  <img src="assets/recorder-mini-compact.png?v=561" width="640" height="300" loading="lazy" decoding="async" alt="Mini recorder as a slim bar with a rainbow outline: version, Stop, X and Pause, the waveform, then the Mode icon and Chrome as the current app">
+                </div>
+              </div>
+              <div class="screen screen-bottom">
+                <div class="crop crop-mini-cancelled">
+                  <img src="assets/recorder-mini-cancelled.png?v=no-paste" width="352" height="40" loading="lazy" decoding="async" alt="Mini recorder's small Cancelled bar on the bottom edge of the screen, with red text and a thin red outline">
+                </div>
               </div>
             </div>
           </div>
-          <figcaption class="shot-caption"><strong>Mini</strong> sits at the bottom of the screen and grows upward to show live words, highlights, screenshots and typing. Your Mode and the app you're in are on the right.</figcaption>
+          <figcaption class="shot-caption"><strong>Mini</strong> sits at the bottom of the screen and grows upward to show live words, highlights, screenshots and typing. Your Mode and the app you're in are on the right. If it closes before a red outline finishes, a small Cancelled or Won’t paste bar shows the rest.</figcaption>
         </figure>
 
         <figure class="shot-group">
@@ -281,13 +308,20 @@
                 <img src="assets/recorder-notch-expanded.png?v=561" width="1100" height="300" loading="lazy" decoding="async" alt="Notch recorder hanging from the top of the screen, with its controls above two lines of example text and a thin rainbow outline">
               </div>
             </div>
-            <div class="screen screen-top screen-short">
-              <div class="crop crop-notch-compact">
-                <img src="assets/recorder-notch-compact.png?v=561" width="1100" height="300" loading="lazy" decoding="async" alt="Notch recorder as a slim bar at the top of the screen, with Stop, X and Pause on the left and the waveform, Mode icon and Chrome on the right">
+            <div class="shot-pair">
+              <div class="screen screen-top screen-short">
+                <div class="crop crop-notch-compact">
+                  <img src="assets/recorder-notch-compact.png?v=561" width="1100" height="300" loading="lazy" decoding="async" alt="Notch recorder as a slim bar at the top of the screen, with Stop, X and Pause on the left and the waveform, Mode icon and Chrome on the right">
+                </div>
+              </div>
+              <div class="screen screen-top screen-short">
+                <div class="crop crop-notch-wont-paste">
+                  <img src="assets/recorder-notch-wont-paste.png?v=no-paste" width="420" height="38" loading="lazy" decoding="async" alt="Notch recorder's small Won’t paste bar hanging from the top of the screen, with red text and a thin red outline">
+                </div>
               </div>
             </div>
           </div>
-          <figcaption class="shot-caption"><strong>Notch</strong> hangs from the top of the screen and grows downward.</figcaption>
+          <figcaption class="shot-caption"><strong>Notch</strong> hangs from the top of the screen and grows downward. Its red bar works the same way.</figcaption>
         </figure>
       </div>
     </section>

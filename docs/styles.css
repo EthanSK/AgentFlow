@@ -1045,10 +1045,29 @@ main:focus {
   gap: 0.75rem;
 }
 
-/* Mini's expanded and slim views side by side once both fit near full size. */
+/* Each layout's small states. Mini stacks its slim bar and red end bar in the
+   column beside the expanded view; Notch puts them in a row under it. Every item
+   is still its own screen, because only one recorder shows at a time. The red end
+   bars were added later the same day by Claude Opus 5.5 and use the slim tile's
+   former spare height, so the band keeps its size. */
+.shot-stack,
+.shot-pair {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+/* Mini's expanded view and its small states side by side once they fit near full
+   size; the stacked small screens share the row height equally. Notch's small
+   states use the same 7:4 split, so the two groups line up. */
 @media (min-width: 64rem) {
-  .shot-row-mini {
+  .shot-row-mini,
+  .shot-pair {
     grid-template-columns: minmax(0, 7fr) minmax(0, 4fr);
+  }
+
+  .shot-stack {
+    grid-auto-rows: 1fr;
   }
 }
 
@@ -1078,7 +1097,9 @@ main:focus {
   padding-bottom: clamp(2.5rem, 6vw, 4.5rem);
 }
 
+/* Narrower side padding keeps both Notch bars near full size in the 7:4 row. */
 .screen-short {
+  padding-inline: clamp(0.5rem, 1.5vw, 1rem);
   padding-bottom: clamp(1.75rem, 4vw, 2.75rem);
 }
 
@@ -1106,6 +1127,11 @@ main:focus {
 .crop-mini-compact { --iw: 640; --x: 156; --y: 258; --w: 328; --h: 42; }
 .crop-notch-expanded { --iw: 1100; --x: 0; --y: 0; --w: 1100; --h: 221; }
 .crop-notch-compact { --iw: 1100; --x: 218; --y: 0; --w: 664; --h: 40; }
+/* Red end bars: mini-cancelled (64,0)-(288,40) on a 352x40 canvas; its stroke
+   touches the top and bottom canvas edges, so only the sides get 2px.
+   notch-wont-paste fills its 420x38 canvas, wings included. */
+.crop-mini-cancelled { --iw: 352; --x: 62; --y: 0; --w: 228; --h: 40; }
+.crop-notch-wont-paste { --iw: 420; --x: 0; --y: 0; --w: 420; --h: 38; }
 
 .shot-caption {
   max-width: 44rem;
