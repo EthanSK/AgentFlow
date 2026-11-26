@@ -1,7 +1,19 @@
 # Learnings
 
 ---
+**Date:** 2026-11-26T01:26:22Z
+**Trigger:** Ethan: come in in the same way as it did before with the animation; last longer, like one extra cycle.
+**Symptom:** The longer context acknowledgement lost the animated entrance/travelling arc/exit Ethan liked.
+**Root cause:** Build 556 interpreted longer colour visibility as a whole-edge hold and overrode the first-context entrance. Ethan explicitly rejected that interpretation in 2b0bd222; passing source/native checks did not establish design acceptance.
+**Fix:** Restore the pre-556 lap curve and travelling paint byte-for-byte, retain the growing entrance, and replay the original 1s animation for two cycles. Keep Reduce Motion and the shared speech/typing motion controller unchanged.
+**Commit:** cf6323cbe0cba8ff8985a66845fbee0d8bfbabc0
+**Guard:** All 53 focused named native functions passed on the Mini, including original shape/fade guards, an extra-cycle wrapper guard, both-shape first-context entrance frames, shared speech/typing coast/resume, and protected stop/media/delivery contracts. Inspected native Mini/Notch entrance and second-cycle frames retain a thin sharp edge and black interior. No live capture or Voice control was generated.
+---
+
+
+---
 **Date:** 2026-11-26T00:34:03Z
+**Status:** Superseded by Ethan's later 2b0bd222 correction: retain the original animated entrance/travelling arc/exit and add one cycle. The 556 full-colour interpretation below passed its checks but was rejected in use; it is historical evidence, not the accepted design.
 **Trigger:** Ethan requested at least about one second fully blue/magenta and the same reusable acceleration/deceleration system for speech and typing.
 **Symptom:** Blue selection and magenta screenshot acknowledgements were too brief; a growing entrance could shorten the first complete colour signal.
 **Root cause:** A travelling colour segment and an overlapping outline entrance do not guarantee a whole-edge colour minimum. The entrance overlap was found by source review, not a reproduced pre-fix native failure.

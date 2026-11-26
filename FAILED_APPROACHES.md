@@ -2942,4 +2942,6 @@ fixture evidence, not physical input acceptance or full release qualification.
 
 ## 2026-11-26 — Letting entrance trim consume the context-colour minimum
 
+**Superseded by Ethan's later explicit correction (2b0bd222):** he wanted the original entrance and exit retained, with one extra animated cycle. The minimum-whole-stroke interpretation and entrance override described below were rejected in use. Preserve this as historical reasoning, not permission to suppress the entrance.
+
 Source review found that an empty typing session could start its 450 ms growing-outline entrance at the same time as the context acknowledgement. Merely lengthening the colour pulse would leave less than the requested minimum with the entire edge visible. Give the acknowledgement priority over entrance trimming, while preserving normal typing entrance behaviour. Reconsider overlap only with native frames in both Mini and Notch proving a complete colour loop and at least about one second of whole-edge colour. The extended entrance fixture and all 52 focused cases passed after the correction; no pre-fix native failure was claimed.

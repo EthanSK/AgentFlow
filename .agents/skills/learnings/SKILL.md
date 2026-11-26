@@ -951,6 +951,11 @@ Keep each field concise but specific enough to prevent rediscovery. Name the sym
 
 ## Recorder outline changes
 
+Ethan's 2026-11-26 context correction: keep the original animated entrance,
+travelling arc and exit; "one extra cycle" extends that animation. Do not replace
+it with a whole-edge static colour or skip its growing entrance. Preserve the
+original lap curve/paint and the extra-cycle regression when changing duration.
+
 Ethan: “same system, same reusable code” for speech and typing acceleration and
 deceleration (2026-11-26). Both accepted editor changes and newly recognised speech
 feed `RecorderOutlineActivity`; keep their tuning and quiet/resume behaviour shared,
