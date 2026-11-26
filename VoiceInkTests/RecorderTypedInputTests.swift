@@ -1103,11 +1103,14 @@ struct RecorderTypedInputTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let recorder = Recorder()
         let assistant = AssistantSession()
-        for paused in [false, true] {
+        for presentation in ["recording", "paused", "finishing", "transcribing"] {
+            let paused = presentation == "paused"
             let session = RecordingSession()
             session.liveRecordingState = paused ? .paused : .recording
             session.partialTranscript = "Every spoken word remains here while capture pauses and resumes."
             session.microphoneOff = true
+            if presentation == "finishing" { session.acknowledgeCaptureFinish() }
+            if presentation == "transcribing" { session.phase = .transcribing }
             for style in ["mini", "notch"] {
                 let view: AnyView
                 if style == "mini" {
@@ -1130,7 +1133,7 @@ struct RecorderTypedInputTests {
                 let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
                 host.cacheDisplay(in: host.bounds, to: bitmap)
                 let png = try #require(bitmap.representation(using: .png, properties: [:]))
-                let path = directory.appendingPathComponent("\(style)-\(paused ? "paused" : "recording").png")
+                let path = directory.appendingPathComponent("\(style)-\(presentation).png")
                 try png.write(to: path)
                 print("HUD_LAYOUT_FIXTURE \(path.path)")
                 #expect(RecorderPauseButton(stateProvider: session).symbolName == (paused ? "play.fill" : "pause.fill"))
