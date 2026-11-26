@@ -1,6 +1,14 @@
 # Learnings
 
 ---
+**Date:** 2026-11-26
+**Trigger:** Ethan requested the same red entrance/hold/return for Cancel and Won’t paste as blue selections and magenta screenshots.
+**Verified source contract:** Cancellation can remove a real session before a two-second visual acknowledgement finishes. Never retain a real session, transcript/audio or delivery owner for animation; keep one immutable presentation receipt with its original pulse deadline. A newer start/reset suppresses old receipts, and expiry must re-run existing panel-visibility guards rather than hiding a newer capture. Decorative visibility must not consume the next Start as an idle-panel dismiss.
+**Implementation:** Build563 extends the existing shared pulse and renderer with red, including the existing0.6s full-colour hold and Reduce Motion. The session observes only genuine outcome transitions; repeated choices do not restart, normal-delivery reversal clears red, and late context remains saved without overriding the no-paste cue. Capture,600ms normal-stop tail, output policy and media/Voice boundaries stay independent. Native execution/install/public qualification are separate gates, not established by this source review.
+---
+
+
+---
 **Date:** 2026-11-26T15:30:00Z
 **Trigger:** Ethan says the rainbow still returns to base speed too quickly after typing, despite the earlier near-matched rates.
 **Symptom:** Build561's exponential coast removed about81% of extra speed during the first second after the last input.

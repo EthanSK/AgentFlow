@@ -1,7 +1,8 @@
 // Ethan's context acknowledgement: when he highlights text or saves a screenshot
 // while recording, the Recording Outline answers in that context's transcript
 // colour, blue for a selection and magenta for a screenshot, so he can tell the
-// context was captured without looking at the HUD.
+// context was captured without looking at the HUD. Explicit Cancel / Won’t paste
+// uses the same entrance, hold and return in red. — GPT-6.2 Sol
 //
 // His 2026-11-26 correction defines one continuous entrance and exit, not separate
 // laps: the colour travels round from its own band until it fills the whole
@@ -18,9 +19,11 @@ import SwiftUI
 enum RecorderContextColor {
     static let selection = Color.cyan
     static let screenshot = Color.purple
+    static let noPaste = AppTheme.Status.error
 }
 
-/// One accepted highlight or screenshot. The recording session owns it, so every
+/// One accepted highlight, screenshot or explicit no-paste outcome. The recording
+/// session owns it, so every
 /// mirrored panel draws the same acknowledgement from the same start time. A newer
 /// acceptance replaces it, so there is never a queue and no callback outlives it.
 ///
@@ -32,11 +35,16 @@ struct RecorderContextAcceptancePulse: Equatable {
         case selection
         /// A saved macOS screenshot.
         case screenshot
+        /// Ethan's red acknowledgement for Cancel / Won't paste. The normal
+        /// spectrum still avoids pure red; only this explicit action uses it.
+        /// — GPT-6.1 Sol
+        case noPaste
 
         var color: Color {
             switch self {
             case .selection: return RecorderContextColor.selection
             case .screenshot: return RecorderContextColor.screenshot
+            case .noPaste: return RecorderContextColor.noPaste
             }
         }
     }
@@ -50,6 +58,14 @@ struct RecorderContextAcceptancePulse: Equatable {
     /// there is no recursive history, animation queue or input wait.
     /// — Claude Opus 5.5; GPT-6.1 Sol
     private(set) var replaced: RecorderContextSweep.Underlay? = nil
+
+    /// Explicit UI outcomes share the accepted context animation. Constructing a
+    /// pulse never changes capture or output policy. — GPT-6.1 Sol
+    init(kind: Kind, at date: Date, id: UUID = UUID()) {
+        self.id = id
+        self.kind = kind
+        startedAt = date
+    }
 
     /// Typed prose and internal speech-timing markers are not captured context,
     /// so they launch nothing. — Claude Opus 5.5
@@ -71,6 +87,35 @@ struct RecorderContextAcceptancePulse: Equatable {
         var pulse = self
         pulse.replaced = previous.flatMap { RecorderContextSweep.underlay(freezing: $0, at: startedAt) }
         return pulse
+    }
+}
+
+/// A tiny visual receipt after a card finishes: no session, transcript, audio or
+/// destination is retained. Its original pulse time prevents a fast cancellation
+/// from disappearing before the red animation has shown. — GPT-6.1 Sol
+struct RecorderNoPasteFeedback: Equatable, Identifiable {
+    enum Reason: Equatable {
+        case cancelled, clipboardOnly
+
+        var title: String {
+            self == .cancelled ? String(localized: "Cancelled") : String(localized: "Won’t paste")
+        }
+
+        var symbol: String { self == .cancelled ? "xmark.circle.fill" : "nosign" }
+    }
+
+    let id: UUID
+    let pulse: RecorderContextAcceptancePulse
+    let reason: Reason
+    let activity: RecorderOutlineActivity?
+    let isProcessing: Bool
+    let processingStartedAt: Date?
+
+    func remaining(at date: Date, reducedMotion: Bool) -> TimeInterval? {
+        let duration = reducedMotion ? RecorderContextSweep.stillDuration : RecorderContextSweep.duration
+        let end = pulse.startedAt.addingTimeInterval(duration)
+        guard date >= pulse.startedAt, date < end else { return nil }
+        return end.timeIntervalSince(date)
     }
 }
 

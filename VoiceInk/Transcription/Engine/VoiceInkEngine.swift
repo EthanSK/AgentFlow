@@ -175,6 +175,12 @@ class VoiceInkEngine: NSObject, ObservableObject {
     // the .recording session; transcribing cards stack above it. @Published so the stack
     // container redraws on add/remove.
     @Published var sessions: [RecordingSession] = []
+    // One tiny, non-interactive visual receipt, never a real session. Latest action
+    // wins, so cancellation cannot grow a feedback queue or retain transcripts.
+    // No capture, idle/readiness or delivery predicate counts this value. — GPT-6.1 Sol
+    @Published private(set) var noPasteOutlineFeedback: RecorderNoPasteFeedback?
+    private var noPasteOutlineFeedbackExpiry: Task<Void, Never>?
+    private var noPasteOutlineFeedbackNotBefore: Date = .distantPast
 
     // ── DERIVED compat state ──
     // Existing single-card UI (the active MiniRecorderView/NotchRecorderView via the
@@ -676,12 +682,54 @@ class VoiceInkEngine: NSObject, ObservableObject {
     /// Remove a finished/aborted session from the collection + recompute derived state.
     /// SwiftUI animates the card out (transition on the `sessions` array).
     private func removeSession(_ session: RecordingSession) {
+        let feedback = sessions.contains(where: { $0.id == session.id })
+            ? session.noPasteFeedbackForRetirement() : nil
         startupPresentation.clear(session.startID)
         session.phase = .done
         session.endLiveSelectionCapture()
         session.clearContext()
         sessions.removeAll { $0.id == session.id }
+        if let feedback { retainNoPasteOutlineFeedback(feedback) }
         recomputeDerivedState()
+    }
+
+    /// Finish only the already-started red animation after the real card leaves.
+    /// The original deadline is retained; this never waits in removeSession or
+    /// changes the session collection, microphone, pipeline or paste decision.
+    /// — GPT-6.1 Sol
+    private func retainNoPasteOutlineFeedback(_ feedback: RecorderNoPasteFeedback) {
+        let enabled = UserDefaults.standard.object(forKey: RecorderCaptureOutlinePreference.preferenceKey)
+            .map { _ in UserDefaults.standard.bool(forKey: RecorderCaptureOutlinePreference.preferenceKey) }
+            ?? RecorderCaptureOutlinePreference.defaultValue
+        guard enabled, !isResettingRecordingSession,
+              recorderUIManager?.isRecorderPanelVisible == true,
+              feedback.pulse.startedAt >= noPasteOutlineFeedbackNotBefore,
+              noPasteOutlineFeedback.map({ $0.pulse.startedAt <= feedback.pulse.startedAt }) ?? true,
+              let remaining = feedback.remaining(at: Date(),
+                  reducedMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) else { return }
+        noPasteOutlineFeedbackExpiry?.cancel()
+        noPasteOutlineFeedback = feedback
+        noPasteOutlineFeedbackExpiry = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(remaining))
+            guard !Task.isCancelled, let self,
+                  self.noPasteOutlineFeedback?.id == feedback.id,
+                  self.noPasteOutlineFeedback?.pulse.id == feedback.pulse.id else { return }
+            self.noPasteOutlineFeedback = nil
+            self.noPasteOutlineFeedbackExpiry = nil
+            // A newer capture/assistant owns visibility independently. Re-run its
+            // existing guard instead of blindly hiding a window. — GPT-6.1 Sol
+            await self.recorderUIManager?.dismissRecorderPanel()
+        }
+    }
+
+    /// A new start takes priority over an older decorative receipt. Remember its
+    /// boundary too, so an old pipeline cannot replay red after the new start.
+    /// — GPT-6.1 Sol
+    private func clearNoPasteOutlineFeedback(suppressBefore date: Date) {
+        noPasteOutlineFeedbackNotBefore = date
+        noPasteOutlineFeedbackExpiry?.cancel()
+        noPasteOutlineFeedbackExpiry = nil
+        if noPasteOutlineFeedback != nil { noPasteOutlineFeedback = nil }
     }
 
     var onHUDPauseRequested: (() -> Void)?
@@ -888,6 +936,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
         else { CodexSpeechPlaybackReceiver.shared.silenceBeforeRecording() }
         activeRecordingDeliveryBarrier.beginCapture(owner: requestID)
         let activationTime = Date()
+        clearNoPasteOutlineFeedback(suppressBefore: activationTime)
         let captureStartedAt = ProcessInfo.processInfo.systemUptime
         let focusedInput: FocusLockService.Target?
         if FocusLockService.recordingStartInputCaptureEnabled {
@@ -2478,6 +2527,7 @@ class VoiceInkEngine: NSObject, ObservableObject {
             vippLog.notice("resetRecordingSession: duplicate reset ignored while the first reset is draining")
             return
         }
+        clearNoPasteOutlineFeedback(suppressBefore: Date())
         isResettingRecordingSession = true
         defer { isResettingRecordingSession = false }
 

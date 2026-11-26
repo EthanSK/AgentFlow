@@ -110,7 +110,7 @@ struct RecorderContextSweepTests {
         let count = session.liveSelectionReferences.count
         session.recordLiveSelection(try #require(LiveSelectionReference("after cancel")).identifiedForCapture(UUID()))
         #expect(session.liveSelectionReferences.count == count)
-        #expect(session.contextAcceptancePulse == nil)
+        #expect(session.contextAcceptancePulse?.kind == .noPaste)
         session.shouldCancel = false
 
         // One real lap; its later labels and drag image belong to the same gesture.
@@ -543,10 +543,19 @@ struct RecorderContextSweepTests {
         #expect(outline.components(separatedBy: "TimelineView(").count == 2)
         #expect(!outline.contains("Timer"))
         #expect(outline.contains(".task(id: acceptancePulse?.id)"))
-        // One launch site, inside the accepted-context boundary.
+        // Context gestures still have one launch site. Explicit no-paste actions
+        // have their own presentation-only producer; expiry/reversal only clear it.
         let session = try source("VoiceInk/Transcription/Engine/RecordingSession.swift")
         #expect(session.components(separatedBy: "acknowledgeAcceptedContext(").count == 3)
-        #expect(session.components(separatedBy: "contextAcceptancePulse = ").count == 2)
+        #expect(session.components(separatedBy: "RecorderContextAcceptancePulse(accepting: reference").count == 2)
+        #expect(session.components(separatedBy: "RecorderContextAcceptancePulse(kind: .noPaste").count == 2)
+        let outcomeStart = try #require(session.range(of: "private func acknowledgeNoPaste("))
+        let outcomeEnd = try #require(session.range(of: "func noPasteFeedbackForRetirement()"))
+        let outcome = String(session[outcomeStart.lowerBound..<outcomeEnd.lowerBound])
+        #expect(outcome.contains("contextAcceptancePulse = pulse"))
+        for forbidden in ["stopRecording(", "pasteTarget =", "completionDisposition =", "await recorder", "Task.detached"] {
+            #expect(!outcome.contains(forbidden), "No-paste decoration must not own \(forbidden)")
+        }
         let boundary = try #require(session.range(of: "func recordLiveSelection("))
         let call = try #require(session.range(of: "acknowledgeAcceptedContext(reference, precedesSpeech: precedesSpeech)"))
         let attach = try #require(session.range(of: "func attachLiveSelectionImage("))
@@ -559,27 +568,26 @@ struct RecorderContextSweepTests {
     @Test @MainActor func lapPaintsTheBorderThenHandsBackTheSameRainbow() async throws {
         let size = CGSize(width: 500, height: 80)
         let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
-        let screenshot = try #require(LiveSelectionReference(screenshotURL: URL(
-            fileURLWithPath: "/tmp/AgentFlowTests/lap.png")))
         let directory = ProcessInfo.processInfo.environment["VIPP_OUTLINE_SNAPSHOT_DIR"]
-        for reduced in [false, true] {
+        for (kind, reduced) in [(RecorderContextAcceptancePulse.Kind.screenshot, false),
+                                (.screenshot, true), (.noPaste, true)] {
             // The moving acknowledgement starts just after mounting, so the first
             // capture lands in its entrance.
-            let pulse = try #require(RecorderContextAcceptancePulse(
-                accepting: screenshot, at: Date().addingTimeInterval(reduced ? 0 : 0.15)))
+            let pulse = RecorderContextAcceptancePulse(
+                kind: kind, at: Date().addingTimeInterval(reduced ? 0 : 0.15))
             let plain = OutlineLeafHost(shape: shape, size: size, origin: CGPoint(x: 0, y: 0),
                                         pulse: nil, reduced: reduced)
             let acknowledged = OutlineLeafHost(shape: shape, size: size, origin: CGPoint(x: 0, y: 120),
                                                pulse: pulse, reduced: reduced)
             defer { plain.close(); acknowledged.close() }
-            let label = "Reduce Motion=\(reduced)"
+            let label = "\(kind) Reduce Motion=\(reduced)"
             func save(_ frame: NSBitmapImageRep, _ name: String) throws {
                 guard let directory else { return }
                 let folder = URL(fileURLWithPath: directory, isDirectory: true)
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
                 let data = try #require(frame.representation(using: .png, properties: [:]))
                 try data.write(to: folder.appendingPathComponent(
-                    "context-lap-\(reduced ? "still" : "flow")-\(name).png"))
+                    "context-lap-\(kind)-\(reduced ? "still" : "flow")-\(name).png"))
             }
 
             // The short still hold needs its samples early: the hosted test saw
@@ -638,6 +646,7 @@ struct RecorderContextSweepTests {
         environment.colorScheme = .dark
         let selectionTint = sweep.components(of: RecorderContextColor.selection, in: environment)
         let screenshotTint = sweep.components(of: RecorderContextColor.screenshot, in: environment)
+        let redTint = sweep.components(of: RecorderContextColor.noPaste, in: environment)
         let directory = ProcessInfo.processInfo.environment["VIPP_OUTLINE_SNAPSHOT_DIR"]
         let folder = directory.map { URL(fileURLWithPath: $0, isDirectory: true) }
         if let folder { try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true) }
@@ -648,9 +657,12 @@ struct RecorderContextSweepTests {
         let screenshot = try #require(LiveSelectionReference(screenshotURL: URL(
             fileURLWithPath: "/tmp/AgentFlowTests/native-fill.png")))
 
-        for (reference, tint, name) in [(highlight, selectionTint, "selection"),
-                                        (screenshot, screenshotTint, "screenshot")] {
-            let pulse = try #require(RecorderContextAcceptancePulse(accepting: reference, at: start))
+        let highlightPulse = try #require(RecorderContextAcceptancePulse(accepting: highlight, at: start))
+        let screenshotPulse = try #require(RecorderContextAcceptancePulse(accepting: screenshot, at: start))
+        let redPulse = RecorderContextAcceptancePulse(kind: .noPaste, at: start)
+        for (pulse, tint, name) in [(highlightPulse, selectionTint, "selection"),
+                                   (screenshotPulse, screenshotTint, "screenshot"),
+                                   (redPulse, redTint, "no-paste")] {
             let label = "\(shapeName) \(name)"
             let after = sweep.duration + 0.05
             let plain = try await host.render(nil, at: start.addingTimeInterval(after))
@@ -708,7 +720,7 @@ struct RecorderContextSweepTests {
                 }
             }
 
-            if reference.isScreenshot {
+            if pulse.kind == .screenshot {
                 // A screenshot accepted while the highlight's blue is held paints its
                 // magenta over that blue. No visible stop returns to the rainbow.
                 let earlier = try #require(RecorderContextAcceptancePulse(accepting: highlight,
@@ -744,6 +756,125 @@ struct RecorderContextSweepTests {
                 try data.write(to: folder.appendingPathComponent("context-fill-\(shapeName)-\(name)-sheet.png"))
             }
         }
+    }
+
+    // Red is a visual acknowledgement of the existing outcome, never another
+    // completion policy or a delay in capture/delivery. — GPT-6.2 Sol
+    @Test @MainActor func noPasteActionsLaunchOnceAndReversalRemovesTheRedPromise() throws {
+        let session = RecordingSession(phase: .transcribing)
+        #expect(session.selectPendingClipboardOnlyCompletion())
+        let first = try #require(session.contextAcceptancePulse)
+        #expect(first.kind == .noPaste && !session.shouldCancel)
+        #expect(session.selectPendingClipboardOnlyCompletion())
+        #expect(session.contextAcceptancePulse == first)
+        #expect(session.applyPendingPrimaryCompletionGesture(.continueTowardNoAutoSend(continuationInterval: 0.1)))
+        #expect(session.contextAcceptancePulse == first)
+        #expect(session.applyPendingPrimaryCompletionGesture(.deliverWithoutAutoSend))
+        #expect(session.contextAcceptancePulse == nil)
+        #expect(session.noPasteFeedbackForRetirement() == nil)
+        #expect(session.completionDisposition == .normalDelivery && session.autoSendDisposition == .suppressOnce)
+
+        session.shouldCancel = true
+        let cancelled = try #require(session.contextAcceptancePulse)
+        #expect(cancelled.kind == .noPaste && cancelled.id != first.id)
+        #expect(session.noPasteFeedbackForRetirement()?.reason == .cancelled)
+        session.shouldCancel = true
+        #expect(session.contextAcceptancePulse == cancelled)
+        #expect(!session.selectPendingClipboardOnlyCompletion())
+
+        let done = RecordingSession(phase: .done)
+        done.shouldCancel = true
+        done.completionDisposition = .clipboardOnly
+        #expect(done.contextAcceptancePulse == nil && done.noPasteFeedbackForRetirement() == nil)
+    }
+
+    @Test @MainActor func typingFinishAndLateShiftShareTheRedOutcomeWithoutChangingRoutes() throws {
+        let typing = RecordingSession()
+        typing.microphoneOff = true
+        typing.liveRecordingState = .recording
+        typing.updateTypedInput("retained private example")
+        let originalTarget = typing.pasteTarget.destination
+        typing.finishTypedInputWithoutPasting()
+        #expect(typing.completionDisposition == .clipboardOnly && !typing.shouldCancel)
+        #expect(typing.contextAcceptancePulse?.kind == .noPaste)
+        #expect(typing.pasteTarget.destination == originalTarget)
+        let feedback = try #require(typing.noPasteFeedbackForRetirement())
+        #expect(feedback.id == typing.id && feedback.reason == .clipboardOnly)
+        #expect(feedback.reason.title == "Won’t paste")
+
+        let lateShift = RecordingSession()
+        lateShift.armTypingClipboardOnlyCompletion()
+        lateShift.phase = .transcribing
+        #expect(lateShift.selectTypingClipboardOnlyCompletion())
+        #expect(lateShift.contextAcceptancePulse?.kind == .noPaste)
+        #expect(lateShift.completionDisposition == .clipboardOnly && !lateShift.shouldCancel)
+    }
+
+    @Test @MainActor func redKeepsOriginalMotionAndLateContextCannotOverrideIt() throws {
+        let session = RecordingSession()
+        session.liveRecordingState = .recording
+        session.partialTranscript = "recognised example"
+        session.completionDisposition = .clipboardOnly
+        let red = try #require(session.contextAcceptancePulse)
+        let selection = try #require(LiveSelectionReference("saved context")).identifiedForCapture(UUID())
+        session.recordLiveSelection(selection)
+        #expect(session.liveSelectionReferences.last?.captureID == selection.captureID)
+        #expect(session.contextAcceptancePulse == red)
+        session.completionDisposition = .normalDelivery
+        #expect(session.contextAcceptancePulse == nil)
+        // Repeating the same stored gesture must not replay blue on reversal.
+        session.recordLiveSelection(selection)
+        #expect(session.contextAcceptancePulse == nil)
+
+        session.shouldCancel = true
+        let before = try #require(session.noPasteFeedbackForRetirement())
+        #expect(before.reason == .cancelled && !before.isProcessing)
+        session.liveRecordingState = .idle
+        session.partialTranscript = ""
+        session.clearContext()
+        #expect(session.noPasteOutlineMotion == before)
+        #expect(session.noPasteFeedbackForRetirement() == before)
+        #expect(session.showsRecordingActivityOutline)
+        session.phase = .done
+        // The immutable receipt can finish independently of the retired session.
+        #expect(before.id == session.id && before.pulse.kind == .noPaste)
+    }
+
+    @Test func retiredRedUsesOnlyTheOriginalRemainingDeadline() throws {
+        let start = Date(timeIntervalSinceReferenceDate: 12345)
+        let feedback = RecorderNoPasteFeedback(id: UUID(),
+            pulse: .init(kind: .noPaste, at: start), reason: .cancelled,
+            activity: nil, isProcessing: false, processingStartedAt: nil)
+        #expect(feedback.remaining(at: start.addingTimeInterval(-0.01), reducedMotion: false) == nil)
+        #expect(feedback.remaining(at: start, reducedMotion: false) == RecorderContextSweep.duration)
+        #expect(abs(try #require(feedback.remaining(at: start.addingTimeInterval(1.5), reducedMotion: false)) - 0.5) < 0.0001)
+        #expect(feedback.remaining(at: start.addingTimeInterval(2), reducedMotion: false) == nil)
+        #expect(abs(try #require(feedback.remaining(at: start.addingTimeInterval(0.2), reducedMotion: true)) - 0.4) < 0.0001)
+        #expect(feedback.remaining(at: start.addingTimeInterval(0.6), reducedMotion: true) == nil)
+    }
+
+    @Test func decorativeReceiptKeepsVisibilityWithoutConsumingTheNextStart() throws {
+        #expect(RecorderPanelLifecyclePolicy.shouldKeepVisible(sessionCount: 0,
+            hasPendingStart: false, hasCaptureOwner: false, assistantVisible: false, hasOutlineFeedback: true))
+        #expect(RecorderPanelLifecyclePolicy.idleToggleAction(sessionCount: 0,
+            hasPendingStart: false, hasCaptureOwner: false, hasOutlineFeedback: true) == .startRecording)
+        #expect(RecorderPanelLifecyclePolicy.idleToggleAction(sessionCount: 0,
+            hasPendingStart: true, hasCaptureOwner: false, hasOutlineFeedback: true) == .preservePendingStart)
+        let engine = try source("VoiceInk/Transcription/Engine/VoiceInkEngine.swift")
+        let begin = try #require(engine.range(of: "private func retainNoPasteOutlineFeedback("))
+        let end = try #require(engine.range(of: "var onHUDPauseRequested:"))
+        let receipt = String(engine[begin.lowerBound..<end.lowerBound])
+        for forbidden in ["sessions.append", "sessions =", "RecordingSession(", "recorder.stop", "paste(", "Task.detached"] {
+            #expect(!receipt.contains(forbidden), "Retired decoration must not retain/operate \(forbidden)")
+        }
+        #expect(receipt.contains("feedback.pulse.startedAt >= noPasteOutlineFeedbackNotBefore"))
+        #expect(receipt.contains("self.noPasteOutlineFeedback?.pulse.id == feedback.pulse.id"))
+        #expect(engine.contains("clearNoPasteOutlineFeedback(suppressBefore: activationTime)"))
+        #expect(engine.contains("clearNoPasteOutlineFeedback(suppressBefore: Date())"))
+        let stack = try source("VoiceInk/Views/Recorder/RecorderStackView.swift")
+        #expect(stack.contains(".allowsHitTesting(false)"))
+        #expect(stack.contains("if outlineEnabled"))
+        #expect(stack.contains("continuesExistingOutline: true"))
     }
 
     // MARK: - Helpers

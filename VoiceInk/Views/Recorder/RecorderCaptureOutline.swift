@@ -34,6 +34,10 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
     var isProcessing = false
     var processingStartedAt: Date? = nil
     var activity: RecorderOutlineActivity? = nil
+    /// A compact retirement receipt continues a border already shown on its real
+    /// card. Skip the separate first-mount introduction; the original shared pulse
+    /// still supplies its entrance/hold/exit and timestamp. — GPT-6.1 Sol
+    var continuesExistingOutline = false
 
     // macOS exposes Reduce Motion as a read-only environment value. Hosted
     // appearance previews can exercise its static branch without changing the
@@ -84,7 +88,7 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
             // — GPT-6.1 Sol
             await Task.yield()
             guard !Task.isCancelled, introductionStartedAt == nil else { return }
-            introductionStartedAt = Date()
+            introductionStartedAt = continuesExistingOutline ? .distantPast : Date()
         }
         // A newer pulse or the outline's removal cancels this task, so no hold can
         // outlive its pulse or clear a newer one. — Claude Opus 5.5

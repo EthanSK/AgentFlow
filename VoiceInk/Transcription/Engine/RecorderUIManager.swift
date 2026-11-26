@@ -43,15 +43,17 @@ enum RecorderPanelLifecyclePolicy {
         sessionCount: Int,
         hasPendingStart: Bool,
         hasCaptureOwner: Bool,
-        assistantVisible: Bool
+        assistantVisible: Bool,
+        hasOutlineFeedback: Bool = false
     ) -> Bool {
-        sessionCount > 0 || hasPendingStart || hasCaptureOwner || assistantVisible
+        sessionCount > 0 || hasPendingStart || hasCaptureOwner || assistantVisible || hasOutlineFeedback
     }
 
     static func idleToggleAction(
         sessionCount: Int,
         hasPendingStart: Bool,
-        hasCaptureOwner: Bool
+        hasCaptureOwner: Bool,
+        hasOutlineFeedback: Bool = false
     ) -> IdleToggleAction {
         // A synchronous reservation owns the next recording before its session card
         // exists. Treating that gap as truly idle can hide the panel and make the
@@ -59,7 +61,7 @@ enum RecorderPanelLifecyclePolicy {
         if hasPendingStart || hasCaptureOwner {
             return .preservePendingStart
         }
-        return sessionCount > 0 ? .startRecording : .dismiss
+        return sessionCount > 0 || hasOutlineFeedback ? .startRecording : .dismiss
     }
 
     /// Only a live start that still owns the microphone and loses its recorder panel
@@ -231,7 +233,8 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
         let showsStartup = engine.startupPresentation.shouldShow(
             sessionCount: engine.sessions.count, assistantVisible: showsAssistant
         )
-        guard showsAssistant || baseSession != nil || showsStartup else { return nil }
+        let hasFeedback = engine.noPasteOutlineFeedback != nil
+        guard showsAssistant || baseSession != nil || showsStartup || hasFeedback else { return nil }
 
         let showsRealtimeTranscript = baseSession?.showsLiveContext == true
 
@@ -242,9 +245,11 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
             ?? MiniRecorderLayoutMetrics.controlBarHeight
         let contextLimit = MiniRecorderLayoutMetrics.contextHeightLimit(
             screenHeight: screen.visibleFrame.height, scale: scale, controlsHeight: controlsHeight)
-        let extraStackHeight = engine.sessions.filter { $0.id != baseSession?.id }.reduce(CGFloat.zero) {
+        var extraStackHeight = engine.sessions.filter { $0.id != baseSession?.id }.reduce(CGFloat.zero) {
             $0 + RecorderChatBannerLayout.chipExtraHeight($1.codexBanner, availableWidth: width)
         }
+        let feedbackIsBase = hasFeedback && baseSession == nil && !showsAssistant
+        if hasFeedback && !feedbackIsBase { extraStackHeight += MiniRecorderLayoutMetrics.stackedCardSpacing }
         let transcriptHeight: CGFloat
         if let baseSession, showsRealtimeTranscript {
             transcriptHeight = baseSession.liveContextHeight(width: width, maxHeight: contextLimit)
@@ -255,7 +260,7 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
         return MiniRecorderLayoutMetrics.notificationBottomReservedHeight(
             showsAssistant: showsAssistant,
             showsRealtimeTranscript: showsRealtimeTranscript,
-            sessionCount: engine.sessions.count,
+            sessionCount: engine.sessions.count + (feedbackIsBase ? 1 : 0),
             realtimeTranscriptHeight: transcriptHeight,
             assistantHeight: min(MiniRecorderLayoutMetrics.assistantPanelHeight, contextLimit),
             controlsHeight: controlsHeight,
@@ -651,7 +656,8 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
                     switch RecorderPanelLifecyclePolicy.idleToggleAction(
                         sessionCount: engine.sessions.count,
                         hasPendingStart: engine.hasPendingRecordingStart,
-                        hasCaptureOwner: engine.hasActiveCaptureOwner
+                        hasCaptureOwner: engine.hasActiveCaptureOwner,
+                        hasOutlineFeedback: engine.noPasteOutlineFeedback != nil
                     ) {
                     case .preservePendingStart:
                         // The first press is already progressing through permission,
@@ -747,7 +753,8 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
             sessionCount: engine.sessions.count,
             hasPendingStart: hasPendingStart,
             hasCaptureOwner: hasCaptureOwner,
-            assistantVisible: assistantVisible
+            assistantVisible: assistantVisible,
+            hasOutlineFeedback: engine.noPasteOutlineFeedback != nil
         ) {
             vippLog.info("dismissRecorderPanel: SUPPRESSED — sessions=\(engine.sessions.count, privacy: .public) pendingStart=\(hasPendingStart, privacy: .public) captureOwner=\(hasCaptureOwner, privacy: .public) assistantVisible=\(assistantVisible, privacy: .public) (keep bar visible)")
             return

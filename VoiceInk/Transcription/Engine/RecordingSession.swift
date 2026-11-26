@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import SwiftUI
+import AppKit
 import os
 
 enum RecordingStopDelay {
@@ -388,6 +389,8 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     // Presentation only: never a capture, focus, Pause, media, microphone or
     // delivery signal. — Claude Opus 5.5
     @Published private(set) var contextAcceptancePulse: RecorderContextAcceptancePulse?
+    private var noPastePulseExpiry: Task<Void, Never>?
+    private var cancelledOutlineFeedback: RecorderNoPasteFeedback?
     private var lastAcknowledgedContext: LiveSelectionReference?
     private var liveSelectionCapture: LiveSelectionCapture?
     // The editable prose run is NOT part of `liveSelectionReferences`. It has no
@@ -750,7 +753,20 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     // Unlike the separate raw/skip toggle, clipboard-only completion still applies
     // the session's normal formatting/enhancement; it changes only the final side
     // effect so no destination app is touched.
-    @Published var completionDisposition: RecordingCompletionDisposition = .normalDelivery
+    @Published var completionDisposition: RecordingCompletionDisposition = .normalDelivery {
+        didSet {
+            guard completionDisposition != oldValue, !shouldCancel else { return }
+            if completionDisposition == .clipboardOnly {
+                acknowledgeNoPaste(reason: .clipboardOnly)
+            } else if contextAcceptancePulse?.kind == .noPaste {
+                // A genuine fourth click can restore paste. Remove the old red
+                // promise immediately; it must not reappear later. — GPT-6.1 Sol
+                noPastePulseExpiry?.cancel()
+                contextAcceptancePulse = nil
+                cancelledOutlineFeedback = nil
+            }
+        }
+    }
 
     @Published var autoSendDisposition: RecordingAutoSendDisposition = .configured
 
@@ -1075,10 +1091,11 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     }
 
     /// Launches the outline's acknowledgement, after the guard above has accepted
-    /// `reference`. This is the only place one starts. Label updates, a
+    /// `reference`. This is the only place a context gesture starts one. Label updates, a
     /// drag's attached image, retry hydration and history never call it, so they
     /// never animate. It only publishes presentation state, after every existing
-    /// step, and changes no capture, focus or timing. — Claude Opus 5.5
+    /// step, and changes no capture, focus or timing. Explicit no-paste outcomes
+    /// share the renderer through their separate action below. — Claude Opus 5.5; GPT-6.1 Sol
     private func acknowledgeAcceptedContext(_ reference: LiveSelectionReference, precedesSpeech: Bool,
                                             at date: Date = Date()) {
         // Typed prose and speech-timing markers are not captured context.
@@ -1086,6 +1103,9 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         // The same accepted gesture arriving again must not relaunch its lap.
         if let last = lastAcknowledgedContext, Self.isSameAcceptance(reference, last) { return }
         lastAcknowledgedContext = reference
+        // Keep saving captured context as before, but a late reference cannot
+        // replace the red Cancel / Won't paste acknowledgement. — GPT-6.1 Sol
+        guard !shouldCancel, completionDisposition == .normalDelivery else { return }
         // A highlight or screenshot made before Start was already in view when
         // Ethan pressed it; the lap answers gestures made while recording. Pause
         // and voice startup show no outline, so a lap launched
@@ -1098,6 +1118,49 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         // colour value lets its entrance paint over the earlier colour rather
         // than first exposing the rainbow. — Claude Opus 5.5; GPT-6.1 Sol
         contextAcceptancePulse = pulse.replacing(contextAcceptancePulse)
+    }
+
+    /// One explicit no-paste action, on the existing shared animation. This only
+    /// publishes decoration: actual cancellation and output guards do not await it.
+    /// — GPT-6.1 Sol
+    private func acknowledgeNoPaste(reason: RecorderNoPasteFeedback.Reason, at date: Date = Date()) {
+        guard phase != .done else { return }
+        let pulse = RecorderContextAcceptancePulse(kind: .noPaste, at: date)
+            .replacing(contextAcceptancePulse)
+        contextAcceptancePulse = pulse
+        if reason == .cancelled {
+            cancelledOutlineFeedback = outlineFeedback(pulse: pulse, reason: reason)
+        }
+        noPastePulseExpiry?.cancel()
+        let duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            ? RecorderContextSweep.stillDuration : RecorderContextSweep.duration
+        noPastePulseExpiry = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(duration))
+            guard !Task.isCancelled, self?.contextAcceptancePulse?.id == pulse.id else { return }
+            self?.contextAcceptancePulse = nil
+            self?.cancelledOutlineFeedback = nil
+            self?.noPastePulseExpiry = nil
+        }
+    }
+
+    /// A fast finish can remove the real session immediately. Hand only its tiny
+    /// visual receipt to the HUD; no audio, transcript or delivery owner survives
+    /// just to finish an animation. — GPT-6.1 Sol
+    func noPasteFeedbackForRetirement() -> RecorderNoPasteFeedback? {
+        guard let pulse = contextAcceptancePulse, pulse.kind == .noPaste else { return nil }
+        if shouldCancel { return cancelledOutlineFeedback }
+        guard completionDisposition == .clipboardOnly else { return nil }
+        return outlineFeedback(pulse: pulse, reason: .clipboardOnly)
+    }
+
+    var noPasteOutlineMotion: RecorderNoPasteFeedback? {
+        shouldCancel && contextAcceptancePulse?.kind == .noPaste ? cancelledOutlineFeedback : nil
+    }
+
+    private func outlineFeedback(pulse: RecorderContextAcceptancePulse,
+                                 reason: RecorderNoPasteFeedback.Reason) -> RecorderNoPasteFeedback {
+        RecorderNoPasteFeedback(id: id, pulse: pulse, reason: reason, activity: outlineActivity,
+            isProcessing: liveRecordingState.isProcessing, processingStartedAt: outlineProcessingStartedAt)
     }
 
     /// Text and Telegram images carry a per-gesture capture ID. Screenshots and a
@@ -1181,7 +1244,11 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     // Per-session cancel flag. Replaces the old GLOBAL engine `shouldCancelRecording`. The
     // pipeline's shouldCancel() gate reads this for ITS session only, so cancelling session
     // A never poisons session B.
-    var shouldCancel: Bool = false
+    var shouldCancel: Bool = false {
+        didSet {
+            if shouldCancel && !oldValue { acknowledgeNoPaste(reason: .cancelled) }
+        }
+    }
 
     // Stable creation timestamp for deterministic stack ordering (oldest at the bottom/base
     // in mini; newest nearest the pill in notch). The `sessions` array is also kept in

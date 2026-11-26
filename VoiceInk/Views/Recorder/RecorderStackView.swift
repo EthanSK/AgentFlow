@@ -213,6 +213,15 @@ struct MiniRecorderStackView: View {
                     .transition(engine.startupPresentation.isHandingOff(to: session.startID)
                         ? .identity : .move(edge: .bottom).combined(with: .opacity))
             }
+            if let feedback = engine.noPasteOutlineFeedback {
+                RecorderNoPasteFeedbackView(feedback: feedback, style: .mini)
+                    .offset(y: ordered.isEmpty && !showAssistantOnlyCard ? 0 :
+                        -(baseCardHeight + 6
+                          + CGFloat(stackedChipCount) * MiniRecorderLayoutMetrics.stackedCardSpacing
+                          + ordered.filter { $0.id != baseSession?.id }.reduce(0) { $0 + extraChipHeight($1) }))
+                    .id(feedback.pulse.id)
+                    .transition(.opacity)
+            }
         }
         // Implicit animation keyed on the session id list so add/remove (and the resulting
         // offset shuffles) animate the pile growing/collapsing.
@@ -226,7 +235,9 @@ struct MiniRecorderStackView: View {
         }
         .background(RecorderPanelHeightSync(
             desiredHeight: max(120, baseCardHeight + CGFloat(stackedChipCount) * MiniRecorderLayoutMetrics.stackedCardSpacing
-                + ordered.filter { $0.id != baseSession?.id }.reduce(0) { $0 + extraChipHeight($1) } + 12),
+                + ordered.filter { $0.id != baseSession?.id }.reduce(0) { $0 + extraChipHeight($1) }
+                + (engine.noPasteOutlineFeedback != nil && (!ordered.isEmpty || showAssistantOnlyCard)
+                    ? MiniRecorderLayoutMetrics.stackedCardSpacing : 0) + 12),
             edge: .bottom,
             scale: CGFloat(hudScale.scale)
         ))
@@ -372,7 +383,8 @@ struct NotchRecorderStackView: View {
         return max(120, pill + backgroundSessions.reduce(CGFloat.zero) { height, session in
             height + MiniRecorderLayoutMetrics.stackedCardSpacing
                 + RecorderChatBannerLayout.chipExtraHeight(session.codexBanner, availableWidth: liveTranscriptWidth)
-        } + 12)
+        } + (engine.noPasteOutlineFeedback != nil && (pillSession != nil || showAssistantOnlyPill)
+            ? MiniRecorderLayoutMetrics.stackedCardSpacing : 0) + 12)
     }
 
     var body: some View {
@@ -433,6 +445,13 @@ struct NotchRecorderStackView: View {
                 )
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
+            if let feedback = engine.noPasteOutlineFeedback {
+                RecorderNoPasteFeedbackView(feedback: feedback, style: .notch,
+                    notchSize: pillSession == nil && !showAssistantOnlyPill
+                        ? CGSize(width: notchWidth, height: notchHeight) : nil)
+                    .id(feedback.pulse.id)
+                    .transition(.opacity)
+            }
         }
         .animation(engine.startupPresentation.isHandingOff(to: pillSession?.startID)
             ? nil : .spring(response: 0.38, dampingFraction: 0.85), value: engine.sessions.map(\.id))
@@ -462,27 +481,41 @@ struct TranscribingChip: View {
     var availableWidth = MiniRecorderLayoutMetrics.liveTranscriptWidth
     var onHeightChange: () -> Void = {}
     let onCancel: () -> Void
+    @AppStorage(RecorderCaptureOutlinePreference.preferenceKey)
+    private var outlineEnabled = RecorderCaptureOutlinePreference.defaultValue
 
     private var label: String {
+        if let noPasteReason { return noPasteReason.title }
         switch session.liveRecordingState {
         case .enhancing: return String(localized: "Enhancing…")
         default:         return String(localized: "Transcribing…")
         }
     }
 
+    private var noPasteReason: RecorderNoPasteFeedback.Reason? {
+        if session.shouldCancel { return .cancelled }
+        return session.completionDisposition == .clipboardOnly ? .clipboardOnly : nil
+    }
+
     var body: some View {
         let banner = session.codexBanner.map { RecorderChatBannerLayout($0, availableWidth: availableWidth, placement: .chip) }
         HStack(spacing: 8) {
             // Reuse the existing spinning processing indicator for visual consistency.
-            ProcessingIndicator(color: .white.opacity(0.86))
-                .frame(width: 14, height: 14)
+            if let noPasteReason {
+                Image(systemName: noPasteReason.symbol)
+                    .foregroundStyle(RecorderContextColor.noPaste)
+                    .frame(width: 14, height: 14)
+            } else {
+                ProcessingIndicator(color: .white.opacity(0.86))
+                    .frame(width: 14, height: 14)
+            }
 
-            if let banner {
+            if let banner, noPasteReason == nil {
                 RecorderChatBanner(layout: banner)
             } else {
                 Text(label)
                     .font(.system(size: MiniRecorderLayoutMetrics.processingFontSize, weight: .medium))
-                    .foregroundColor(.white.opacity(0.82))
+                    .foregroundColor(noPasteReason == nil ? .white.opacity(0.82) : RecorderContextColor.noPaste)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
             }
@@ -503,5 +536,85 @@ struct TranscribingChip: View {
             RoundedRectangle(cornerRadius: style == .mini ? 16 : 12, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.08), lineWidth: 0.6)
         )
+        .overlay {
+            if outlineEnabled, let pulse = session.contextAcceptancePulse, pulse.kind == .noPaste {
+                RecorderCaptureOutline(
+                    shape: RoundedRectangle(cornerRadius: style == .mini ? 16 : 12, style: .continuous),
+                    acceptancePulse: pulse,
+                    isProcessing: session.noPasteOutlineMotion?.isProcessing ?? session.recordingState.isProcessing,
+                    processingStartedAt: session.noPasteOutlineMotion?.processingStartedAt
+                        ?? session.outlineProcessingStartedAt,
+                    activity: session.noPasteOutlineMotion?.activity ?? session.outlineActivity,
+                    continuesExistingOutline: true)
+            }
+        }
+    }
+
+}
+
+/// A read-only end receipt, never a recorder session or a set of live controls.
+/// The original pulse continues on the existing 30Hz leaf, so instant cancellation
+/// stays visible without holding capture/paste work open. — GPT-6.1 Sol
+struct RecorderNoPasteFeedbackView: View {
+    let feedback: RecorderNoPasteFeedback
+    let style: TranscribingChip.Style
+    var notchSize: CGSize? = nil
+    @AppStorage(RecorderCaptureOutlinePreference.preferenceKey)
+    private var outlineEnabled = RecorderCaptureOutlinePreference.defaultValue
+
+    var body: some View {
+        Group {
+            if let notchSize {
+                // Keep the status in a wing, outside the physical camera notch.
+                // Mirrored notch panels receive their own measured cutout size.
+                // — GPT-6.1 Sol
+                HStack(spacing: 0) {
+                    label.frame(width: 120)
+                    Color.clear.frame(width: notchSize.width)
+                    Color.clear.frame(width: 120)
+                }
+                .frame(height: notchSize.height + 6)
+                .background(Color.black)
+                .clipShape(NotchShape(topCornerRadius: 8, bottomCornerRadius: 16))
+                .overlay {
+                    if outlineEnabled {
+                        outline(shape: NotchShape(topCornerRadius: 8, bottomCornerRadius: 16), openTop: true)
+                    }
+                }
+            } else {
+                label
+                    .frame(width: MiniRecorderLayoutMetrics.processingChipWidth,
+                           height: MiniRecorderLayoutMetrics.controlBarHeight)
+                    .background(Color.black)
+                    .clipShape(RoundedRectangle(cornerRadius: style == .mini ? 16 : 12, style: .continuous))
+                    .overlay {
+                        if outlineEnabled {
+                            outline(shape: RoundedRectangle(cornerRadius: style == .mini ? 16 : 12,
+                                                             style: .continuous))
+                        }
+                    }
+            }
+        }
+        // A finished card must never route a click to a newer live capture.
+        // No editor, focus request, waveform, spinner or audio meter is retained.
+        // — GPT-6.1 Sol
+        .allowsHitTesting(false)
+    }
+
+    private var label: some View {
+        HStack(spacing: 6) {
+            Image(systemName: feedback.reason.symbol)
+            Text(feedback.reason.title)
+        }
+        .font(.system(size: MiniRecorderLayoutMetrics.processingFontSize, weight: .medium))
+        .foregroundStyle(RecorderContextColor.noPaste)
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private func outline<S: Shape>(shape: S, openTop: Bool = false) -> some View {
+        RecorderCaptureOutline(shape: shape, omitsTopEdge: openTop,
+            acceptancePulse: feedback.pulse, isProcessing: feedback.isProcessing,
+            processingStartedAt: feedback.processingStartedAt, activity: feedback.activity,
+            continuesExistingOutline: true)
     }
 }

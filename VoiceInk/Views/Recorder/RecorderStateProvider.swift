@@ -42,6 +42,9 @@ protocol RecorderStateProvider: AnyObject {
     // value, so the generic cards reach RecordingSession's published pulse.
     // Presentation only; never a route or capture signal. — Claude Opus 5.5
     var contextAcceptancePulse: RecorderContextAcceptancePulse? { get }
+    /// A cancellation keeps the outline's original motion while its real state
+    /// unwinds. This snapshot owns no microphone or delivery work. — GPT-6.1 Sol
+    var noPasteOutlineMotion: RecorderNoPasteFeedback? { get }
 
 }
 
@@ -76,7 +79,8 @@ extension RecorderStateProvider {
     /// its pulse before empty typing has mounted any decorative view. Keep pulse
     /// production independent from the deferred display gate. — GPT-6.1 Sol
     var isEligibleForRecordingActivityOutline: Bool {
-        recordingState == .recording || recordingState.isProcessing
+        contextAcceptancePulse?.kind == .noPaste
+            || recordingState == .recording || recordingState.isProcessing
             || (recordingState == .starting && microphoneOff && canTypeInHUD)
     }
 
@@ -86,7 +90,8 @@ extension RecorderStateProvider {
     /// Microphone-off typing shares the outline after its first actual edit or
     /// accepted context gesture, so decorative geometry stays out of empty typing
     /// startup without suppressing the blue/magenta acknowledgement. Voice startup,
-    /// Pause and idle remain unlit. This replaces
+    /// Pause and idle remain unlit except for an explicit, bounded red outcome.
+    /// This replaces
     /// the old showsLiveCaptureOutline gate; it is never a hardware or route signal.
     /// Original design by Claude Opus 5.5. Found and fixed by GPT-6.1 Sol.
     var showsRecordingActivityOutline: Bool {
@@ -126,6 +131,7 @@ extension RecorderStateProvider {
     var outlineProcessingStartedAt: Date? { nil }
     var outlineActivity: RecorderOutlineActivity? { nil }
     var contextAcceptancePulse: RecorderContextAcceptancePulse? { nil }
+    var noPasteOutlineMotion: RecorderNoPasteFeedback? { nil }
     func toggleMicrophone() {}
     func togglePause() {}
     func updateTypedInput(_ value: String) {}
