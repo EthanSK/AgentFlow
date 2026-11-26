@@ -1,6 +1,16 @@
 # Learnings
 
 ---
+**Date:** 2026-11-26T15:01:00Z
+**Trigger:** Exact-source hosted 561 run 45840939899 executed 1,104 functions in 56 suites and failed only the real-clock Reduce Motion hold snapshot; cleanup succeeded, publication/download did not run.
+**Symptom:** The late hold sample matched plain rainbow (difference fraction 0.0) while earlier hold/stillness checks and controlled native frames passed.
+**Root cause:** The test stacked waits, redundant snapshots and optional PNG export within the newly shortened 0.6-second real-time window. The failure did not record actual capture time, so its precise scheduling/serialization share is unproven; do not infer a production paint failure from that late sample.
+**Fix:** Test-only e5d91fb1 samples the still border earlier, reuses its first capture for the 120ms stillness comparison, then exports PNGs after timed captures. Every colour, stillness and automatic-expiry threshold remains; the hold assertion now reports actual elapsed time. Native production is byte-identical to the installed f8eb085d build561.
+**Commit:** e5d91fb1c13b3b904cfc9f370a320d9dfdaabbbb
+**Guard:** The canonical named Mini rerun passed, including moving/still real-clock visibility and automatic return to rainbow. Exact-source hosted qualification must run again after this fixture correction; no new app build/install is needed for tests/comments/lessons alone.
+---
+
+---
 **Date:** 2026-11-26T14:31:00Z
 **Trigger:** Ethan accepted the installed 560 fill/hold/exit, then asked for 50% of its full-colour duration, superseding his interim 70% and earlier one-second minimum.
 **Symptom:** The approved animation held its solid context colour longer than he wanted.

@@ -582,9 +582,9 @@ struct RecorderContextSweepTests {
                     "context-lap-\(reduced ? "still" : "flow")-\(name).png"))
             }
 
-            // The short still hold needs its samples early. Capture/PNG work used
-            // to consume most of its 0.6s budget on the hosted runner. Keep that work
-            // out of the timed interval, without extending the real hold. — GPT-6.1 Sol
+            // The short still hold needs its samples early: the hosted test saw
+            // restored rainbow at the late sample. Avoid redundant captures and PNG
+            // export in this 0.6s interval; never extend the real hold. — GPT-6.1 Sol
             try await Task.sleep(for: .milliseconds(reduced ? 100 : 500))
             let entranceFrame = try acknowledged.capture()
             let during = try EdgeComparison(plain.capture(), entranceFrame)

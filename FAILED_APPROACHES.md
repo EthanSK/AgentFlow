@@ -1,5 +1,10 @@
 # VoiceInk++ failed approaches and regression ledger
 
+
+## Sampling a short hold after redundant capture work — 2026-11-26
+
+Do not stack fixed waits, extra snapshots and PNG export before testing a short real-time animation hold. Hosted561 run45840939899 failed its late Reduce Motion sample after the hold was shortened to0.6s; all other1,103 functions passed. The exact capture elapsed time was not logged, so scheduling/serialization attribution remains bounded. Reconsider a later sample only with a measured time budget that fits the current hold. Test-only e5d91fb1 keeps the real120ms stillness and expiry checks, removes redundant timed work, samples earlier and reports actual capture elapsed time; its named Mini rerun passed. This is test-fixture evidence, not a reason to lengthen the user's accepted animation or weaken pixel thresholds.
+
 ## 2026-11-26 — Treating feathered coverage as an unfeathered clock or moving spark attenuation as ink loss — REJECTED
 
 The first continuous-fill focus on1fd00a69 passed59 of60 named functions, including actual native colour/shape frames and the two repaired boundary checks. The remaining pure paint fixture rejected tiny early changes in a soft edge while the white spark moved, and required full coverage to start/end at the exact head/tail constants. Actual uninterrupted whole-colour coverage was0.670–1.936s, longer than the requested minimum. Test-onlyc8ee5e07 tracks whether fully opaque ink ever exposes rainbow again before exit, retains continuous full-colour coverage for at least1s across the entire nominal hold, and still requires partial entrance/exit. Native pixel thresholds were not lowered. Reconsider exact hard edge timings or monotonic partial attenuation only if the design deliberately removes feathers and the moving spark; never treat an invalid fixture assumption as a reason to remove the requested entrance/exit.
