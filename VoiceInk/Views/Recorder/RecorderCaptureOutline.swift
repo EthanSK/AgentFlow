@@ -8,8 +8,9 @@ import SwiftUI
 /// One sharp stroke follows the recorder's silhouette during capture and transcription.
 /// Colour still flows evenly around the border; there is no bloom, pale core,
 /// opacity flicker or interior shading. Reduce Motion holds the colours still.
-/// An accepted highlight or screenshot recolours the same stroke for one quick lap
-/// (`RecorderContextSweep`); it never changes its width, alignment or phase. — Claude Opus 5.5
+/// An accepted highlight or screenshot holds the full stroke colour during one lap
+/// (`RecorderContextSweep`); it never changes its width, alignment or phase.
+/// — Claude Opus 5.5; GPT-6.1 Sol
 ///
 /// Callers place it in a `.background` above the card fill and beneath content, and
 /// the card's own clip bounds it, so it changes no geometry, hit target, drag

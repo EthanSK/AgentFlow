@@ -951,6 +951,13 @@ Keep each field concise but specific enough to prevent rediscovery. Name the sym
 
 ## Recorder outline changes
 
+Ethan: “same system, same reusable code” for speech and typing acceleration and
+deceleration (2026-11-26). Both accepted editor changes and newly recognised speech
+feed `RecorderOutlineActivity`; keep their tuning and quiet/resume behaviour shared,
+rather than adding a separate voice curve. Preserve the producer-level
+`recognisedSpeechAndTypingCoastAndResumeThroughTheSameMotion` regression.
+
+
 Keep text momentum and loading phase on the existing decorative leaf clock. When a
 context pulse and its background move differently, preserve the actual rainbow
 colour separately from the pulse mask. Retain controlled-date native frame checks

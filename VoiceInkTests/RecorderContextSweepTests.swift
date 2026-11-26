@@ -17,7 +17,7 @@ struct RecorderContextSweepTests {
 
     @Test func pulseMaskPreservesTheActualRainbowWhenItsClockDiffers() {
         let paint = RecorderContextSweepPaint(tint: blue,
-            form: .lap(.init(head: 0, tail: 0, strength: 0)))
+            form: .lap(.init(head: 0, strength: 0)))
         for position in stride(from: 0.0, to: 1.0, by: 0.01) {
             let actual = position + 0.35
             #expect(paint.components(at: position, rainbowPosition: actual)
@@ -165,50 +165,53 @@ struct RecorderContextSweepTests {
         #expect(sweep.acknowledgement(for: pulse, at: start.addingTimeInterval(sweep.duration)) == nil)
         #expect(sweep.acknowledgement(for: pulse, at: start.addingTimeInterval(0.5))?.kind == .selection)
 
-        // Exactly one lap: head and tail each travel once, the tail never passes
-        // the head, and the arc stretches to about half the border mid-lap.
+        // One head travels once while the entire border stays coloured for at
+        // least a second; this deliberately replaces the former half-border arc.
+        // The underlying rainbow still returns unchanged. — GPT-6.1 Sol
+        #expect(sweep.fullColorDuration >= 1)
         var previous = sweep.lap(atProgress: 0)
-        #expect(previous.head == 0 && previous.tail == 0 && previous.strength == 0)
+        #expect(previous.head == 0 && previous.strength == 0)
         for step in 1...200 {
             let lap = sweep.lap(atProgress: Double(step) / 200)
-            #expect(lap.head >= previous.head && lap.tail >= previous.tail && lap.tail <= lap.head)
+            #expect(lap.head >= previous.head && lap.head <= 1)
             #expect(lap.strength >= 0 && lap.strength <= 1)
             previous = lap
         }
-        #expect(sweep.lap(atProgress: sweep.travelShare).head == 1)
-        #expect(previous.head == 1 && previous.tail == 1 && previous.strength == 0)
-        let middle = sweep.lap(atProgress: 0.5)
-        #expect(middle.head - middle.tail > 0.4 && middle.head - middle.tail < 0.6)
-
+        #expect(previous.head == 1 && previous.strength == 0)
+        let holdStart = sweep.fadeInDuration
+        let holdEnd = holdStart + sweep.fullColorDuration
+        #expect(sweep.lap(atProgress: holdStart / sweep.duration).head == 0)
+        #expect(sweep.lap(atProgress: holdEnd / sweep.duration).head == 1)
         for (tint, origin) in [(blue, blueOrigin), (magenta, magentaOrigin)] {
-            let paint = RecorderContextSweepPaint(tint: tint, form: .lap(middle))
-            #expect(paint.origin == origin)
-            // Mid-arc is the transcript colour, and the far side is the rainbow's own
-            // colour at its own phase, bit for bit.
-            let arcMiddle = origin + (middle.head + middle.tail) / 2
-            #expect(sweep.squaredDistance(paint.components(at: arcMiddle), tint) < 1e-12)
-            let farSide = arcMiddle + 0.5
-            #expect(paint.components(at: farSide) == RecorderNeonSpectrum.components(at: farSide))
-            // A white-hot spark rides the head.
-            let head = paint.components(at: origin + middle.head)
-            #expect(min(head.red, head.green, head.blue) > min(tint.red, tint.green, tint.blue) + 0.2)
-
-            // Early on, only the stretch beside the launch band changes.
-            let early = RecorderContextSweepPaint(tint: tint, form: .lap(sweep.lap(atProgress: 0.12)))
-            for index in 0..<144 {
-                let offset = Double(index) / 144
-                guard offset > 0.2, offset < 0.8 else { continue }
-                #expect(early.components(at: origin + offset) == RecorderNeonSpectrum.components(at: origin + offset))
+            for elapsed in stride(from: holdStart + 0.0001, through: holdEnd - 0.0001, by: 0.025) {
+                let lap = sweep.lap(atProgress: elapsed / sweep.duration)
+                #expect(abs(lap.strength - 1) < 1e-12)
+                let paint = RecorderContextSweepPaint(tint: tint, form: .lap(lap))
+                #expect(paint.origin == origin)
+                // Every point is exactly the tint, apart from the small white
+                // highlight. There must be no remaining rainbow arc. — GPT-6.1 Sol
+                for index in 0..<144 {
+                    let position = origin + Double(index) / 144
+                    let painted = paint.components(at: position, rainbowPosition: position + 0.35)
+                    let distance = abs(Double(index) / 144 - lap.head)
+                    if min(distance, 1 - distance) > sweep.sparkHalfWidth {
+                        #expect(sweep.squaredDistance(painted, tint) < 1e-12)
+                    } else {
+                        #expect(painted.red >= tint.red && painted.green >= tint.green && painted.blue >= tint.blue)
+                    }
+                }
+                let head = paint.components(at: origin + lap.head)
+                #expect(min(head.red, head.green, head.blue) > min(tint.red, tint.green, tint.blue) + 0.2)
             }
-
-            // Launch and landing fade from and to nothing, so neither end jumps.
+            // Both fades hand back the real rainbow even when its clock differs.
+            // — Claude Opus 5.5; GPT-6.1 Sol
             for progress in [0.001, 0.999] {
                 let edge = RecorderContextSweepPaint(tint: tint, form: .lap(sweep.lap(atProgress: progress)))
                 for index in 0..<144 {
                     let position = Double(index) / 144
-                    let distance = sweep.squaredDistance(edge.components(at: position),
-                                                         RecorderNeonSpectrum.components(at: position))
-                    #expect(distance < 1e-4, "progress \(progress) position \(position)")
+                    let actual = position + 0.35
+                    #expect(sweep.squaredDistance(edge.components(at: position, rainbowPosition: actual),
+                        RecorderNeonSpectrum.components(at: actual)) < 1e-4)
                 }
             }
         }
@@ -221,7 +224,7 @@ struct RecorderContextSweepTests {
             fileURLWithPath: "/tmp/AgentFlowTests/still.png")))
         let pulse = try #require(RecorderContextAcceptancePulse(accepting: screenshot, at: start))
         #expect(pulse.kind == .screenshot)
-        #expect(sweep.stillDuration > 0.3 && sweep.stillDuration < 1.5)
+        #expect(sweep.stillDuration == sweep.fullColorDuration && sweep.stillDuration >= 1)
         #expect(sweep.stillRemaining(of: pulse, at: start) == sweep.stillDuration)
         let partway = try #require(sweep.stillRemaining(of: pulse, at: start.addingTimeInterval(0.3)))
         // Date stores an absolute floating-point value; fractional intervals are
@@ -328,7 +331,20 @@ struct RecorderContextSweepTests {
                 #expect(held.differingFraction < 0.01, "\(label): \(held.differingFraction)")
             }
 
-            try await Task.sleep(for: .milliseconds(1_300))
+            // Split the existing 1.3s observation interval: the colour must still
+            // be clearly present late in the full-colour hold, then end normally.
+            // No extra test or production delay. — GPT-6.1 Sol
+            try await Task.sleep(for: .milliseconds(600))
+            let lateFrame = try acknowledged.capture()
+            let late = try EdgeComparison(plain.capture(), lateFrame)
+            #expect(late.edgePixels > 100, "\(label)")
+            #expect(late.differingFraction > 0.4, "\(label): late hold \(late.differingFraction)")
+            if let directory = ProcessInfo.processInfo.environment["VIPP_OUTLINE_SNAPSHOT_DIR"] {
+                let data = try #require(lateFrame.representation(using: .png, properties: [:]))
+                try data.write(to: URL(fileURLWithPath: directory).appendingPathComponent(
+                    "context-lap-\(reduced ? "still" : "flow")-late-hold.png"))
+            }
+            try await Task.sleep(for: .milliseconds(700))
             let after = try EdgeComparison(plain.capture(), acknowledged.capture())
             #expect(after.edgePixels > 100, "\(label)")
             #expect(after.differingFraction < 0.01, "\(label): \(after.differingFraction)")

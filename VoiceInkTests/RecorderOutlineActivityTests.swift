@@ -149,6 +149,45 @@ struct RecorderOutlineActivityTests {
         voice.flushSpeechTiming()
     }
 
+    @Test @MainActor func recognisedSpeechAndTypingCoastAndResumeThroughTheSameMotion() throws {
+        let typed = RecordingSession()
+        typed.microphoneOff = true
+        let voice = RecordingSession()
+        defer { voice.flushSpeechTiming() }
+        let start = Date().addingTimeInterval(1)
+        var text = ""
+        for index in 0..<20 {
+            text += "word "
+            let date = start.addingTimeInterval(Double(index) / 10)
+            typed.updateTypedInput(text, at: date)
+            voice.recordSpeechActivity(text, at: date)
+            voice.partialTranscript = text
+        }
+        let last = start.addingTimeInterval(1.9)
+        let typedActivity = try #require(typed.outlineActivity)
+        let speechActivity = try #require(voice.outlineActivity)
+        let peak = speechActivity.speed(at: last.addingTimeInterval(0.2))
+        for quiet in [0.0, 0.1, 0.2, 0.3, 0.5, 1.0, 2.0, 20.0] {
+            let date = last.addingTimeInterval(quiet)
+            #expect(typedActivity.speed(at: date) == speechActivity.speed(at: date))
+            #expect(abs(RecorderCaptureOutlineTrace.wrapped(
+                typedActivity.phase(at: date) - speechActivity.phase(at: date))) < 1e-6)
+        }
+        let resume = last.addingTimeInterval(0.5)
+        let before = speechActivity.speed(at: resume)
+        #expect(before > RecorderOutlineActivity.idleSpeed && before < peak)
+        text += "resumed"
+        typed.updateTypedInput(text, at: resume)
+        voice.recordSpeechActivity(text, at: resume)
+        voice.partialTranscript = text
+        let resumedTyping = try #require(typed.outlineActivity)
+        let resumedSpeech = try #require(voice.outlineActivity)
+        #expect(resumedSpeech.speed(at: resume) == before)
+        #expect(resumedSpeech.speed(at: resume.addingTimeInterval(0.1)) > before)
+        #expect(resumedTyping.speed(at: resume.addingTimeInterval(0.1))
+            == resumedSpeech.speed(at: resume.addingTimeInterval(0.1)))
+    }
+
     @Test func textBurstsEaseInWithoutResettingColourOrVisibleSpeed() {
         var activity = RecorderOutlineActivity(at: start)
         activity.addText(units: 32, at: start)

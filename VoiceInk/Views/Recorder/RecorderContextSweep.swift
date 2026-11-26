@@ -1,8 +1,10 @@
 // Ethan's context acknowledgement (2026-11-24): when he highlights text or saves a
-// screenshot while recording, the Recording Outline runs one quick lap in that
+// screenshot while recording, the Recording Outline runs one visible lap in that
 // context's transcript colour, blue for a selection and magenta for a screenshot,
 // then hands the border back to the untouched rainbow. He can tell the context was
-// captured without looking at the HUD. Presentation only. — Claude Opus 5.5
+// captured without looking at the HUD. His 2026-11-26 refinement holds the whole
+// border in that colour for at least a second. Presentation only.
+// — Claude Opus 5.5; GPT-6.1 Sol
 import SwiftUI
 
 /// One colour source for the HUD context labels and their acceptance lap. The HUD
@@ -60,22 +62,17 @@ struct RecorderContextAcceptancePulse: Equatable {
 /// phase but never changes it, so when the lap ends the border is exactly the
 /// rainbow it would have been anyway. — Claude Opus 5.5
 enum RecorderContextSweep {
-    /// The whole acknowledgement. The head laps the card in three quarters of
-    /// this, nearly seven times the rainbow's own flow, so it reads as an event in
-    /// peripheral vision and is gone before it competes with the transcript.
-    static let duration: TimeInterval = 1.0
+    /// Ethan wants a full-colour acknowledgement for a good second minimum,
+    /// rather than a short arc passing by. One head completes exactly one lap
+    /// while the whole border holds its colour; short fades surround that hold.
+    /// These are drawing times, never input/capture waits. — GPT-6.1 Sol
+    static let fullColorDuration: TimeInterval = 1.2
+    static let fadeInDuration: TimeInterval = 0.1
+    static let fadeOutDuration: TimeInterval = 0.2
+    static let duration = fadeInDuration + fullColorDuration + fadeOutDuration
     /// Reduce Motion: the whole border holds the context colour this long, with no
     /// movement or fade, then returns to the still rainbow.
-    static let stillDuration: TimeInterval = 0.8
-    /// The head travels over the first 75% of the lap and the tail over the last
-    /// 75%. The arc stretches to about half the border mid-lap, then the tail
-    /// closes onto the head back where it started.
-    static let travelShare = 0.75
-    /// Edge softness in laps. The head is crisp so its direction reads clearly;
-    /// the tail dissolves back into the rainbow. They span about two and six of
-    /// the outline's 72 colour stops, so the edges glide rather than step.
-    static let headFeather = 0.025
-    static let tailFeather = 0.09
+    static let stillDuration = fullColorDuration
     /// A white-hot spark rides the head. It is a colour along the same 1pt stroke,
     /// never a glow, blur or gradient into the panel.
     static let sparkHalfWidth = 0.035
@@ -84,8 +81,7 @@ enum RecorderContextSweep {
     struct Lap: Equatable {
         /// Distance travelled clockwise from the launch point, in laps, 0...1.
         let head: Double
-        let tail: Double
-        /// Fades the lap in at launch and out on landing, 0...1.
+        /// Fades the full-colour border in and out, with a 1.2s plateau. — GPT-6.1 Sol
         let strength: Double
     }
 
@@ -110,13 +106,15 @@ enum RecorderContextSweep {
         return Acknowledgement(kind: pulse.kind, form: .lap(lap(atProgress: progress)))
     }
 
-    /// Ignites over the first 6% of the lap and fades over the last 10%, reaching
-    /// exactly zero at both ends, so neither launch nor landing can jump.
+    /// The head travels only during the fully coloured hold. Both short fades
+    /// reach zero at the endpoints and leave the underlying flow untouched.
+    /// — Claude Opus 5.5; GPT-6.1 Sol
     static func lap(atProgress progress: Double) -> Lap {
-        Lap(
-            head: smoothstep(progress / travelShare),
-            tail: smoothstep((progress - (1 - travelShare)) / travelShare),
-            strength: smoothstep(progress / 0.06) * smoothstep((1 - progress) / 0.1)
+        let elapsed = progress * duration
+        return Lap(
+            head: smoothstep((elapsed - fadeInDuration) / fullColorDuration),
+            strength: smoothstep(elapsed / fadeInDuration)
+                * smoothstep((duration - elapsed) / fadeOutDuration)
         )
     }
 
@@ -125,7 +123,8 @@ enum RecorderContextSweep {
     /// `stillDuration`, so the hold is always bounded.
     static func stillRemaining(of pulse: RecorderContextAcceptancePulse, at date: Date) -> TimeInterval? {
         // Compare the same representable Date deadline used by callers. Subtracting
-        // elapsed time from0.8 could leave47ns at the nominal endpoint. — GPT-6.1 Sol
+        // elapsed time from a fractional hold could leave nanoseconds at the nominal
+        // endpoint. — GPT-6.1 Sol
         let deadline = pulse.startedAt.addingTimeInterval(stillDuration)
         guard date < deadline else { return nil }
         return stillDuration - max(0, date.timeIntervalSince(pulse.startedAt))
@@ -193,19 +192,15 @@ struct RecorderContextSweepPaint {
 
         let sweep = RecorderContextSweep.self
         let lapOffset = (position - origin) - (position - origin).rounded(.down)
-        var cover = 0.0
-        var spark = 0.0
-        // The arc and its feathers can straddle the launch point at either end of
-        // the lap, so test this stop one lap behind and ahead as well.
-        for x in [lapOffset - 1, lapOffset, lapOffset + 1] {
-            let afterTail = sweep.smoothstep((x - lap.tail + sweep.tailFeather) / sweep.tailFeather)
-            let beforeHead = 1 - sweep.smoothstep((x - lap.head) / sweep.headFeather)
-            cover = max(cover, afterTail * beforeHead)
-            let nearHead = max(0, 1 - abs(x - lap.head) / sweep.sparkHalfWidth)
-            spark = max(spark, nearHead * nearHead)
-        }
-        let tinted = Self.mix(rainbow, tint, cover * lap.strength)
-        return Self.mix(tinted, .init(red: 1, green: 1, blue: 1), spark * sweep.sparkWhiteness * lap.strength)
+        let distance = abs(lapOffset - lap.head)
+        let nearHead = max(0, 1 - min(distance, 1 - distance) / sweep.sparkHalfWidth)
+        // The whole stroke stays tinted while one small highlight travels around
+        // it. No rainbow leaks through the hold, even as its own clock accelerates.
+        // This replaces the former half-border arc, not the shared motion clock.
+        // — GPT-6.1 Sol
+        let highlighted = Self.mix(tint, .init(red: 1, green: 1, blue: 1),
+                                   nearHead * nearHead * sweep.sparkWhiteness)
+        return Self.mix(rainbow, highlighted, lap.strength)
     }
 
     func color(at position: Double, rainbowPosition: Double? = nil) -> Color {
@@ -216,7 +211,8 @@ struct RecorderContextSweepPaint {
     static func mix(_ from: RecorderNeonSpectrum.Components, _ to: RecorderNeonSpectrum.Components,
                     _ amount: Double) -> RecorderNeonSpectrum.Components {
         guard amount > 0 else { return from }
-        let t = min(amount, 1)
+        guard amount < 1 else { return to }
+        let t = amount
         return RecorderNeonSpectrum.Components(
             red: from.red + (to.red - from.red) * t,
             green: from.green + (to.green - from.green) * t,
