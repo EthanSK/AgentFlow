@@ -1,6 +1,17 @@
 # Learnings
 
 ---
+**Date:** 2026-11-26T02:06:03Z
+**Trigger:** Canonical21efc046 andce89a4cf: Sometimes clicking the stop button does not register; it just continues recording.
+**Symptom:** Ethan reported that Stop sometimes continued recording; the existing centre-click test passed but did not cover clicks near its small painted edge.
+**Root cause:** An isolated real-event native probe on unchanged557 ignored points14 logical points from the21pt circular control centre at0.5/0.85/1 scale. This establishes a small-target limitation, not the cause of Ethan's uncaptured episode or a main-thread stall. Saved info-level handler receipts were also unavailable; a bounded passive trace saw no new event.
+**Fix:** Keep the21pt painted face and standard SwiftUI Button; add5pt layout-owned padding and a rectangular31pt hit region, preserving a separate gap before Cancel. Retain the existing disabled rules and real600ms microphone tail. Promote the existing user-action handler receipt to notice in bounded OS logging, without transcripts, polling or retries.
+**Commit:** a46bcf91bb7d7084235d5aeaeded78fbc456c0d9
+**Guard:** The new edge test failed on24137c34 baseline and passed after the change. All17 selected canonical Mini functions passed, covering real scaled edge/centre/resize clicks, disabled finishing/loading states, Cancel/gap/focus isolation, both layouts, pause/start/focus, shared outline and protected stop/media/Primary/Next/HUD-only contracts. A final layout rerun ond35820f7 also passed; eight inspected Mini/Notch frames cover recording, paused, finishing and transcribing. The fixture sets both phase and liveRecordingState because the UI reads the latter; phase alone must not be called a loading screenshot. The21pt painted symbol, spacing and readable Transcribing label remain intact. Physical intermittent acceptance remains unverified.
+---
+
+
+---
 **Date:** 2026-11-26T01:26:22Z
 **Trigger:** Ethan: come in in the same way as it did before with the animation; last longer, like one extra cycle.
 **Symptom:** The longer context acknowledgement lost the animated entrance/travelling arc/exit Ethan liked.
