@@ -877,6 +877,57 @@ struct RecorderContextSweepTests {
         #expect(stack.contains("continuesExistingOutline: true"))
     }
 
+    /// Exercise the actual retired-card UI, not just its colour shader. These are
+    /// isolated nonactivating panels on the test Mac; no engine/capture is started.
+    /// Each private defaults suite proves the complete outline switch independently
+    /// of the red status label. — GPT-6.2 Sol
+    @Test @MainActor func retiredCancelAndNoPasteCardsRenderInBothStylesAndRespectOutlineOff() async throws {
+        let suite = "AgentFlowTests.red-feedback.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        for notch in [false, true] {
+            for reason in [RecorderNoPasteFeedback.Reason.cancelled, .clipboardOnly] {
+                let size = CGSize(width: notch ? 420 : 352, height: notch ? 38 : 40)
+                let feedback = RecorderNoPasteFeedback(id: UUID(),
+                    pulse: .init(kind: .noPaste, at: Date().addingTimeInterval(-0.7)),
+                    reason: reason, activity: nil, isProcessing: false, processingStartedAt: nil)
+                func card() -> some View {
+                    RecorderNoPasteFeedbackView(feedback: feedback, style: notch ? .notch : .mini,
+                        notchSize: notch ? CGSize(width: 180, height: 32) : nil)
+                        .defaultAppStorage(defaults)
+                        .frame(width: size.width, height: size.height)
+                }
+                defaults.set(true, forKey: RecorderCaptureOutlinePreference.preferenceKey)
+                let panel = NSPanel(contentRect: NSRect(origin: .zero, size: size),
+                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+                panel.isOpaque = false
+                panel.backgroundColor = .clear
+                let host = NSHostingView(rootView: card())
+                panel.contentView = host
+                panel.orderFrontRegardless()
+                defer { panel.orderOut(nil); panel.close() }
+                func capture() throws -> NSBitmapImageRep {
+                    host.layoutSubtreeIfNeeded()
+                    let frame = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+                    host.cacheDisplay(in: host.bounds, to: frame)
+                    return frame
+                }
+                try await Task.sleep(for: .milliseconds(350))
+                let on = try capture()
+                defaults.set(false, forKey: RecorderCaptureOutlinePreference.preferenceKey)
+                try await Task.sleep(for: .milliseconds(100))
+                let off = try capture()
+                let compared = try EdgeComparison(on, off)
+                #expect(compared.differingPixels > 80, "notch=\(notch) reason=\(reason): \(compared.differingPixels)")
+                if let directory = ProcessInfo.processInfo.environment["VIPP_OUTLINE_SNAPSHOT_DIR"] {
+                    let folder = URL(fileURLWithPath: directory, isDirectory: true)
+                    let image = try #require(on.representation(using: .png, properties: [:]))
+                    try image.write(to: folder.appendingPathComponent("\(notch ? "notch" : "mini")-\(reason)-feedback.png"))
+                }
+            }
+        }
+    }
+
     // MARK: - Helpers
 
     /// How much of the rainbow still shows at `position`, 0...1, taken from the
