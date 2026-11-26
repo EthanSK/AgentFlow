@@ -582,28 +582,33 @@ struct RecorderContextSweepTests {
                     "context-lap-\(reduced ? "still" : "flow")-\(name).png"))
             }
 
-            // About 0.35s in: the entrance for motion; inside the still hold otherwise.
-            try await Task.sleep(for: .milliseconds(reduced ? 250 : 500))
+            // The short still hold needs its samples early. Capture/PNG work used
+            // to consume most of its 0.6s budget on the hosted runner. Keep that work
+            // out of the timed interval, without extending the real hold. — GPT-6.1 Sol
+            try await Task.sleep(for: .milliseconds(reduced ? 100 : 500))
             let entranceFrame = try acknowledged.capture()
             let during = try EdgeComparison(plain.capture(), entranceFrame)
             #expect(during.edgePixels > 100, "\(label)")
             #expect(during.differingFraction > (reduced ? 0.4 : 0.1), "\(label): \(during.differingFraction)")
-            try save(entranceFrame, "during")
+            let holdFrame: NSBitmapImageRep
             if reduced {
-                // Still means still: no movement while the colour is held.
-                let first = try acknowledged.capture()
+                // Reuse the first real capture and compare after 120ms. Do not take
+                // redundant snapshots or write PNGs before the second sample. — GPT-6.1 Sol
                 try await Task.sleep(for: .milliseconds(120))
-                let held = try EdgeComparison(first, acknowledged.capture())
+                holdFrame = try acknowledged.capture()
+                let held = try EdgeComparison(entranceFrame, holdFrame)
                 #expect(held.differingFraction < 0.01, "\(label): \(held.differingFraction)")
+            } else {
+                // About 0.95s in: the whole stroke holds the screenshot colour.
+                try await Task.sleep(for: .milliseconds(600))
+                holdFrame = try acknowledged.capture()
             }
-
-            // About 0.95s in: the whole stroke holds the screenshot colour. Only the
-            // rainbow's own near-magenta stretch can still match the plain leaf.
-            try await Task.sleep(for: .milliseconds(reduced ? 50 : 600))
-            let holdFrame = try acknowledged.capture()
+            let holdElapsed = Date().timeIntervalSince(pulse.startedAt)
             let hold = try EdgeComparison(plain.capture(), holdFrame)
             #expect(hold.edgePixels > 100, "\(label)")
-            #expect(hold.differingFraction > (reduced ? 0.4 : 0.5), "\(label): hold \(hold.differingFraction)")
+            #expect(hold.differingFraction > (reduced ? 0.4 : 0.5),
+                    "\(label): hold at \(holdElapsed)s, fraction \(hold.differingFraction)")
+            try save(entranceFrame, "during")
             try save(holdFrame, "hold")
 
             // After the 2s acknowledgement (0.6s still hold): the same rainbow.
