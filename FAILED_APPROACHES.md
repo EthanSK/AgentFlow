@@ -1,5 +1,13 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-26 — Replaying separate coloured laps for a continuous context acknowledgement — REJECTED
+
+Build557/558/559 replayed the original one-second growing arc twice. Native shape/count checks passed, but Ethan observed blue, rainbow, then blue and explicitly rejected that result. His clarified intent is one animated fill of the whole stroke, at least one uninterrupted second entirely blue/magenta with motion, then an animated return to rainbow. Do not preserve the modulo reset or treat a loop-count assertion as design acceptance. Reconsider separate laps only if Ethan explicitly requests a rainbow gap between independent signals; preserve the thin stroke, entrance/exit, underlying phase, accessibility and off switch.
+
+## 2026-11-26 — Calling fifty-percent faster braking a small difference — REJECTED
+
+The earlier typing/speech controller used3/s braking against2/s response. Ethan reported that it still slowed too fast and asked for nearly the same rate. Native927ac9bb uses a five-percent difference and links retained-charge decay to half the braking rate to preserve resumed momentum. Reconsider the old coefficient only with an explicit changed feel preference or new comparable evidence, not because its historical tests passed. Keep200ms quiet debounce,800ms continuation, gains, shared code and phase continuity.
+
 ## 2026-11-25 — Using visual braking debounce as the stored-charge deadline — REJECTED
 
 The first uninstalled555 draftda4e6c9b used200ms for both visual braking and retained charge. Fast10cps checks passed, but slower continuous3cps typing would lose charge between every key and plateau below1x. Sourceee47ab5d separates the existing800ms charge-retention allowance from200ms visible braking; a new1000-key3cps guard exceeds250x while the fast chain still exceeds780x. All51 focused native functions passed. The signedda4 candidate was never installed. Reconsider combining those deadlines only with explicit behavior approval and both slower/faster continuous-chain guards preserving the accepted uncapped build-up.

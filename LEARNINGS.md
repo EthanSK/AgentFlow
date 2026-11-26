@@ -1,6 +1,17 @@
 # Learnings
 
 ---
+**Date:** 2026-11-26T13:17:38Z
+**Trigger:** Ethan reports slowdown still too fast and wants almost the same ramp-down as ramp-up.
+**Symptom:** The visible rainbow lost momentum too quickly after typing; recognised speech uses the same controller.
+**Root cause:** The earlier agent choice set braking3/s against response2/s, a50-percent gap despite describing it as a little faster. Later Stop/context edits had not overwritten that tuning.
+**Fix:** Native927ac9bb keeps response2/s and uses braking=responseRate*1.05; stored-charge decay remains half the braking rate so resumed input cannot chase a target below its visible speed. Preserve200ms quiet debounce,800ms continuation, gains, unbounded chaining, phase integration and one30Hz decorative clock.
+**Commit:** 927ac9bbfe26de5a778a99f95e6faace3c1d2612
+**Guard:** All54 named native functions actually Passed with TEST SUCCEEDED, including observable easing-rate comparison, long charged-coast resume, producer-level typing/speech parity and protected startup/capture/media/delivery guards. The first Fleet wrapper still expected a renamed test and failed its metadata assertion; its failure receipt is preserved separately from the raw successful native result. The corrected expected-name validation passed without rerunning unchanged code. Ordinary universal559 was Developer ID signed and installed with five-second warning/cooperative all-session guard; exact runtime identity, signature/entitlements, icon, updater key, eight preferences and untouched legacy VoiceInk verified. Human feel and total long-chain rise/fall durations are not proven equal. Public qualification follows with the additive560 context correction.
+---
+
+
+---
 **Date:** 2026-11-26T02:06:03Z
 **Trigger:** Canonical21efc046 andce89a4cf: Sometimes clicking the stop button does not register; it just continues recording.
 **Symptom:** Ethan reported that Stop sometimes continued recording; the existing centre-click test passed but did not cover clicks near its small painted edge.
@@ -13,6 +24,7 @@
 
 ---
 **Date:** 2026-11-26T01:26:22Z
+**Status:** Superseded by Ethan's later continuous-fill clarification: two separate coloured laps with a rainbow break are rejected. Preserve the animated entrance and exit, but fill the whole edge and hold its colour for at least one second. Historical native execution below is not acceptance of the two-lap interpretation.
 **Trigger:** Ethan: come in in the same way as it did before with the animation; last longer, like one extra cycle.
 **Symptom:** The longer context acknowledgement lost the animated entrance/travelling arc/exit Ethan liked.
 **Root cause:** Build 556 interpreted longer colour visibility as a whole-edge hold and overrode the first-context entrance. Ethan explicitly rejected that interpretation in 2b0bd222; passing source/native checks did not establish design acceptance.
@@ -36,6 +48,7 @@
 
 ---
 **Date:** 2026-11-25T15:52:45Z
+**Status:** The3/s versus2/s braking coefficient is superseded by native927ac9bb after Ethan reported that slowdown still felt too fast. Preserve the verified200ms quiet threshold,800ms continuation, gains, integration and shared speech/typing contracts; do not restore the old coefficient from this historical receipt.
 **Trigger:** Canonical073d825b: decelerate soon after stopping typing, a little faster than acceleration but smoothly enough to continue.
 **Symptom:** Ethan wanted the shared typing/recognised-text rainbow to coast promptly after a pause and retain the chance to continue its chain.
 **Root cause:** Visual speed and stored charge need different quiet-time policies. The first uninstalled555 draft reused a200ms brake threshold for retained charge, which would make slower continuous3cps typing plateau below1x.

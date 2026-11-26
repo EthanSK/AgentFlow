@@ -381,11 +381,12 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
     @Published private(set) var liveSelectionReferences: [LiveSelectionReference] = [] {
         didSet { hudContextPreviewCache = nil }
     }
-    // Ethan's one-lap outline acknowledgement for the latest highlight/screenshot
-    // accepted during live capture. It is published in the same turn as the
-    // reference itself, so the card updates once, and every mirrored panel draws
-    // the same lap. Presentation only: never a capture, focus, Pause, media,
-    // microphone or delivery signal. — Claude Opus 5.5
+    // Ethan's outline acknowledgement for the latest highlight/screenshot accepted
+    // during live capture: its colour fills the border, holds, then hands back the
+    // rainbow. It is published in the same turn as the reference itself, so the
+    // card updates once, and every mirrored panel draws the same frames.
+    // Presentation only: never a capture, focus, Pause, media, microphone or
+    // delivery signal. — Claude Opus 5.5
     @Published private(set) var contextAcceptancePulse: RecorderContextAcceptancePulse?
     private var lastAcknowledgedContext: LiveSelectionReference?
     private var liveSelectionCapture: LiveSelectionCapture?
@@ -1073,8 +1074,8 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         acknowledgeAcceptedContext(reference, precedesSpeech: precedesSpeech)
     }
 
-    /// Launches the outline's one-lap acknowledgement, after the guard above has
-    /// accepted `reference`. This is the only place a lap starts. Label updates, a
+    /// Launches the outline's acknowledgement, after the guard above has accepted
+    /// `reference`. This is the only place one starts. Label updates, a
     /// drag's attached image, retry hydration and history never call it, so they
     /// never animate. It only publishes presentation state, after every existing
     /// step, and changes no capture, focus or timing. — Claude Opus 5.5
@@ -1093,7 +1094,10 @@ final class RecordingSession: ObservableObject, Identifiable, RecorderStateProvi
         // display gate here would prevent the first real gesture from lighting it.
         // Found by GPT-6.2 Astra. Fixed by GPT-6.1 Sol.
         guard !precedesSpeech, isEligibleForRecordingActivityOutline else { return }
-        contextAcceptancePulse = pulse
+        // A newer gesture still replaces the older one at once. It only carries the
+        // older colour's frozen frame, so its entrance paints over that colour
+        // instead of first dropping the border back to the rainbow. — Claude Opus 5.5
+        contextAcceptancePulse = pulse.replacing(contextAcceptancePulse)
     }
 
     /// Text and Telegram images carry a per-gesture capture ID. Screenshots and a

@@ -8,8 +8,9 @@ import SwiftUI
 /// One sharp stroke follows the recorder's silhouette during capture and transcription.
 /// Colour still flows evenly around the border; there is no bloom, pale core,
 /// opacity flicker or interior shading. Reduce Motion holds the colours still.
-/// An accepted highlight or screenshot holds the full stroke colour during one lap
-/// (`RecorderContextSweep`); it never changes its width, alignment or phase.
+/// An accepted highlight or screenshot grows its transcript colour round the stroke,
+/// holds the whole stroke in it for over a second, then hands the rainbow back
+/// (`RecorderContextSweep`). It never changes width, alignment or rainbow phase.
 /// — Claude Opus 5.5; GPT-6.1 Sol
 ///
 /// Callers place it in a `.background` above the card fill and beneath content, and
@@ -24,9 +25,9 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
     /// without an opacity gradient into the black surface. Mini stays a closed ring. — GPT-6.1 Sol
     var omitsTopEdge = false
     /// The session's latest accepted highlight/screenshot. It is a plain value from
-    /// the card, so this leaf still never observes the session. The lap is derived
-    /// from this leaf's existing clock and simply stops being drawn when it ends.
-    /// — Claude Opus 5.5
+    /// the card, so this leaf still never observes the session. The acknowledgement
+    /// is derived from this leaf's existing clock and simply stops being drawn when
+    /// it ends. — Claude Opus 5.5
     var acceptancePulse: RecorderContextAcceptancePulse? = nil
     /// Transcription reverses with the existing input momentum, then accelerates
     /// on the same leaf clock; the real capture tail keeps recording motion. — GPT-6.1 Sol
@@ -104,17 +105,17 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
         )) { timeline in
             let frameDate = frameDateForPreview ?? timeline.date
             let phase = reduceMotion ? 0 : RecorderCaptureOutlineStyle.flowPhase(at: frameDate, isProcessing: isProcessing, processingStartedAt: processingStartedAt, activity: activity)
-            // The lap reads the same wall-clock frame as the rainbow, so mirrored
-            // panels match, and it never shifts the rainbow's phase. — Claude Opus 5.5
+            // The acknowledgement reads the same wall-clock frame as the rainbow, so
+            // mirrored panels match, and it never shifts the rainbow's phase. — Claude Opus 5.5
             let acknowledgement = reduceMotion
                 ? stillAcknowledgement.map { RecorderContextSweep.Acknowledgement(kind: $0.kind, form: .still) }
                 : RecorderContextSweep.acknowledgement(for: acceptancePulse, at: frameDate)
-            // Keep the growing entrance even for the first accepted context.
-            // Ethan wanted the original animation extended by one cycle, not a
-            // full-stroke colour replacement. Found and fixed by GPT-6.1 Sol.
+            // Keep the outline's growing entrance even for the first accepted
+            // context; the context colour travels round inside it rather than
+            // replacing it with a static full stroke. Found and fixed by GPT-6.1 Sol.
             let introduction = reduceMotion ? 1
                 : RecorderCaptureOutlineStyle.introductionFraction(elapsed: frameDate.timeIntervalSince(started))
-            // Follow the live charged colour band; if loading begins mid-lap,
+            // Follow the live charged colour band; if loading begins mid-acknowledgement,
             // its mask keeps that live frame while the rainbow beneath reverses.
             // With no pulse, no second phase calculation is needed.
             // Found and fixed by GPT-6.1 Sol.
@@ -139,8 +140,8 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
 
     /// Reduce Motion's acknowledgement: the whole border takes the context colour
     /// for `RecorderContextSweep.stillDuration`, without movement or fade, then
-    /// returns to the still rainbow. With motion this returns at once and the lap
-    /// runs on the leaf's own clock. — Claude Opus 5.5
+    /// returns to the still rainbow. With motion this returns at once and the
+    /// acknowledgement runs on the leaf's own clock. — Claude Opus 5.5
     private func holdStillAcknowledgement() async {
         guard reduceMotion, let pulse = acceptancePulse,
               let remaining = RecorderContextSweep.stillRemaining(of: pulse, at: Date()) else {
@@ -172,11 +173,19 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
         guard !samples.isEmpty else { return }
 
         // Only while an acknowledgement shows: the transcript colour as this panel
-        // draws it, recoloring the same stops along the same single stroke.
-        let paint = acknowledgement.map {
+        // draws it, recoloring the same stops along the same single stroke. A
+        // replaced colour still ahead of a new entrance is resolved the same way,
+        // so a second context paints over the first without a rainbow gap.
+        // — Claude Opus 5.5
+        let paint = acknowledgement.map { shown in
             RecorderContextSweepPaint(
-                tint: RecorderContextSweep.components(of: $0.kind.color, in: context.environment),
-                form: $0.form)
+                tint: RecorderContextSweep.components(of: shown.kind.color, in: context.environment),
+                form: shown.form,
+                underlay: shown.underlay.map {
+                    RecorderContextSweepPaint.Layer(
+                        tint: RecorderContextSweep.components(of: $0.kind.color, in: context.environment),
+                        lap: $0.lap)
+                })
         }
         let tube = GraphicsContext.Shading.conicGradient(
             Gradient(stops: samples.map { sample in

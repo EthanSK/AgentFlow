@@ -218,8 +218,8 @@ struct MiniRecorderView<S: RecorderStateProvider & ObservableObject>: View {
         // colour but beneath every control, transcript line and drag surface, and the
         // clip below bounds it. It never marks a saved or Next destination. Removal is
         // instant for Pause; Stop retains it through the tail and transcription.
-        // An accepted highlight/screenshot adds one lap of its transcript colour; the
-        // same switch removes that too. — Claude Opus 5.5
+        // An accepted highlight/screenshot fills it with its transcript colour, holds,
+        // then returns the rainbow; the same switch removes that too. — Claude Opus 5.5
         .background {
             if captureOutlineEnabled && stateProvider.showsRecordingActivityOutline {
                 RecorderCaptureOutline(shape: cardShape,

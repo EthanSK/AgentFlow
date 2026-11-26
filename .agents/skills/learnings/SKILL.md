@@ -951,10 +951,14 @@ Keep each field concise but specific enough to prevent rediscovery. Name the sym
 
 ## Recorder outline changes
 
-Ethan's 2026-11-26 context correction: keep the original animated entrance,
-travelling arc and exit; "one extra cycle" extends that animation. Do not replace
-it with a whole-edge static colour or skip its growing entrance. Preserve the
-original lap curve/paint and the extra-cycle regression when changing duration.
+Ethan's latest 2026-11-26 context clarification: the blue/magenta part should go
+around to fill the outline, remain fully that colour for at least a second, then
+animate back to rainbow. Preserve an attractive growing entrance and exit, with
+motion during the uninterrupted full-colour hold. Two separate laps with a rainbow
+break between them are rejected. Check the actual rendered sequence and whole-edge
+colour coverage through entrance, hold and exit; a loop-count assertion alone does
+not prove this intent. This supersedes the earlier interpretation of "one extra
+cycle" as replaying the original arc twice.
 
 Ethan: “same system, same reusable code” for speech and typing acceleration and
 deceleration (2026-11-26). Both accepted editor changes and newly recognised speech

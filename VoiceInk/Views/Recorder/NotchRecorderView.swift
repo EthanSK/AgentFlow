@@ -168,7 +168,8 @@ struct NotchRecorderView<S: RecorderStateProvider & ObservableObject>: View {
         // or Next destination marker. The pill hangs from the display's top edge, so
         // the border keeps an open top, without a line along the menu bar or a
         // fade into the black interior. — GPT-6.1 Sol
-        // The accepted-context lap runs along the same open U. — Claude Opus 5.5
+        // The accepted-context fill, hold and return run along the same open U.
+        // — Claude Opus 5.5
         .background {
             if captureOutlineEnabled && stateProvider.showsRecordingActivityOutline {
                 RecorderCaptureOutline(shape: pillShape, omitsTopEdge: true,

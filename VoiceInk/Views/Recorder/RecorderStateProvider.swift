@@ -37,7 +37,8 @@ protocol RecorderStateProvider: AnyObject {
     var pasteDestinationIndicatorTarget: FocusLockService.Target? { get } // While recording this previews the Next Track destination; after stop it follows the session's actual pending paste target until delivery finishes.
     var iconActionPulse: RecorderIconActionPulse? { get } // Primary normal stop flashes the left/current icon; either accepted Next-button route flashes the right/locked icon.
     // The latest accepted highlight/screenshot, which the Recording Outline answers
-    // with one lap of its transcript colour. A requirement, not only an extension
+    // by filling with its transcript colour, holding it, then returning to the
+    // rainbow. A requirement, not only an extension
     // value, so the generic cards reach RecordingSession's published pulse.
     // Presentation only; never a route or capture signal. — Claude Opus 5.5
     var contextAcceptancePulse: RecorderContextAcceptancePulse? { get }
