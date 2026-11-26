@@ -186,6 +186,7 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
     private var reportedRecorderPresentationIssue: RecorderPanelPresentationIssueLevel = .none
     private var isRestoringRecorderPanelStyle = false
     private var displayEnvironmentObservers: [NSObjectProtocol] = []
+    private var panelDismissalID: UUID?
 
     private enum LaunchResetState {
         case pending
@@ -285,6 +286,7 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
         reason: String,
         rearmFailureNotification: Bool = false
     ) -> Bool {
+        panelDismissalID = nil
         if rearmFailureNotification {
             // Every explicit Primary start deserves visible feedback if it cannot
             // begin; deduplication is only for repeated system repair events.
@@ -474,17 +476,27 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
         )
     }
 
-    private func hideRecorderPanel() {
+    private func hideRecorderPanel(animated: Bool = false, completion: @escaping @MainActor () -> Void = {}) {
         switch recorderPanelStyle {
         case .notch:
-            notchWindowManager?.hide()
+            if let notchWindowManager { notchWindowManager.hide(animated: animated, completion: completion) }
+            else { completion() }
         case .mini:
-            miniWindowManager?.hide()
+            if let miniWindowManager { miniWindowManager.hide(animated: animated, completion: completion) }
+            else { completion() }
         }
     }
 
     @discardableResult
     private func rebuildVisiblePanel(previousStyle: RecorderPanelStyle) -> Bool {
+        // A finished, fading bar has no content to rebuild in the new style.
+        // Finish its decoration instead of reviving an empty recorder. — GPT-6.1 Sol
+        if panelDismissalID != nil {
+            panelDismissalID = nil
+            isRecorderPanelVisible = false
+            destroyWindowManager(for: previousStyle)
+            return true
+        }
         // A hidden style can discard its stale manager immediately. For a visible HUD,
         // materialize and verify the replacement first; only then remove the proven old
         // panels. This makes a failed style preference transactional instead of leaving
@@ -657,7 +669,7 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
                         sessionCount: engine.sessions.count,
                         hasPendingStart: engine.hasPendingRecordingStart,
                         hasCaptureOwner: engine.hasActiveCaptureOwner,
-                        hasOutlineFeedback: engine.noPasteOutlineFeedback != nil
+                        hasOutlineFeedback: engine.noPasteOutlineFeedback != nil || panelDismissalID != nil
                     ) {
                     case .preservePendingStart:
                         // The first press is already progressing through permission,
@@ -666,8 +678,13 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
                         // bar and thereby destroy the reserved recording.
                         vippLog.info("toggleRecorderPanel: idle press ignored while recording start owns reservation/capture; preserving bar")
                     case .startRecording:
-                    // Background transcription(s) in flight → start ANOTHER recording.
-                    await engine.toggleRecord(modeId: modeId)
+                        // A completion fade still owns Next but must not hide a new
+                        // recording. Cancel it before capture, without awaiting it.
+                        // Found and fixed by GPT-6.1 Sol.
+                        if panelDismissalID != nil,
+                           !showRecorderPanel(reason: "recording restart during completion fade") { return }
+                        // Background transcription(s) in flight → start ANOTHER recording.
+                        await engine.toggleRecord(modeId: modeId)
                     case .dismiss:
                         await dismissRecorderPanel()
                     }
@@ -765,9 +782,18 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
         // no assistant, so this is a clean post-delivery dismiss.
         vippLog.info("dismissRecorderPanel: HIDE bar (state=\(String(describing: engine.recordingState), privacy: .public))")
 
-        isRecorderPanelVisible = false
-        hideRecorderPanel()
+        // Ethan's completion fade is presentation only: no sleep before paste,
+        // no retained recording, and no old completion may hide a newer Start.
+        // Keep Next owned until the last visible pixels disappear. — GPT-6.1 Sol
+        guard panelDismissalID == nil else { return }
+        let dismissalID = UUID()
+        panelDismissalID = dismissalID
         engine.assistantSession.reset()
+        hideRecorderPanel(animated: true) { [weak self] in
+            guard let self, self.panelDismissalID == dismissalID else { return }
+            self.panelDismissalID = nil
+            self.isRecorderPanelVisible = false
+        }
     }
 
     // Force-hide the panel regardless of in-flight sessions. Used by the explicit
@@ -775,6 +801,7 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
     private func forceDismissRecorderPanel() async {
         guard let engine = engine else { return }
         vippLog.info("forceDismissRecorderPanel: HIDE bar unconditionally (state=\(String(describing: engine.recordingState), privacy: .public))")
+        panelDismissalID = nil
         isRecorderPanelVisible = false
         hideRecorderPanel()
         engine.assistantSession.reset()
@@ -884,6 +911,7 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
     }
 
     private func handleRecorderDisplayEnvironmentChange(_ notification: Notification) {
+        guard panelDismissalID == nil else { return }
         guard RecorderPanelPresentationPolicy.shouldRemirror(
             isLogicallyVisible: isRecorderPanelVisible
         ) else { return }

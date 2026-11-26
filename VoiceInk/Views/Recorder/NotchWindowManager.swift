@@ -12,6 +12,7 @@ class NotchWindowManager {
     }
 
     private var windows: [WindowEntry] = []
+    private let dismissal = RecorderPanelDismissal()
     private let hudScale = RecorderHUDScaleStore.shared
     private var scaleSubscription: AnyCancellable?
 
@@ -59,6 +60,7 @@ class NotchWindowManager {
 
     @discardableResult
     func show() -> RecorderPanelPresentationReport {
+        dismissal.cancel(panels: windows.map(\.panel))
         let screens = NSScreen.screens
         let currentDisplayIDs = screens.enumerated().map { index, screen in
             RecorderDisplayReusePolicy.screenIdentity(for: screen, index: index)
@@ -89,8 +91,8 @@ class NotchWindowManager {
         }
     }
 
-    func hide() {
-        windows.forEach { $0.panel.orderOut(nil) }
+    func hide(animated: Bool = false, completion: @escaping @MainActor () -> Void = {}) {
+        dismissal.hide(panels: windows.map(\.panel), animated: animated, completion: completion)
     }
 
     func displayIfNeeded() {
@@ -101,6 +103,7 @@ class NotchWindowManager {
     }
 
     private func refreshScale() {
+        guard !dismissal.isFading else { return }
         guard !windows.isEmpty else { return }
         let screens = NSScreen.screens
         let identities = screens.enumerated().map { index, screen in
@@ -170,6 +173,7 @@ class NotchWindowManager {
     }
 
     private func deinitializeWindows() {
+        dismissal.cancel(panels: windows.map(\.panel))
         windows.forEach {
             $0.panel.orderOut(nil)
             $0.windowController.close()

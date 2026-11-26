@@ -8,6 +8,110 @@ import SwiftUI
 @testable import VoiceInkPlusPlus
 
 @Suite(.serialized)
+struct RecorderPanelDismissalTests {
+    @Test @MainActor func completionFadeDoesNotWaitOrHideANewerPresentation() {
+        for panel in [MiniRecorderPanel(contentRect: NSRect(x: 0, y: 0, width: 300, height: 60)),
+                      NotchRecorderPanel(contentRect: NSRect(x: 0, y: 0, width: 300, height: 60))] as [NSPanel] {
+            var completions: [@MainActor () -> Void] = []
+            var finished = 0
+            let fade = RecorderPanelDismissal { panels, duration, completion in
+                #expect(panels.count == 1)
+                #expect(duration == 0.22)
+                completions.append(completion)
+            }
+            panel.orderFrontRegardless()
+            defer { panel.orderOut(nil); panel.close() }
+            fade.hide(panels: [panel], animated: true, reducedMotion: false) { finished += 1 }
+            #expect(fade.isFading && panel.isVisible && panel.ignoresMouseEvents)
+            #expect(finished == 0)
+            fade.hide(panels: [panel], animated: true, reducedMotion: false)
+            #expect(completions.count == 1)
+            fade.cancel(panels: [panel])
+            completions[0]()
+            #expect(panel.isVisible && panel.alphaValue == 1 && !panel.ignoresMouseEvents)
+            #expect(!fade.isFading && finished == 0)
+            fade.hide(panels: [panel], animated: true, reducedMotion: false) { finished += 1 }
+            completions[1]()
+            #expect(!panel.isVisible && !fade.isFading && finished == 1)
+            #expect(panel.alphaValue == 1 && !panel.ignoresMouseEvents)
+        }
+    }
+
+    @Test @MainActor func resetAndReducedMotionHideImmediatelyAndPreserveMouseState() {
+        var animateCalls = 0
+        var finished = 0
+        let fade = RecorderPanelDismissal { _, _, _ in animateCalls += 1 }
+        let panels = (0..<2).map { _ in NSPanel(contentRect: NSRect(x: 0, y: 0, width: 100, height: 50),
+            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false) }
+        defer { panels.forEach { $0.orderOut(nil); $0.close() } }
+        panels[1].ignoresMouseEvents = true
+        panels.forEach { $0.orderFrontRegardless() }
+        fade.hide(panels: panels, animated: true, reducedMotion: true) { finished += 1 }
+        #expect(animateCalls == 0 && finished == 1 && panels.allSatisfy { !$0.isVisible })
+        panels.forEach { $0.orderFrontRegardless() }
+        fade.hide(panels: panels, animated: true, reducedMotion: false)
+        fade.hide(panels: panels, animated: false) { finished += 1 }
+        #expect(animateCalls == 1 && finished == 2 && !fade.isFading)
+        #expect(panels.allSatisfy { !$0.isVisible && $0.alphaValue == 1 })
+        #expect(!panels[0].ignoresMouseEvents && panels[1].ignoresMouseEvents)
+    }
+
+    @Test @MainActor func nativeFadeInterpolatesBothLayoutsAndReleasesEveryMirror() async throws {
+        let panels: [NSPanel] = [
+            MiniRecorderPanel(contentRect: NSRect(x: 60, y: 60, width: 300, height: 60)),
+            NotchRecorderPanel(contentRect: NSRect(x: 60, y: 140, width: 300, height: 60))
+        ]
+        defer { panels.forEach { $0.orderOut(nil); $0.close() } }
+        for panel in panels {
+            panel.contentView = NSHostingView(rootView: Text("Transcribing…").foregroundStyle(.white)
+                .frame(width: 300, height: 60).background(.black))
+            panel.orderFrontRegardless()
+            panel.displayIfNeeded()
+        }
+        let fade = RecorderPanelDismissal()
+        var finished = false
+        fade.hide(panels: panels, animated: true, reducedMotion: false) { finished = true }
+        #expect(!finished && fade.isFading)
+        try await Task.sleep(for: .milliseconds(80))
+        #expect(panels.allSatisfy { $0.isVisible && $0.alphaValue > 0 && $0.alphaValue < 1 })
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while !finished && ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(finished && !fade.isFading && panels.allSatisfy { !$0.isVisible })
+        #expect(panels.allSatisfy { $0.alphaValue == 1 && !$0.ignoresMouseEvents })
+        panels.forEach { $0.orderFrontRegardless() }
+        fade.hide(panels: panels, animated: true, reducedMotion: false)
+        try await Task.sleep(for: .milliseconds(70))
+        fade.cancel(panels: panels)
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(panels.allSatisfy { $0.isVisible && $0.alphaValue == 1 && !$0.ignoresMouseEvents })
+    }
+
+    @Test func fadingKeepsNextOwnedAndPrimaryCanStartWithoutWaiting() throws {
+        #expect(RecorderPanelLifecyclePolicy.idleToggleAction(sessionCount: 0,
+            hasPendingStart: false, hasCaptureOwner: false, hasOutlineFeedback: true) == .startRecording)
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent(
+            "VoiceInk/Transcription/Engine/RecorderUIManager.swift"), encoding: .utf8)
+        #expect(source.contains("hasOutlineFeedback: engine.noPasteOutlineFeedback != nil || panelDismissalID != nil"))
+        #expect(source.contains("if panelDismissalID != nil,\n                           !showRecorderPanel(reason: \"recording restart during completion fade\") { return }"))
+        let start = try #require(source.range(of: "    func dismissRecorderPanel() async {"))
+        let end = try #require(source.range(of: "    // Force-hide the panel", range: start.upperBound..<source.endIndex))
+        let body = source[start.lowerBound..<end.lowerBound]
+        let fade = try #require(body.range(of: "hideRecorderPanel(animated: true)"))
+        let release = try #require(body.range(of: "self.isRecorderPanelVisible = false"))
+        #expect(fade.lowerBound < release.lowerBound)
+        #expect(body.contains("self.panelDismissalID == dismissalID"))
+        #expect(!body.contains("Task.sleep"))
+        for file in ["MiniWindowManager", "NotchWindowManager"] {
+            let manager = try String(contentsOf: root.appendingPathComponent(
+                "VoiceInk/Views/Recorder/\(file).swift"), encoding: .utf8)
+            #expect(manager.contains("dismissal.cancel(panels: windows.map(\\.panel))"))
+            #expect(manager.contains("guard !dismissal.isFading else { return }"))
+        }
+    }
+}
+
+@Suite(.serialized)
 struct RecorderResponsivenessTests {
     @Test @MainActor func pausedRecorderBackgroundTracksStateAcrossBothStyles() async throws {
         let session = RecordingSession(phase: .recording)

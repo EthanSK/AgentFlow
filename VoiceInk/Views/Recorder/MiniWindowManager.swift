@@ -165,6 +165,7 @@ class MiniWindowManager {
     }
 
     private var windows: [WindowEntry] = []
+    private let dismissal = RecorderPanelDismissal()
     private let hudScale = RecorderHUDScaleStore.shared
     private var scaleSubscription: AnyCancellable?
 
@@ -211,6 +212,7 @@ class MiniWindowManager {
 
     @discardableResult
     func show() -> RecorderPanelPresentationReport {
+        dismissal.cancel(panels: windows.map(\.panel))
         let screens = NSScreen.screens
         let currentDisplayIDs = screens.enumerated().map { index, screen in
             RecorderDisplayReusePolicy.screenIdentity(for: screen, index: index)
@@ -246,8 +248,8 @@ class MiniWindowManager {
         }
     }
 
-    func hide() {
-        windows.forEach { $0.panel.orderOut(nil) }
+    func hide(animated: Bool = false, completion: @escaping @MainActor () -> Void = {}) {
+        dismissal.hide(panels: windows.map(\.panel), animated: animated, completion: completion)
     }
 
     func displayIfNeeded() {
@@ -259,6 +261,7 @@ class MiniWindowManager {
     }
 
     private func refreshScale() {
+        guard !dismissal.isFading else { return }
         guard !windows.isEmpty else { return }
         let screens = NSScreen.screens
         let identities = screens.enumerated().map { index, screen in
@@ -335,10 +338,77 @@ class MiniWindowManager {
     }
 
     private func deinitializeWindows() {
+        dismissal.cancel(panels: windows.map(\.panel))
         windows.forEach {
             $0.panel.orderOut(nil)
             $0.windowController.close()
         }
         windows.removeAll()
+    }
+}
+
+/// Fades both mirrored recorder layouts with AppKit, without keeping a session alive
+/// or waiting in the delivery path. New presentation invalidates the old completion.
+/// The existing SwiftUI removal transition stays onscreen until this finishes. — GPT-6.1 Sol
+@MainActor
+final class RecorderPanelDismissal {
+    typealias Animation = ([NSPanel], TimeInterval, @escaping @MainActor () -> Void) -> Void
+    private let animate: Animation
+    private var identity = UUID()
+    private var priorMouseHandling: [ObjectIdentifier: Bool] = [:]
+    private(set) var isFading = false
+
+    init(animate: @escaping Animation = RecorderPanelDismissal.animatePanels) {
+        self.animate = animate
+    }
+
+    func hide(panels: [NSPanel], animated: Bool,
+              reducedMotion: Bool = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+              completion: @escaping @MainActor () -> Void = {}) {
+        guard animated, !reducedMotion, panels.contains(where: \.isVisible) else {
+            cancel(panels: panels)
+            panels.forEach { $0.orderOut(nil) }
+            completion()
+            return
+        }
+        guard !isFading else { return }
+        isFading = true
+        let id = UUID()
+        identity = id
+        for panel in panels {
+            priorMouseHandling[ObjectIdentifier(panel)] = panel.ignoresMouseEvents
+            panel.ignoresMouseEvents = true
+        }
+        animate(panels, 0.22) { [weak self] in
+            guard let self, self.identity == id else { return }
+            panels.forEach { $0.orderOut(nil) }
+            self.cancel(panels: panels)
+            completion()
+        }
+    }
+
+    func cancel(panels: [NSPanel]) {
+        identity = UUID()
+        isFading = false
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            for panel in panels {
+                panel.animator().alphaValue = 1
+                if let original = priorMouseHandling.removeValue(forKey: ObjectIdentifier(panel)) {
+                    panel.ignoresMouseEvents = original
+                }
+            }
+        }
+    }
+
+    private static func animatePanels(_ panels: [NSPanel], duration: TimeInterval,
+                                      completion: @escaping @MainActor () -> Void) {
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = duration
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panels.forEach { $0.animator().alphaValue = 0 }
+        }, completionHandler: {
+            Task { @MainActor in completion() }
+        })
     }
 }
