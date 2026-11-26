@@ -846,7 +846,8 @@ struct RecorderContextSweepTests {
             pulse: .init(kind: .noPaste, at: start), reason: .cancelled,
             activity: nil, isProcessing: false, processingStartedAt: nil)
         #expect(feedback.remaining(at: start.addingTimeInterval(-0.01), reducedMotion: false) == nil)
-        #expect(feedback.remaining(at: start, reducedMotion: false) == RecorderContextSweep.duration)
+        #expect(feedback.remaining(at: start, reducedMotion: false)
+            == start.addingTimeInterval(RecorderContextSweep.duration).timeIntervalSince(start))
         #expect(abs(try #require(feedback.remaining(at: start.addingTimeInterval(1.5), reducedMotion: false)) - 0.5) < 0.0001)
         #expect(feedback.remaining(at: start.addingTimeInterval(2), reducedMotion: false) == nil)
         #expect(abs(try #require(feedback.remaining(at: start.addingTimeInterval(0.2), reducedMotion: true)) - 0.4) < 0.0001)

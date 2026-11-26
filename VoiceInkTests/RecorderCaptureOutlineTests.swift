@@ -339,7 +339,14 @@ struct RecorderCaptureOutlineTests {
                     let lit = switchOn && (name == "recording" || name == "typing" || name == "resumed" || name == "wont-paste")
                     if lit {
                         #expect(edge.saturatedFraction > 0.6, "\(label): \(edge.saturatedFraction)")
-                        #expect(edge.hueBuckets.count >= 2, "\(label): \(edge.hueBuckets)")
+                        if name == "wont-paste" {
+                            // Explicit no-paste now paints red, rather than promising
+                            // ordinary rainbow activity. Full fill/hold/exit is checked
+                            // separately at controlled native frame times. — GPT-6.2 Sol
+                            #expect(edge.hueBuckets.contains(0), "\(label): \(edge.hueBuckets)")
+                        } else {
+                            #expect(edge.hueBuckets.count >= 2, "\(label): \(edge.hueBuckets)")
+                        }
                         if style == "notch" {
                             // The sharp U leaves the bezel edge unpainted.
                             #expect(topOfNotch.opaqueFraction > 0.9, "\(label)")
@@ -391,8 +398,9 @@ struct RecorderCaptureOutlineTests {
         #expect(abs(processing + 2 * recording) < 0.000_000_001)
         #expect(RecorderCaptureOutlineStyle.frameInterval == 1.0 / 30.0)
         for file in ["MiniRecorderView.swift", "NotchRecorderView.swift"] {
-            #expect(try source("VoiceInk/Views/Recorder/" + file)
-                .contains("isProcessing: stateProvider.recordingState.isProcessing"))
+            let card = try source("VoiceInk/Views/Recorder/" + file)
+            #expect(card.contains("isProcessing: stateProvider.noPasteOutlineMotion?.isProcessing"))
+            #expect(card.contains("?? stateProvider.recordingState.isProcessing"))
         }
     }
 
@@ -442,8 +450,9 @@ struct RecorderCaptureOutlineTests {
         session.liveRecordingState = .idle
         #expect(provider.outlineProcessingStartedAt == nil)
         for file in ["MiniRecorderView.swift", "NotchRecorderView.swift"] {
-            #expect(try source("VoiceInk/Views/Recorder/" + file)
-                .contains("processingStartedAt: stateProvider.outlineProcessingStartedAt"))
+            let card = try source("VoiceInk/Views/Recorder/" + file)
+            #expect(card.contains("processingStartedAt: stateProvider.noPasteOutlineMotion?.processingStartedAt"))
+            #expect(card.contains("?? stateProvider.outlineProcessingStartedAt"))
         }
     }
 
