@@ -1,6 +1,15 @@
 # Learnings
 
 ---
+**Date:** 2026-11-26T15:30:00Z
+**Trigger:** Ethan says the rainbow still returns to base speed too quickly after typing, despite the earlier near-matched rates.
+**Symptom:** Build561's exponential coast removed about81% of extra speed during the first second after the last input.
+**Root cause:** Matching the acceleration and braking coefficients does not make an accumulating charge and an exponential coast feel equally long. The prior source used2.1/s braking; the user confirms its feel is still too abrupt.
+**Fix:** Build562 keeps2/s build-up,200ms visual debounce,800ms continuation and the shared typing/speech controller, but uses0.8/s braking. About53% of extra speed remains one second after the last input instead of19%; stored charge retains the existing half-braking-rate relation for smooth resumption. No capture delay, frame clock or publisher changes.
+**Guard:** Focused native execution, signed installation and hosted public qualification are pending. Preserve continuous speed/phase at pause and resume, finite travel, uncapped sustained charge, identical typing/speech producers, loading hand-off and the accepted0.6s context hold/entrance/exit.
+---
+
+---
 **Date:** 2026-11-26T15:01:00Z
 **Trigger:** Exact-source hosted 561 run 45840939899 executed 1,104 functions in 56 suites and failed only the real-clock Reduce Motion hold snapshot; cleanup succeeded, publication/download did not run.
 **Symptom:** The late hold sample matched plain rainbow (difference fraction 0.0) while earlier hold/stillness checks and controlled native frames passed.

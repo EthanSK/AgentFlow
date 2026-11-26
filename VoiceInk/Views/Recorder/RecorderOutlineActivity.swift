@@ -86,16 +86,17 @@ struct RecorderOutlineActivity: Equatable {
     // This changes visual momentum only; input/capture timing is untouched. — GPT-6.1 Sol
     private static let linearGain = 0.034
     private static let quadraticGain = 0.000765
-    // Keep the existing half-second build-up. Ethan wants nearly the same easing
-    // when slowing down: braking is only 5% faster, not the previous 50% faster.
-    // Tie the rates together so later build-up tuning cannot restore harsh braking.
+    // Keep the existing half-second build-up. Ethan still found the matched-rate
+    // coast too fast: exponential braking discarded 81% of the extra speed in
+    // the first second after typing stopped. Let that momentum fade over a longer
+    // tail (about 53% remains at one second), without delaying the start of braking.
     // Keep the prior 800 ms chaining allowance independent of that visual trigger:
     // slower continuous typing must not lose charge merely because braking starts.
     // Found and fixed by GPT-6.1 Sol.
     // Stored charge then fades more slowly, leaving a chance to resume the chain.
     // No timer, input wait or extra publisher is involved. — GPT-6.1 Sol
     private static let responseRate = 2.0
-    private static let brakingRate = responseRate * 1.05
+    private static let brakingRate = responseRate * 0.4
     private static let brakingDelay = 0.2
     private static let chargeRetentionInterval = 0.8
     // Charge drives a quadratic speed target. Retain the existing half-rate relation

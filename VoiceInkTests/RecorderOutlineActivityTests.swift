@@ -48,7 +48,7 @@ struct RecorderOutlineActivityTests {
         let initial = activity.speed(at: brake) - RecorderOutlineActivity.idleSpeed
         let quiet = lastKey.addingTimeInterval(0.5)
         let remaining = activity.speed(at: quiet) - RecorderOutlineActivity.idleSpeed
-        #expect(remaining > initial * 0.50 && remaining < initial * 0.57)
+        #expect(remaining > initial * 0.77 && remaining < initial * 0.80)
         #expect(activity.speed(at: quiet) > RecorderOutlineActivity.idleSpeed)
         let speed = activity.speed(at: quiet)
         let phase = activity.phase(at: quiet)
@@ -74,7 +74,7 @@ struct RecorderOutlineActivityTests {
         #expect(activity.speed(at: start.addingTimeInterval(999.0 / 3)) > 250)
     }
 
-    @Test func brakingBeginsQuicklyAndNearlyMatchesBuildUpWithoutPhaseJumps() {
+    @Test func brakingBeginsQuicklyButKeepsAGentleLongCoastWithoutPhaseJumps() {
         var activity = RecorderOutlineActivity(at: start)
         activity.addText(units: 32, at: start)
         let brake = start.addingTimeInterval(0.2)
@@ -88,14 +88,18 @@ struct RecorderOutlineActivityTests {
         let riseRetention = (momentum - firstRise) / firstRise
         let fallRetention = (activity.speed(at: brake.addingTimeInterval(0.1))
             - RecorderOutlineActivity.idleSpeed) / momentum
-        // Compare the actual visible easing rates; don't merely repeat the two
-        // implementation constants. Ethan wants them nearly matched. — GPT-6.1 Sol
+        // Ethan still felt the matched rates returned to base too quickly. Check
+        // actual retained motion, not just matching implementation constants.
+        // The build-up stays unchanged while the visible coast lasts longer.
+        // Found and fixed by GPT-6.1 Sol. — GPT-6.1 Sol
         let relativeBrakingRate = log(fallRetention) / log(riseRetention)
-        #expect(relativeBrakingRate > 1 && relativeBrakingRate < 1.1)
+        #expect(relativeBrakingRate > 0.38 && relativeBrakingRate < 0.42)
         let halfSecond = activity.speed(at: brake.addingTimeInterval(0.5)) - RecorderOutlineActivity.idleSpeed
-        #expect(halfSecond / momentum > 0.33 && halfSecond / momentum < 0.37)
+        #expect(halfSecond / momentum > 0.65 && halfSecond / momentum < 0.69)
         let oneSecond = activity.speed(at: brake.addingTimeInterval(1)) - RecorderOutlineActivity.idleSpeed
-        #expect(oneSecond > momentum * 0.10 && oneSecond < momentum * 0.15)
+        #expect(oneSecond > momentum * 0.43 && oneSecond < momentum * 0.47)
+        let twoSeconds = activity.speed(at: brake.addingTimeInterval(2)) - RecorderOutlineActivity.idleSpeed
+        #expect(twoSeconds > momentum * 0.19 && twoSeconds < momentum * 0.22)
         let phaseBefore = activity.phase(at: brake.addingTimeInterval(-0.000_001))
         let phaseAfter = activity.phase(at: brake.addingTimeInterval(0.000_001))
         #expect(abs(RecorderCaptureOutlineTrace.wrapped(phaseAfter - phaseBefore)) < 0.0001)
