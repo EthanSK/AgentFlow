@@ -86,18 +86,22 @@ struct RecorderOutlineActivity: Equatable {
     // This changes visual momentum only; input/capture timing is untouched. — GPT-6.1 Sol
     private static let linearGain = 0.034
     private static let quadraticGain = 0.000765
-    // Keep the existing half-second build-up. After 200 ms without text, braking
-    // responds 50% faster, easing most of the added speed away over about a second.
+    // Keep the existing half-second build-up. Ethan wants nearly the same easing
+    // when slowing down: braking is only 5% faster, not the previous 50% faster.
+    // Tie the rates together so later build-up tuning cannot restore harsh braking.
     // Keep the prior 800 ms chaining allowance independent of that visual trigger:
     // slower continuous typing must not lose charge merely because braking starts.
     // Found and fixed by GPT-6.1 Sol.
     // Stored charge then fades more slowly, leaving a chance to resume the chain.
     // No timer, input wait or extra publisher is involved. — GPT-6.1 Sol
     private static let responseRate = 2.0
-    private static let brakingRate = 3.0
+    private static let brakingRate = responseRate * 1.05
     private static let brakingDelay = 0.2
     private static let chargeRetentionInterval = 0.8
-    private static let decayRate = 1.5
+    // Charge drives a quadratic speed target. Retain the existing half-rate relation
+    // explicitly, so a longer coast cannot leave resumed input chasing a target
+    // below its visible momentum. Found and fixed by GPT-6.1 Sol.
+    private static let decayRate = brakingRate / 2
     // One paste/model catch-up is a burst, not thousands of physical keystrokes.
     // Continuous input can still accumulate unlimited charge and speed. — GPT-6.1 Sol
     private static let maximumBurst = 32
