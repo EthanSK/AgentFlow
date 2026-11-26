@@ -2,6 +2,15 @@
 
 ---
 **Date:** 2026-11-26
+**Trigger:** Ethan additionally wants the rainbow speed to build more slowly while typing or speaking, retaining his just-restored earlier shared slowdown.
+**Implementation boundary:** Build565 reduces both visual gains by25% in the existing shared value (0.0255 linear,0.00057375 quadratic), rather than lowering the response rate and accidentally retuning braking through its derived relationship. Preserve2/s response,2.1/s braking,1.05/s charge decay,200ms visual trigger,800ms chaining, burst bound and uncapped sustained speed. Input/capture clocks, one decorative leaf and accepted context/red sweeps are unchanged.
+**Guard intent:** The fixed1000-key10cps native trace must be between585x and610x (old gain about791x, new about593x), rejecting the old too-fast gain while retaining the long-chain bound. The slower3cps chain, actual speech/typing parity and continuous phase/resume assertions remain. Native execution/install/public qualification are separate pending gates.
+**Prior batch:** Ordinary signed564 fromd0321436 installed as PID17890, exact executable23f2a553d5a1abe8410c230cc768b2d97b8f8fb9c32e43aeac6684973f2365bf; all68 focused native functions passed and all protected settings remained. Its public45876609540 run was deliberately cancelled before credential preparation/publication to include the new565 request; not a test or product failure.
+---
+
+
+---
+**Date:** 2026-11-26
 **Trigger:** After trying build562’s longer coast, Ethan first considered faster speech-only braking, then explicitly chose consistent pre-562 deceleration for both speech and typing.
 **Source contract:** Build564 restores the previous2.1/s braking and its derived1.05/s charge decay in the single RecorderOutlineActivity value. It retains2/s build-up,200ms visual trigger,800ms chain allowance, gains, continuous phase/speed, uncapped accumulation and the existing renderer. Do not revive the superseded slower562 curve or fork speech/typing from the interim false start.
 **Boundary:** Only the visual coefficient and build number change in production. The red/blue/magenta fill/hold/exit,600ms live microphone tail, startup, input, media, Voice and three delivery contracts are unchanged. Native execution, signed installation and hosted exact-source qualification remain separate gates.

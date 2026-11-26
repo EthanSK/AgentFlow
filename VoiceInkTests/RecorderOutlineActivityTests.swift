@@ -15,9 +15,11 @@ struct RecorderOutlineActivityTests {
             fast.addText(units: 1, at: start.addingTimeInterval(Double(index) / 10))
             slow.addText(units: 1, at: start.addingTimeInterval(Double(index) * 2))
         }
-        // The gentler gain and speed easing put this near791x, versus the
-        // original940x target. Keep a strong long-chain assertion. — GPT-6.1 Sol
-        #expect(fast.speed(at: start.addingTimeInterval(99.9)) > 780)
+        // The fixed input trace reached about791x before565. The requested
+        // gentler build-up puts it near593x; the upper bound rejects the old gain
+        // while the lower bound still protects an uncapped long chain. — GPT-6.1 Sol
+        let fastSpeed = fast.speed(at: start.addingTimeInterval(99.9))
+        #expect(fastSpeed > 585 && fastSpeed < 610)
         #expect(slow.speed(at: start.addingTimeInterval(1_998)) < 1)
     }
 

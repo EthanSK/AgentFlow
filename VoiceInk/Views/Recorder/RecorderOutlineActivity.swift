@@ -82,10 +82,12 @@ struct RecorderOutlineActivity: Equatable {
     }
 
     static let idleSpeed = 0.35
-    // Fifteen percent gentler than the first charge tuning, not a speed cap.
+    // Ethan wants speed to build more gently for both typing and speech. Reduce
+    // both gains by 25% from564, preserving the same uncapped shared charge curve.
+    // Keep the preferred braking below independent of this build-up adjustment.
     // This changes visual momentum only; input/capture timing is untouched. — GPT-6.1 Sol
-    private static let linearGain = 0.034
-    private static let quadraticGain = 0.000765
+    private static let linearGain = 0.0255
+    private static let quadraticGain = 0.00057375
     // Ethan preferred the faster pre-562 coast after trying the longer tail.
     // Restore that same easing for both typing and recognised speech: braking
     // stays only 5% faster than build-up, with one shared motion implementation.
