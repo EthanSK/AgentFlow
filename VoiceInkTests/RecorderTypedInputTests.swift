@@ -1025,6 +1025,71 @@ struct RecorderTypedInputTests {
         }
     }
 
+    @Test @MainActor func stopControlAcceptsEdgeClicksAtEveryHUDScaleWithoutTakingCancelClicks() throws {
+        // Dispatch real mouse events around Stop's small painted face, including
+        // after the host resizes. No microphone or recorder lifecycle is started.
+        // A larger click target must retain the gap and Cancel's own action. — GPT-6.1 Sol
+        for scale: CGFloat in [0.5, 0.85, 1] {
+            for state: RecordingState in [.recording, .paused] {
+                var stopped = 0
+                var cancelled = 0
+                let originalKeyWindow = NSApp.keyWindow
+                let panel = MiniRecorderPanel(contentRect: NSRect(x: 100, y: 100,
+                    width: 90 * scale, height: 40 * scale))
+                defer { panel.close() }
+                let host = ScaledRecorderHostingView(rootView: AnyView(
+                    HStack(spacing: 6) {
+                        RecorderRecordButton(recordingState: state, action: { stopped += 1 })
+                            .frame(width: 31, height: 40)
+                        RecorderCancelButton(action: { cancelled += 1 })
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+                ), scale: scale)
+                panel.contentView = host
+                panel.orderFrontRegardless()
+                host.layoutSubtreeIfNeeded()
+                RunLoop.current.run(until: Date().addingTimeInterval(0.15))
+                host.layoutSubtreeIfNeeded()
+                func click(_ point: NSPoint) throws {
+                    let location = NSPoint(x: point.x * scale, y: point.y * scale)
+                    let down = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: location,
+                        modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                        windowNumber: panel.windowNumber, context: nil, eventNumber: 1, clickCount: 1, pressure: 1))
+                    let up = try #require(NSEvent.mouseEvent(with: .leftMouseUp, location: location,
+                        modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime + 0.05,
+                        windowNumber: panel.windowNumber, context: nil, eventNumber: 2, clickCount: 1, pressure: 0))
+                    NSApp.postEvent(up, atStart: false)
+                    NSApp.sendEvent(down)
+                    RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+                    NSApp.sendEvent(up)
+                    RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+                }
+                let offsets: [NSPoint] = [
+                    .zero, NSPoint(x: -14, y: 0), NSPoint(x: 14, y: 0),
+                    NSPoint(x: 0, y: -14), NSPoint(x: 0, y: 14),
+                    NSPoint(x: -14, y: -14), NSPoint(x: -14, y: 14),
+                    NSPoint(x: 14, y: -14), NSPoint(x: 14, y: 14)
+                ]
+                for (index, offset) in offsets.enumerated() {
+                    if index == 4 {
+                        panel.setContentSize(NSSize(width: 110 * scale, height: 100 * scale))
+                        host.layoutSubtreeIfNeeded()
+                        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+                    }
+                    try click(NSPoint(x: 15.5 + offset.x, y: 20 + offset.y))
+                    #expect(stopped == index + 1,
+                        "Stop missed offset \(offset), scale \(scale), state \(state)")
+                    #expect(cancelled == 0)
+                }
+                try click(NSPoint(x: 34, y: 20))
+                #expect(stopped == offsets.count && cancelled == 0)
+                try click(NSPoint(x: 47.5, y: 20))
+                #expect(stopped == offsets.count && cancelled == 1)
+                #expect(NSApp.keyWindow === originalKeyWindow)
+            }
+        }
+    }
+
     @Test @MainActor func bothHUDLayoutsRenderPauseAndResumeWithoutClipping() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("agentflow-hud-pause-405")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
