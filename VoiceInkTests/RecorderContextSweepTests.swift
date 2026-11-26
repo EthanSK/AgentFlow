@@ -177,7 +177,9 @@ struct RecorderContextSweepTests {
         var previous = sweep.lap(atElapsed: 0)
         #expect(previous.head == 0 && previous.tail == 0 && previous.strength == 0 && previous.spark == 1)
         for step in 1...520 {
-            let elapsed = sweep.duration * Double(step) / 520
+            // Sample the exact endpoint, not a multiply/divide rounding below it.
+            // The production Date deadline is checked separately. — GPT-6.1 Sol
+            let elapsed = step == 520 ? sweep.duration : sweep.duration * Double(step) / 520
             let lap = sweep.lap(atElapsed: elapsed)
             #expect(lap.head >= previous.head && lap.tail >= previous.tail && lap.tail <= lap.head, "\(elapsed)")
             #expect(lap.strength >= 0 && lap.strength <= 1, "\(elapsed)")
@@ -342,10 +344,15 @@ struct RecorderContextSweepTests {
                 }
                 return best.place
             }
-            let earlier = try brightestPlace(at: sweep.entranceDuration + 0.4)
-            let later = try brightestPlace(at: sweep.entranceDuration + 1.0)
+            // Sample the settled sheen inside the shortened hold, before exit.
+            // The old fixed 1.0s offset belonged to the former 1.2s hold. — GPT-6.1 Sol
+            let earlierTime = sweep.entranceDuration + sweep.holdDuration * 0.55
+            let laterTime = sweep.entranceDuration + sweep.holdDuration * 0.95
+            let earlier = try brightestPlace(at: earlierTime)
+            let later = try brightestPlace(at: laterTime)
             let travelled = (later - earlier) - (later - earlier).rounded(.down)
-            #expect(abs(travelled - 0.6 / RecorderCaptureOutlineStyle.lapDuration) < 0.01, "\(label) \(travelled)")
+            #expect(abs(travelled - (laterTime - earlierTime) / RecorderCaptureOutlineStyle.lapDuration) < 0.01,
+                    "\(label) \(travelled)")
         }
     }
 
