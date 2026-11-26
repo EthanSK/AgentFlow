@@ -2938,3 +2938,8 @@ posts/dequeues the owned wheel through AppKit's event queue, verifies the actual
 current event, and passed all 122 cases, including unchanged scroll-position,
 click, drag and nonactivation assertions at all three scales. This is native
 fixture evidence, not physical input acceptance or full release qualification.
+
+
+## 2026-11-26 — Letting entrance trim consume the context-colour minimum
+
+Source review found that an empty typing session could start its 450 ms growing-outline entrance at the same time as the context acknowledgement. Merely lengthening the colour pulse would leave less than the requested minimum with the entire edge visible. Give the acknowledgement priority over entrance trimming, while preserving normal typing entrance behaviour. Reconsider overlap only with native frames in both Mini and Notch proving a complete colour loop and at least about one second of whole-edge colour. The extended entrance fixture and all 52 focused cases passed after the correction; no pre-fix native failure was claimed.

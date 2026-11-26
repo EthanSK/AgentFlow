@@ -1,6 +1,17 @@
 # Learnings
 
 ---
+**Date:** 2026-11-26T00:34:03Z
+**Trigger:** Ethan requested at least about one second fully blue/magenta and the same reusable acceleration/deceleration system for speech and typing.
+**Symptom:** Blue selection and magenta screenshot acknowledgements were too brief; a growing entrance could shorten the first complete colour signal.
+**Root cause:** A travelling colour segment and an overlapping outline entrance do not guarantee a whole-edge colour minimum. The entrance overlap was found by source review, not a reproduced pre-fix native failure.
+**Fix:** Hold the entire edge in the accepted context colour for 1.2 seconds while its head completes one lap, with short fades. An active acknowledgement takes priority over the ordinary entrance trim. Keep underlying rainbow phase and the existing shared typing/speech activity controller unchanged.
+**Commit:** 9bcb2dd56d09733fd2a35e7daaaa918f5e8d96fa
+**Guard:** All 52 focused named native functions passed on the Mini, including both-shape entrance frames, full-colour hold, Reduce Motion and production typed/recognised-speech coast/resume parity. Inspected native frames retain a black interior and thin sharp edge. Signed 556 installed with preserved settings; physical taste/GPU/battery acceptance is separate.
+---
+
+
+---
 **Date:** 2026-11-25T15:52:45Z
 **Trigger:** Canonical073d825b: decelerate soon after stopping typing, a little faster than acceleration but smoothly enough to continue.
 **Symptom:** Ethan wanted the shared typing/recognised-text rainbow to coast promptly after a pause and retain the chance to continue its chain.
