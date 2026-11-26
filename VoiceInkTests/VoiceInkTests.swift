@@ -1732,7 +1732,7 @@ struct VoiceInkTests {
             of: "    func toggleRecorderPanel("
         ))
         let toggleEnd = try #require(source.range(
-            of: "        vippLog.info(\"toggleRecorderPanel: enter",
+            of: "        vippLog.notice(\"toggleRecorderPanel: enter",
             range: toggleStart.upperBound..<source.endIndex
         ))
         let prefix = source[toggleStart.lowerBound..<toggleEnd.lowerBound]
