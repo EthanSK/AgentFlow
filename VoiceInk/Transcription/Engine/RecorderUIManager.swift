@@ -543,10 +543,19 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
     /// signal; the exact reservation is checked again after this suspension.
     func flushStartupPresentation(requestID: UUID) async {
         guard let engine,
+              engine.startupPresentation.requestID == requestID,
               engine.startupPresentation.shouldShow(
                 sessionCount: engine.sessions.count,
                 assistantVisible: engine.assistantSession.isVisible
               ) else { return }
+        // Reserved hardware/typing Starts bypass the idle-card decision below.
+        // Cancel the old fade at this common accepted-Start boundary too, before
+        // the first suspension or microphone setup. Found and fixed by GPT-6.1 Sol.
+        if panelDismissalID != nil,
+           !showRecorderPanel(reason: "reserved recording restart during completion fade") {
+            engine.cancelRecordingStartReservation(requestID)
+            return
+        }
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             DispatchQueue.main.async { [weak self] in
                 defer { continuation.resume() }

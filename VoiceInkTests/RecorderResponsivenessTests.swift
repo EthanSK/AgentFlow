@@ -9,6 +9,21 @@ import SwiftUI
 
 @Suite(.serialized)
 struct RecorderPanelDismissalTests {
+    @Test func reservedStartsCancelTheOldFadeBeforeYieldingOrOpeningAudio() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent(
+            "VoiceInk/Transcription/Engine/RecorderUIManager.swift"), encoding: .utf8)
+        let start = try #require(source.range(of: "    func flushStartupPresentation(requestID: UUID) async {"))
+        let end = try #require(source.range(of: "    func toggleRecorderPanel(", range: start.upperBound..<source.endIndex))
+        let body = source[start.lowerBound..<end.lowerBound]
+        let identity = try #require(body.range(of: "engine.startupPresentation.requestID == requestID"))
+        let cancel = try #require(body.range(of: "showRecorderPanel(reason: \"reserved recording restart during completion fade\")"))
+        let yield = try #require(body.range(of: "await withCheckedContinuation"))
+        #expect(identity.lowerBound < cancel.lowerBound && cancel.lowerBound < yield.lowerBound)
+        #expect(body.contains("engine.cancelRecordingStartReservation(requestID)"))
+        #expect(!body.contains("Task.sleep"))
+    }
+
     @Test @MainActor func completionFadeDoesNotWaitOrHideANewerPresentation() {
         for panel in [MiniRecorderPanel(contentRect: NSRect(x: 0, y: 0, width: 300, height: 60)),
                       NotchRecorderPanel(contentRect: NSRect(x: 0, y: 0, width: 300, height: 60))] as [NSPanel] {
