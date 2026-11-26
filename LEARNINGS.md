@@ -1,6 +1,16 @@
 # Learnings
 
 ---
+**Date:** 2026-11-26T14:31:00Z
+**Trigger:** Ethan accepted the installed 560 fill/hold/exit, then asked for 50% of its full-colour duration, superseding his interim 70% and earlier one-second minimum.
+**Symptom:** The approved animation held its solid context colour longer than he wanted.
+**Root cause:** The design was correct; only the 1.2-second full-colour hold needed tuning.
+**Fix:** da69263b halves the shared hold to 0.6 seconds, including the no-motion alternative. Both 0.7-second transitions, paint, phase, shared typing/speech coasting, off switch and capture/delivery timing stay unchanged.
+**Commit:** 0cb24126ff312ac8af0b7ba5a9fcc52b16162300
+**Guard:** The focused Mini run executed 60 named functions: 58 passed, including native colour/shape frames, real-clock animation, shared coasting, startup, stop-tail/media and Primary/Next/HUD-only contracts. Two tests retained old sampling assumptions: multiply/divide could sample infinitesimally before the endpoint, and a fixed sheen sample now landed in exit. Test-only 0cb24126 samples the exact endpoint and derives both sheen observations inside the shortened hold; both named reruns passed, with production byte-identical. Four native sequence sheets were inspected and 20 small phase proofs retained. Preserve the accepted entrance and exit when adjusting the hold; tests must sample the relevant phase rather than an obsolete fixed offset. Installation and exact-source public qualification are separate evidence.
+---
+
+---
 **Date:** 2026-11-26T13:58:35Z
 **Trigger:** Ethan clarified blue/magenta must fill the outline, remain fully coloured for at least a second, then animate back; separate replayed laps are rejected.
 **Symptom:** Two separate colour laps returned to rainbow between launches; an earlier whole-edge flash had lost the animated entrance and exit.
