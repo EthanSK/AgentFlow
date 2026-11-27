@@ -909,21 +909,38 @@ struct RecorderContextSweepTests {
                 defer { panel.orderOut(nil); panel.close() }
                 func capture() throws -> NSBitmapImageRep {
                     host.layoutSubtreeIfNeeded()
+                    panel.displayIfNeeded()
                     let frame = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
                     host.cacheDisplay(in: host.bounds, to: frame)
                     return frame
                 }
+                // The outline starts from a task on its mounted SwiftUI leaf.
+                // Materialize that tree before the existing yield: a cold test
+                // window must not mount it only in the supposed "on" capture.
+                // Found and fixed by GPT-6.1 Sol.
+                host.layoutSubtreeIfNeeded()
+                panel.displayIfNeeded()
+                let started = ProcessInfo.processInfo.systemUptime
                 try await Task.sleep(for: .milliseconds(350))
+                let onPreference = defaults.bool(forKey: RecorderCaptureOutlinePreference.preferenceKey)
                 let on = try capture()
+                let onElapsed = ProcessInfo.processInfo.systemUptime - started
                 defaults.set(false, forKey: RecorderCaptureOutlinePreference.preferenceKey)
                 try await Task.sleep(for: .milliseconds(100))
+                let offPreference = defaults.bool(forKey: RecorderCaptureOutlinePreference.preferenceKey)
                 let off = try capture()
                 let compared = try EdgeComparison(on, off)
+                #expect(onPreference && !offPreference)
+                print("RecorderFeedbackDiagnostic notch=\(notch) reason=\(reason) systemReduceMotion=\(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) onPreference=\(onPreference) offPreference=\(offPreference) onElapsed=\(onElapsed) edgePixels=\(compared.edgePixels) differingPixels=\(compared.differingPixels)")
                 #expect(compared.differingPixels > 80, "notch=\(notch) reason=\(reason): \(compared.differingPixels)")
-                if let directory = ProcessInfo.processInfo.environment["VIPP_OUTLINE_SNAPSHOT_DIR"] {
+                if let directory = ProcessInfo.processInfo.environment["VIPP_RETIRED_FEEDBACK_SNAPSHOT_DIR"]
+                    ?? ProcessInfo.processInfo.environment["VIPP_OUTLINE_SNAPSHOT_DIR"] {
                     let folder = URL(fileURLWithPath: directory, isDirectory: true)
-                    let image = try #require(on.representation(using: .png, properties: [:]))
-                    try image.write(to: folder.appendingPathComponent("\(notch ? "notch" : "mini")-\(reason)-feedback.png"))
+                    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                    for (suffix, frame) in [("", on), ("-off", off)] {
+                        let image = try #require(frame.representation(using: .png, properties: [:]))
+                        try image.write(to: folder.appendingPathComponent("\(notch ? "notch" : "mini")-\(reason)-feedback\(suffix).png"))
+                    }
                 }
             }
         }

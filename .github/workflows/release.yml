@@ -52,6 +52,8 @@ jobs:
       - name: Sign, notarize and publish immutable updates
         run: |
           export AGENTFLOW_BUILD_HOST="$(hostname)"
+          export VIPP_RETIRED_FEEDBACK_SNAPSHOT_DIR="$RUNNER_TEMP/AgentFlow.noindex/RetiredFeedbackFrames.noindex"
+          export TEST_RUNNER_VIPP_RETIRED_FEEDBACK_SNAPSHOT_DIR="$VIPP_RETIRED_FEEDBACK_SNAPSHOT_DIR"
           bash scripts/package-public-release.sh "$RUNNER_TEMP/AgentFlow.noindex" --complete
           # Publish with this workflow's scoped token. — GPT-6.1 Sol
           bash scripts/publish-public-release.sh "$RUNNER_TEMP/AgentFlow.noindex"
@@ -86,3 +88,4 @@ jobs:
             ${{ runner.temp }}/AgentFlow.noindex/native-test-results.json
             ${{ runner.temp }}/AgentFlow.noindex/remaining-test-results.json
             ${{ runner.temp }}/AgentFlow.noindex/qualified-tests.json
+            ${{ runner.temp }}/AgentFlow.noindex/RetiredFeedbackFrames.noindex/*.png
