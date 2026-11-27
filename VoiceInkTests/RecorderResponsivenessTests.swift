@@ -281,6 +281,7 @@ struct RecorderPanelDismissalTests {
             if condition() { return true }
             try await Task.sleep(for: .milliseconds(2))
         } while ContinuousClock.now < deadline
+        maxGap = max(maxGap, last.duration(to: .now))
         let result = condition()
         if !result {
             print("RecorderFadeDiagnostic observer elapsed=\(started.duration(to: .now)) samples=\(samples) maxGap=\(maxGap) appRunning=\(NSApplication.shared.isRunning) appActive=\(NSApplication.shared.isActive)")
