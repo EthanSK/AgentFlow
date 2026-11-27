@@ -56,6 +56,7 @@ canonical_action() {
     tail -35 "$log" >&2
     exit 1
   fi
+  grep -E '✔ Test run with [1-9][0-9]* tests? in [1-9][0-9]* suites? passed' "$log" | tail -1
 }
 
 canonical_action "$output/xcode-recorder-tests.log" \

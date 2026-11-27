@@ -68,3 +68,21 @@ jobs:
           if [[ -n "${RELEASE_KEYCHAIN:-}" && -f "$RELEASE_KEYCHAIN" ]]; then
             security delete-keychain "$RELEASE_KEYCHAIN"
           fi
+      # Retain only public-source test evidence, never signing files or a whole
+      # temporary directory. Missing hosted catalogue bytes hid the format error.
+      # Found and fixed by GPT-6.1 Sol.
+      - name: Retain release test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-test-diagnostics
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/AgentFlow.noindex/xcode-recorder-tests.log
+            ${{ runner.temp }}/AgentFlow.noindex/xcode-remaining-tests.log
+            ${{ runner.temp }}/AgentFlow.noindex/xcode-test-discovery.log
+            ${{ runner.temp }}/AgentFlow.noindex/test-catalog.json
+            ${{ runner.temp }}/AgentFlow.noindex/native-test-results.json
+            ${{ runner.temp }}/AgentFlow.noindex/remaining-test-results.json
+            ${{ runner.temp }}/AgentFlow.noindex/qualified-tests.json

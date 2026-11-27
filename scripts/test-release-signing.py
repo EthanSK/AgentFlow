@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise the production Sparkle signing block without a certificate or native build."""
+"""Package entry point's signing/accounting guards; fake irreversible CLIs. — GPT-6.1 Sol"""
 import os
 from pathlib import Path
 import subprocess
@@ -57,7 +57,8 @@ class SparkleSigningTests(unittest.TestCase):
                 self.assertTrue(entitlements["com.apple.security.device.audio-input"])
                 self.assertNotIn("com.apple.developer.icloud-container-identifiers", entitlements)
 
-    def release_gate_fixture(self, xcode_exit=0, fault="", parameter_prefix=""):
+    def release_gate_fixture(self, xcode_exit: int = 0, fault: str = "",
+                             parameter_prefix: str = "", catalog_siblings: bool = False):
         import copy
         import json
         import shutil
@@ -80,6 +81,11 @@ class SparkleSigningTests(unittest.TestCase):
         catalog = {"errors": [], "values": [{"testPlan": "VoiceInk", "disabledTests": [],
                     "enabledTests": [{"identifier": "VoiceInkTests/" + node["nodeIdentifier"]}
                                      for node in native + remaining]}]}
+        if catalog_siblings:
+            catalog["values"][0]["enabledTests"].extend({"identifier": name} for name in (
+                "VoiceInkUITests/VoiceInkUITests/testExample()",
+                "VoiceInkUITests/VoiceInkUITests/testLaunchPerformance()",
+                "VoiceInkUITests/VoiceInkUITestsLaunchTests/testLaunch()"))
         if fault == "missing":
             remaining.pop()
         elif fault == "overlap":
@@ -98,6 +104,12 @@ class SparkleSigningTests(unittest.TestCase):
             catalog["values"][0]["disabledTests"] = [{"identifier": "VoiceInkTests/Fixture/disabled()"}]
         elif fault == "foreign":
             catalog["values"][0]["enabledTests"][0]["identifier"] = "OtherTarget/Fixture/foreign()"
+        elif fault == "empty_catalog":
+            catalog["values"][0]["enabledTests"].clear()
+        elif fault == "missing_identifier":
+            catalog["values"][0]["enabledTests"][0].pop("identifier")
+        elif fault == "non_string_identifier":
+            catalog["values"][0]["enabledTests"][0]["identifier"] = 123
         elif fault == "duplicate_catalog":
             catalog["values"][0]["enabledTests"].append(copy.deepcopy(catalog["values"][0]["enabledTests"][0]))
         elif fault == "zero_native":
@@ -111,6 +123,9 @@ class SparkleSigningTests(unittest.TestCase):
                 shutil.copy2(ROOT / "scripts" / name, repo / "scripts" / name)
             shutil.copy2(ROOT / "VoiceInk.xcodeproj/project.pbxproj",
                          repo / "VoiceInk.xcodeproj/project.pbxproj")
+            scheme = Path("VoiceInk.xcodeproj/xcshareddata/xcschemes/VoiceInk.xcscheme")
+            (repo / scheme).parent.mkdir(parents=True)
+            shutil.copy2(ROOT / scheme, repo / scheme)
             fixture = base / "fixture.json"
             fixture.write_text(json.dumps({"native": native, "remaining": remaining, "catalog": catalog}))
             fake = repo / "xcodebuild"
@@ -190,11 +205,25 @@ class SparkleSigningTests(unittest.TestCase):
     def test_full_release_rejects_incomplete_or_false_green_partition_receipts(self):
         for fault in ("missing", "overlap", "failed_case", "skipped_argument",
                       "missing_argument", "duplicate", "discovery_error", "disabled",
-                      "foreign", "duplicate_catalog", "zero_native", "summary_count"):
+                      "foreign", "empty_catalog", "missing_identifier", "non_string_identifier",
+                      "duplicate_catalog", "zero_native", "summary_count"):
             with self.subTest(fault=fault):
                 result, _, receipt = self.release_gate_fixture(fault=fault)
                 self.assertNotEqual(result.returncode, 0, result.stdout)
                 self.assertIsNone(receipt)
+
+    def test_hosted_scheme_siblings_cannot_replace_selected_unit_coverage(self):
+        for fault in ("", "missing", "foreign", "duplicate", "skipped_argument"):
+            with self.subTest(fault=fault):
+                result, calls, receipt = self.release_gate_fixture(fault=fault, catalog_siblings=True)
+                self.assertEqual(result.returncode == 0, not fault, result.stderr)
+                if fault:
+                    self.assertIsNone(receipt)
+                else:
+                    self.assertEqual(calls, ["native", "remaining"])
+                    self.assertEqual(receipt["selectedTarget"], "VoiceInkTests")
+                    self.assertEqual(receipt["namedFunctionsPassed"], 365)
+                    self.assertEqual(len(receipt["schemeSiblingCatalogueTests"]), 3)
 
     def test_public_checksum_manifest_works_in_another_download_folder(self):
         line = next(line for line in PACKAGE.splitlines()

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Require exact full-target coverage across fresh canonical Xcode test hosts."""
+"""The public test gate's exact selected-target accounting across Xcode hosts. — GPT-6.1 Sol"""
 import argparse
 import json
 from pathlib import Path
 import re
+import xml.etree.ElementTree as ET
 
 
 def require(condition, message):
@@ -53,10 +54,27 @@ def main():
     target, separator, suite = args.native_suite.partition("/")
     require(separator and target and suite, "Invalid native-suite identifier.")
     prefix = target + "/"
-    discovered = [test.get("identifier") for value in values
-                  for test in value.get("enabledTests", [])]
-    require(discovered and all(isinstance(name, str) and name.startswith(prefix)
-                               for name in discovered), "Discovery contains missing or foreign identifiers.")
+    # Hosted Xcode26.3 includes the scheme's sibling UI target in discovery even
+    # with -only-testing:VoiceInkTests. Keep complete selected-target coverage;
+    # accept other namespaces only when declared by the actual owning scheme.
+    # Found and fixed by GPT-6.1 Sol.
+    scheme = Path(__file__).resolve().parent.parent / "VoiceInk.xcodeproj/xcshareddata/xcschemes/VoiceInk.xcscheme"
+    scheme_targets = {node.attrib["BlueprintName"] for node in ET.parse(scheme).findall(
+        "./TestAction/Testables/TestableReference/BuildableReference")}
+    require(target in scheme_targets, "Selected target is missing from the owning Xcode scheme.")
+    catalogue_identifiers = [test.get("identifier") for value in values
+                             for test in value.get("enabledTests", [])]
+    foreign = [name for name in catalogue_identifiers
+               if not isinstance(name, str) or "/" not in name
+               or name.partition("/")[0] not in scheme_targets]
+    require(catalogue_identifiers and not foreign,
+            "Discovery contains missing or foreign identifiers: selected prefix {!r}, "
+            "total {}, rejected {}, first rejected {!r}.".format(
+                prefix, len(catalogue_identifiers), len(foreign), foreign[:5]))
+    require(len(catalogue_identifiers) == len(set(catalogue_identifiers)),
+            "Complete scheme discovery contains duplicated identifiers.")
+    discovered = [name for name in catalogue_identifiers if name.startswith(prefix)]
+    siblings = sorted(set(catalogue_identifiers) - set(discovered))
     names = [name[len(prefix):] for name in discovered]
     require(len(names) == len(set(names)) and len(names) >= 365,
             "Complete-target discovery is empty, duplicated or below the release coverage floor.")
@@ -85,6 +103,7 @@ def main():
             "Invalid exact source/build identity.")
     receipt = {
         "sourceCommit": args.source, "build": args.build,
+        "selectedTarget": target, "schemeSiblingCatalogueTests": siblings,
         "discoveredFunctions": len(names), "namedFunctionsPassed": len(names),
         "suites": native_suites + remaining_suites,
         "nativeFunctionsPassed": len(native), "remainingFunctionsPassed": len(remaining),
@@ -93,6 +112,8 @@ def main():
         "tests": sorted(names),
     }
     Path(args.output).write_text(json.dumps(receipt, indent=2) + "\n")
+    print("Selected target {}: {} discovered functions; {} sibling-target catalogue entries outside this action.".format(
+        target, len(names), len(siblings)))
     for name in sorted(names):
         print("Passed " + name)
     print("Full release suite passed: {} named tests, {} suites; source {}, build {}.".format(
