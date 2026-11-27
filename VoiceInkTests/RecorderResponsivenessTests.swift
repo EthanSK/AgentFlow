@@ -197,14 +197,21 @@ struct RecorderPanelDismissalTests {
             #expect(zip(panels, initialMouseHandling).allSatisfy { $0.0.ignoresMouseEvents == $0.1 })
             return
         }
+        var during: [Int] = []
         let sampled = try await observeNativeAnimation {
-            panels.allSatisfy { $0.isVisible && $0.alphaValue > 0.1 && $0.alphaValue < 0.6 }
+            guard panels.allSatisfy({ $0.isVisible && $0.alphaValue > 0.1 && $0.alphaValue < 0.6 }) else {
+                return false
+            }
+            // Capture in the native sample callback. Resuming this test task can be
+            // delayed until the window has already finished and ordered out.
+            // — GPT-6.1 Sol
+            during = try panels.map { try self.paintedSamples(in: $0, name: "\(fixtureName)-during") }
+            return true
         }
         if !sampled {
             print("RecorderFadeDiagnostic style=\(style) systemReduceMotion=\(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) explicitReducedMotion=\(reducedMotion) elapsed=\(started.duration(to: .now)) finished=\(finished) panels=\(panels.map { ($0.isVisible, $0.alphaValue) })")
         }
         #expect(sampled, "Completion fade never exposed an intermediate native frame")
-        let during = try panels.map { try paintedSamples(in: $0, name: "\(fixtureName)-during") }
         for (before, after) in zip(initial, during) {
             #expect(after > before / 2, "Recorder content vanished before its window fade: \(before) -> \(after)")
         }
@@ -263,29 +270,47 @@ struct RecorderPanelDismissalTests {
         }
     }
 
-    // Observe multiple real frames while yielding the main actor. A nested RunLoop alone
-    // prevented the hosted probe's MainActor completion from running until an actual yield.
-    // Keep the same bound and strict alpha/content predicates; log scheduler gaps on failure
-    // instead of inferring that a missed frame proves a native defect. — GPT-6.1 Sol
-    @MainActor private func observeNativeAnimation(_ condition: () -> Bool) async throws -> Bool {
+    // A full target measured a 155ms test-task resumption gap inside a 220ms fade.
+    // Observe on AppKit's own main run loop, while the async test yields, so native
+    // frame observation does not depend on Swift task resumption. Preserve the same
+    // one-second bound and strict intermediate-alpha/content requirements.
+    // — GPT-6.1 Sol
+    @MainActor private func observeNativeAnimation(_ condition: @escaping @MainActor () throws -> Bool) async throws -> Bool {
+        try Task.checkCancellation()
         let started = ContinuousClock.now
         let deadline = started.advanced(by: .seconds(1))
         var last = started
         var maxGap = Duration.zero
         var samples = 0
-        repeat {
-            let now = ContinuousClock.now
-            maxGap = max(maxGap, last.duration(to: now))
-            last = now
-            samples += 1
-            if condition() { return true }
-            try await Task.sleep(for: .milliseconds(2))
-        } while ContinuousClock.now < deadline
-        maxGap = max(maxGap, last.duration(to: .now))
-        let result = condition()
-        if !result {
-            print("RecorderFadeDiagnostic observer elapsed=\(started.duration(to: .now)) samples=\(samples) maxGap=\(maxGap) appRunning=\(NSApplication.shared.isRunning) appActive=\(NSApplication.shared.isActive)")
+        let result: Bool = try await withCheckedThrowingContinuation { continuation in
+            var timer: Timer?
+            let nativeTimer = Timer(timeInterval: 0.002, repeats: true) { _ in
+                // This timer is installed only on RunLoop.main. — GPT-6.1 Sol
+                MainActor.assumeIsolated {
+                    let now = ContinuousClock.now
+                    maxGap = max(maxGap, last.duration(to: now))
+                    last = now
+                    samples += 1
+                    do {
+                        let observed = try condition()
+                        guard observed || now >= deadline else { return }
+                        timer?.invalidate()
+                        timer = nil
+                        if !observed {
+                            print("RecorderFadeDiagnostic observer elapsed=\(started.duration(to: .now)) samples=\(samples) maxGap=\(maxGap) appRunning=\(NSApplication.shared.isRunning) appActive=\(NSApplication.shared.isActive)")
+                        }
+                        continuation.resume(returning: observed)
+                    } catch {
+                        timer?.invalidate()
+                        timer = nil
+                        continuation.resume(throwing: error)
+                    }
+                }
+            }
+            timer = nativeTimer
+            RunLoop.main.add(nativeTimer, forMode: .common)
         }
+        try Task.checkCancellation()
         return result
     }
 }
