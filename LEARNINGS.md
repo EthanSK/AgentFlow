@@ -1,6 +1,17 @@
 # Learnings
 
 ---
+**Date:** 2026-11-27T22:43:47.669122+00:00
+**Trigger:** Hosted570/run46074119666 failed a different existing native image fixture after all7isolated fade functions Passed.
+**Symptom:** The1114-function remainder failed only retiredCancelAndNoPasteCardsRenderInBothStylesAndRespectOutlineOff: Mini clipboard-only on/off difference0, required>80. All10Python gates Passed; credential cleanup and retained diagnostic upload Passed. The original on/off PNGs were not configured, so the exact failed paint state remains unknown.
+**Root cause:** The fixture's first explicit NSHostingView layout occurred inside its supposed on-capture, after its350ms wait. The outline deliberately starts asynchronously from its mounted SwiftUI leaf, so that wait did not itself prove the leaf had mounted. This is a verified fixture setup hole, not proof that it caused the original hosted pixels. The unchanged8f5b fixture Passed alone on Mini/all4variants, so do not claim an exact reproduction or new production defect.
+**Fix:** Materialize the real host/panel before its existing yield and each capture, following the pre-existing native image and live manager display pattern. Keep both layouts, cancellation/clipboard-only variants, dynamic master-off switch, exact350/100ms waits and>80pixel requirement. Add bounded preference/time/pixel metadata and eight paired synthetic on/off images after comparison; the hosted allowlist retains only that dedicated PNG directory.
+**Commit:** e5dbdc539e3266bb15094f4e5f687624fa3c09d7
+**Guard:** The entire19-function RecorderContextSweepTests suite Passed through normal Mini Xcode, including2parameter arguments and all4real retired-card variants. Differences were286/286/267/267; preferences were true→false in every case. Four returned artifact hashes, process/lock cleanup and all8paired images were verified/visually inspected. Native app/project/build inputs and all fade tests are unchanged; no reinstall or production timing/settings change. Exact-source full hosted signing/notary/publication/download qualification remains pending.
+---
+
+
+---
 **Date:** 2026-11-27T22:00:33.491394+00:00
 **Trigger:** Continuing the explicitly requested GitHub Actions failure repair.
 **Symptom:** Run46067567787/source5535e366 reached the final catalogue validator and failed `Discovery contains missing or foreign identifiers.`

@@ -107,8 +107,10 @@ is only a local build, even when `codesign --verify --deep --strict` succeeds.
    universal Release app and embeds GPLv3. Detailed test logs remain with the job's
    output, rather than being transferred from a Mini. An `always()` step after
    credential cleanup retains only the explicit test-log/JSON allowlist for seven
-   days, including failed-run catalogues; it never uploads a whole temporary folder
-   or signing credentials.
+   days, including failed-run catalogues, plus the eight synthetic retired-card
+   on/off PNGs from their dedicated test directory. Those images are written after
+   the timed comparison. It never uploads a whole temporary folder or signing
+   credentials.
 4. The same job signs nested code and the outer app with Developer ID and hardened
    runtime, retains Automation, submits to Apple, staples, and produces the public
    ZIP, SHA-256 file and source-bound `release.json`. Sparkle's bare `Autoupdate`

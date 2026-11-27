@@ -1,5 +1,12 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-27 — Sleeping before the first explicit SwiftUI fixture layout — REJECTED
+
+Hosted8f5b99dc/run46074119666 Passed all7native fade functions and10Python release guards, then failed only one of the1114remaining functions: the Mini clipboard-only retired-card on/off image comparison differed by0pixels versus the unchanged>80requirement. Retained logs identify the variant, but original bitmap pairs were not configured. The unchanged test then Passed alone on Mini/all4variants; no exact original paint cause or production defect is established.
+
+Its first explicit layout was inside the on-capture after350ms. The asynchronous outline task is tied to a mounted SwiftUI leaf, so elapsed sleep before layout is not readiness proof. Test-onlye5dbdc53 materializes the real host/panel before the same yield and each capture. It retains350/100ms, both layouts/reasons, dynamic master-off and>80pixels, while recording bounded preference/time/pixel metadata and8paired synthetic frames after measurement. All19context/outline functions,2parameter arguments and4retired variants Passed on Mini; all4artifact hashes, process/lock cleanup and8images were verified. Reconsider implicit first-layout readiness only with actual mounted-tree/frame evidence on supported hosted toolchains; never add padding, lower the pixel guard or modify native app tuning to hide this failure. Fully hosted qualification remains pending.
+
+
 ## 2026-11-27 — Assuming target selection filters Xcode enumeration — REJECTED
 
 Public570/source5535e366 rejected its catalogue after both canonical actions had passed their exit/summary guards; no catalogue artifact was retained. Manual-only hosted46071037562 captured1124 entries despite `-only-testing:VoiceInkTests`: all1121 selected unit IDs matched the passing Mini catalogue, with3 additional entries from the scheme's separate VoiceInkUITests target. The unchanged5535 checker reproduced its exact rejection on these bytes. Do not infer a native fade failure or recover the lost original catalogue by assertion.
