@@ -65,7 +65,7 @@ struct RecorderCaptureOutlineTests {
         #expect(session.canTypeInHUD)
         #expect(session.showsRecordingActivityOutline)
         #expect(session.typedInput.isEmpty)
-        #expect(session.outlineActivity?.hasTextActivity == false)
+        #expect(session.outlineActivity?.speed(at: Date()) == RecorderOutlineActivity.idleSpeed)
         session.updateTypedInput("ready before the border")
         #expect(session.typedInput == "ready before the border")
         #expect(session.showsRecordingActivityOutline)
@@ -300,7 +300,7 @@ struct RecorderCaptureOutlineTests {
                     session.liveRecordingState = state
                     if microphoneOff {
                         #expect(session.typedInput.isEmpty)
-                        #expect(session.outlineActivity?.hasTextActivity == false)
+                        #expect(session.outlineActivity?.speed(at: Date()) == RecorderOutlineActivity.idleSpeed)
                     }
                     host.layoutSubtreeIfNeeded()
                     // Let the real native card finish laying out before reading pixels.

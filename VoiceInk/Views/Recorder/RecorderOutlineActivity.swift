@@ -6,7 +6,6 @@
 import Foundation
 
 struct RecorderOutlineActivity: Equatable {
-    private(set) var hasTextActivity = false
     private var anchor: Date
     private var anchorPhase: Double
     private var anchorSpeed: Double
@@ -21,7 +20,6 @@ struct RecorderOutlineActivity: Equatable {
 
     mutating func addText(units: Int, at date: Date) {
         guard units > 0 else { return }
-        hasTextActivity = true
         // Late timestamps never rewind the shared phase or resurrect older charge.
         let date = max(anchor, date)
         let current = motion(at: date)
