@@ -1,0 +1,62 @@
+# Temporary manual-only observation of Xcode's hosted catalogue; no test execution,
+# credentials, signing or publication. Remove after the format is verified.
+# — GPT-6.1 Sol
+name: Inspect hosted test discovery
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  discover:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - name: Prepare pinned speech dependency
+        run: make check whisper
+      - name: Build and enumerate the complete test target
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/Discovery.noindex"
+          mkdir -p "$output"
+          export LLVM_PROFILE_FILE="$output/profile-%p.profraw"
+          common=(
+            -project "$PWD/VoiceInk.xcodeproj" -scheme VoiceInk -configuration Debug
+            -destination 'platform=macOS,arch=arm64'
+            -derivedDataPath "$output/DerivedData.noindex"
+            -clonedSourcePackagesDirPath "$output/Packages.noindex"
+            -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates
+            -parallel-testing-enabled NO -jobs 2 -xcconfig "$PWD/LocalBuild.xcconfig"
+            CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES
+            DEVELOPMENT_TEAM= ENABLE_HARDENED_RUNTIME=NO
+            "CODE_SIGN_ENTITLEMENTS=$PWD/VoiceInk/VoiceInk.local.entitlements"
+            'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) LOCAL_BUILD'
+          )
+          /usr/bin/python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=900, check=True)' \
+            xcodebuild "${common[@]}" build-for-testing >"$output/build.log" 2>&1
+          /usr/bin/python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=180, check=True)' \
+            xcodebuild "${common[@]}" -only-testing:VoiceInkTests -enumerate-tests \
+            -test-enumeration-style flat -test-enumeration-format json \
+            -test-enumeration-output-path "$output/test-catalog.json" test-without-building \
+            >"$output/discovery.log" 2>&1
+          python3 - "$output/test-catalog.json" <<'PY'
+          import json,sys
+          catalog=json.load(open(sys.argv[1]))
+          names=[test.get('identifier') for value in catalog.get('values', []) for test in value.get('enabledTests', [])]
+          foreign=[name for name in names if not isinstance(name,str) or not name.startswith('VoiceInkTests/')]
+          print(json.dumps({'errors':catalog.get('errors'), 'count':len(names), 'first':names[:5],
+                            'foreignCount':len(foreign), 'firstForeign':foreign[:10]}, indent=2))
+          PY
+      - name: Retain only catalogue diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hosted-test-discovery
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/Discovery.noindex/test-catalog.json
+            ${{ runner.temp }}/Discovery.noindex/discovery.log
+            ${{ runner.temp }}/Discovery.noindex/build.log
