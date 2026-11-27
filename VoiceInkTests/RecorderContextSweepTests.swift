@@ -30,7 +30,7 @@ struct RecorderContextSweepTests {
         let session = RecordingSession()
         session.microphoneOff = true
         #expect(session.contextAcceptancePulse == nil)
-        #expect(session.canTypeInHUD && !session.showsRecordingActivityOutline)
+        #expect(session.canTypeInHUD && session.showsRecordingActivityOutline)
 
         let highlight = try #require(LiveSelectionReference("highlighted words"))
             .timed(at: Date(timeIntervalSince1970: 10)).identifiedForCapture(UUID())
