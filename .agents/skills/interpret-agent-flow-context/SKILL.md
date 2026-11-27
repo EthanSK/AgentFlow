@@ -37,6 +37,8 @@ User-requested startup efficiency — 2026-10-08: existing session traces repeat
 
 First spend a moment understanding what Ethan actually meant from nearby speech, typing, selections and approximate timing. Tag placement is a clue, not a strict binding or exact chronology. A highlight may be him pointing while speaking, or reading silently. Do not force a one-to-one match, overfit to abundant highlights, or invent hidden intent. Ask only when unresolved ambiguity materially changes the action. User-requested interpretation pause — 2026-09-29.
 
+For a broad screenshot complaint, require authored words or a clear highlight identifying the target before naming a specific element as the issue. Otherwise ask which part; do not turn a visual guess into a diagnosis or a new task. Self-improved — 2026-11-26: an unmentioned font was incorrectly treated as the target of a screenshot-wide complaint (task `01a16a35-e451-7852-966d-25f9b6397432`).
+
 For speech blocks, forgive obvious speech-to-text errors and infer the intended term from selected code and context. Answer the intended question instead of correcting the transcription; ask only when ambiguity changes the answer or action. User-requested — 2026-10-13.
 
 - Speech outside tags, `<speech>`, legacy `<speech_segment>` and `<typed_text>` contain Ethan's authored words. Decode XML entities once. Preserve payload whitespace, unmatched leading prose and the best-effort observed order. A canonical file's legacy skill-reminder HTML comment is metadata, not extra speech or a requirement to reread already-known guidance.
