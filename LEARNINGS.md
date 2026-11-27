@@ -1,5 +1,16 @@
 # Learnings
 
+---
+**Date:** 2026-11-27T15:42:46Z
+**Trigger:** Ethan asked on2026-11-27 for the rainbow before the first keystroke, once the panel is ready, without slowing startup.
+**Symptom:** The ready empty typing panel stayed unlit until the first edit.
+**Root cause:** The earlier first-edit performance choice explicitly filtered empty typing from the shared outline display gate. Ethan now wants the outline as a readiness signal before typing.
+**Fix:** Build569 removes that display exclusion and its unused first-edit flag. The existing decorative leaf still yields before Canvas creation and retains the same draw-around entrance; input, focus, capture and delivery never await it. Both layouts retain the master off switch, Reduce Motion and shared motion tuning.
+**Commit:** 1a92b8fbe7dc5994ff5e1df08d32668bbfd5748f
+**Guard:** 73 unique focused native functions Passed across unchanged production:72 initial and the corrected old context-visibility expectation rerun alone through the canonical action. Actual Mini/Notch empty-typing on/off frames inspected. Signed universal569 installed and runtime/signature/eight preferences verified. First public46024518582/source66cf7119 failed only an existing fixed-clock fade fixture among1119 functions/57 suites; no exact sample delay was logged. Test-only478853e4 retains strict native interpolation/completion/cancellation checks and passed12 selected canonical functions. Its copied wrapper stale-name failure is preserved separately; exact returned native results and all artifact hashes verified. Hosted retry46029755289/source478853e4 executed1119 functions/57 suites and failed only the extra second-animation/pre-cancel interpolation check added by that test patch; the first interpolation check passed. Publication/download skipped and credential cleanup passed. The exact second sample values were not logged. Ethan requested a separate failure-investigation chat; that owner now receives this remaining gate repair and public qualification. No full-release success is claimed. Native/app/project bytes match the installed source; no reinstall is needed for the test/docs-only changes. No physical zero-impact startup benchmark or live capture/control probe was generated.
+---
+
+
 ## 2026-11-27 — A returned realtime audio callback is not a connected provider
 
 A real recording logged an offline (-1009) background handshake, kept capturing its complete WAV and later took36.659s on completed-file transcription. The recording/session logic remained separate from the network task. Source investigation found that StreamingTranscriptionSession.prepare returns before connecting; its later catch previously set streamingFailed without reaching the existing realtime-unavailable warning. A blank realtime HUD therefore hid a real connection failure. This does not establish the cause of the separately reported intermittent physical Stop miss, and no network or fade cause is claimed for that input symptom.
@@ -179,6 +190,7 @@ Companion0.2.11 (fa079af1) defers an already-paused result until the search fini
 
 ---
 **Date:** 2026-11-25
+**Status:** The first-edit-only visibility choice is superseded by569 at Ethan's2026-11-27 request. Preserve the asynchronous leaf, introduction and capture/focus safeguards described below.
 **Trigger:** Ethan requested the fastest possible startup without losing functionality, an asynchronously introduced border that grows around the panel after typing starts, and an Astra startup audit.
 **Verified:** Three natural installed553 focus requests took941,984 and1059ms. They succeeded on attempt2; associated Codex selection reads finished later. This does not isolate rainbow drawing as the cause, prove a Code-preselection wait, or establish a one-second timer.
 **Fix:** 504d0626 keeps empty typing ready without mounting decorative geometry until actual text or an accepted context gesture. The outline yields its own mounting task, then grows one sharp path over0.45s on its existing30Hz clock; Reduce Motion stays still and the saved off switch removes the whole leaf. Capture-state eligibility remains separate from deferred display eligibility, so the first blue/magenta context pulse can create itself. The same source removes one identical .starting/recompute publication before audio startup; the first synchronous handoff, Mode, selection, journal and router setup remain.
