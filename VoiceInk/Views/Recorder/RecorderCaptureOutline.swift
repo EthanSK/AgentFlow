@@ -81,9 +81,8 @@ struct RecorderCaptureOutline<OutlineShape: Shape>: View, Animatable {
             }
         }
         .task {
-            // Ethan wants input ready before the outline grows around it. Typing
-            // mounts this leaf after a real edit or context gesture; yielding keeps the
-            // first Canvas/path work outside the panel's mounting turn. Nothing in
+            // Ethan wants the ready typing panel lit before the first edit. Yielding
+            // keeps the first Canvas/path work outside the panel's mounting turn. Nothing in
             // keyboard focus, capture or delivery awaits this decorative task.
             // — GPT-6.1 Sol
             await Task.yield()

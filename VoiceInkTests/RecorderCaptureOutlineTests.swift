@@ -32,7 +32,7 @@ struct RecorderCaptureOutlineTests {
         // Microphone-off typing keeps the recording state but captures no audio.
         session.microphoneOff = true
         #expect(session.canTypeInHUD)
-        #expect(!session.showsRecordingActivityOutline)
+        #expect(session.showsRecordingActivityOutline)
         session.updateTypedInput("first actual edit")
         #expect(session.showsRecordingActivityOutline)
         session.liveRecordingState = .starting
@@ -58,12 +58,14 @@ struct RecorderCaptureOutlineTests {
         #expect(session.showsRecordingActivityOutline)
     }
 
-    @Test @MainActor func typingIsReadyBeforeOutlineAndCommittedTextKeepsItLit() {
+    @Test @MainActor func emptyTypingShowsOutlineBeforeFirstEditAndAcrossRuns() {
         let session = RecordingSession()
         session.microphoneOff = true
         session.liveRecordingState = .starting
         #expect(session.canTypeInHUD)
-        #expect(!session.showsRecordingActivityOutline)
+        #expect(session.showsRecordingActivityOutline)
+        #expect(session.typedInput.isEmpty)
+        #expect(session.outlineActivity?.hasTextActivity == false)
         session.updateTypedInput("ready before the border")
         #expect(session.typedInput == "ready before the border")
         #expect(session.showsRecordingActivityOutline)
@@ -74,7 +76,7 @@ struct RecorderCaptureOutlineTests {
         #expect(!session.showsRecordingActivityOutline)
         session.liveRecordingState = .recording
         #expect(session.canTypeInHUD)
-        #expect(!session.showsRecordingActivityOutline)
+        #expect(session.showsRecordingActivityOutline)
         session.updateTypedInput("resume")
         #expect(session.showsRecordingActivityOutline)
         session.acknowledgeCaptureFinish()
@@ -235,7 +237,7 @@ struct RecorderCaptureOutlineTests {
         }
     }
 
-    @Test @MainActor func miniAndNotchLightTheirEdgeOnlyForLiveCaptureAndTheSavedSwitch() async throws {
+    @Test @MainActor func miniAndNotchLightEmptyTypingAndCaptureOnlyWhenEnabled() async throws {
         // Private suites keep this independent of the installed app's real choice.
         let suitePrefix = "AgentFlowTests.RecordingOutline.\(UUID().uuidString)"
         let unsetDefaults = try #require(UserDefaults(suiteName: suitePrefix + ".unset"))
@@ -286,8 +288,8 @@ struct RecorderCaptureOutlineTests {
 
                 // Reuse one host across transitions, as the real mirrored panels do.
                 let scenarios: [(String, RecordingState, Bool, RecordingCompletionDisposition)] = [
-                    ("recording", .recording, false, .normalDelivery),
                     ("typing", .recording, true, .normalDelivery),
+                    ("recording", .recording, false, .normalDelivery),
                     ("wont-paste", .recording, false, .clipboardOnly),
                     ("paused", .paused, false, .normalDelivery),
                     ("resumed", .recording, false, .normalDelivery)
@@ -296,7 +298,10 @@ struct RecorderCaptureOutlineTests {
                     session.microphoneOff = microphoneOff
                     session.completionDisposition = disposition
                     session.liveRecordingState = state
-                    if microphoneOff { session.updateTypedInput("typing") }
+                    if microphoneOff {
+                        #expect(session.typedInput.isEmpty)
+                        #expect(session.outlineActivity?.hasTextActivity == false)
+                    }
                     host.layoutSubtreeIfNeeded()
                     // Let the real native card finish laying out before reading pixels.
                     try await Task.sleep(for: .milliseconds(500))

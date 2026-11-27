@@ -87,16 +87,15 @@ extension RecorderStateProvider {
     /// Ethan's rainbow now follows live microphone capture AND the small loading
     /// card until transcription/processing finishes. During the real stop tail the
     /// small card keeps the actual waveform; only capture end changes it to loading.
-    /// Microphone-off typing shares the outline after its first actual edit or
-    /// accepted context gesture, so decorative geometry stays out of empty typing
-    /// startup without suppressing the blue/magenta acknowledgement. Voice startup,
+    /// Microphone-off typing shows the outline before the first edit so Ethan can
+    /// see that the panel is ready. Its leaf yields before mounting the Canvas;
+    /// input never waits for decoration. Voice startup,
     /// Pause and idle remain unlit except for an explicit, bounded red outcome.
     /// This replaces
     /// the old showsLiveCaptureOutline gate; it is never a hardware or route signal.
     /// Original design by Claude Opus 5.5. Found and fixed by GPT-6.1 Sol.
+    /// — GPT-6.1 Sol
     var showsRecordingActivityOutline: Bool {
-        if microphoneOff && canTypeInHUD && !captureFinishRequested,
-           outlineActivity?.hasTextActivity == false && contextAcceptancePulse == nil { return false }
         return isEligibleForRecordingActivityOutline
     }
 
