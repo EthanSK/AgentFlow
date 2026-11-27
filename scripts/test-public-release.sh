@@ -25,7 +25,7 @@ test "$(grep -Fc "CURRENT_PROJECT_VERSION = $app_build;" "$project")" -ge 2
 derived="$output/TestDerivedData.noindex"
 native_suite=VoiceInkTests/RecorderPanelDismissalTests
 common=(
-  -project "$project" -scheme VoiceInk -configuration Debug
+  -project "$root/VoiceInk.xcodeproj" -scheme VoiceInk -configuration Debug
   -destination 'platform=macOS,arch=arm64' -derivedDataPath "$derived"
   -clonedSourcePackagesDirPath "${AGENTFLOW_PACKAGES_DIR:-$output/Packages.noindex}"
   -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates

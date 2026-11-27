@@ -119,6 +119,8 @@ class SparkleSigningTests(unittest.TestCase):
                 from pathlib import Path
                 args=sys.argv[1:]
                 data=json.loads(Path(os.environ["FIXTURE_DATA"]).read_text())
+                project=Path(args[args.index("-project")+1])
+                assert project.is_dir() and project.name=="VoiceInk.xcodeproj"
                 if "-enumerate-tests" in args:
                     assert "-only-testing:VoiceInkTests" in args and "test-without-building" in args
                     Path(args[args.index("-test-enumeration-output-path")+1]).write_text(json.dumps(data["catalog"]))
