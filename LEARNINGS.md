@@ -1,6 +1,17 @@
 # Learnings
 
 ---
+**Date:** 2026-11-27T20:55:29Z
+**Trigger:** Renewed request to fix Agent Flow GitHub Actions failures.
+**Symptom:** Hosted fade checks failed after a complete Mini pass; observer scheduling gaps could exceed the220ms animation.
+**Root cause:** Latest269987df hosted gate executed1121functions/57suites and failed3observations in2fadefunctions, with maximum gaps223.95/175.07/518.30ms. These prove missed observation opportunities, not the exact underlying workload or a new installed app defect.
+**Fix:** The public test gate runs the7recorder UI functions first in a fresh canonical Xcode app host, then the1114-function disjoint remainder with the same built test products. One validator requires exact equality with independent whole-target Xcode discovery, all named/argument results Passed, both action exits and summaries passed, and all4real layout/motion cases. Unfiltered fallback is disallowed; native animation/timing/predicates are unchanged.
+**Commit:** 7a78bd88bb562d068bc861fef78a551c67c0dedc
+**Guard:** Nine release/signing/accounting functions Passed, including false-green/omission/duplication/disabled/skipped/missing-argument controls. The real canonical Mini partition passed1121named functions/57suites,7+1114,all4style-motion cases, with distinct app PIDs independently observed;3returned artifact hashes,6frames and remote cleanup verified. Exact-source fully hosted/sign/notary/publication/download qualification remains pending.
+---
+
+
+---
 **Date:** 2026-11-27T16:45:19Z
 **Trigger:** Ethan: oh yeah the fade out doesnt happen rn; separate failure investigation chat01a21dc9-7f3a-79e1-bdc1-38839f2c5b23.
 **Symptom:** The final Mini recorder disappeared without the requested visible fade, while the standalone native window fade test passed.

@@ -73,7 +73,7 @@ TMPDIR="$output/SigningFixtures.noindex" python3 "$root/scripts/test-release-sig
 # Keep the named test logs, then reclaim only this release's generated test host before building
 # a separate universal Release app. The Mini can run out of space when both DerivedData trees coexist.
 test -d "$output/TestDerivedData.noindex"
-rm -rf "$output/TestDerivedData.noindex" "$output/TestFrameworks.noindex"
+rm -rf "$output/TestDerivedData.noindex"
 
 build_log="$output/xcode-release-build.log"
 derived="$output/ReleaseDerivedData.noindex"

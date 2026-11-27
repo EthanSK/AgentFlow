@@ -78,13 +78,21 @@ is only a local build, even when `codesign --verify --deep --strict` succeeds.
 
 ## Release boundary
 
-1. Work from a clean `main` commit. Increment both main-app `CURRENT_PROJECT_VERSION` settings;
-   never reuse an installed or published build number. Preserve the unrelated dirty VoiceInk
-   checkout and the official `/Applications/VoiceInk.app`.
-2. The GitHub-hosted Mac runs the full named unit suite. `scripts/test-public-release.sh`
-   uses Xcode's normal test action first. Only when TestManager executes zero named
-   tests does it use the already-built full-suite `xcrun xctest` fallback. The summary
-   and individual named passes must agree, with at least the current 365-test floor.
+1. Work from a clean `main` commit. Native app changes increment both main-app
+   `CURRENT_PROJECT_VERSION` settings. Test/documentation repairs to an unpublished
+   candidate retain its build only when native app/project/build inputs are unchanged
+   and mapped to the installed source; they do not reinstall unchanged production.
+   Never overwrite a published version or its assets. Preserve unrelated checkout
+   changes and the official `/Applications/VoiceInk.app`.
+2. The GitHub-hosted Mac runs the complete named unit target through
+   `scripts/test-public-release.sh`. Its recorder UI suite runs first in a fresh
+   canonical Xcode app host; the disjoint remainder runs in a second canonical action
+   using the same built test products. `scripts/verify-release-test-results.py` requires
+   their exact, non-overlapping union to equal Xcode's independent complete-target
+   discovery, with every case and all four recorder layout/motion cases passed.
+   Both Xcode exits and named summaries must pass, retaining the 365-function floor.
+   A failed or zero-test action fails the aggregate; an unfiltered direct runner is
+   not a fallback for this partitioned public gate.
    Include the cross-app selection fallback, privacy and fresh-setup model guards in
    the exact source being signed. GUI/session-dependent tests must actually pass on
    the hosted Mac; do not skip them or delegate them to a personal machine.

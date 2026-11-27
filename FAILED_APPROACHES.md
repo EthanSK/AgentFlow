@@ -1,5 +1,11 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-27 — Treating a bounded sampler as immunity to shared-host scheduling gaps — REJECTED
+
+Hosted269987df/run46052553825 still missed standalone native interpolation and both real animated layouts despite explicit motion policies, asynchronous yielding and same-callback pixel capture. It executed1121functions/57suites and failed3observations in2functions, with measured maximum gaps223.95/175.07/518.30ms during a220ms fade; both real windows were already finished/hidden. No content-threshold assertion failed in that attempt. The underlying workload causing those gaps remains unproved. Do not infer a new capture defect or repeatedly rerun the unchanged full gate.
+
+Test-only7a78bd88 separates the recorder UI suite into its own fresh canonical app host, then runs the disjoint remainder. Independent Xcode discovery must exactly equal the union of both named result sets; omitted/duplicate/disabled/failed tests and skipped/missing recorder arguments cannot pass. Both canonical exit statuses remain mandatory, and there is no unfiltered direct fallback. All1121functions/57suites and4style-motion cases Passed on Mini with distinct app PIDs,9accounting/signing functions and verified artifacts/cleanup. Fully hosted qualification remains pending. Reconsider the combined host only with a measured scheduling bound compatible with the same unchanged strict frame/content checks; never lengthen the user's fade or accept endpoints to satisfy CI.
+
 ## 2026-11-27 — A fading native window does not prove the recorder card remains visible
 
 The standalone AppKit interpolation fixture passed while the real Mini stack's final downward removal made every pixel transparent before the window finished fading. Native test-only440f3b70 captured a completely transparent Mini mid-fade frame; Notch retained its content. Build570/e6002821 preserves the final Mini card in place with opacity removal and keeps immediate startup insertion and non-final stack movement separate. All36 focused canonical native functions passed, including real-stack cases and existing capture/delivery safeguards. Reconsider moving the final card only with actual hosted-stack frames proving it remains visibly painted through the native fade, not window alpha alone.
