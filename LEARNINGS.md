@@ -1,5 +1,16 @@
 # Learnings
 
+---
+**Date:** 2026-11-27T16:45:19Z
+**Trigger:** Ethan: oh yeah the fade out doesnt happen rn; separate failure investigation chat01a21dc9-7f3a-79e1-bdc1-38839f2c5b23.
+**Symptom:** The final Mini recorder disappeared without the requested visible fade, while the standalone native window fade test passed.
+**Root cause:** The last Mini card used a downward removal transition and could become fully transparent before the native window fade completed. The first real-stack fixture captured zero nontransparent pixels in its mid-fade Mini image; Notch retained content. A strict alpha threshold in the first fixture falsely counted fading Notch pixels as missing and was corrected.
+**Fix:** Build570 uses an asymmetric Mini transition: immediate startup handoff insertion, opacity-only removal for the final card, and unchanged movement for non-final stack removals. The hosted cancellation fixture now observes its own fresh in-flight animation rather than requiring a second interpolation immediately after a completed animation; the exact old fixture scheduling cause remains unknown.
+**Commit:** e60028217a686400356bc6222e5139442ad4b92d
+**Guard:** All36 selected canonical native functions Passed on Mac Mini, including the new real-stack Mini/Notch cases, strict native interpolation/completion/reset, observed in-flight cancellation, startup/retired-feedback and600ms/media/Primary/Next/HUD-only guards. All4 returned artifact hashes and process/lock cleanup verified. Native frames visually inspected. Ordinary universal build and guarded signed local install are pending; public570 must still pass its exact-source hosted full gate and actual-download verification. No live microphone, Voice toggle or delivery probe generated. The earlier intermittent physical Stop/paste cause remains unproved.
+---
+
+
 ## 2026-11-27 — Completed Codex highlights focus the pane input
 
 The separate Codex helper retained a 9 November exception that preserved same-pane highlights while Agent Flow’s typing box returned the keyboard. The later request restores input focus after every completed chat-text highlight, including drag, double/triple-click and modifier selection. Remove the exception and its proof cache together. Keep the separately requested 3-second idle / 300-ms active capture intervals, exact pane/window proof, selected-draft protections, newer-input cancellation and recording-stop checks.
