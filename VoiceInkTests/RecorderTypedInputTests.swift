@@ -1025,7 +1025,7 @@ struct RecorderTypedInputTests {
         }
     }
 
-    @Test @MainActor func stopControlAcceptsEdgeClicksAtEveryHUDScaleWithoutTakingCancelClicks() throws {
+    @Test @MainActor func stopControlAcceptsEdgeClicksAtEveryHUDScaleWithoutTakingCancelClicks() async throws {
         // Dispatch real mouse events around Stop's small painted face, including
         // after the host resizes. No microphone or recorder lifecycle is started.
         // A larger click target must retain the gap and Cancel's own action. — GPT-6.1 Sol
@@ -1055,9 +1055,9 @@ struct RecorderTypedInputTests {
                 panel.contentView = host
                 panel.orderFrontRegardless()
                 host.layoutSubtreeIfNeeded()
-                RunLoop.current.run(until: Date().addingTimeInterval(0.15))
+                try await Task.sleep(for: .milliseconds(150))
                 host.layoutSubtreeIfNeeded()
-                func click(_ point: NSPoint) throws {
+                func click(_ point: NSPoint) async throws {
                     let location = NSPoint(x: point.x * scale, y: point.y * scale)
                     let down = try #require(NSEvent.mouseEvent(with: .leftMouseDown, location: location,
                         modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
@@ -1065,11 +1065,13 @@ struct RecorderTypedInputTests {
                     let up = try #require(NSEvent.mouseEvent(with: .leftMouseUp, location: location,
                         modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime + 0.05,
                         windowNumber: panel.windowNumber, context: nil, eventNumber: 2, clickCount: 1, pressure: 0))
+                    // One queued release lets AppKit finish synchronous tracking. A real
+                    // main-actor yield then delivers events and the resized SwiftUI frame;
+                    // do not dispatch that same mouse-up twice. Same100ms fixture budget.
+                    // This changes no live Stop handling or app timing. — GPT-6.1 Sol
                     NSApp.postEvent(up, atStart: false)
                     NSApp.sendEvent(down)
-                    RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-                    NSApp.sendEvent(up)
-                    RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+                    try await Task.sleep(for: .milliseconds(100))
                 }
                 let offsets: [NSPoint] = [
                     .zero, NSPoint(x: -14, y: 0), NSPoint(x: 14, y: 0),
@@ -1082,16 +1084,17 @@ struct RecorderTypedInputTests {
                     if index == 4 {
                         panel.setContentSize(NSSize(width: 110 * scale, height: 100 * scale))
                         host.layoutSubtreeIfNeeded()
-                        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+                        try await Task.sleep(for: .milliseconds(50))
                     }
-                    try click(NSPoint(x: 15.5 + offset.x, y: 20 + offset.y))
-                    #expect(stopped == (acceptsStop ? index + 1 : 0),
+                    let previousStops = stopped
+                    try await click(NSPoint(x: 15.5 + offset.x, y: 20 + offset.y))
+                    #expect(stopped == previousStops + (acceptsStop ? 1 : 0),
                         "Stop missed offset \(offset), scale \(scale), state \(state)")
                     #expect(cancelled == 0)
                 }
-                try click(NSPoint(x: 34, y: 20))
+                try await click(NSPoint(x: 34, y: 20))
                 #expect(stopped == (acceptsStop ? offsets.count : 0) && cancelled == 0)
-                try click(NSPoint(x: 47.5, y: 20))
+                try await click(NSPoint(x: 47.5, y: 20))
                 #expect(stopped == (acceptsStop ? offsets.count : 0) && cancelled == 1)
                 #expect(NSApp.keyWindow === originalKeyWindow)
             }
