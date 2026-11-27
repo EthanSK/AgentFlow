@@ -5,6 +5,7 @@ import Testing
 import AppKit
 import ApplicationServices
 import SwiftUI
+import SwiftData
 @testable import VoiceInkPlusPlus
 
 @Suite(.serialized)
@@ -99,12 +100,92 @@ struct RecorderPanelDismissalTests {
         #expect(panels.allSatisfy { $0.alphaValue == 1 && !$0.ignoresMouseEvents })
         panels.forEach { $0.orderFrontRegardless() }
         fade.hide(panels: panels, animated: true, reducedMotion: false)
+        let restartStarted = ContinuousClock.now
         #expect(observeNativeAnimation {
             panels.allSatisfy { $0.isVisible && $0.alphaValue > 0 && $0.alphaValue < 1 }
-        })
+        }, "Repeated fade sample after \(restartStarted.duration(to: .now)): \(panels.map { ($0.isVisible, $0.alphaValue) })")
         fade.cancel(panels: panels)
         try await Task.sleep(for: .milliseconds(300))
         #expect(panels.allSatisfy { $0.isVisible && $0.alphaValue == 1 && !$0.ignoresMouseEvents })
+    }
+
+    @Test(arguments: RecorderPanelStyle.allCases)
+    @MainActor func finalSessionRetirementKeepsVisibleContentForTheCompletionFade(style: RecorderPanelStyle) async throws {
+        let schema = Schema([Transcription.self])
+        let container = try ModelContainer(for: schema, configurations:
+            ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none))
+        let models = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let whisper = WhisperModelManager(modelsDirectory: models)
+        let transcriptionModels = TranscriptionModelManager(whisperModelManager: whisper,
+            fluidAudioModelManager: FluidAudioModelManager())
+        let engine = VoiceInkEngine(modelContext: ModelContext(container), whisperModelManager: whisper,
+            transcriptionModelManager: transcriptionModels)
+        let session = RecordingSession(phase: .transcribing)
+        session.liveRecordingState = .transcribing
+        engine.sessions = [session]
+        let previousStyle = UserDefaults.standard.object(forKey: "RecorderType")
+        let previousWindows = Set(NSApp.windows.map(ObjectIdentifier.init))
+        let ui = RecorderUIManager()
+        ui.configure(engine: engine, recorder: engine.recorder)
+        engine.recorderUIManager = ui
+        ui.recorderPanelStyle = style
+        ui.showTranscriptionRetryPanel()
+        let panels = NSApp.windows.filter { !previousWindows.contains(ObjectIdentifier($0)) }
+            .compactMap { $0 as? NSPanel }
+        defer {
+            panels.forEach { $0.orderOut(nil); $0.close() }
+            if let previousStyle { UserDefaults.standard.set(previousStyle, forKey: "RecorderType") }
+            else { UserDefaults.standard.removeObject(forKey: "RecorderType") }
+        }
+        #expect(ui.isRecorderPanelVisible && !panels.isEmpty)
+        try await Task.sleep(for: .milliseconds(150))
+        let initial = try panels.map { try paintedSamples(in: $0, name: "\(style)-before") }
+        #expect(initial.allSatisfy { $0 > 100 })
+
+        // Exercise the real stack and UI-manager boundary after retirement, rather than
+        // fading a permanent Text fixture. No audio, provider, paste or shortcut runs.
+        // The pipeline may yield for resource cleanup before its empty-panel dismissal.
+        // — GPT-6.1 Sol
+        session.phase = .done
+        session.clearContext()
+        engine.sessions = []
+        await Task.yield()
+        await ui.dismissRecorderPanel()
+        let sampled = observeNativeAnimation {
+            panels.allSatisfy { $0.isVisible && $0.alphaValue > 0.1 && $0.alphaValue < 0.6 }
+        }
+        #expect(sampled, "Completion fade never exposed an intermediate native frame")
+        let during = try panels.map { try paintedSamples(in: $0, name: "\(style)-during") }
+        for (before, after) in zip(initial, during) {
+            #expect(after > before / 2, "Recorder content vanished before its window fade: \(before) -> \(after)")
+        }
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while ui.isRecorderPanelVisible && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(!ui.isRecorderPanelVisible && panels.allSatisfy { !$0.isVisible })
+    }
+
+    /// Count recorder-owned painted pixels, independent of the window's animated alpha,
+    /// and retain synthetic native frames for visual inspection. — GPT-6.1 Sol
+    @MainActor private func paintedSamples(in panel: NSPanel, name: String) throws -> Int {
+        let view = try #require(panel.contentView)
+        view.layoutSubtreeIfNeeded()
+        let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        var painted = 0
+        for y in stride(from: 0, to: bitmap.pixelsHigh, by: 4) {
+            for x in stride(from: 0, to: bitmap.pixelsWide, by: 4) {
+                if (bitmap.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.5 { painted += 1 }
+            }
+        }
+        if let directory = ProcessInfo.processInfo.environment["VIPP_OUTLINE_SNAPSHOT_DIR"] {
+            let folder = URL(fileURLWithPath: directory, isDirectory: true)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try #require(bitmap.representation(using: .png, properties: [:]))
+                .write(to: folder.appendingPathComponent("completion-fade-\(name).png"))
+        }
+        return painted
     }
 
     @Test func fadingKeepsNextOwnedAndPrimaryCanStartWithoutWaiting() throws {
