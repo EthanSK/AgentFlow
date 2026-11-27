@@ -210,8 +210,14 @@ struct MiniRecorderStackView: View {
                     // climb upward in the bottom-anchored panel.
                     .offset(y: cardOffset(for: session))
                     .zIndex(zIndex(for: session))
+                    // Ethan's final "fade out" must keep the last Mini card in place.
+                    // Moving it below the host's bottom edge erased every painted pixel
+                    // while AppKit was still fading the window. Background stack removal
+                    // keeps its existing movement; the startup handoff stays immediate.
+                    // Found and fixed by GPT-6.1 Sol. — GPT-6.1 Sol
                     .transition(engine.startupPresentation.isHandingOff(to: session.startID)
-                        ? .identity : .move(edge: .bottom).combined(with: .opacity))
+                        ? .identity : ordered.count == 1
+                            ? .opacity : .move(edge: .bottom).combined(with: .opacity))
             }
             if let feedback = engine.noPasteOutlineFeedback {
                 RecorderNoPasteFeedbackView(feedback: feedback, style: .mini)
