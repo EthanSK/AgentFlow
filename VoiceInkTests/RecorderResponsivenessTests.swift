@@ -183,6 +183,13 @@ struct RecorderPanelDismissalTests {
         session.clearContext()
         engine.sessions = []
         await Task.yield()
+        // Materialize the retirement update before starting the window-only sample.
+        // A cold NSHostingView layout consumed211ms in the focused native fixture,
+        // leaving no observable frame of the220ms window animation. Keep that
+        // synthetic layout cost outside the measured native-alpha interval; capture
+        // still requires real retired content at strict intermediate window alpha.
+        // This does not add a delay or flush to the app. — GPT-6.1 Sol
+        panels.forEach { $0.contentView?.layoutSubtreeIfNeeded(); $0.displayIfNeeded() }
         var finished = false
         // The hosted Mac enables Reduce Motion. Its real managers correctly hide
         // immediately under that policy, so an animated-frame test cannot inherit
