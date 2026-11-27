@@ -1,6 +1,17 @@
 # Learnings
 
 ---
+**Date:** 2026-11-27T22:00:33.491394+00:00
+**Trigger:** Continuing the explicitly requested GitHub Actions failure repair.
+**Symptom:** Run46067567787/source5535e366 reached the final catalogue validator and failed `Discovery contains missing or foreign identifiers.`
+**Root cause:** Manual-only hosted build/enumeration46071037562/source364cb867 returned1124 entries: the same1121 VoiceInkTests unit IDs as the passing Mini catalogue, plus3 VoiceInkUITests sibling-target entries despite `-only-testing:VoiceInkTests`. The unchanged5535 validator reproduced its exact rejection on those actual bytes. The original failed run retained no catalogue, so its exact rows remain unavailable; this is a verified reproduction of the rejection mechanism.
+**Fix:** Scope accounting to the selected complete unit target and derive allowed sibling namespaces from the actual shared scheme. Report sibling entries separately; reject malformed/unknown targets, duplicate catalogues and every omitted/failed selected result or recorder argument. Preserve both canonical Xcode exits, summaries, all4 recorder layout/motion cases and every native predicate. Retain a seven-day explicit allowlist of public test logs/JSON after credential cleanup, including failures; retire the temporary manual discovery workflow.
+**Commit:** 92b7298594008c675e2fc115b5951112a4f01784
+**Guard:** All10 focused accounting/signing functions Passed on Mini; returned log hash and remote process/lock cleanup verified. Empty/malformed/foreign catalogues, omissions, duplicates, failed/skipped cases and false-green Xcode exits still fail. The actual hosted catalogue reconciles exactly with the already-executed1121-function/57-suite Mini results; that comparison is not new native execution. Native app/project/build inputs remain identical to installede600/build570. Exact-source full hosted signing/notary/publication/download qualification remains pending.
+---
+
+
+---
 **Date:** 2026-11-27T20:55:29Z
 **Trigger:** Renewed request to fix Agent Flow GitHub Actions failures.
 **Symptom:** Hosted fade checks failed after a complete Mini pass; observer scheduling gaps could exceed the220ms animation.

@@ -69,7 +69,7 @@ jobs:
             security delete-keychain "$RELEASE_KEYCHAIN"
           fi
       # Retain only public-source test evidence, never signing files or a whole
-      # temporary directory. Missing hosted catalogue bytes hid the format error.
+      # temporary directory. Missing hosted catalogue bytes hid the scope error.
       # Found and fixed by GPT-6.1 Sol.
       - name: Retain release test diagnostics
         if: always()

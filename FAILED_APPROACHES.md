@@ -1,5 +1,12 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-27 — Assuming target selection filters Xcode enumeration — REJECTED
+
+Public570/source5535e366 rejected its catalogue after both canonical actions had passed their exit/summary guards; no catalogue artifact was retained. Manual-only hosted46071037562 captured1124 entries despite `-only-testing:VoiceInkTests`: all1121 selected unit IDs matched the passing Mini catalogue, with3 additional entries from the scheme's separate VoiceInkUITests target. The unchanged5535 checker reproduced its exact rejection on these bytes. Do not infer a native fade failure or recover the lost original catalogue by assertion.
+
+Source92b72985 derives known test-target namespaces from the actual owning scheme, accounts for the selected complete unit target and reports sibling entries separately. Sibling catalogue entries must never substitute for missing unit results; unknown/malformed targets, duplicates, skipped/failed arguments and failed canonical actions still reject qualification. All10 focused accounting/signing functions Passed on Mini, and the actual hosted catalogue reconciled with the complete prior1121-result receipt. This is not another native execution or hosted/public success. Retain the explicit test diagnostic artifact allowlist on future failures; never include signing credentials or a whole temporary directory. Reconsider a selected-target-only catalogue assumption only with actual output from every supported hosted toolchain; keep the same complete-unit coverage requirements.
+
+
 ## 2026-11-27 — Treating a bounded sampler as immunity to shared-host scheduling gaps — REJECTED
 
 Hosted269987df/run46052553825 still missed standalone native interpolation and both real animated layouts despite explicit motion policies, asynchronous yielding and same-callback pixel capture. It executed1121functions/57suites and failed3observations in2functions, with measured maximum gaps223.95/175.07/518.30ms during a220ms fade; both real windows were already finished/hidden. No content-threshold assertion failed in that attempt. The underlying workload causing those gaps remains unproved. Do not infer a new capture defect or repeatedly rerun the unchanged full gate.

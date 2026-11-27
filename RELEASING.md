@@ -89,7 +89,12 @@ is only a local build, even when `codesign --verify --deep --strict` succeeds.
    canonical Xcode app host; the disjoint remainder runs in a second canonical action
    using the same built test products. `scripts/verify-release-test-results.py` requires
    their exact, non-overlapping union to equal Xcode's independent complete-target
-   discovery, with every case and all four recorder layout/motion cases passed.
+   discovery for the selected `VoiceInkTests` target, with every case and all four
+   recorder layout/motion cases passed. Hosted Xcode can also list the scheme's
+   separate `VoiceInkUITests` target despite the selection flag. The checker derives
+   known targets from the actual shared scheme, reports sibling-target entries
+   separately, and rejects unknown/malformed targets; sibling entries cannot replace
+   any selected unit test. Recorder UI checks remain inside the complete unit target.
    Both Xcode exits and named summaries must pass, retaining the 365-function floor.
    A failed or zero-test action fails the aggregate; an unfiltered direct runner is
    not a fallback for this partitioned public gate.
@@ -100,7 +105,10 @@ is only a local build, even when `codesign --verify --deep --strict` succeeds.
    the hosted machine selected as `AGENTFLOW_BUILD_HOST`. It checks the pinned
    universal `whisper.cpp` dependency, runs the full suite, then builds a separate
    universal Release app and embeds GPLv3. Detailed test logs remain with the job's
-   output, rather than being transferred from a Mini.
+   output, rather than being transferred from a Mini. An `always()` step after
+   credential cleanup retains only the explicit test-log/JSON allowlist for seven
+   days, including failed-run catalogues; it never uploads a whole temporary folder
+   or signing credentials.
 4. The same job signs nested code and the outer app with Developer ID and hardened
    runtime, retains Automation, submits to Apple, staples, and produces the public
    ZIP, SHA-256 file and source-bound `release.json`. Sparkle's bare `Autoupdate`
