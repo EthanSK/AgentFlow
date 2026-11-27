@@ -3,8 +3,13 @@ import AppKit
 import QuartzCore
 import Foundation
 import Darwin
+import SwiftUI
 
 @MainActor final class CompletionState { var finished = false }
+final class ProbePanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
 
 @MainActor func observe(_ panel: NSPanel, started: Double,
                         rows: inout [[Double]], maxGap: inout Double,
@@ -25,13 +30,28 @@ import Darwin
 @MainActor func runProbe(strategy: String) async throws {
     let app = NSApplication.shared
     if strategy == "active-async" { app.activate(ignoringOtherApps: true) }
-    let panel = NSPanel(contentRect: NSRect(x: 60, y: 100, width: 300, height: 60),
-                        styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+    let notch = CommandLine.arguments[3] == "notch"
+    let mask: NSWindow.StyleMask = notch
+        ? [.nonactivatingPanel, .fullSizeContentView, .hudWindow]
+        : [.nonactivatingPanel, .fullSizeContentView]
+    let panel = ProbePanel(contentRect: NSRect(x: 60, y: 100, width: 300, height: 60),
+                           styleMask: mask, backing: .buffered, defer: false)
+    panel.isFloatingPanel = true
+    panel.becomesKeyOnlyIfNeeded = true
     panel.isOpaque = false
-    panel.backgroundColor = .black
+    panel.backgroundColor = .clear
+    panel.hasShadow = false
     panel.hidesOnDeactivate = false
-    panel.level = .statusBar
-    panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+    panel.level = notch ? .statusBar + 3 : .floating + 1
+    panel.collectionBehavior = notch
+        ? [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        : [.canJoinAllSpaces, .fullScreenAuxiliary]
+    panel.titlebarAppearsTransparent = true
+    panel.titleVisibility = .hidden
+    if notch { panel.appearance = NSAppearance(named: .darkAqua) }
+    panel.styleMask.remove(.titled)
+    panel.contentView = NSHostingView(rootView: Text("Transcribing…").foregroundStyle(.white)
+        .frame(width: 300, height: 60).background(.black))
     panel.orderFrontRegardless()
     panel.displayIfNeeded()
     defer { panel.orderOut(nil); panel.close() }
@@ -59,6 +79,7 @@ import Darwin
     try await Task.sleep(for: .milliseconds(100))
     let result: [String: Any] = [
         "requestedPolicy": CommandLine.arguments[2], "strategy": strategy,
+        "style": CommandLine.arguments[3],
         "reduceMotion": NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
         "appRunning": app.isRunning, "appActive": app.isActive,
         "interpolated": rows.contains { $0[1] > 0 && $0[1] < 1 },
@@ -70,9 +91,9 @@ import Darwin
         options: [.sortedKeys]), encoding: .utf8)!)
 }
 
-guard CommandLine.arguments.count == 3,
+guard CommandLine.arguments.count == 4,
       ProcessInfo.processInfo.environment["GITHUB_ACTIONS"] == "true" else {
-    print("This disposable probe requires the GitHub-hosted diagnostic job and two arguments.")
+    print("This disposable probe requires the GitHub-hosted diagnostic job and three arguments.")
     exit(2)
 }
 let app = NSApplication.shared

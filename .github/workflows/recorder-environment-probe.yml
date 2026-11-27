@@ -26,8 +26,9 @@ jobs:
               for policy in ['original', 'false']:
                   if policy == 'false':
                       subprocess.run(['defaults', 'write', *key, '-bool', 'false'], check=True)
-                  for strategy in ['runloop', 'flush', 'async', 'active-async']:
-                      subprocess.run([sys.argv[1], strategy, policy], check=True, timeout=15)
+                  for style in ['mini', 'notch']:
+                      for strategy in ['runloop', 'flush', 'async', 'active-async']:
+                          subprocess.run([sys.argv[1], strategy, policy, style], check=True, timeout=15)
           finally:
               if original.returncode == 0:
                   value = 'true' if original_value in ['1', 'true', 'yes'] else 'false'
