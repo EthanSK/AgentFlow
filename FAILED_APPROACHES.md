@@ -1,5 +1,13 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-27 — Collapsing a fallback realtime HUD inline in the engine — REJECTED
+
+The first568 candidatece131a81 correctly surfaced the asynchronous handshake failure, but duplicated session.showsRealtimeTranscriptHUD=false in VoiceInkEngine. The unchanged startupAudioAccountingAndFallbackHUDRemainHonest guard rejected that branch among67 executed native functions.734fbf39 keeps the sole assignment in RealtimeTranscriptionStartup via an explicitly extracted display helper; new background failures share it without cancelling the file-finalization owner. All68 final focused cases passed with the old guard intact. This was a caught source-boundary issue, not an installed user failure. Reconsider another owner only with a deliberate policy change and evidence that synchronous/late failures cannot diverge; do not relax the single-owner assertion to accommodate duplication.
+
+
+## 2026-11-26 — Cancelling a completion fade only in the ordinary idle-card Start branch — REJECTED
+
+The first566 implementation kept the black bar visible for220ms and cancelled its old completion when the unreserved idle-card branch started again. Source tracing then showed reserved hardware/typing Starts commit directly through engine.toggleRecord and the common startup flush, bypassing that branch. The old fade could therefore still hide the new capture's controls. This is a verified source-boundary defect, not a claimed live recording failure. The new reserved-start structural regression rejects that prior source; b03197d4 validates/cancels the exact accepted Start before the flush's first suspension, alongside the still-needed ordinary idle-card guard. All73 focused native functions passed, including real window fade/cancel behavior. Reconsider a narrower hook only after proving every supported accepted-Start entry passes through it; never add a start delay or retain a real session to keep decoration alive.
 
 ## Sampling a short hold after redundant capture work — 2026-11-26
 
