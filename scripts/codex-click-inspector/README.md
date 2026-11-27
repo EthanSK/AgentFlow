@@ -55,23 +55,12 @@ typed-only session with automatic return switched off sends neither and counts
 as idle. Cost: with Agent Flow idle, the input is focused 3 seconds after a
 highlight instead of 0.4, and a key pressed in that window cancels it.
 
-One exception keeps a highlight on screen (Ethan, 2026-11-09). While Agent Flow's
-typing box will take the keyboard back after a highlight, Agent Flow posts
-`com.ethansk.voiceink.typingBoxKeyboardReturnOn`, then `...ReturnOff` when that
-stops. During that state a highlight in the pane that already has Codex's input
-is left alone, because the final paste lands there anyway. A highlight in any
-other pane, or any pane the helper cannot prove, still focuses its input and
-clears the highlight, so the text still lands in the highlighted pane. Speech
-sessions are unchanged. Focusing the pane at finish instead was rejected: nothing
-orders that write before a typed-only paste, and a late write would move the
-auto-send Return to the other pane. Codex does not expose which input it
-remembers, so the proof is narrow: the click just before the highlight must be
-one where this helper verifiably focused that pane's input, a click inside that
-input, or an earlier kept highlight (the double or triple click's own clicks do
-not count against it). Any other click in between, such as a tab or button,
-forgets the pane and costs one cleared highlight. A keyboard-only move to
-the other composer is not visible to the helper. The flag also resets when Agent
-Flow launches, so a crash cannot leave it on.
+Completed highlights always use the measured pane's existing input-focus action,
+including while Agent Flow's typing box returns the keyboard (Ethan, 2026-11-27).
+This supersedes the 9 November same-pane highlight-preservation exception.
+Focusing the composer can clear the message highlight after capture's existing
+settling interval. Draft selections, direct composer/control clicks, newer input,
+window identity and recording-stop protections still govern the focus action.
 
 The click path never acts on learned regions, a remembered input or
 another app, re-checks focus and frontmost app right before the write, and
