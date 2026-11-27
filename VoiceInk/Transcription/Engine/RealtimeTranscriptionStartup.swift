@@ -37,6 +37,18 @@ enum RealtimeTranscriptionStartup {
         case supersededAttemptReleased
     }
 
+    /// A late network failure changes only this live session's preview. Capture and
+    /// the finalization task still own its complete-file recovery. — GPT-6.1 Sol
+    static func backgroundProviderFailure(
+        session: RecordingSession,
+        ownsLiveCapture: @MainActor () -> Bool
+    ) -> Outcome {
+        guard ownsLiveCapture(), session.liveRecordingState.isRecordingOrPaused,
+              !session.shouldCancel else { return .supersededAttemptReleased }
+        collapseRealtimeHUD(session)
+        return .completedFileFallback(.providerPreparationFailed)
+    }
+
     /// - Parameters:
     ///   - streamingSession: This recording's provider attempt. The caller attaches it
     ///     as `session.transcriptionSession` first, so a stop during preparation freezes
@@ -143,9 +155,15 @@ enum RealtimeTranscriptionStartup {
             // the provider's file service and this session's frozen configuration.
             session.transcriptionSession = nil
         }
-        session.showsRealtimeTranscriptHUD = false
+        collapseRealtimeHUD(session)
         startupAudioRouter.close()
         detachRecorderAudio()
+    }
+
+    /// Extraction of the existing fallBackToCompletedFile display update; both
+    /// synchronous and background failures share this one preview policy. — GPT-6.1 Sol
+    private static func collapseRealtimeHUD(_ session: RecordingSession) {
+        session.showsRealtimeTranscriptHUD = false
     }
 
     /// The session no longer owns live capture. Only its own startup buffer is

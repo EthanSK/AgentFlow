@@ -95,14 +95,35 @@ struct RealtimeSilenceSleepIntegrationTests {
         let start = try #require(source.range(of: "onRealtimeStartupFailure: { [weak self, weak session] in"))
         let end = try #require(source.range(of: "session.transcriptionSession = streamingSession", range: start.upperBound..<source.endIndex))
         let body = source[start.lowerBound..<end.lowerBound]
-        let effect = try #require(body.range(of: "session.showsRealtimeTranscriptHUD = false"))
-        for guardText in ["self.activeRecordingSession === session", "session.startID == startID",
-                          "session.liveRecordingState.isRecordingOrPaused", "!session.shouldCancel"] {
+        let effect = try #require(body.range(of: "self.applyRealtimeStartupOutcome(outcome, sessionID: session.id)"))
+        for guardText in ["self.activeRecordingSession === session", "session.startID == startID"] {
             #expect(try #require(body.range(of: guardText)).lowerBound < effect.lowerBound)
         }
-        #expect(body.contains(".completedFileFallback(.providerPreparationFailed)"))
+        #expect(body.contains("RealtimeTranscriptionStartup.backgroundProviderFailure("))
         for forbidden in ["stopRecording", "cancelRecording", "removeSession", "paste", "Task.sleep"] {
             #expect(!body.contains(forbidden))
+        }
+    }
+
+    @Test @MainActor func lateRealtimeFailureChangesOnlyTheStillOwnedCapturePreview() {
+        for phase in [RecordingSession.Phase.recording, .transcribing] {
+            for owns in [true, false] {
+                for cancelled in [true, false] {
+                    let session = RecordingSession(phase: phase)
+                    session.showsRealtimeTranscriptHUD = true
+                    session.shouldCancel = cancelled
+                    let other = RecordingSession(phase: .recording)
+                    other.showsRealtimeTranscriptHUD = true
+                    let result = RealtimeTranscriptionStartup.backgroundProviderFailure(
+                        session: session, ownsLiveCapture: { owns })
+                    let shouldWarn = phase == .recording && owns && !cancelled
+                    #expect(result == (shouldWarn ? .completedFileFallback(.providerPreparationFailed)
+                                                  : .supersededAttemptReleased))
+                    #expect(session.showsRealtimeTranscriptHUD == !shouldWarn)
+                    #expect(session.phase == phase && session.shouldCancel == cancelled)
+                    #expect(other.showsRealtimeTranscriptHUD && other.phase == .recording)
+                }
+            }
         }
     }
 

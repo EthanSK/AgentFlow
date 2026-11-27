@@ -1661,15 +1661,14 @@ class VoiceInkEngine: NSObject, ObservableObject {
                         // A's delayed connect failure must never repaint or warn over B.
                         // Keep A's WAV, Stop controls, recovery and delivery unchanged.
                         // Found by Claude Opus 5.5. Fixed by GPT-6.1 Sol.
-                        guard let self, let session,
-                              self.activeRecordingSession === session,
-                              session.startID == startID,
-                              session.liveRecordingState.isRecordingOrPaused,
-                              !session.shouldCancel else { return }
-                        session.showsRealtimeTranscriptHUD = false
-                        self.applyRealtimeStartupOutcome(
-                            .completedFileFallback(.providerPreparationFailed), sessionID: session.id
+                        guard let self, let session else { return }
+                        let outcome = RealtimeTranscriptionStartup.backgroundProviderFailure(
+                            session: session,
+                            ownsLiveCapture: {
+                                self.activeRecordingSession === session && session.startID == startID
+                            }
                         )
+                        self.applyRealtimeStartupOutcome(outcome, sessionID: session.id)
                     }
                 )
                 session.transcriptionSession = streamingSession
