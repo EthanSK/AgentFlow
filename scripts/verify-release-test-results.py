@@ -31,7 +31,7 @@ def results(path, log):
     require(all(node.get("result") == "Passed" for node in arguments),
             "A parameterized argument did not pass.")
     summaries = re.findall(
-        r"^[\s\u2063]*✔ Test run with ([1-9][0-9]*) tests in ([1-9][0-9]*) suites passed",
+        r"^[\s\u2063]*✔ Test run with ([1-9][0-9]*) tests? in ([1-9][0-9]*) suites? passed",
         Path(log).read_text(), re.MULTILINE)
     require(bool(summaries), "Canonical action lacks a nonzero passing test summary.")
     count, suites = map(int, summaries[-1])

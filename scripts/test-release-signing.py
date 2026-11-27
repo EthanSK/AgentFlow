@@ -141,7 +141,8 @@ class SparkleSigningTests(unittest.TestCase):
                     else:
                         print("✔ Test fixture() passed after 0.01 seconds.")
                 count=len(cases)+(1 if os.environ["FIXTURE_FAULT"]=="summary_count" and not native else 0)
-                print(f"✔ Test run with {count} tests in 1 suites passed after 0.02 seconds.")
+                noun="test" if count==1 else "tests"
+                print(f"✔ Test run with {count} {noun} in 1 suite passed after 0.02 seconds.")
                 sys.exit(int(os.environ["FIXTURE_XCODE_EXIT"]))
             """))
             fake.chmod(0o755)
