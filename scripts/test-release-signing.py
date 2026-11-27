@@ -57,41 +57,141 @@ class SparkleSigningTests(unittest.TestCase):
                 self.assertTrue(entitlements["com.apple.security.device.audio-input"])
                 self.assertNotIn("com.apple.developer.icloud-container-identifiers", entitlements)
 
-    def test_failed_xcode_run_cannot_pass_with_green_swift_testing_summary(self):
+    def release_gate_fixture(self, xcode_exit=0, fault="", parameter_prefix=""):
+        import copy
+        import json
         import shutil
+        import textwrap
+        native_names = [
+            "completionFadeDoesNotWaitOrHideANewerPresentation()",
+            "fadingKeepsNextOwnedAndPrimaryCanStartWithoutWaiting()",
+            "nativeCancelPreemptsAnObservedFadeWithoutHidingEitherLayout()",
+            "nativeFadeInterpolatesBothLayoutsAndReleasesEveryMirror()",
+            "reservedStartsCancelTheOldFadeBeforeYieldingOrOpeningAudio()",
+            "resetAndReducedMotionHideImmediatelyAndPreserveMouseState()",
+            "finalSessionRetirementKeepsVisibleContentForTheCompletionFade(style:reducedMotion:)",
+        ]
+        native = [{"nodeType": "Test Case", "nodeIdentifier": "RecorderPanelDismissalTests/" + name,
+                   "result": "Passed"} for name in native_names]
+        native[-1]["children"] = [{"nodeType": "Arguments", "name": name, "result": "Passed"}
+                                  for name in (".mini, false", ".mini, true", ".notch, false", ".notch, true")]
+        remaining = [{"nodeType": "Test Case", "nodeIdentifier": f"Fixture/fixture{i}()",
+                      "result": "Passed"} for i in range(358)]
+        catalog = {"errors": [], "values": [{"testPlan": "VoiceInk", "disabledTests": [],
+                    "enabledTests": [{"identifier": "VoiceInkTests/" + node["nodeIdentifier"]}
+                                     for node in native + remaining]}]}
+        if fault == "missing":
+            remaining.pop()
+        elif fault == "overlap":
+            remaining.append(copy.deepcopy(native[0]))
+        elif fault == "failed_case":
+            remaining[0]["result"] = "Failed"
+        elif fault == "skipped_argument":
+            native[-1]["children"][0]["result"] = "Skipped"
+        elif fault == "missing_argument":
+            native[-1]["children"].pop()
+        elif fault == "duplicate":
+            remaining.append(copy.deepcopy(remaining[0]))
+        elif fault == "discovery_error":
+            catalog["errors"] = ["Synthetic discovery failure"]
+        elif fault == "disabled":
+            catalog["values"][0]["disabledTests"] = [{"identifier": "VoiceInkTests/Fixture/disabled()"}]
+        elif fault == "foreign":
+            catalog["values"][0]["enabledTests"][0]["identifier"] = "OtherTarget/Fixture/foreign()"
+        elif fault == "duplicate_catalog":
+            catalog["values"][0]["enabledTests"].append(copy.deepcopy(catalog["values"][0]["enabledTests"][0]))
+        elif fault == "zero_native":
+            native.clear()
         with tempfile.TemporaryDirectory() as directory:
-            repo = Path(directory) / "repo"
+            base = Path(directory)
+            repo = base / "repo"
             (repo / "scripts").mkdir(parents=True)
             (repo / "VoiceInk.xcodeproj").mkdir()
-            gate = repo / "scripts/test-public-release.sh"
-            shutil.copy2(ROOT / "scripts/test-public-release.sh", gate)
+            for name in ("test-public-release.sh", "verify-release-test-results.py"):
+                shutil.copy2(ROOT / "scripts" / name, repo / "scripts" / name)
             shutil.copy2(ROOT / "VoiceInk.xcodeproj/project.pbxproj",
                          repo / "VoiceInk.xcodeproj/project.pbxproj")
+            fixture = base / "fixture.json"
+            fixture.write_text(json.dumps({"native": native, "remaining": remaining, "catalog": catalog}))
             fake = repo / "xcodebuild"
-            fake.write_text("#!/bin/sh\n"
-                            "i=0; while [ $i -lt 357 ]; do\n"
-                            "  echo \"✔ Test fixture$i() passed after 0.01 seconds.\"\n"
-                            "  i=$((i + 1))\ndone\n"
-                            "i=0; while [ $i -lt 8 ]; do\n"
-                            "  printf '%s✔ Test parameter%s() with 2 test cases passed after 0.01 seconds.\\n' \"$FIXTURE_PARAMETER_PREFIX\" \"$i\"\n"
-                            "  i=$((i + 1))\ndone\n"
-                            "echo '✔ Test run with 365 tests in 2 suites passed after 0.02 seconds.'\n"
-                            "exit \"$FIXTURE_XCODE_EXIT\"\n")
+            fake.write_text("#!/usr/bin/env python3\n" + textwrap.dedent("""
+                import json,os,sys
+                from pathlib import Path
+                args=sys.argv[1:]
+                data=json.loads(Path(os.environ["FIXTURE_DATA"]).read_text())
+                if "-enumerate-tests" in args:
+                    assert "-only-testing:VoiceInkTests" in args and "test-without-building" in args
+                    Path(args[args.index("-test-enumeration-output-path")+1]).write_text(json.dumps(data["catalog"]))
+                    print("Discovery only")
+                    sys.exit(0)
+                native="-only-testing:VoiceInkTests/RecorderPanelDismissalTests" in args
+                if native:
+                    assert "test" in args
+                else:
+                    assert "-skip-testing:VoiceInkTests/RecorderPanelDismissalTests" in args
+                    assert "-only-testing:VoiceInkTests" in args and "test-without-building" in args
+                with Path(os.environ["FIXTURE_CALLS"]).open("a") as calls:
+                    calls.write(("native" if native else "remaining") + "\\n")
+                cases=data["native" if native else "remaining"]
+                for case in cases:
+                    if case.get("children"):
+                        print(os.environ["FIXTURE_PARAMETER_PREFIX"]+"✔ Test parameter() with 4 test cases passed after 0.01 seconds.")
+                    else:
+                        print("✔ Test fixture() passed after 0.01 seconds.")
+                count=len(cases)+(1 if os.environ["FIXTURE_FAULT"]=="summary_count" and not native else 0)
+                print(f"✔ Test run with {count} tests in 1 suites passed after 0.02 seconds.")
+                sys.exit(int(os.environ["FIXTURE_XCODE_EXIT"]))
+            """))
             fake.chmod(0o755)
+            fake_result = repo / "xcrun"
+            fake_result.write_text("#!/usr/bin/env python3\n" + textwrap.dedent("""
+                import json,os,sys
+                from pathlib import Path
+                args=sys.argv[1:]
+                path=args[args.index("--path")+1]
+                data=json.loads(Path(os.environ["FIXTURE_DATA"]).read_text())
+                cases=data["native" if path.endswith("/RecorderPanelTests.xcresult") else "remaining"]
+                print(json.dumps({"testNodes":cases}))
+            """))
+            fake_result.chmod(0o755)
             subprocess.run(["git", "init", "-q", str(repo)], check=True)
             subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
             subprocess.run(["git", "-C", str(repo), "-c", "user.name=Fixture",
                             "-c", "user.email=fixture@localhost", "commit", "-qm", "Fixture"], check=True)
-            for xcode_exit, prefix in ((0, ""), (0, "\u2063"), (65, ""), (65, "\u2063")):
-                with self.subTest(xcode_exit=xcode_exit, parameter_prefix=prefix):
-                    result = subprocess.run(
-                        ["bash", str(gate), str(Path(directory) / f"out-{xcode_exit}")],
-                        env={**os.environ, "PATH": str(repo) + ":" + os.environ["PATH"],
-                             "FIXTURE_XCODE_EXIT": str(xcode_exit),
-                             "FIXTURE_PARAMETER_PREFIX": prefix}, capture_output=True, text=True)
-                    self.assertEqual(result.returncode == 0, xcode_exit == 0, result.stderr)
-                    if xcode_exit:
-                        self.assertIn("Xcode failed", result.stderr)
+            calls = base / "calls.txt"
+            result = subprocess.run(
+                ["bash", str(repo / "scripts/test-public-release.sh"), str(base / "output")],
+                env={**os.environ, "PATH": str(repo) + ":" + os.environ["PATH"],
+                     "FIXTURE_DATA": str(fixture), "FIXTURE_CALLS": str(calls),
+                     "FIXTURE_XCODE_EXIT": str(xcode_exit), "FIXTURE_FAULT": fault,
+                     "FIXTURE_PARAMETER_PREFIX": parameter_prefix}, capture_output=True, text=True)
+            executed = calls.read_text().splitlines() if calls.exists() else []
+            receipt = base / "output/qualified-tests.json"
+            return result, executed, json.loads(receipt.read_text()) if receipt.exists() else None
+
+    def test_failed_xcode_run_cannot_pass_with_green_swift_testing_summary(self):
+        for xcode_exit, prefix in ((0, ""), (0, "\u2063"), (65, ""), (65, "\u2063")):
+            with self.subTest(xcode_exit=xcode_exit, parameter_prefix=prefix):
+                result, calls, receipt = self.release_gate_fixture(xcode_exit=xcode_exit, parameter_prefix=prefix)
+                self.assertEqual(result.returncode == 0, xcode_exit == 0, result.stderr)
+                if xcode_exit:
+                    self.assertIn("Xcode failed", result.stderr)
+                    self.assertEqual(calls, ["native"])
+                    self.assertIsNone(receipt)
+                else:
+                    self.assertEqual(calls, ["native", "remaining"])
+                    self.assertEqual(receipt["namedFunctionsPassed"], 365)
+                    self.assertTrue(receipt["exactDisjointCoverage"])
+                    self.assertEqual(receipt["nativeStyleMotionCasesPassed"], 4)
+
+    def test_full_release_rejects_incomplete_or_false_green_partition_receipts(self):
+        for fault in ("missing", "overlap", "failed_case", "skipped_argument",
+                      "missing_argument", "duplicate", "discovery_error", "disabled",
+                      "foreign", "duplicate_catalog", "zero_native", "summary_count"):
+            with self.subTest(fault=fault):
+                result, _, receipt = self.release_gate_fixture(fault=fault)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+                self.assertIsNone(receipt)
 
     def test_public_checksum_manifest_works_in_another_download_folder(self):
         line = next(line for line in PACKAGE.splitlines()

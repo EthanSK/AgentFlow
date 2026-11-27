@@ -1,21 +1,20 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# A public binary needs a full, named test pass from its exact source/build.
-# Run in a clean release checkout on the selected build host; never package the test host.
+# Qualify the complete discovered target from one exact source/build. The native
+# recorder suite gets a fresh canonical test host before other AppKit fixtures.
+# Hosted observations measured up to518ms between samples of a220ms fade; keep
+# every strict frame/content guard instead of lengthening the user's animation.
+# — GPT-6.1 Sol
 root=$(cd "$(dirname "$0")/.." && pwd)
 output=${1:?Pass a fresh, task-scoped output directory}
 mkdir -p "$output"
-# The direct Swift Testing runner inherits its working directory. Keep LLVM's
-# generated coverage file with the release evidence, not as default.profraw in
-# the source checkout (which would block the next clean-checkout release).
 export LLVM_PROFILE_FILE="$output/profile-%p.profraw"
-test "$(git -C "$root" status --porcelain | wc -l | tr -d ' ')" = 0
+test -z "$(git -C "$root" status --porcelain)"
 
 project="$root/VoiceInk.xcodeproj/project.pbxproj"
 builds=$(sed -n 's/.*CURRENT_PROJECT_VERSION = \([0-9][0-9]*\);/\1/p' "$project" | sort -u)
 test "$(printf '%s\n' "$builds" | wc -l | tr -d ' ')" = 2 || {
-  # App and test target each carry a build value; require the app's two configurations to agree.
   echo 'Unexpected Xcode build-version settings; inspect the project before release.' >&2
   exit 1
 }
@@ -24,106 +23,70 @@ app_build=$(grep 'CURRENT_PROJECT_VERSION = ' "$project" | head -1 | sed -E 's/.
 test "$(grep -Fc "CURRENT_PROJECT_VERSION = $app_build;" "$project")" -ge 2
 
 derived="$output/TestDerivedData.noindex"
-canonical_log="$output/xcode-full-tests.log"
-canonical_result=0
-/usr/bin/python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=900, check=True)' \
-  xcodebuild -project "$root/VoiceInk.xcodeproj" -scheme VoiceInk \
-  -configuration Debug -destination 'platform=macOS,arch=arm64' \
-  -only-testing:VoiceInkTests \
-  -derivedDataPath "$derived" -resultBundlePath "$output/FullTests.xcresult" \
-  -clonedSourcePackagesDirPath "${AGENTFLOW_PACKAGES_DIR:-$output/Packages.noindex}" \
-  -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates -parallel-testing-enabled NO -jobs 2 \
-  -xcconfig "$root/LocalBuild.xcconfig" \
-  CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES \
-  DEVELOPMENT_TEAM= ENABLE_HARDENED_RUNTIME=NO "CODE_SIGN_ENTITLEMENTS=$root/VoiceInk/VoiceInk.local.entitlements" \
-  'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) LOCAL_BUILD' \
-  test >"$canonical_log" 2>&1 || canonical_result=$?
+native_suite=VoiceInkTests/RecorderPanelDismissalTests
+common=(
+  -project "$project" -scheme VoiceInk -configuration Debug
+  -destination 'platform=macOS,arch=arm64' -derivedDataPath "$derived"
+  -clonedSourcePackagesDirPath "${AGENTFLOW_PACKAGES_DIR:-$output/Packages.noindex}"
+  -onlyUsePackageVersionsFromResolvedFile -skipPackageUpdates
+  -parallel-testing-enabled NO -jobs 2 -xcconfig "$root/LocalBuild.xcconfig"
+  CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=YES
+  DEVELOPMENT_TEAM= ENABLE_HARDENED_RUNTIME=NO
+  "CODE_SIGN_ENTITLEMENTS=$root/VoiceInk/VoiceInk.local.entitlements"
+  'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) LOCAL_BUILD'
+)
 
-passed_log="$canonical_log"
-# XCTest and Swift Testing share the scheme. A passing Swift summary can coexist
-# with a failed XCTest or test-host exit. Never turn that into a release receipt.
-if grep -Eq '^✔ Test run with [1-9][0-9]* tests in [1-9][0-9]* suites passed' "$canonical_log"; then
-  if (( canonical_result != 0 )); then
-    echo "Xcode failed (exit $canonical_result) despite a passing Swift Testing summary." >&2
-    grep -E 'failed|error:|✘' "$canonical_log" >&2 || true
+canonical_action() {
+  local log=$1
+  shift
+  local result=0
+  /usr/bin/python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=900, check=True)' \
+    xcodebuild "${common[@]}" "$@" >"$log" 2>&1 || result=$?
+  # A green Swift summary never overrules Xcode/XCTest failure. Neither action
+  # may fall back to an unfiltered direct runner: that would lose this partition.
+  # TestManager stalls remain failures with evidence, never zero-test passes.
+  if (( result != 0 )); then
+    echo "Xcode failed (exit $result): $log" >&2
+    grep -E '✘|Expectation failed|[Ii]ssue recorded|RecorderFadeDiagnostic|error:' "$log" >&2 || true
+    tail -35 "$log" >&2
     exit 1
   fi
-else
-  # TestManager has repeatedly stalled at zero named tests on this Mini. The direct runner is
-  # allowed only for this full-suite release gate, against the already-built bundle.
-  if grep -Eq '^[◇✔✘] Test .+\(|^Test Case .+ failed|^Test Suite .+ failed' "$canonical_log"; then
-    echo 'Canonical Xcode runner executed tests but did not pass; refusing fallback.' >&2
-    # The final test-log lines can contain only unrelated passing cases.
-    # Keep the actual failures in the Fleet/GitHub log before its source is reclaimed.
-    grep -E '✘|Expectation failed|[Ii]ssue recorded|RecorderFadeDiagnostic|error:' "$canonical_log" >&2 || true
-    tail -35 "$canonical_log" >&2
+  if ! grep -Eq '✔ Test run with [1-9][0-9]* tests in [1-9][0-9]* suites passed' "$log"; then
+    echo "Canonical action has no nonzero passing Swift Testing summary: $log" >&2
+    tail -35 "$log" >&2
     exit 1
   fi
-  host="$derived/Build/Products/Debug/AgentFlow.app"
-  bundle="$host/Contents/PlugIns/VoiceInkTests.xctest"
-  if ! test -d "$bundle"; then
-    echo 'Xcode did not build the test bundle.' >&2
-    # Keep the actual build failure in CI; the disposable runner takes its local log away. — GPT-6.1 Sol
-    grep -E 'error:|[Ff]ailed|[Uu]nable to|[Cc]ould not' "$canonical_log" >&2 || true
-    tail -40 "$canonical_log" >&2
-    exit 1
-  fi
-  # The direct runner uses a different Bundle.main. Keep the built host untouched and stage its
-  # package resource beside a disposable framework copy so MediaRemoteAdapter can find it.
-  resource_bundle="$host/Contents/Resources/MediaRemoteAdapter_MediaRemoteAdapter.bundle"
-  test -d "$resource_bundle" || { echo 'MediaRemoteAdapter test resource is missing.' >&2; exit 1; }
-  staged_frameworks="$output/TestFrameworks.noindex"
-  ditto "$host/Contents/Frameworks" "$staged_frameworks"
-  ditto "$resource_bundle" \
-    "$staged_frameworks/MediaRemoteAdapter.framework/Versions/A/Resources/MediaRemoteAdapter_MediaRemoteAdapter.bundle"
-  passed_log="$output/direct-full-tests.log"
-  DYLD_LIBRARY_PATH="$host/Contents/MacOS" \
-  DYLD_FRAMEWORK_PATH="$staged_frameworks:$host/Contents/Frameworks:$(xcode-select -p)/Platforms/MacOSX.platform/Developer/Library/Frameworks" \
-    /usr/bin/python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=600, check=True)' \
-    xcrun xctest "$bundle" >"$passed_log" 2>&1 || {
-      echo "Full-suite fallback failed (canonical exit $canonical_result)." >&2
-      tail -35 "$passed_log" >&2
-      exit 1
-    }
-fi
-
-summary=$(grep -E '^✔ Test run with [1-9][0-9]* tests in [1-9][0-9]* suites passed' "$passed_log" | tail -1)
-[[ "$summary" =~ ^✔\ Test\ run\ with\ ([0-9]+)\ tests\ in\ ([0-9]+)\ suites\ passed ]] || {
-  echo 'No passing Swift Testing suite summary.' >&2
-  exit 1
 }
-count=${BASH_REMATCH[1]}
-ordinary=$(grep -E '^✔ Test .* passed after' "$passed_log" | grep -v -E '^✔ Test run| with [0-9]+ test cases passed after' | wc -l | tr -d ' ')
-# Swift Testing can prefix parameterized summaries with an invisible separator.
-# Count each function once with either output form; exclude it from ordinary passes.
-# Their individual cases are starts, not separate passed-test lines. — GPT-6.1 Sol
-# Count each passing named parameterized function once, matching the run summary.
-parameterized=$(awk '/✔ Test .+ with [0-9]+ test cases passed after/ { n++ } END { print n+0 }' "$passed_log")
-named=$((ordinary + parameterized))
-test "$count" -ge 365
-if test "$named" != "$count"; then
-  # Unified logging sometimes splits a named Swift Testing pass in the middle of
-  # its name. Only the successful canonical Xcode action has independent, named
-  # case results. A direct fallback still needs every name in its own output.
-  if [[ "$passed_log" != "$canonical_log" ]] || (( canonical_result != 0 )); then
-    echo "Test summary names $count tests but output contains $named named passes." >&2
-    exit 1
-  fi
-  xcrun xcresulttool get test-results tests --path "$output/FullTests.xcresult" --compact \
-    | /usr/bin/python3 -c '
-import json, sys
-expected = int(sys.argv[1])
-roots = json.load(sys.stdin)["testNodes"]
-def nodes(items):
-    for item in items:
-        yield item
-        yield from nodes(item.get("children", []))
-cases = [node for node in nodes(roots) if node.get("nodeType") == "Test Case"]
-names = {case.get("nodeIdentifier") for case in cases}
-if not (len(cases) == len(names) == expected and all(names)
-        and all(case.get("result") == "Passed" for case in cases)):
-    sys.exit("The Xcode result bundle did not confirm every named passing test.")
-' "$count"
-fi
-printf 'Full release suite passed: %s named tests, %s suites; source %s, build %s.\n' \
-  "$count" "${BASH_REMATCH[2]}" "$(git -C "$root" rev-parse HEAD)" "$app_build"
+
+canonical_action "$output/xcode-recorder-tests.log" \
+  "-only-testing:$native_suite" -resultBundlePath "$output/RecorderPanelTests.xcresult" test
+
+# Ask Xcode for the complete target independently of either selection. This is
+# discovery, not execution; the verifier requires exact, disjoint result coverage.
+# Build once above; subsequent commands use those same test products.
+catalog="$output/test-catalog.json"
+/usr/bin/python3 -c 'import subprocess,sys; subprocess.run(sys.argv[1:], timeout=180, check=True)' \
+  xcodebuild "${common[@]}" -only-testing:VoiceInkTests -enumerate-tests \
+  -test-enumeration-style flat -test-enumeration-format json \
+  -test-enumeration-output-path "$catalog" test-without-building \
+  >"$output/xcode-test-discovery.log" 2>&1
+
+canonical_action "$output/xcode-remaining-tests.log" \
+  -only-testing:VoiceInkTests "-skip-testing:$native_suite" \
+  -resultBundlePath "$output/RemainingTests.xcresult" test-without-building
+
+xcrun xcresulttool get test-results tests --path "$output/RecorderPanelTests.xcresult" \
+  --compact >"$output/native-test-results.json"
+xcrun xcresulttool get test-results tests --path "$output/RemainingTests.xcresult" \
+  --compact >"$output/remaining-test-results.json"
+
+# The single validator owns full named coverage/accounting for both real actions.
+# No test is skipped merely because its UI timing needs a fresh process.
+python3 "$root/scripts/verify-release-test-results.py" \
+  --catalog "$catalog" --native-suite "$native_suite" \
+  --native-results "$output/native-test-results.json" \
+  --remaining-results "$output/remaining-test-results.json" \
+  --native-log "$output/xcode-recorder-tests.log" \
+  --remaining-log "$output/xcode-remaining-tests.log" \
+  --source "$(git -C "$root" rev-parse HEAD)" --build "$app_build" \
+  --output "$output/qualified-tests.json"
