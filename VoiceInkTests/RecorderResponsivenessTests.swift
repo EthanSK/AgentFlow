@@ -184,12 +184,14 @@ struct RecorderPanelDismissalTests {
         engine.sessions = []
         await Task.yield()
         // Materialize the retirement update before starting the window-only sample.
-        // A cold NSHostingView layout consumed211ms in the focused native fixture,
-        // leaving no observable frame of the220ms window animation. Keep that
-        // synthetic layout cost outside the measured native-alpha interval; capture
+        // The focused fixture measured a211ms native-run-loop sampling gap, nearly
+        // the whole220ms window animation. Flush pending synthetic layout work
+        // outside the measured native-alpha interval; capture
         // still requires real retired content at strict intermediate window alpha.
         // This does not add a delay or flush to the app. — GPT-6.1 Sol
+        let layoutStarted = ContinuousClock.now
         panels.forEach { $0.contentView?.layoutSubtreeIfNeeded(); $0.displayIfNeeded() }
+        print("RecorderFadeDiagnostic retirementLayout style=\(style) elapsed=\(layoutStarted.duration(to: .now))")
         var finished = false
         // The hosted Mac enables Reduce Motion. Its real managers correctly hide
         // immediately under that policy, so an animated-frame test cannot inherit
