@@ -745,7 +745,7 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
               engine.recordingState.isRecordingOrPaused else {
             return false
         }
-        vippLog.info("finishRecordingToClipboard: genuine Primary double-click")
+        vippLog.notice("finishRecordingToClipboard: genuine Primary double-click")
         return await engine.finishActiveRecordingToClipboard(modeId: modeId)
     }
 
@@ -758,7 +758,7 @@ class RecorderUIManager: ObservableObject, RecorderPanelPresenting, Notification
               engine.recordingState.isRecordingOrPaused else {
             return false
         }
-        vippLog.info("finishRecordingWithoutAutoSend: genuine Primary quadruple-click")
+        vippLog.notice("finishRecordingWithoutAutoSend: genuine Primary quadruple-click")
         return await engine.finishActiveRecordingWithoutAutoSend(modeId: modeId)
     }
 

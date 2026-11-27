@@ -1,3 +1,4 @@
+// Offline integration checks for realtime gating, startup and completed-file recovery. — GPT-6.1 Sol
 import Foundation
 import SwiftData
 import Testing
@@ -13,19 +14,23 @@ private final class SilenceSleepTestProvider: StreamingTranscriptionProvider, @u
     private var commits = 0
     private let errorOnCommit: Bool
     private let committedText: String
+    private let connectOperation: (@Sendable () async throws -> Void)?
 
-    init(errorOnCommit: Bool = false, committedText: String = "alpha beta") {
+    init(errorOnCommit: Bool = false, committedText: String = "alpha beta",
+         connectOperation: (@Sendable () async throws -> Void)? = nil) {
         let pair = AsyncStream.makeStream(of: StreamingTranscriptionEvent.self)
         transcriptionEvents = pair.stream
         continuation = pair.continuation
         self.errorOnCommit = errorOnCommit
         self.committedText = committedText
+        self.connectOperation = connectOperation
     }
 
     var sent: [Data] { lock.withLock { chunks } }
     var commitCount: Int { lock.withLock { commits } }
     func emit(_ event: StreamingTranscriptionEvent) { continuation.yield(event) }
     func connect(model: any TranscriptionModel, language: String?) async throws {
+        try await connectOperation?()
         emit(.sessionStarted)
     }
     func sendAudioChunk(_ data: Data) async throws { lock.withLock { chunks.append(data) } }
@@ -50,6 +55,57 @@ private final class SilenceSleepTestStates: @unchecked Sendable {
 }
 
 struct RealtimeSilenceSleepIntegrationTests {
+    @Test @MainActor func backgroundRealtimeConnectFailureReportsOnceAndKeepsFileFallback() async throws {
+        let provider = SilenceSleepTestProvider(connectOperation: { throw URLError(.notConnectedToInternet) })
+        let run = try harness(provider: provider, enabled: false)
+        var warnings = 0
+        let fallback = StartupFailureTestFallback()
+        let session = StreamingTranscriptionSession(streamingService: run.service,
+            fallbackService: fallback, onRealtimeStartupFailure: { warnings += 1 })
+        let configuration = TranscriptionRuntimeConfiguration(mode: nil, model: model(), language: "en", isRealtimeEnabled: true,
+            requestContext: .init(language: "en", prompt: "frozen prompt"))
+        let callback = try await session.prepare(configuration: configuration)
+        #expect(callback != nil)
+        let audio = URL(fileURLWithPath: "/offline-fixture.wav")
+        let result = try await session.transcribe(audioURL: audio)
+        #expect(warnings == 1 && result == "recovered speech")
+        #expect(await fallback.audioURLs == [audio])
+        #expect(await fallback.prompts == ["frozen prompt"])
+        #expect(try await session.transcribe(audioURL: audio) == result)
+        #expect(warnings == 1)
+        #expect(await fallback.audioURLs.count == 1)
+    }
+
+    @Test @MainActor func cancelledRealtimeConnectDoesNotReportAnOfflineWarning() async throws {
+        let provider = SilenceSleepTestProvider(connectOperation: { throw CancellationError() })
+        let run = try harness(provider: provider, enabled: false)
+        var warnings = 0
+        let session = StreamingTranscriptionSession(streamingService: run.service,
+            fallbackService: StartupFailureTestFallback(), onRealtimeStartupFailure: { warnings += 1 })
+        _ = try await session.prepare(configuration: .init(mode: nil, model: model(), language: "en", isRealtimeEnabled: true,
+            requestContext: .init(language: "en", prompt: nil)))
+        _ = try await session.transcribe(audioURL: URL(fileURLWithPath: "/offline-fixture.wav"))
+        #expect(warnings == 0)
+    }
+
+    @Test func backgroundRealtimeWarningRequiresTheExactLiveRecording() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(contentsOf: root.appendingPathComponent(
+            "VoiceInk/Transcription/Engine/VoiceInkEngine.swift"), encoding: .utf8)
+        let start = try #require(source.range(of: "onRealtimeStartupFailure: { [weak self, weak session] in"))
+        let end = try #require(source.range(of: "session.transcriptionSession = streamingSession", range: start.upperBound..<source.endIndex))
+        let body = source[start.lowerBound..<end.lowerBound]
+        let effect = try #require(body.range(of: "session.showsRealtimeTranscriptHUD = false"))
+        for guardText in ["self.activeRecordingSession === session", "session.startID == startID",
+                          "session.liveRecordingState.isRecordingOrPaused", "!session.shouldCancel"] {
+            #expect(try #require(body.range(of: guardText)).lowerBound < effect.lowerBound)
+        }
+        #expect(body.contains(".completedFileFallback(.providerPreparationFailed)"))
+        for forbidden in ["stopRecording", "cancelRecording", "removeSession", "paste", "Task.sleep"] {
+            #expect(!body.contains(forbidden))
+        }
+    }
+
     private func pcm(_ sample: Int16, count: Int = 320) -> Data {
         var data = Data()
         for _ in 0..<count {
@@ -272,5 +328,17 @@ struct RealtimeSilenceSleepIntegrationTests {
         #expect(group.wait(timeout: .now() + 2) == .success)
         controller.finish()
         #expect(lock.withLock { sent + withheld } == 400)
+    }
+}
+
+/// A completed-file double that never reads a WAV or calls a provider. — GPT-6.1 Sol
+private actor StartupFailureTestFallback: TranscriptionService {
+    var audioURLs: [URL] = []
+    var prompts: [String?] = []
+    func transcribe(audioURL: URL, model: any TranscriptionModel,
+                    context: TranscriptionRequestContext) async throws -> String {
+        audioURLs.append(audioURL)
+        prompts.append(context.prompt)
+        return "recovered speech"
     }
 }

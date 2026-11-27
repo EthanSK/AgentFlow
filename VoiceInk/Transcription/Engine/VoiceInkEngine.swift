@@ -1656,6 +1656,20 @@ class VoiceInkEngine: NSObject, ObservableObject {
                         Task { @MainActor in
                             session?.applyRealtimeStreamSleeping(sleeping, generation: generation)
                         }
+                    },
+                    onRealtimeStartupFailure: { [weak self, weak session] in
+                        // A's delayed connect failure must never repaint or warn over B.
+                        // Keep A's WAV, Stop controls, recovery and delivery unchanged.
+                        // Found by Claude Opus 5.5. Fixed by GPT-6.1 Sol.
+                        guard let self, let session,
+                              self.activeRecordingSession === session,
+                              session.startID == startID,
+                              session.liveRecordingState.isRecordingOrPaused,
+                              !session.shouldCancel else { return }
+                        session.showsRealtimeTranscriptHUD = false
+                        self.applyRealtimeStartupOutcome(
+                            .completedFileFallback(.providerPreparationFailed), sessionID: session.id
+                        )
                     }
                 )
                 session.transcriptionSession = streamingSession

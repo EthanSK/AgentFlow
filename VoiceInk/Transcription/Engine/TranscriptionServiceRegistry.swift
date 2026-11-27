@@ -53,6 +53,7 @@ class TranscriptionServiceRegistry {
         for configuration: TranscriptionRuntimeConfiguration,
         onPartialTranscript: ((String) -> Void)? = nil,
         onRealtimeSilenceSleepChange: ((Bool, UInt64) -> Void)? = nil,
+        onRealtimeStartupFailure: (@MainActor () -> Void)? = nil,
         realtimeSilenceSleepEnabled: Bool = RealtimeSilenceSleepPolicy.isEnabled()
     ) -> TranscriptionSession {
         let model = configuration.model
@@ -69,7 +70,8 @@ class TranscriptionServiceRegistry {
                 onSilenceSleepChange: onRealtimeSilenceSleepChange
             )
             let fallback = service(for: model.provider)
-            return StreamingTranscriptionSession(streamingService: streamingService, fallbackService: fallback)
+            return StreamingTranscriptionSession(streamingService: streamingService, fallbackService: fallback,
+                onRealtimeStartupFailure: onRealtimeStartupFailure)
         } else {
             return FileTranscriptionSession(service: service(for: model.provider))
         }

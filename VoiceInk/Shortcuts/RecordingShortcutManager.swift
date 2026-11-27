@@ -516,7 +516,7 @@ class RecordingShortcutManager: ObservableObject {
                     let dispatchLatencyMilliseconds = max(
                         0, Int((ProcessInfo.processInfo.systemUptime - eventTime) * 1_000)
                     )
-                    self.logger.info("Recording shortcut key-down action=\(String(describing: action), privacy: .public) mode=\(mode.rawValue, privacy: .public) recordingState=\(String(describing: self.engine.recordingState), privacy: .public) route=primaryCurrentInput dispatchLatencyMs=\(dispatchLatencyMilliseconds, privacy: .public)")
+                    self.logger.notice("Recording shortcut key-down action=\(String(describing: action), privacy: .public) mode=\(mode.rawValue, privacy: .public) recordingState=\(String(describing: self.engine.recordingState), privacy: .public) route=primaryCurrentInput dispatchLatencyMs=\(dispatchLatencyMilliseconds, privacy: .public)")
                     await self.shortcutModeHandler.handleKeyDown(
                         action: action,
                         eventTime: eventTime,
@@ -1434,7 +1434,7 @@ final class RecordingShortcutModeHandler {
     }
 
     func logPrimaryMouseReadiness(_ ready: Bool) {
-        vippLog.info("primary mouse: readiness ready=\(ready, privacy: .public) protocolVersion=1")
+        vippLog.notice("primary mouse: readiness ready=\(ready, privacy: .public) protocolVersion=1")
     }
 
     func logPrimaryMouseEvent(
@@ -1442,7 +1442,7 @@ final class RecordingShortcutModeHandler {
         decision: PrimaryMousePressCoordinator.Decision
     ) {
         let latency = Int((ProcessInfo.processInfo.systemUptime - event.receivedAt) * 1_000)
-        vippLog.info("primary mouse: edge source=\(event.command.source.rawValue, privacy: .public) phase=\(event.command.phase.rawValue, privacy: .public) decision=\(decision.rawValue, privacy: .public) dispatchLatencyMs=\(latency, privacy: .public)")
+        vippLog.notice("primary mouse: edge source=\(event.command.source.rawValue, privacy: .public) phase=\(event.command.phase.rawValue, privacy: .public) decision=\(decision.rawValue, privacy: .public) dispatchLatencyMs=\(latency, privacy: .public)")
     }
 
     /// A semantic mouse press is complete before this async action starts. It
@@ -1456,10 +1456,20 @@ final class RecordingShortcutModeHandler {
         decisionRegistered: @escaping @MainActor () -> Void = {}
     ) async {
         defer { decisionRegistered() }
-        guard isCurrent(), !isShortcutPressed,
-              !primaryDuplicateChordCoalescer.shouldCoalesce(
-                  action: .primaryRecording, mode: .toggle, eventTime: eventTime
-              ) else { return }
+        guard isCurrent() else {
+            vippLog.notice("primary mouse: activation ignored reason=staleReceiver")
+            return
+        }
+        guard !isShortcutPressed else {
+            vippLog.notice("primary mouse: activation ignored reason=keyboardHeld")
+            return
+        }
+        guard !primaryDuplicateChordCoalescer.shouldCoalesce(
+            action: .primaryRecording, mode: .toggle, eventTime: eventTime
+        ) else {
+            vippLog.notice("primary mouse: activation ignored reason=duplicateChord")
+            return
+        }
         lastShortcutPressTime = Date()
         lastPrimaryGestureWasMouse = true
         await handlePrimaryToggleKeyDown(
@@ -1492,6 +1502,9 @@ final class RecordingShortcutModeHandler {
         }
 
         guard !isShortcutPressed else {
+            if action == .primaryRecording {
+                vippLog.notice("shortcut: Primary key-down ignored reason=keyboardHeld")
+            }
             return
         }
 
@@ -2103,7 +2116,7 @@ final class RecordingShortcutModeHandler {
             }
 
             self.primaryGestureDecisionTask = nil
-            self.vippLog.info("shortcut: Primary single press window expired → base-current-input normal stop")
+            self.vippLog.notice("shortcut: Primary single press window expired → base-current-input normal stop")
             await self.toggleRecorderPanel(modeId, .primaryCurrentInput)
         }
     }
@@ -2143,7 +2156,7 @@ final class RecordingShortcutModeHandler {
     ) {
         primaryGestureDecisionTask?.cancel()
         let delay = primaryPressCoordinator.triplePressContinuationInterval
-        vippLog.info("shortcut: Primary double-click deferred for \(delay, privacy: .public)s awaiting possible pause/resume triple-click")
+        vippLog.notice("shortcut: Primary double-click deferred for \(delay, privacy: .public)s awaiting possible pause/resume triple-click")
         primaryGestureDecisionTask = Task { @MainActor [weak self] in
             let nanoseconds = UInt64(delay * 1_000_000_000)
             do {
@@ -2171,7 +2184,7 @@ final class RecordingShortcutModeHandler {
             return
         }
         let didFinish = await finishRecordingToClipboard(modeId)
-        vippLog.info("shortcut: Primary double-click clipboard-only finish success=\(didFinish, privacy: .public) paste=false autoSend=false playback=restoredIfOwned")
+        vippLog.notice("shortcut: Primary double-click clipboard-only finish success=\(didFinish, privacy: .public) paste=false autoSend=false playback=restoredIfOwned")
     }
 
     private func finishPrimaryRecordingWithoutAutoSend(modeId: UUID?) async {

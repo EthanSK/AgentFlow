@@ -154,11 +154,14 @@ final class StreamingTranscriptionSession: TranscriptionSession {
     private var eagerlyFinalizesAfterStop = false
     private var startupTask: Task<Void, Never>?
     private var startupTaskID: UUID?
+    private let onRealtimeStartupFailure: (@MainActor () -> Void)?
     private let logger = Logger(subsystem: "com.prakashjoshipax.voiceink", category: "StreamingTranscriptionSession")
 
-    init(streamingService: StreamingTranscriptionService, fallbackService: TranscriptionService) {
+    init(streamingService: StreamingTranscriptionService, fallbackService: TranscriptionService,
+         onRealtimeStartupFailure: (@MainActor () -> Void)? = nil) {
         self.streamingService = streamingService
         self.fallbackService = fallbackService
+        self.onRealtimeStartupFailure = onRealtimeStartupFailure
     }
 
     func prepare(configuration: TranscriptionRuntimeConfiguration) async throws -> ((Data) -> Void)? {
@@ -209,6 +212,11 @@ final class StreamingTranscriptionSession: TranscriptionSession {
                 let desc = error.localizedDescription
                 self.logger.error("❌ Failed to start streaming, will fall back to batch: \(desc, privacy: .public)")
                 self.streamingFailed = true
+                // prepare returns before the network connects. Report its later failure
+                // through the same session-owned warning as synchronous preparation;
+                // recording and its complete-WAV fallback must remain independent.
+                // Found by Claude Opus 5.5. Fixed by GPT-6.1 Sol.
+                self.onRealtimeStartupFailure?()
             }
         }
 
