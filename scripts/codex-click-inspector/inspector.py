@@ -23,7 +23,7 @@ import Quartz as Q
 import objc
 from Foundation import NSObject, NSTimer, NSRunLoop, NSRunLoopCommonModes, NSBundle, NSDictionary, NSProcessInfo, NSDistributedNotificationCenter, NSNotificationSuspensionBehaviorDeliverImmediately
 from pane_model import (Node, PaneModel, Rect, Sample, Observation, Diagnostics, describe, MAX_ANCESTORS, MAIN_CONTENT_CLASS,
-                        ClickGesture, input_focus_plan, input_pane_after_click, is_highlight_gesture, needs_hit_retest, KEPT_HIGHLIGHT_ACTION, HIT_RETEST_ATTEMPTS, HIT_RETEST_INTERVAL_SECONDS)
+                        ClickGesture, input_focus_plan, is_highlight_gesture, needs_hit_retest, HIT_RETEST_ATTEMPTS, HIT_RETEST_INTERVAL_SECONDS)
 from pane_focuser import PaneInputFocuser
 from claude_prompt_focuser import ClaudePromptFocuser, CLAUDE_BUNDLE_ID, RECORDING_STOPPED, ENABLED as CLAUDE_FOCUS_ENABLED
 from helper_runtime import (LatestResult, SingleInstance, HelperHealth, HealthLog, HelperPreferences)
@@ -338,8 +338,7 @@ class Inspector(NSObject):
         self.focuser = PaneInputFocuser(self.reader) if self.reader else None
         self.focus_inputs, self.mouse_down_point, self.down_monitor = True, None, None  # Ethan: on by default.
         # Off until Agent Flow says otherwise, so a helper restarted mid-session just focuses inputs as usual.
-        # input_proof is (window key, pane, click sequence): it only counts for the very next gesture, so a click this helper never finished reading cannot leave a stale pane behind.
-        self.typing_box_returns_keyboard, self.input_proof = False, None
+        self.typing_box_returns_keyboard = False
         # Idle until Agent Flow says otherwise: a helper restarted mid-recording only focuses later, and that recording's stop still drops a waiting focus. The epoch counts Agent Flow's state changes so a waiting highlight can tell one happened.
         self.agent_flow_recording, self.agent_flow_epoch = False, 0
         # Own reader: the click worker changes its reader's deadline at the same time.
@@ -887,36 +886,24 @@ class Inspector(NSObject):
         # double/triple clicks without Agent Flow capture. The old receipt veto
         # deliberately preserved pre-start selections; do not restore that veto
         # over this preference (task 01a0d315-7d5e-7be0-bc08-80626ca0729b).
-        # Ethan (2026-11-09) narrowed it for one case: while Agent Flow's typing box
-        # will take the keyboard back, a highlight in the pane that already has
-        # Codex's input stays highlighted, because the final paste lands there
-        # anyway. A highlight in any other pane still focuses its input so the
-        # 2026-10-17 paste rule holds. Rejected: focusing the pane at finish instead.
-        # Nothing orders that write before a typed-only paste, and a late write would
-        # move the auto-send Return to the other pane. This reads Agent Flow's state,
-        # not the old capture receipt, so it cannot race the capture.
+        # Ethan (2026-11-27): highlighting a pane must focus that pane's input,
+        # including when Agent Flow's typing box will take the keyboard back.
+        # The former same-pane preservation skip hid the requested caret action.
+        # Keep the existing capture delays and newer-input/recording-stop guards.
+        # Found and fixed by GPT-6.1 Sol.
         if self.focus_inputs and sequence == self.sequence and not self.paused:
             pane = None
             try:
                 pane, frame = input_focus_plan(self.model, observation)
-                proof, self.input_proof = self.input_proof, None  # A focus error below must leave the pane unproven.
-                # Every click advances the sequence twice, at press and at release. So this accepts a proof only from the click just before this gesture or from the gesture's own clicks; any other click, pause or reconnect in between makes the gap too large.
-                input_pane = proof[1] if (proof and proof[0] == focused.window_key
-                                          and proof[2] >= sequence - 2 * max(1, gesture.click_count)) else None
                 if pane and (sequence != self.sequence or self.paused):
                     action = "Skipped · a newer click arrived"
                 elif pane and highlight and agent_flow_epoch != self.agent_flow_epoch:
                     action = "Skipped · Agent Flow started or stopped during the highlight wait"
-                elif (pane and highlight and pane == input_pane and self.typing_box_returns_keyboard
-                      and agent_flow_is_running()):  # The running check covers Agent Flow crashing before it can say Off.
-                    action = KEPT_HIGHLIGHT_ACTION
                 else:
                     action = self.focuser.focus(pid, frame, pane,
                         is_current=current,
                         window_key=focused.window_key,
                         click_point=(x, y)) if pane else frame
-                input_pane = input_pane_after_click(self.model, observation, pane, action, input_pane)
-                self.input_proof = (focused.window_key, input_pane, sequence) if input_pane else None
                 if highlight:
                     action = "After highlight · " + action
             except Exception as exc:

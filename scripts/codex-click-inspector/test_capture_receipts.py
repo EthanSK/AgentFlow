@@ -39,9 +39,9 @@ class ClickFocusTests(unittest.TestCase):
                    newer_click: bool = False, newer_key: bool = False,
                    paused: bool = False, focus_inputs: bool = True,
                    interrupt_highlight=None, current_main: bool = False, coarse_hits: int = 0,
-                   typing_box_returns_keyboard: bool = False, input_pane: str | None = None,
+                   typing_box_returns_keyboard: bool = False,
                    agent_flow_running: bool = True, focus_status: str = "fixture focus",
-                   proof_sequence: int = 0, focused_sample=None, click_sample=None, click_point=(100, 620),
+                   focused_sample=None, click_sample=None, click_point=(100, 620),
                    agent_flow_recording: bool = False, health=None):
         region = Rect(0, 0, 600, 700)
         marker = "app-shell-tab-panel-app-shell-tab:68" if side else "fixture-chat-panel"
@@ -55,8 +55,7 @@ class ClickFocusTests(unittest.TestCase):
             reader=Mock(), model=PaneModel(), focus_inputs=focus_inputs,
             focuser=Mock(), completed=Mock(), pending=Mock(), health=health or HelperHealth(),
             agent_flow_recording=agent_flow_recording, agent_flow_epoch=0,
-            typing_box_returns_keyboard=typing_box_returns_keyboard,
-            input_proof=(8, input_pane, proof_sequence) if input_pane else None)
+            typing_box_returns_keyboard=typing_box_returns_keyboard)
         owner.process_request = lambda request: inspector.Inspector.process_request(owner, request)
         owner.key_count = lambda: int(newer_key)
         owner.focuser.focus.return_value = focus_status
@@ -127,9 +126,9 @@ class ClickFocusTests(unittest.TestCase):
         owner = self.run_worker(ClickGesture(click_count=2), interrupt_highlight=self.start_then(recording))
         owner.focuser.focus.assert_called_once()
 
-    def test_agent_flow_starting_keeps_a_highlight_in_the_pane_that_has_codexs_input(self):
-        owner = self.run_worker(ClickGesture(click_count=2), input_pane="Main chat", interrupt_highlight=self.start_then())
-        owner.focuser.focus.assert_not_called()  # The paste lands in that pane anyway.
+    def test_agent_flow_starting_still_focuses_the_highlighted_pane(self):
+        owner = self.run_worker(ClickGesture(click_count=2), interrupt_highlight=self.start_then())
+        owner.focuser.focus.assert_called_once()
 
     def test_agent_flow_stopping_during_the_settle_after_start_never_writes_focus(self):
         def stop(current):
@@ -162,29 +161,15 @@ class ClickFocusTests(unittest.TestCase):
         owner.focuser.focus.assert_not_called()
         self.assertEqual(len(owner.highlight_waits), 1)
 
-    def test_typing_box_keeps_a_highlight_in_the_pane_that_has_codexs_input(self):
-        for gesture in (ClickGesture(click_count=2), ClickGesture(click_count=3), ClickGesture(drag_points=12)):
-            with self.subTest(gesture=gesture):
-                owner = self.run_worker(gesture, typing_box_returns_keyboard=True, input_pane="Main chat")
-                owner.focuser.focus.assert_not_called()
-                self.assertEqual(owner.input_proof, (8, "Main chat", 1))  # A kept highlight moved nothing.
-
-    def test_proof_older_than_the_previous_click_focuses_as_usual(self):
-        # The fixture highlight's release is sequence 1, and each click advances the sequence twice.
-        for gesture, newest_stale in ((ClickGesture(drag_points=12), -2), (ClickGesture(click_count=3), -6)):
-            with self.subTest(gesture=gesture, kept=True):  # Only this gesture's own clicks came after the proof.
-                self.run_worker(gesture, typing_box_returns_keyboard=True, input_pane="Main chat",
-                                proof_sequence=newest_stale + 1).focuser.focus.assert_not_called()
-            with self.subTest(gesture=gesture, kept=False):  # One more click, pause or reconnect sits in between.
-                self.run_worker(gesture, typing_box_returns_keyboard=True, input_pane="Main chat",
-                                proof_sequence=newest_stale).focuser.focus.assert_called_once()
-
-    def test_interrupted_focus_in_the_proven_pane_keeps_the_proof(self):
-        # A slow double click: its first click starts a focus that the second click cancels.
-        for input_pane, expected in (("Main chat", (8, "Main chat", 1)), ("Side chat", None)):
-            with self.subTest(input_pane=input_pane):
-                owner = self.run_worker(ClickGesture(), input_pane=input_pane, focus_status="Skipped · request superseded")
-                self.assertEqual(owner.input_proof, expected)
+    def test_every_completed_highlight_focuses_its_pane_during_typing(self):
+        for side in (False, True):
+            pane = "Side chat" if side else "Main chat"
+            for gesture in (ClickGesture(click_count=2), ClickGesture(click_count=3),
+                            ClickGesture(drag_points=12), ClickGesture(modifier_held=True)):
+                with self.subTest(pane=pane, gesture=gesture):
+                    owner = self.run_worker(gesture, side=side, typing_box_returns_keyboard=True)
+                    owner.focuser.focus.assert_called_once()
+                    self.assertEqual(owner.focuser.focus.call_args.args[2], pane)
 
     def composer_sample(self, x, y, window_key=8):
         composer = Rect(40, 640, 520, 50)
@@ -193,50 +178,39 @@ class ClickFocusTests(unittest.TestCase):
             Node("AXGroup", "", "", Rect(0, 0, 600, 700), False, False, "AXLandmarkRegion", True),
             Node("AXGroup", "", "fixture-chat-panel", Rect(0, 0, 600, 700))), focus_stable=True)
 
-    def test_control_click_with_a_composer_still_focused_forgets_the_pane(self):
+    def test_control_click_with_a_composer_still_focused_keeps_native_focus(self):
         # The tab or button was sampled before Codex moved focus to another pane's input.
         region = Rect(0, 0, 600, 700)
         button = Sample(7, 8, Rect(0, 0, 1000, 700), 100, 620, (
             Node("AXButton", "", "", Rect(80, 600, 60, 30)),
             Node("AXGroup", "", "", region, False, False, "AXLandmarkRegion", True),
             Node("AXGroup", "", "fixture-chat-panel", region)), focus_stable=True)
-        owner = self.run_worker(ClickGesture(), input_pane="Main chat", click_sample=button,
+        owner = self.run_worker(ClickGesture(), click_sample=button,
                                 focused_sample=self.composer_sample(100, 620))
         owner.focuser.focus.assert_not_called()
-        self.assertIsNone(owner.input_proof)
 
-    def test_click_inside_the_focused_composer_proves_its_pane(self):
+    def test_click_inside_the_focused_composer_keeps_native_focus(self):
         owner = self.run_worker(ClickGesture(), click_point=(100, 660), click_sample=self.composer_sample(100, 660),
                                 focused_sample=self.composer_sample(100, 660))
         owner.focuser.focus.assert_not_called()
-        self.assertEqual(owner.input_proof, (8, "Main chat", 1))
 
     def test_highlight_in_another_pane_still_focuses_so_the_paste_follows_it(self):
         owner = self.run_worker(ClickGesture(click_count=3), side=True,
-                                typing_box_returns_keyboard=True, input_pane="Main chat")
+                                typing_box_returns_keyboard=True)
         owner.focuser.focus.assert_called_once()
 
     def test_unproven_input_pane_focuses_as_usual(self):
         self.run_worker(ClickGesture(click_count=3), typing_box_returns_keyboard=True).focuser.focus.assert_called_once()
 
     def test_highlight_focuses_as_usual_without_the_typing_box(self):
-        self.run_worker(ClickGesture(click_count=3), input_pane="Main chat").focuser.focus.assert_called_once()
+        self.run_worker(ClickGesture(click_count=3)).focuser.focus.assert_called_once()
 
     def test_crashed_agent_flow_cannot_leave_highlights_kept(self):
-        self.run_worker(ClickGesture(click_count=3), typing_box_returns_keyboard=True, input_pane="Main chat",
+        self.run_worker(ClickGesture(click_count=3), typing_box_returns_keyboard=True,
                         agent_flow_running=False).focuser.focus.assert_called_once()
 
     def test_plain_click_still_focuses_while_the_typing_box_returns_keyboard(self):
-        self.run_worker(ClickGesture(), typing_box_returns_keyboard=True, input_pane="Main chat").focuser.focus.assert_called_once()
-
-    def test_verified_focus_proves_the_input_pane_and_a_failed_one_forgets_it(self):
-        # The earlier proof names the other pane, so only a verified write can prove this one.
-        for status, expected in (("Focused Main chat input · verified · caret · held", "Main chat"),
-                                 ("Focus sent to Main chat input · not confirmed", None),
-                                 ("Skipped · no pane input found within the search limit", None)):
-            with self.subTest(status=status):
-                owner = self.run_worker(ClickGesture(), input_pane="Side chat", focus_status=status)
-                self.assertEqual(owner.input_proof, (8, expected, 1) if expected else None)
+        self.run_worker(ClickGesture(), typing_box_returns_keyboard=True).focuser.focus.assert_called_once()
 
     def test_single_double_triple_and_later_clicks_focus_without_capture(self):
         for side in (False, True):

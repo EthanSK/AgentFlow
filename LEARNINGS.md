@@ -1,5 +1,12 @@
 # Learnings
 
+## 2026-11-27 — Completed Codex highlights focus the pane input
+
+The separate Codex helper retained a 9 November exception that preserved same-pane highlights while Agent Flow’s typing box returned the keyboard. The later request restores input focus after every completed chat-text highlight, including drag, double/triple-click and modifier selection. Remove the exception and its proof cache together. Keep the separately requested 3-second idle / 300-ms active capture intervals, exact pane/window proof, selected-draft protections, newer-input cancellation and recording-stop checks.
+
+The real-worker fixture reproduced the former skip in both panes; 34 focused checks and all 206 helper checks passed on the Mac Mini. These offline checks and helper readiness do not establish physical Codex caret acceptance. Never reinstate an older preservation veto over the latest explicit focus request, or infer the exact live cause from an unrelated historical marker failure.
+
+
 ---
 **Date:** 2026-11-27T15:42:46Z
 **Trigger:** Ethan asked on2026-11-27 for the rainbow before the first keystroke, once the panel is ready, without slowing startup.
