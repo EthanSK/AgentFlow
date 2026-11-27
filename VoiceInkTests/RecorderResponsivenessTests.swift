@@ -143,34 +143,44 @@ struct RecorderPanelDismissalTests {
         let session = RecordingSession(phase: .transcribing)
         session.liveRecordingState = .transcribing
         engine.sessions = [session]
-        let previousStyle = UserDefaults.standard.object(forKey: "RecorderType")
         let previousWindows = Set(NSApp.windows.map(ObjectIdentifier.init))
-        let ui = RecorderUIManager()
-        ui.configure(engine: engine, recorder: engine.recorder)
-        engine.recorderUIManager = ui
-        ui.recorderPanelStyle = style
-        ui.showTranscriptionRetryPanel()
+        let hide: (@escaping @MainActor () -> Void) -> Void
+        let destroy: () -> Void
+        switch style {
+        case .mini:
+            let manager = MiniWindowManager(engine: engine, recorder: engine.recorder,
+                assistantSession: engine.assistantSession, onRecordButtonTapped: {}, onCloseTapped: {},
+                onCancelTapped: {}, onAssistantFollowUp: { _ in }, onCancelSession: { _ in })
+            #expect(manager.show().isComplete)
+            hide = { manager.hide(animated: true, completion: $0) }
+            destroy = { manager.destroyWindow() }
+        case .notch:
+            let manager = NotchWindowManager(engine: engine, recorder: engine.recorder,
+                assistantSession: engine.assistantSession, onRecordButtonTapped: {}, onCloseTapped: {},
+                onCancelTapped: {}, onAssistantFollowUp: { _ in }, onCancelSession: { _ in })
+            #expect(manager.show().isComplete)
+            hide = { manager.hide(animated: true, completion: $0) }
+            destroy = { manager.destroyWindow() }
+        }
         let panels = NSApp.windows.filter { !previousWindows.contains(ObjectIdentifier($0)) }
             .compactMap { $0 as? NSPanel }
-        defer {
-            panels.forEach { $0.orderOut(nil); $0.close() }
-            if let previousStyle { UserDefaults.standard.set(previousStyle, forKey: "RecorderType") }
-            else { UserDefaults.standard.removeObject(forKey: "RecorderType") }
-        }
-        #expect(ui.isRecorderPanelVisible && !panels.isEmpty)
+        defer { destroy() }
+        #expect(!panels.isEmpty && panels.allSatisfy(\.isVisible))
         try await Task.sleep(for: .milliseconds(150))
         let initial = try panels.map { try paintedSamples(in: $0, name: "\(style)-before") }
         #expect(initial.allSatisfy { $0 > 100 })
 
-        // Exercise the real stack and UI-manager boundary after retirement, rather than
+        // Exercise the real stack and window-manager boundary after retirement, rather than
         // fading a permanent Text fixture. No audio, provider, paste or shortcut runs.
         // The pipeline may yield for resource cleanup before its empty-panel dismissal.
+        // Direct managers avoid changing global recorder-style preferences in parallel tests.
         // — GPT-6.1 Sol
         session.phase = .done
         session.clearContext()
         engine.sessions = []
         await Task.yield()
-        await ui.dismissRecorderPanel()
+        var finished = false
+        hide { finished = true }
         let sampled = observeNativeAnimation {
             panels.allSatisfy { $0.isVisible && $0.alphaValue > 0.1 && $0.alphaValue < 0.6 }
         }
@@ -180,10 +190,10 @@ struct RecorderPanelDismissalTests {
             #expect(after > before / 2, "Recorder content vanished before its window fade: \(before) -> \(after)")
         }
         let deadline = ContinuousClock.now.advanced(by: .seconds(2))
-        while ui.isRecorderPanelVisible && ContinuousClock.now < deadline {
+        while !finished && ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
-        #expect(!ui.isRecorderPanelVisible && panels.allSatisfy { !$0.isVisible })
+        #expect(finished && panels.allSatisfy { !$0.isVisible })
     }
 
     /// Count recorder-owned painted pixels, independent of the window's animated alpha,
