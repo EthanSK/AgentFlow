@@ -1,0 +1,37 @@
+# Controlled synthetic AppKit probe on a disposable GitHub VM only. — GPT-6.1 Sol
+name: Inspect hosted recorder animation environment
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+jobs:
+  inspect:
+    runs-on: macos-15
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare native sampling and disposable VM motion settings
+        run: |
+          swiftc -swift-version 5 scripts/probe-recorder-animation.swift -o "$RUNNER_TEMP/recorder-animation-probe"
+          python3 - "$RUNNER_TEMP/recorder-animation-probe" <<'PY'
+          import subprocess, sys
+          key = ['com.apple.universalaccess', 'reduceMotion']
+          original = subprocess.run(['defaults', 'read', *key], capture_output=True, text=True)
+          original_value = original.stdout.strip().lower()
+          if original.returncode == 0:
+              assert original_value in ['1', '0', 'true', 'false', 'yes', 'no']
+          try:
+              for policy in ['original', 'false']:
+                  if policy == 'false':
+                      subprocess.run(['defaults', 'write', *key, '-bool', 'false'], check=True)
+                  for strategy in ['runloop', 'flush', 'async', 'active-async']:
+                      subprocess.run([sys.argv[1], strategy, policy], check=True, timeout=15)
+          finally:
+              if original.returncode == 0:
+                  value = 'true' if original_value in ['1', 'true', 'yes'] else 'false'
+                  subprocess.run(['defaults', 'write', *key, '-bool', value], check=True)
+              else:
+                  subprocess.run(['defaults', 'delete', *key], check=True)
+          PY
