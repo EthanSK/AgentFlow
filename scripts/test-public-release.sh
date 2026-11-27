@@ -55,7 +55,7 @@ else
     echo 'Canonical Xcode runner executed tests but did not pass; refusing fallback.' >&2
     # The final test-log lines can contain only unrelated passing cases.
     # Keep the actual failures in the Fleet/GitHub log before its source is reclaimed.
-    grep -E '✘|Expectation failed|[Ii]ssue recorded|error:' "$canonical_log" >&2 || true
+    grep -E '✘|Expectation failed|[Ii]ssue recorded|RecorderFadeDiagnostic|error:' "$canonical_log" >&2 || true
     tail -35 "$canonical_log" >&2
     exit 1
   fi

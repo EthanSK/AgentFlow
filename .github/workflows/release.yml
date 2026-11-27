@@ -29,6 +29,8 @@ jobs:
           xcodebuild -version
           swift --version
           uname -m
+          # Preserve the native motion policy beside each hosted qualification. — GPT-6.1 Sol
+          swift -e 'import AppKit; print("RecorderFadeDiagnostic systemReduceMotion=\(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)")'
       - name: Prepare pinned speech dependency
         run: make check whisper
       - name: Fetch verified Sparkle tools

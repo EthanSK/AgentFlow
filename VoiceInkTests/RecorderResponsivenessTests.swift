@@ -129,8 +129,10 @@ struct RecorderPanelDismissalTests {
         #expect(!finished && !fade.isFading)
     }
 
-    @Test(arguments: RecorderPanelStyle.allCases)
-    @MainActor func finalSessionRetirementKeepsVisibleContentForTheCompletionFade(style: RecorderPanelStyle) async throws {
+    @Test(arguments: RecorderPanelStyle.allCases, [false, true])
+    @MainActor func finalSessionRetirementKeepsVisibleContentForTheCompletionFade(
+        style: RecorderPanelStyle, reducedMotion: Bool
+    ) async throws {
         let schema = Schema([Transcription.self])
         let container = try ModelContainer(for: schema, configurations:
             ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none))
@@ -144,7 +146,6 @@ struct RecorderPanelDismissalTests {
         session.liveRecordingState = .transcribing
         engine.sessions = [session]
         let previousWindows = Set(NSApp.windows.map(ObjectIdentifier.init))
-        let hide: (@escaping @MainActor () -> Void) -> Void
         let destroy: () -> Void
         switch style {
         case .mini:
@@ -152,22 +153,23 @@ struct RecorderPanelDismissalTests {
                 assistantSession: engine.assistantSession, onRecordButtonTapped: {}, onCloseTapped: {},
                 onCancelTapped: {}, onAssistantFollowUp: { _ in }, onCancelSession: { _ in })
             #expect(manager.show().isComplete)
-            hide = { manager.hide(animated: true, completion: $0) }
             destroy = { manager.destroyWindow() }
         case .notch:
             let manager = NotchWindowManager(engine: engine, recorder: engine.recorder,
                 assistantSession: engine.assistantSession, onRecordButtonTapped: {}, onCloseTapped: {},
                 onCancelTapped: {}, onAssistantFollowUp: { _ in }, onCancelSession: { _ in })
             #expect(manager.show().isComplete)
-            hide = { manager.hide(animated: true, completion: $0) }
             destroy = { manager.destroyWindow() }
         }
         let panels = NSApp.windows.filter { !previousWindows.contains(ObjectIdentifier($0)) }
             .compactMap { $0 as? NSPanel }
-        defer { destroy() }
+        let dismissal = RecorderPanelDismissal()
+        defer { dismissal.cancel(panels: panels); destroy() }
         #expect(!panels.isEmpty && panels.allSatisfy(\.isVisible))
+        let initialMouseHandling = panels.map(\.ignoresMouseEvents)
+        let fixtureName = "\(style)-reduced-\(reducedMotion)"
         try await Task.sleep(for: .milliseconds(150))
-        let initial = try panels.map { try paintedSamples(in: $0, name: "\(style)-before") }
+        let initial = try panels.map { try paintedSamples(in: $0, name: "\(fixtureName)-before") }
         #expect(initial.allSatisfy { $0 > 100 })
 
         // Exercise the real stack and window-manager boundary after retirement, rather than
@@ -180,12 +182,27 @@ struct RecorderPanelDismissalTests {
         engine.sessions = []
         await Task.yield()
         var finished = false
-        hide { finished = true }
+        // The hosted Mac enables Reduce Motion. Its real managers correctly hide
+        // immediately under that policy, so an animated-frame test cannot inherit
+        // the machine preference. Exercise the same production dismissal with both
+        // policies explicitly, retaining strict animated-content checks in every run.
+        // No system preference or live app is changed. — GPT-6.1 Sol
+        let started = ContinuousClock.now
+        dismissal.hide(panels: panels, animated: true, reducedMotion: reducedMotion) { finished = true }
+        if reducedMotion {
+            #expect(finished && !dismissal.isFading && panels.allSatisfy { !$0.isVisible })
+            #expect(panels.allSatisfy { $0.alphaValue == 1 })
+            #expect(zip(panels, initialMouseHandling).allSatisfy { $0.0.ignoresMouseEvents == $0.1 })
+            return
+        }
         let sampled = observeNativeAnimation {
             panels.allSatisfy { $0.isVisible && $0.alphaValue > 0.1 && $0.alphaValue < 0.6 }
         }
+        if !sampled {
+            print("RecorderFadeDiagnostic style=\(style) systemReduceMotion=\(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion) explicitReducedMotion=\(reducedMotion) elapsed=\(started.duration(to: .now)) finished=\(finished) panels=\(panels.map { ($0.isVisible, $0.alphaValue) })")
+        }
         #expect(sampled, "Completion fade never exposed an intermediate native frame")
-        let during = try panels.map { try paintedSamples(in: $0, name: "\(style)-during") }
+        let during = try panels.map { try paintedSamples(in: $0, name: "\(fixtureName)-during") }
         for (before, after) in zip(initial, during) {
             #expect(after > before / 2, "Recorder content vanished before its window fade: \(before) -> \(after)")
         }
@@ -194,6 +211,8 @@ struct RecorderPanelDismissalTests {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(finished && panels.allSatisfy { !$0.isVisible })
+        #expect(panels.allSatisfy { $0.alphaValue == 1 })
+        #expect(zip(panels, initialMouseHandling).allSatisfy { $0.0.ignoresMouseEvents == $0.1 })
     }
 
     /// Count recorder-owned painted pixels, independent of the window's animated alpha,
