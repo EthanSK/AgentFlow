@@ -89,7 +89,7 @@ struct RecorderPanelDismissalTests {
         fade.hide(panels: panels, animated: true, reducedMotion: false) { finished = true }
         #expect(!finished && fade.isFading)
         let sampleStarted = ContinuousClock.now
-        let interpolated = observeNativeAnimation {
+        let interpolated = try await observeNativeAnimation {
             panels.allSatisfy { $0.isVisible && $0.alphaValue > 0 && $0.alphaValue < 1 }
         }
         #expect(interpolated,
@@ -120,9 +120,11 @@ struct RecorderPanelDismissalTests {
         var finished = false
         fade.hide(panels: panels, animated: true, reducedMotion: false) { finished = true }
         let cancellationStarted = ContinuousClock.now
-        #expect(observeNativeAnimation {
+        let cancellationInterpolated = try await observeNativeAnimation {
             panels.allSatisfy { $0.isVisible && $0.alphaValue > 0 && $0.alphaValue < 1 }
-        }, "Cancellation fade sample after \(cancellationStarted.duration(to: .now)): \(panels.map { ($0.isVisible, $0.alphaValue) })")
+        }
+        #expect(cancellationInterpolated,
+                "Cancellation fade sample after \(cancellationStarted.duration(to: .now)): \(panels.map { ($0.isVisible, $0.alphaValue) })")
         fade.cancel(panels: panels)
         try await Task.sleep(for: .milliseconds(300))
         #expect(panels.allSatisfy { $0.isVisible && $0.alphaValue == 1 && !$0.ignoresMouseEvents })
@@ -195,7 +197,7 @@ struct RecorderPanelDismissalTests {
             #expect(zip(panels, initialMouseHandling).allSatisfy { $0.0.ignoresMouseEvents == $0.1 })
             return
         }
-        let sampled = observeNativeAnimation {
+        let sampled = try await observeNativeAnimation {
             panels.allSatisfy { $0.isVisible && $0.alphaValue > 0.1 && $0.alphaValue < 0.6 }
         }
         if !sampled {
@@ -261,18 +263,29 @@ struct RecorderPanelDismissalTests {
         }
     }
 
-    // Observe AppKit interpolation while servicing its run loop, rather than resuming a Swift
-    // task at one fixed point inside a 220ms animation. Other concurrent suites can delay that
-    // task beyond the fade. Both panels must still show a real intermediate alpha; endpoints
-    // never satisfy the check. Test-only; no recorder timing changes. Found and fixed by
-    // GPT-6.1 Sol. — GPT-6.1 Sol
-    @MainActor private func observeNativeAnimation(_ condition: () -> Bool) -> Bool {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+    // Observe multiple real frames while yielding the main actor. A nested RunLoop alone
+    // prevented the hosted probe's MainActor completion from running until an actual yield.
+    // Keep the same bound and strict alpha/content predicates; log scheduler gaps on failure
+    // instead of inferring that a missed frame proves a native defect. — GPT-6.1 Sol
+    @MainActor private func observeNativeAnimation(_ condition: () -> Bool) async throws -> Bool {
+        let started = ContinuousClock.now
+        let deadline = started.advanced(by: .seconds(1))
+        var last = started
+        var maxGap = Duration.zero
+        var samples = 0
         repeat {
+            let now = ContinuousClock.now
+            maxGap = max(maxGap, last.duration(to: now))
+            last = now
+            samples += 1
             if condition() { return true }
-            RunLoop.current.run(until: Date(timeIntervalSinceNow: 0.002))
+            try await Task.sleep(for: .milliseconds(2))
         } while ContinuousClock.now < deadline
-        return condition()
+        let result = condition()
+        if !result {
+            print("RecorderFadeDiagnostic observer elapsed=\(started.duration(to: .now)) samples=\(samples) maxGap=\(maxGap) appRunning=\(NSApplication.shared.isRunning) appActive=\(NSApplication.shared.isActive)")
+        }
+        return result
     }
 }
 
