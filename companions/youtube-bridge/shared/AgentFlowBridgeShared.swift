@@ -78,12 +78,15 @@ struct BridgeMessage: Codable {
   var nativeTimestamp: Int?
   // H Chat browser-video control. `requestId` correlates one request with its one reply; `issuedAt`
   // lets every layer reject a delayed command instead of acting on it late. `videoAction` is only
-  // ever "pause" or "play"; a status request carries no action and has no playback effect.
+  // "pause", "play" or capability-gated "setVolume"; status carries no action and has no media effect.
   var requestId: String?
   var videoAction: String?
   var issuedAt: Int?
   var protocolVersion: Int?
   var changed: Bool?
+  var capabilities: [String]?
+  var volumePercent: Int?
+  var confirmed: Bool?
 
   init(type: String) {
     self.type = type
@@ -240,6 +243,7 @@ enum HelloChatVideoNotification {
     case status
     case pause
     case play
+    case setVolume
   }
 
   enum ReplyState: String {
@@ -253,6 +257,7 @@ enum HelloChatVideoNotification {
     let requestId: String
     let action: Action
     let issuedAt: Int
+    let volumePercent: Int?
   }
 
   static func decodeRequest(_ notification: Notification) -> Request? {
@@ -263,7 +268,15 @@ enum HelloChatVideoNotification {
           let action = Action(rawValue: rawAction),
           let issuedAt = (notification.userInfo?[issuedAtKey] as? NSNumber)?.intValue
     else { return nil }
-    return Request(requestId: requestId, action: action, issuedAt: issuedAt)
+    let volume = notification.userInfo?["volumePercent"] as? NSNumber
+    if action == .setVolume {
+      guard let clock = notification.userInfo?[issuedAtKey] as? NSNumber,
+            CFGetTypeID(clock) != CFBooleanGetTypeID(), clock.doubleValue.isFinite,
+            clock.doubleValue.rounded() == clock.doubleValue, issuedAt >= 0,
+            let volume, CFGetTypeID(volume) != CFBooleanGetTypeID(), volume.doubleValue.isFinite,
+            volume.doubleValue.rounded() == volume.doubleValue, (0...100).contains(volume.doubleValue) else { return nil }
+    }
+    return Request(requestId: requestId, action: action, issuedAt: issuedAt, volumePercent: action == .setVolume ? volume?.intValue : nil)
   }
 
   static func isFresh(issuedAt: Int, now: Int) -> Bool {
@@ -277,7 +290,10 @@ enum HelloChatVideoNotification {
     state: ReplyState,
     changed: Bool? = nil,
     reason: String? = nil,
-    protocolVersion: Int? = nil
+    protocolVersion: Int? = nil,
+    capabilities: [String]? = nil,
+    volumePercent: Int? = nil,
+    playing: Bool? = nil, paused: Bool? = nil, muted: Bool? = nil, confirmed: Bool? = nil
   ) {
     var userInfo: [String: Any] = [
       requestIdKey: requestId,
@@ -287,6 +303,12 @@ enum HelloChatVideoNotification {
     if let changed { userInfo[changedKey] = changed }
     if let reason { userInfo[reasonKey] = reason }
     if let protocolVersion { userInfo[protocolVersionKey] = protocolVersion }
+    if let capabilities { userInfo["capabilities"] = capabilities }
+    if let volumePercent { userInfo["volumePercent"] = volumePercent }
+    if let playing { userInfo["playing"] = playing }
+    if let paused { userInfo["paused"] = paused }
+    if let muted { userInfo["muted"] = muted }
+    if let confirmed { userInfo["confirmed"] = confirmed }
     DistributedNotificationCenter.default().postNotificationName(
       reply,
       object: nil,

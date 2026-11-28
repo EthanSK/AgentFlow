@@ -254,10 +254,13 @@ private final class NativeBridgeController { // Previously YoutubeSpotifyMediaKe
         let isCommand = message.type == "hellochat-video-command"
         guard let rawId = message.requestId, UUID(uuidString: rawId) != nil,
               message.issuedAt != nil,
-              isCommand ? (message.videoAction == "pause" || message.videoAction == "play") : message.videoAction == nil
+              isCommand ? (message.videoAction == "pause" || message.videoAction == "play" || message.videoAction == "setVolume") : message.videoAction == nil
         else {
           log("Dropped malformed \(message.type) action=\(message.videoAction ?? "nil")")
           return
+        }
+        if message.videoAction == "setVolume" {
+          guard let volume = message.volumePercent, (0 ... 100).contains(volume) else { return }
         }
         if isCommand {
           log("app→Chrome hellochat-video-command action=\(message.videoAction ?? "nil")")

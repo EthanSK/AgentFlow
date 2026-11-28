@@ -49,6 +49,22 @@ class BridgeSnapshotTests(unittest.TestCase):
         self.assertEqual(actual, manifest["files"])
         self.assertTrue(manifest["sourceIncludesUncommittedChanges"])
 
+    def test_named_native_volume_envelope_fixture_is_exported(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.fixture(root)
+            name = "tests/HelloChatYouTubeVolumeContractTests.swift"
+            (root / name).write_text("// Inert public notification decoder fixture\n")
+            self.assertIn(name, vendor.source_files(root))
+
+    def test_arbitrary_swift_tests_still_fail_closed(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            self.fixture(root)
+            (root / "tests/PrivateLocalTests.swift").write_text("// Private fixture\n")
+            with self.assertRaises(ValueError):
+                vendor.source_files(root)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

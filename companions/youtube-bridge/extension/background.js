@@ -1329,6 +1329,7 @@ const handleNativeMessage = (message) => {
         type: 'hellochat-video-status',
         requestId,
         protocolVersion: HELLO_CHAT_VIDEO_PROTOCOL_VERSION,
+        capabilities: ['youtubeAbsoluteVolume'],
         extensionTimestamp: Date.now(),
       });
       return;
@@ -1346,6 +1347,13 @@ const handleNativeMessage = (message) => {
         return;
       }
       rememberHelloChatVideoRequest(requestId);
+      if (videoAction === 'setVolume') {
+        if (!Number.isSafeInteger(message.volumePercent) || message.volumePercent < 0 || message.volumePercent > 100 || !isFreshHelloChatVideoRequest(issuedAt)) {
+          postHelloChatVideoResult(requestId, videoAction, false, 'invalid-or-stale-request'); return;
+        }
+        void enqueueDictationOp('hellochat-video-setVolume', () => setYouTubeVolumeForHelloChat(requestId, issuedAt, message.volumePercent));
+        return;
+      }
       if (videoAction !== 'pause' && videoAction !== 'play') {
         clog('background', `hellochat-video-command rejected action=${String(videoAction)}`);
         return;
@@ -1489,6 +1497,98 @@ const sendDirectionalWithReinject = async (tabId, type, respectMusicTitle = fals
   }
 
   return result;
+};
+
+
+// Read-only discovery binds one volume mutation to Chrome's exact document and player. — GPT-6.1 Sol
+const sendYouTubeVolumeBound = (target, message) => browserCall(() => new Promise(resolve => {
+  chrome.tabs.sendMessage(target.tabId, message, { documentId: target.documentId }, response => {
+    const error = chrome.runtime.lastError;
+    resolve(error ? { delivered: false, reason: error.message } : { delivered: true, response });
+  });
+}), 'youtube-document-volume');
+
+const inspectYouTubeVolumeTarget = async (candidate, requestId, expiresAt) => {
+  const tab = await browserCall(() => chrome.tabs.get(candidate.tabId), 'youtube-volume-tab');
+  if (!isYouTubeUrl(tab?.url || '')) return null;
+  // Chrome supplies documentId for this read; a URL alone cannot identify a same-URL reload.
+  // https://developer.chrome.com/docs/extensions/reference/api/scripting#type-InjectionResult
+  const frames = await browserCall(() => chrome.scripting.executeScript({
+    target: { tabId: candidate.tabId, frameIds: [0] }, func: () => location.href,
+  }), 'youtube-volume-document');
+  const roots = frames?.filter(frame => frame.frameId === 0 && typeof frame.documentId === 'string' && frame.documentId.length > 0 && frame.documentId.length <= 256);
+  if (roots?.length !== 1 || !isYouTubeUrl(roots[0].result || '') || Date.now() >= expiresAt) throw new Error('document-unconfirmed');
+  const target = { ...candidate, documentId: roots[0].documentId, audible: tab.audible === true };
+  const result = await sendYouTubeVolumeBound(target, { type: 'youtube-volume-discover', requestId, expiresAt });
+  const response = result.response;
+  if (result.delivered && response?.reason === 'no-video') return null;
+  if (!result.delivered || response?.eligible !== true || typeof response.playerToken !== 'string' ||
+      !/^[0-9a-f-]{36}$/i.test(response.playerToken) || typeof response.playing !== 'boolean' ||
+      typeof response.paused !== 'boolean' || typeof response.isPiP !== 'boolean' || response.playing === response.paused || Date.now() >= expiresAt) throw new Error('player-unconfirmed');
+  return { ...target, playerToken: response.playerToken, playing: response.playing, paused: response.paused, isPiP: response.isPiP };
+};
+
+// Keep only the current automatic pause owner; old recency alone cannot qualify a lease. — GPT-6.1 Sol
+const currentYouTubeVolumeAutomaticTarget = () => {
+  const age = Date.now() - dictationStartedAt;
+  return isDictationActive() && Number.isInteger(dictationPausedTabId) &&
+    !dictationPlaybackRelinquished && !dictationAutoPauseSuppressed && voiceInkAutoPauseEnabled !== false &&
+    Number.isFinite(dictationStartedAt) && Number.isFinite(age) && age >= 0 && age <= MAX_DICTATION_MS
+      ? dictationPausedTabId : null;
+};
+
+const chooseYouTubeVolumeTarget = (targets, automaticTarget) => {
+  const unique = list => list.length === 1 ? list[0] : null;
+  const pip = targets.filter(target => target.isPiP);
+  if (pip.length) return unique(pip);
+  const playing = targets.filter(target => target.playing);
+  if (playing.length) {
+    const attention = playing.filter(target => target.why === 'last-focused-active-live-check');
+    if (attention.length) return unique(attention);
+    const audible = playing.filter(target => target.audible);
+    if (audible.length) return unique(audible);
+    return unique(playing);
+  }
+  if (automaticTarget !== null) return unique(targets.filter(target => target.tabId === automaticTarget));
+  const retained = targets.filter(target => target.tabId === helloChatPausedTarget?.tabId);
+  if (retained.length) return unique(retained);
+  const attention = targets.filter(target => target.why === 'last-focused-active-live-check');
+  return attention.length ? unique(attention) : unique(targets);
+};
+
+const setYouTubeVolumeForHelloChat = async (requestId, issuedAt, volumePercent) => {
+  const expiresAt = issuedAt + HELLO_CHAT_VIDEO_MAX_AGE_MS;
+  const reply = (response = {}, reason = '') => postNativeMessage({
+    type: 'hellochat-video-result', requestId, videoAction: 'setVolume', protocolVersion: HELLO_CHAT_VIDEO_PROTOCOL_VERSION,
+    changed: response.changed === true, confirmed: response.confirmed === true,
+    volumePercent: response.volumePercent, playing: response.playing, paused: response.paused, muted: response.muted,
+    reason: response.reason || reason || 'volume-unconfirmed',
+  });
+  try {
+    if (!isFreshHelloChatVideoRequest(issuedAt)) { reply({}, 'stale-request'); return; }
+    await hydrateFromStorage();
+    await loadAutoPausePreference();
+    const candidates = await orderedDictationCandidates();
+    const automaticTarget = currentYouTubeVolumeAutomaticTarget(), automaticToken = dictationSessionToken;
+    if (automaticTarget !== null && !candidates.some(target => target.tabId === automaticTarget)) candidates.push({ tabId: automaticTarget, why: 'current-automatic-pause' });
+    if (helloChatPausedTarget && !candidates.some(target => target.tabId === helloChatPausedTarget.tabId)) candidates.push(helloChatPausedTarget);
+    const targets = [], seen = new Set();
+    for (const candidate of candidates) {
+      if (seen.has(candidate.tabId)) continue;
+      seen.add(candidate.tabId);
+      if (Date.now() >= expiresAt) { reply({}, 'stale-request'); return; }
+      const found = await inspectYouTubeVolumeTarget(candidate, requestId, expiresAt);
+      if (found) targets.push(found);
+    }
+    const target = chooseYouTubeVolumeTarget(targets, automaticTarget);
+    if (!target) { reply({}, targets.length ? 'ambiguous-youtube-target' : 'no-youtube-target'); return; }
+    if (Date.now() >= expiresAt) { reply({}, 'stale-request'); return; }
+    if (target.tabId === automaticTarget && (currentYouTubeVolumeAutomaticTarget() !== automaticTarget || dictationSessionToken !== automaticToken)) { reply({}, 'pause-owner-changed'); return; }
+    // Never inject, retry or select another player after this exact one-shot boundary.
+    const result = await sendYouTubeVolumeBound(target, { type: 'set-youtube-volume', requestId,
+      playerToken: target.playerToken, volumePercent, expiresAt });
+    reply(result.response || {}, result.reason);
+  } catch (_error) { reply({}, 'volume-unconfirmed'); }
 };
 
 /**

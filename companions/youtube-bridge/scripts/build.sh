@@ -11,6 +11,9 @@ menu_bar_app="$menu_bar_dist/Agent Flow Bridge.app"
 menu_bar_macos="$menu_bar_app/Contents/MacOS"
 menu_bar_resources="$menu_bar_app/Contents/Resources"
 codesign_identity="${YOUTUBE_SPOTIFY_MEDIA_KEY_CODESIGN_IDENTITY:--}"
+# The extension owns the component version; match the advertised minimum in the actual binary. — GPT-6.1 Sol
+bridge_version="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["version"])' "$repo_root/extension/manifest.json")"
+bridge_minimum_macos="13.0"
 
 codesign_binary() {
   local target="$1"
@@ -40,6 +43,7 @@ mkdir -p "$extension_dist" "$native_dist" "$menu_bar_macos" "$menu_bar_resources
 bash "$repo_root/scripts/package-extension.sh" "$extension_dist"
 
 swiftc \
+  -target "$(uname -m)-apple-macosx${bridge_minimum_macos}" \
   "$repo_root/shared/AgentFlowBridgeShared.swift" \
   "$repo_root/native-host/AgentFlowBridgeNativeHost.swift" \
   -o "$native_dist/AgentFlowBridgeHost" \
@@ -67,11 +71,11 @@ cat > "$menu_bar_app/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.2.9</string>
+  <string>$bridge_version</string>
   <key>CFBundleVersion</key>
-  <string>4</string>
+  <string>6</string>
   <key>LSMinimumSystemVersion</key>
-  <string>13.0</string>
+  <string>$bridge_minimum_macos</string>
   <key>LSUIElement</key>
   <true/>
   <key>NSHighResolutionCapable</key>
@@ -84,6 +88,7 @@ PLIST
 cp "$repo_root/assets/AppIcon.icns" "$menu_bar_resources/AppIcon.icns"
 
 swiftc \
+  -target "$(uname -m)-apple-macosx${bridge_minimum_macos}" \
   "$repo_root/shared/AgentFlowBridgeShared.swift" \
   "$repo_root/menu-bar/main.swift" \
   -o "$menu_bar_macos/AgentFlowBridge" \

@@ -14,6 +14,8 @@ COMPONENTS = {"extension": {".js", ".json", ".html", ".css", ".png"},
               "shared": {".swift"}, "menu-bar": {".swift"},
               "native-host": {".swift"}, "tests": {".mjs"}}
 EXTRA = "scripts/package-extension.sh"
+# Ethan's "YouTube volume" envelope fixture is public; arbitrary Swift tests remain private. — GPT-6.1 Sol
+APPROVED_TEST_FIXTURES = {"tests/HelloChatYouTubeVolumeContractTests.swift"}
 
 
 def digest(path):
@@ -32,7 +34,8 @@ def source_files(source):
             if not path.is_file():
                 continue
             relative = path.relative_to(source)
-            if any(part.startswith(".") for part in relative.parts) or path.suffix not in extensions:
+            if any(part.startswith(".") for part in relative.parts) or (
+                    path.suffix not in extensions and relative.as_posix() not in APPROVED_TEST_FIXTURES):
                 raise ValueError(f"Unapproved source file: {relative}")
             files[relative.as_posix()] = path
     extra = source / EXTRA

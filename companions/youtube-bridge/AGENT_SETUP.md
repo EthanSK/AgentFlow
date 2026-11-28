@@ -7,7 +7,7 @@ Paste this into your local coding agent:
 ## Agent procedure
 
 1. Read the repository instructions. On Ethan's machines, native builds belong on his Mac Mini; use a task-owned directory. On another user's Mac, use their authorized build machine.
-2. Inspect existing Agent Flow, companion and unpacked-extension paths. Preserve unrelated work and browser tabs. Do not install or restart during an active recording.
+2. Inspect existing Agent Flow, companion and unpacked-extension paths. Preserve unrelated work and browser tabs. Do not install or restart during an active recording. Also account for spoken-reminder and hands-free reply holds before replacing an existing helper. Use the owning system's established admission/lease checks; a cached bridge status alone does not prove every hold is idle. Preserve unknown activity rather than stopping it to install.
 3. Build the main app from the repo root using BUILDING.md. Use your own transcription provider credentials or a supported local model; no private proxy is bundled.
 4. Run `./scripts/test.sh` and `./scripts/build.sh` from this directory. Confirm the native host and menu app signatures with `codesign --verify --strict`, and confirm `dist/extension/manifest.json` exists.
 5. Run `./scripts/install.sh` on the target Mac when safe. It rebuilds locally, registers the host for Google Chrome, copies the menu app to `~/Applications`, and creates its login LaunchAgent. Keep this directory in a stable location.

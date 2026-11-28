@@ -364,6 +364,7 @@ private final class MenuBarMediaKeyController {
     message.requestId = request.requestId
     message.videoAction = request.action == .status ? nil : request.action.rawValue
     message.issuedAt = request.issuedAt
+    message.volumePercent = request.volumePercent
     message.reason = "hellochat-video-\(request.action.rawValue)"
     message.nativeTimestamp = BridgeNotification.now()
     BridgeNotification.post(message, name: BridgeNotification.appToBridge)
@@ -385,6 +386,7 @@ private final class MenuBarMediaKeyController {
         action: HelloChatVideoNotification.Action.status.rawValue,
         state: .available,
         protocolVersion: message.protocolVersion,
+        capabilities: message.capabilities,
       )
       return
     }
@@ -402,6 +404,8 @@ private final class MenuBarMediaKeyController {
       changed: message.changed == true,
       reason: message.reason,
       protocolVersion: message.protocolVersion,
+      volumePercent: message.volumePercent,
+      playing: message.playing, paused: message.paused, muted: message.muted, confirmed: message.confirmed,
     )
   }
 

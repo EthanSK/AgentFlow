@@ -780,6 +780,10 @@
     };
   };
 
+
+  // Expiring per-command references bind absolute volume to this document and player. — GPT-6.1 Sol
+  const youtubeVolumePlayers = new Map();
+
   const handleRuntimeMessage = (message, _sender, sendResponse) => {
     if (!message || typeof message !== 'object') {
       return false;
@@ -788,7 +792,7 @@
 
     const typedMessage = /** @type {{ type?: unknown, seekSeconds?: unknown, volumeDelta?: unknown, holdToken?: unknown, playbackRate?: unknown, restorePlaybackRate?: unknown, holdLeaseMilliseconds?: unknown }} */ (message);
     if (Number.isFinite(message.expiresAt) && Date.now() >= message.expiresAt) {
-      sendResponse({ ok: false, reason: 'playback-command-expired' }); return false;
+      sendResponse({ ok: false, reason: 'playback-command-expired', ...(message.type === 'set-youtube-volume' ? { confirmed: false, changed: false } : {}) }); return false;
     }
 
     switch (typedMessage.type) {
@@ -842,6 +846,53 @@
         }
         sendResponse(seekYouTubeFiveSeconds(typedMessage.seekSeconds));
         return false;
+
+      // A percentage command changes only the chosen player's volume. Unlike mouse
+      // volume-up it must not unmute, resume, seek or release a recording lease. — GPT-6.1 Sol
+      // Discovery is media-read-only. The short-lived token binds the later single
+      // percentage write to this document, exact element/source and request. — GPT-6.1 Sol
+      // Discover one exact video reference without changing media or its recording lease. — GPT-6.1 Sol
+      case 'youtube-volume-discover': {
+        const now = Date.now();
+        for (const [token, value] of youtubeVolumePlayers) if (now >= value.expiresAt) youtubeVolumePlayers.delete(token);
+        if (typeof message.requestId !== 'string' || !/^[0-9a-f-]{36}$/i.test(message.requestId) ||
+            !Number.isFinite(message.expiresAt) || now >= message.expiresAt) {
+          sendResponse({ eligible: false, reason: 'invalid-or-stale-volume' }); return false;
+        }
+        const video = getActiveVideo();
+        if (!video || video.ended) { sendResponse({ eligible: false, reason: 'no-video' }); return false; }
+        const playerToken = globalThis.crypto?.randomUUID?.();
+        if (!playerToken) { sendResponse({ eligible: false, reason: 'player-unconfirmed' }); return false; }
+        youtubeVolumePlayers.set(playerToken, { video, source: video.currentSrc, videoId: currentVideoId(),
+          url: location.href, requestId: message.requestId, expiresAt: message.expiresAt });
+        while (youtubeVolumePlayers.size > 8) youtubeVolumePlayers.delete(youtubeVolumePlayers.keys().next().value);
+        sendResponse({ eligible: true, playerToken, playing: isVideoPlaying(video), paused: video.paused,
+          isPiP: getPictureInPictureVideo() === video });
+        return false;
+      }
+
+      case 'set-youtube-volume': {
+        const binding = youtubeVolumePlayers.get(message.playerToken);
+        youtubeVolumePlayers.delete(message.playerToken);
+        if (!binding || binding.requestId !== message.requestId || !Number.isSafeInteger(message.volumePercent) ||
+            message.volumePercent < 0 || message.volumePercent > 100 || !Number.isFinite(message.expiresAt) ||
+            Date.now() >= Math.min(message.expiresAt, binding.expiresAt) || binding.video !== getActiveVideo() ||
+            binding.source !== binding.video.currentSrc || binding.videoId !== currentVideoId() || binding.url !== location.href || binding.video.ended) {
+          sendResponse({ confirmed: false, changed: false, reason: 'stale-player-or-volume' }); return false;
+        }
+        const video = binding.video;
+        const before = { playing: isVideoPlaying(video), paused: video.paused, muted: video.muted, volume: video.volume };
+        try {
+          const requested = message.volumePercent / 100;
+          if (Math.abs(video.volume - requested) > 1e-7) video.volume = requested;
+          const playing = isVideoPlaying(video), paused = video.paused, muted = video.muted;
+          const confirmed = video === getActiveVideo() && binding.source === video.currentSrc && Number.isFinite(video.volume) &&
+            Math.abs(video.volume - requested) <= 1e-7 && playing === before.playing && paused === before.paused && muted === before.muted;
+          sendResponse({ confirmed, changed: video.volume !== before.volume, volumePercent: Math.round(video.volume * 100),
+            playing, paused, muted, reason: confirmed ? (video.volume === before.volume ? 'already-volume' : 'volume-set') : 'volume-unconfirmed' });
+        } catch (_error) { sendResponse({ confirmed: false, changed: false, reason: 'volume-unconfirmed' }); }
+        return false;
+      }
 
       case 'adjust-youtube-volume':
         if (typedMessage.volumeDelta !== -0.05 && typedMessage.volumeDelta !== 0.05) {
