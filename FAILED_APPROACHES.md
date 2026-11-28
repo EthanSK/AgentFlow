@@ -1,5 +1,11 @@
 # VoiceInk++ failed approaches and regression ledger
 
+## 2026-11-28 — Readable snapshots are not atomic Voice ownership
+
+Ethan explicitly superseded the November24 blind-toggle/reader-OFF recording policy with state preservation. Build572 revisits bounded existing-label reads without enabling exposure writes, polling, AXPress or pointer/focus changes. This is not proof that the earlier background-tree failures disappeared. The October9 refusal-only regression and November15 unreadable/deadline evidence below remain negative runtime evidence: an unknown channel is skipped and can prevent suppression or restoration. All151 focused functions passed and572 is installed, but natural audio acceptance is unverified.
+
+Do not count a successful shortcut dispatch, stale150ms readback or one readable snapshot as applied audio or external-change provenance. The retired150ms post-read was removed; an old source test that required its sleep was corrected without relaxing any UI-mutation prohibition. A later visible unmute relinquishes the channel; an unreadable Stop discards its attempt without an inverse and can leave Voice muted for explicit restoration. Stronger same-call/manual-override guarantees require an authoritative state/change feed or agreed shared ownership. Never reintroduce a blind unknown-state fallback or report the snapshot implementation as atomic. Current bounded policy: .agents/skills/learnings/references/codex-voice-accessibility.md; exact native/test source9c8338ed/e4b193de and receipts under ~/.codex/repair-notes/agent-flow/2026-11-28-voice-state-hold/.
+
 ## 2026-11-27 — Sleeping before the first explicit SwiftUI fixture layout — REJECTED
 
 Hosted8f5b99dc/run46074119666 Passed all7native fade functions and10Python release guards, then failed only one of the1114remaining functions: the Mini clipboard-only retired-card on/off image comparison differed by0pixels versus the unchanged>80requirement. Retained logs identify the variant, but original bitmap pairs were not configured. The unchanged test then Passed alone on Mini/all4variants; no exact original paint cause or production defect is established.

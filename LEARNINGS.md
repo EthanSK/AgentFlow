@@ -1,6 +1,20 @@
 # Learnings
 
 ---
+**Date:** 2026-11-28
+**Trigger:** Ethan explicitly asked recording holds to preserve Voice speaker and microphone states already set by him or H Chat.
+**Root cause / limit:** The November24 direct-toggle policy cannot identify an already-muted channel. A shortcut post is not native acceptance, and UI snapshots cannot attribute an unseen external mute/unmute/mute cycle. Existing unreadable-tree and stale-label failures remain relevant; do not claim the platform limitation is solved.
+**Fix:** Native9c8338ed requires fresh known-needed per-channel state and same-call identity at dispatch, tracks each owned attempt separately, and respects a later readable unmute. Unknown state never authorizes a toggle/inverse. The microphone reader defaults on only when its preference is absent, preserving explicit false; exposure preparation and observers stay off. The old150ms delayed post-read is removed rather than treating stale UI as audio proof. Existing300ms speaker-to-mic spacing,600ms real capture tail and500ms normal Primary Enter allowance remain.
+**Guard:** All151 named focused functions/18suites Passed at e4b193de, including five new pre-muted/unreadable/later-visible-unmute cases, rapid/cancel/call replacement/paired ownership and twelve paste/Enter neighbors. The only diagnostic retry failure required the deliberately retired150ms sleep in an old source assertion; e4b inverted only that assertion while retaining its AX/pointer/focus bans. A preceding quiet failed run lost its unlisted result bundle, so its exact failure is not inferred. Signed universal572 is installed, PID48826/executable d600973a21f5aeb1d8c4dee10c03ea520ec8ab68c5914cd3e747049a81547547, after a five-second warning/cooperative all-session quit/readiness. Eight preferences, seven configuration digests, entitlements, updater identity and official VoiceInk are unchanged; verified571 ZIP retained. Exact-source hosted46096516678 is preparing, not yet public-qualified. No live audio/recording/control probe occurred. Unknown Stop can leave Voice muted for explicit restoration; natural audible acceptance and stronger cross-app provenance remain unverified. Evidence: ~/.codex/repair-notes/agent-flow/2026-11-28-voice-state-hold/.
+---
+
+---
+**Date:** 2026-11-28
+**Trigger:** Follow-through for the requested extra100ms before Enter.
+**Guard:** Public571/source19af29dd, hosted46087694503 attempt2, Passed all1121named/57suites in distinct canonical app processes39120/40003; exact7+1114 coverage and all four native motion/layout and four retired-outline variants verified from actual retained artifacts. Stable signing/notarization/staple/immutable publication/download/credential cleanup Passed. Independent actual public ZIP/feed/two checksums/native/Ed25519/latest-feed verification Passed; temporary downloads/extraction removed. ArchiveSHA256 fb76d84e35c35eb6d1069216b22b31909bd5b552567342396081aace57538188. Attempt1 already Passed the full tests but nested Sparkle signing failed with a missing timestamp despite --timestamp; the unchanged ordinary failed-job retry passed. No Apple outage or native app cause is established, and no signing safeguards were weakened. Physical intermittent Enter misses remain unproved. Evidence: ~/.codex/repair-notes/agent-flow/2026-11-28-enter-delay/.
+---
+
+---
 **Date:** 2026-11-28T00:23:17Z
 **Trigger:** User request on 2026-11-28: press Enter 100 milliseconds later than it does now.
 **Symptom:** Ethan reported occasional missing Enter and requested another 100 ms before normal automatic Send.
