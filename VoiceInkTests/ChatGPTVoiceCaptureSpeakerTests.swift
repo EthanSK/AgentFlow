@@ -10,6 +10,7 @@ private actor FakeVoiceSpeakerTransport: ChatGPTVoiceSpeakerTransport {
     private var posts: [ChatGPTVoiceCall] = []
     private var callReads = 0
     private var shortcutConfigured: Bool
+    private var muted: Bool? = false
     let attemptedAt = Date(timeIntervalSince1970: 42)
 
     init(_ call: ChatGPTVoiceCall?, shortcutConfigured: Bool = true) {
@@ -22,12 +23,14 @@ private actor FakeVoiceSpeakerTransport: ChatGPTVoiceSpeakerTransport {
         return currentCall
     }
 
-    func postSpeakerToggle(for call: ChatGPTVoiceCall) -> Date? {
-        guard currentCall == call, shortcutConfigured else { return nil }
+    func postSpeakerToggle(for call: ChatGPTVoiceCall, fromMuted: Bool) -> Date? {
+        guard currentCall == call, shortcutConfigured, muted == fromMuted else { return nil }
         posts.append(call)
+        muted = !fromMuted
         return attemptedAt
     }
 
+    func setMuted(_ value: Bool?) { muted = value }
     func setCurrentCall(_ call: ChatGPTVoiceCall?) { currentCall = call }
     func configureShortcut() { shortcutConfigured = true }
     func postedCalls() -> [ChatGPTVoiceCall] { posts }
@@ -70,12 +73,13 @@ struct ChatGPTVoiceCaptureSpeakerTests {
         #expect(dispatch.contains("Self.configuredSpeakerShortcut()"))
         #expect(dispatch.contains("Self.voiceCall(for: application) == call"))
         #expect(dispatch.components(separatedBy: "Self.postTargetedShortcut(").count == 2)
-        for forbidden in ["readVoiceControls(", "speakerObservation(", "snapshot(", "activate("] {
+        #expect(dispatch.contains("Self.readVoiceControls(applicationPID: call.applicationPID, channel: .speaker).isMuted == fromMuted"))
+        for forbidden in ["snapshot(", "activate(", "AXPress"] {
             #expect(!dispatch.contains(forbidden))
         }
     }
 
-    @Test func backgroundCallWithNoControlsGetsOneTogglePerCaptureBoundary() async {
+    @Test func readableSameCallGetsOneOwnedTogglePerCaptureBoundary() async {
         let transport = FakeVoiceSpeakerTransport(call)
         let speaker = ChatGPTVoiceCaptureSpeaker(transport: transport)
         let posted = ChatGPTVoiceSpeakerPost.postedDirectly(call: call, attemptedAt: transport.attemptedAt)
@@ -84,6 +88,31 @@ struct ChatGPTVoiceCaptureSpeakerTests {
         #expect(await speaker.restoreAfterCapture() == posted)
         #expect(await speaker.restoreAfterCapture() == .skipped)
         #expect(await transport.postedCalls() == [call, call])
+    }
+
+    @Test func preMutedOrUnreadableSpeakersAreNeverToggledOrOwned() async {
+        for state in [true, nil] as [Bool?] {
+            let transport = FakeVoiceSpeakerTransport(call)
+            await transport.setMuted(state)
+            let speaker = ChatGPTVoiceCaptureSpeaker(transport: transport)
+            #expect(await speaker.silenceForCapture() == .skipped)
+            await transport.setMuted(false)
+            #expect(await speaker.restoreAfterCapture() == .skipped)
+            #expect(await transport.postedCalls().isEmpty)
+        }
+    }
+
+    @Test func newerUnmuteOrUnreadableStateCannotReceiveAnOwnedInverse() async {
+        for state in [false, nil] as [Bool?] {
+            let transport = FakeVoiceSpeakerTransport(call)
+            let speaker = ChatGPTVoiceCaptureSpeaker(transport: transport)
+            await speaker.silenceForCapture()
+            await transport.setMuted(state)
+            #expect(await speaker.restoreAfterCapture() == .skipped)
+            await transport.setMuted(true)
+            #expect(await speaker.restoreAfterCapture() == .skipped)
+            #expect(await transport.postedCalls() == [call])
+        }
     }
 
     @Test func replacedOrEndedCallDoesNotReceiveRestore() async {

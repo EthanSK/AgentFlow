@@ -25,7 +25,9 @@ enum ChatGPTVoiceSpeakerPost: Equatable, Sendable, Codable {
 
 protocol ChatGPTVoiceSpeakerTransport: Sendable {
     func activeSpeakerCall() async -> ChatGPTVoiceCall?
-    func postSpeakerToggle(for call: ChatGPTVoiceCall) async -> Date?
+    // Must freshly observe fromMuted on this call before posting; nil state skips.
+    // The result confirms dispatch only, never native acceptance. — GPT-6.1 Sol
+    func postSpeakerToggle(for call: ChatGPTVoiceCall, fromMuted: Bool) async -> Date?
 }
 
 actor ChatGPTVoiceCaptureSpeaker {
@@ -50,7 +52,11 @@ actor ChatGPTVoiceCaptureSpeaker {
         // A rapid successor inherits the outstanding toggle on the same call.
         if ownedCall == call { return .skipped }
         ownedCall = nil
-        guard let attemptedAt = await transport.postSpeakerToggle(for: call) else { return .skipped }
+        // Ethan's 28 November state-preserving hold supersedes blind pairing:
+        // an existing H Chat/manual mute and unreadable state both stay untouched.
+        // The transport reads state once at dispatch, without a duplicate scan. — GPT-6.1 Sol
+        guard let attemptedAt = await transport.postSpeakerToggle(for: call, fromMuted: false)
+        else { return .skipped }
 
         ownedCall = call
         logger.notice("Posted one Codex Voice speaker toggle for capture start")
@@ -62,7 +68,10 @@ actor ChatGPTVoiceCaptureSpeaker {
         guard automaticControlEnabled else { return .skipped }
         guard let call = ownedCall else { return .skipped }
         ownedCall = nil
-        guard let attemptedAt = await transport.postSpeakerToggle(for: call) else { return .skipped }
+        // A later visible unmute takes precedence. Unknown state cannot justify
+        // an inverse; a posted shortcut alone never proves the audible result. — GPT-6.1 Sol
+        guard let attemptedAt = await transport.postSpeakerToggle(for: call, fromMuted: true)
+        else { return .skipped }
 
         logger.notice("Posted one Codex Voice speaker toggle for capture end")
         return .postedDirectly(call: call, attemptedAt: attemptedAt)

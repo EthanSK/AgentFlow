@@ -7,11 +7,13 @@ import Testing
 private actor CaptureBoundarySpeakerTransport: ChatGPTVoiceSpeakerTransport {
     let call: ChatGPTVoiceCall
     private var posts: [ChatGPTVoiceCall] = []
+    private var muted = false
     init(call: ChatGPTVoiceCall) { self.call = call }
     func activeSpeakerCall() -> ChatGPTVoiceCall? { call }
-    func postSpeakerToggle(for call: ChatGPTVoiceCall) -> Date? {
-        guard call == self.call else { return nil }
+    func postSpeakerToggle(for call: ChatGPTVoiceCall, fromMuted: Bool) -> Date? {
+        guard call == self.call, muted == fromMuted else { return nil }
         posts.append(call)
+        muted.toggle()
         return Date()
     }
     func postCount() -> Int { posts.count }
@@ -97,7 +99,8 @@ private actor RepaintingVoiceTransport: ChatGPTVoiceMuteTransport, ChatGPTVoiceS
         from before: ChatGPTVoiceInputSnapshot, toward target: ChatGPTVoiceMicrophoneState,
         using authority: ChatGPTVoiceShortcutAuthority
     ) -> Date? {
-        guard before.call == call else { return nil }
+        guard before.call == call, controlsReadable,
+              microphoneMuted != (target == .muted) else { return nil }
         commands.append(target == .muted ? "mic mute" : "mic restore")
         microphoneMuted.toggle()
         controlsReadable = false
@@ -111,8 +114,8 @@ private actor RepaintingVoiceTransport: ChatGPTVoiceMuteTransport, ChatGPTVoiceS
 
     func activeSpeakerCall() -> ChatGPTVoiceCall? { call }
 
-    func postSpeakerToggle(for call: ChatGPTVoiceCall) -> Date? {
-        guard self.call == call else { return nil }
+    func postSpeakerToggle(for call: ChatGPTVoiceCall, fromMuted: Bool) -> Date? {
+        guard self.call == call, controlsReadable, fromMuted == !nextSpeakerToggleIsStart else { return nil }
         commands.append(nextSpeakerToggleIsStart ? "speaker mute" : "speaker restore")
         nextSpeakerToggleIsStart.toggle()
         controlsReadable = false
@@ -270,15 +273,15 @@ struct ChatGPTVoiceCaptureMuteCoordinatorTests {
         }
     }
 
-    @Test func speakerShortcutsPairEvenWhenTheMicrophoneRepaintHidesControls() async {
+    @Test func repaintMakesUnknownControlsSkipRatherThanBlindlyToggle() async {
         let transport = RepaintingVoiceTransport()
         let coordinator = ChatGPTVoiceCaptureMuteCoordinator(
             transport: transport, speaker: ChatGPTVoiceCaptureSpeaker(transport: transport))
         let lease = await coordinator.prepareForCapture()
-        #expect(await transport.postedCommands() == ["speaker mute", "mic mute"])
+        #expect(await transport.postedCommands() == ["speaker mute"])
         await coordinator.releaseCapture(lease)
         await coordinator.waitForPendingTransitionsForTesting()
-        #expect(await transport.postedCommands() == ["speaker mute", "mic mute", "speaker restore", "mic restore"])
+        #expect(await transport.postedCommands() == ["speaker mute"])
     }
 
     @Test func speakerRepaintDoesNotUnmuteAnInitiallyManuallyMutedMicrophone() async {
@@ -300,7 +303,7 @@ struct ChatGPTVoiceCaptureMuteCoordinatorTests {
         await transport.revealControls(manualMicrophoneMuted: false)
         await coordinator.releaseCapture(lease)
         await coordinator.waitForPendingTransitionsForTesting()
-        #expect(await transport.postedCommands() == ["speaker mute", "mic mute", "speaker restore"])
+        #expect(await transport.postedCommands() == ["speaker mute", "speaker restore"])
     }
 
     @Test func speakerRestoresAcrossCaptureOffResumeAndFinalCompletion() async {
@@ -397,7 +400,7 @@ struct ChatGPTVoiceCaptureMuteCoordinatorTests {
         #expect(alreadyMutedState.ownedMutedApplicationPID == nil)
     }
 
-    @Test func aReadableFailedToggleIsNotInvertedAtStop() async {
+    @Test func staleListeningReadbackRetainsAttemptButUnknownStopNeverInverts() async {
         let transport = FakeChatGPTVoiceMuteTransport(snapshot: voice(.listening))
         await transport.setChangesStateOnPost(false)
         let coordinator = makeCoordinator(transport)
@@ -406,7 +409,7 @@ struct ChatGPTVoiceCaptureMuteCoordinatorTests {
         var postPIDs = await transport.postedPIDs()
         var state = await coordinator.stateForTesting()
         #expect(postPIDs == [pid])
-        #expect(state.ownedMutedApplicationPID == nil)
+        #expect(state.ownedMutedApplicationPID == pid)
         await transport.setSnapshot(voice(nil))
 
         await coordinator.releaseCapture(lease)
@@ -439,7 +442,7 @@ struct ChatGPTVoiceCaptureMuteCoordinatorTests {
         #expect(postPIDs == [pid])
     }
 
-    @Test func unreadableBackgroundControlUsesOnePairedLease() async {
+    @Test func unreadableBackgroundControlNeverTogglesOrOwnsAMute() async {
         let transport = FakeChatGPTVoiceMuteTransport(snapshot: voice(nil))
         let coordinator = makeCoordinator(transport)
 
@@ -447,8 +450,8 @@ struct ChatGPTVoiceCaptureMuteCoordinatorTests {
         var state = await coordinator.stateForTesting()
         var postPIDs = await transport.postedPIDs()
         #expect(state.captureActive)
-        #expect(state.ownedMutedApplicationPID == pid)
-        #expect(postPIDs == [pid])
+        #expect(state.ownedMutedApplicationPID == nil)
+        #expect(postPIDs.isEmpty)
 
         await coordinator.releaseCapture(lease)
         await coordinator.waitForPendingTransitionsForTesting()
@@ -456,7 +459,7 @@ struct ChatGPTVoiceCaptureMuteCoordinatorTests {
         postPIDs = await transport.postedPIDs()
         #expect(!state.captureActive)
         #expect(state.ownedMutedApplicationPID == nil)
-        #expect(postPIDs == [pid, pid])
+        #expect(postPIDs.isEmpty)
     }
 
     @Test func endedUnreadableVoiceSessionIsNotInvertedAtStop() async {
@@ -472,7 +475,7 @@ struct ChatGPTVoiceCaptureMuteCoordinatorTests {
         let postPIDs = await transport.postedPIDs()
         #expect(!state.captureActive)
         #expect(state.ownedMutedApplicationPID == nil)
-        #expect(postPIDs == [pid])
+        #expect(postPIDs.isEmpty)
     }
 
     @Test func userReenabledInputRelinquishesOwnershipWithoutInverseToggle() async {

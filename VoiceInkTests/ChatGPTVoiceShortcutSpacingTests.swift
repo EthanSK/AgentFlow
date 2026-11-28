@@ -54,28 +54,32 @@ private actor ShortcutTestTransport: ChatGPTVoiceMuteTransport, ChatGPTVoiceSpea
     private var posts: [Post] = []
     private var nextSpeakerIsStart = true
     private var allowsMicrophone = true
+    private var microphoneMuted = false
+    private var controlsReadable = true
     init(clock: ShortcutTestClock) {
         self.clock = clock
         call = .init(applicationPID: 42, sessionID: UUID())
     }
     func snapshot() -> ChatGPTVoiceInputSnapshot? {
-        .init(applicationPID: 42, isInputRunning: inputRunning, microphoneState: nil,
+        .init(applicationPID: 42, isInputRunning: inputRunning,
+              microphoneState: controlsReadable ? (microphoneMuted ? .muted : .listening) : nil,
               call: inputRunning ? call : nil)
     }
     func postMicrophoneToggle(from before: ChatGPTVoiceInputSnapshot,
                               toward target: ChatGPTVoiceMicrophoneState,
                               using authority: ChatGPTVoiceShortcutAuthority) -> Date? {
-        guard allowsMicrophone, inputRunning, before.call == call, call != nil else { return nil }
+        guard allowsMicrophone, inputRunning, before.call == call, call != nil,
+              controlsReadable, microphoneMuted != (target == .muted) else { return nil }
         posts.append(.init(command: target == .muted ? "mic mute" : "mic restore", at: clock.now()))
+        microphoneMuted = target == .muted
         return Date()
     }
     func microphoneStateAfterToggle(for call: ChatGPTVoiceCall) -> ChatGPTVoiceMicrophoneState? {
-        Issue.record("Normal direct-toggle recording must not request microphone readback")
-        return nil
+        return self.call == call ? (microphoneMuted ? .muted : .listening) : nil
     }
     func activeSpeakerCall() -> ChatGPTVoiceCall? { inputRunning ? call : nil }
-    func postSpeakerToggle(for call: ChatGPTVoiceCall) -> Date? {
-        guard inputRunning, self.call == call else { return nil }
+    func postSpeakerToggle(for call: ChatGPTVoiceCall, fromMuted: Bool) -> Date? {
+        guard inputRunning, self.call == call, controlsReadable, fromMuted == !nextSpeakerIsStart else { return nil }
         posts.append(.init(command: nextSpeakerIsStart ? "speaker mute" : "speaker restore", at: clock.now()))
         nextSpeakerIsStart.toggle()
         return Date()
@@ -84,6 +88,10 @@ private actor ShortcutTestTransport: ChatGPTVoiceMuteTransport, ChatGPTVoiceSpea
     func replaceCall() { call = .init(applicationPID: 42, sessionID: UUID()) }
     func endCall() { inputRunning = false; call = nil }
     func refuseMicrophone() { allowsMicrophone = false }
+    func setStates(microphone: Bool, speaker: Bool, readable: Bool = true) {
+        microphoneMuted = microphone; nextSpeakerIsStart = !speaker; controlsReadable = readable
+    }
+    func states() -> [Bool] { [microphoneMuted, !nextSpeakerIsStart] }
 }
 
 private struct ShortcutTestHarness {
@@ -120,7 +128,45 @@ private func eventually(_ predicate: () async -> Bool) async -> Bool {
 }
 
 struct ChatGPTVoiceShortcutSpacingTests {
-    @Test func bothBoundariesPostOnceWithThreeHundredMillisecondsAndNoControls() async throws {
+    @Test func eachPreMutedControlRemainsExactlyAsItStarted() async {
+        for microphone in [false, true] {
+            for speaker in [false, true] {
+                let h = ShortcutTestHarness()
+                await h.transport.setStates(microphone: microphone, speaker: speaker)
+                let lease = await h.coordinator.prepareForCapture()
+                #expect(await h.transport.states() == [true, true])
+                await h.coordinator.releaseCapture(lease)
+                await h.coordinator.waitForPendingTransitionsForTesting()
+                #expect(await h.transport.states() == [microphone, speaker])
+                let posts = await h.transport.recorded().map(\.command)
+                #expect(posts.filter { $0.hasPrefix("mic") }.count == (microphone ? 0 : 2))
+                #expect(posts.filter { $0.hasPrefix("speaker") }.count == (speaker ? 0 : 2))
+            }
+        }
+    }
+
+    @Test func unreadablePanelNeverPostsEitherControl() async {
+        let h = ShortcutTestHarness()
+        await h.transport.setStates(microphone: false, speaker: true, readable: false)
+        let lease = await h.coordinator.prepareForCapture()
+        await h.coordinator.releaseCapture(lease)
+        await h.coordinator.waitForPendingTransitionsForTesting()
+        #expect(await h.transport.recorded().isEmpty)
+        #expect(await h.transport.states() == [false, true])
+        #expect(await h.gap.count() == 0)
+    }
+
+    @Test func newerExternalUnmutePreventsBothInverseToggles() async {
+        let h = ShortcutTestHarness()
+        let lease = await h.coordinator.prepareForCapture()
+        await h.transport.setStates(microphone: false, speaker: false)
+        await h.coordinator.releaseCapture(lease)
+        await h.coordinator.waitForPendingTransitionsForTesting()
+        #expect(await h.transport.recorded().map(\.command) == ["speaker mute", "mic mute"])
+        #expect(await h.transport.states() == [false, false])
+    }
+
+    @Test func readableBoundariesPostOnceWithThreeHundredMilliseconds() async throws {
         let h = ShortcutTestHarness()
         let lease = await h.coordinator.prepareForCapture()
         await h.coordinator.releaseCapture(lease)
@@ -281,11 +327,12 @@ struct ChatGPTVoiceShortcutSpacingTests {
 }
 
 struct ChatGPTVoiceMicrophoneStateReadingTests {
-    @Test func readerIsOffUnlessExplicitlyEnabled() throws {
+    @Test func boundedReaderDefaultsOnAndPreservesExplicitOptOut() throws {
         let name = "VoiceMicrophoneReaderTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: name))
         defer { defaults.removePersistentDomain(forName: name) }
-        #expect(!ChatGPTVoiceMicrophoneStateReading.isEnabled(in: defaults))
+        #expect(ChatGPTVoiceMicrophoneStateReading.isEnabled(in: defaults))
+        #expect(!ChatGPTVoiceMicrophoneStateReading.automaticExposureEnabled)
         defaults.set(true, forKey: ChatGPTVoiceMicrophoneStateReading.preferenceKey)
         #expect(ChatGPTVoiceMicrophoneStateReading.isEnabled(in: defaults))
         defaults.set(false, forKey: ChatGPTVoiceMicrophoneStateReading.preferenceKey)
@@ -304,6 +351,7 @@ struct ChatGPTVoiceMicrophoneStateReadingTests {
         let observer = try #require(preparation.range(of: "NSWorkspace.shared.notificationCenter"))
         let prefix = preparation[start.lowerBound..<observer.lowerBound]
         #expect(prefix.contains("guard ChatGPTVoiceMicrophoneStateReading.isEnabled() else"))
+        #expect(prefix.contains("guard ChatGPTVoiceMicrophoneStateReading.automaticExposureEnabled else"))
         #expect(transport.contains("accessibilityLabel: String"))
     }
 }

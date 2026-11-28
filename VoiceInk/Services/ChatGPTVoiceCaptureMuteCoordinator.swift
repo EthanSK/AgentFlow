@@ -30,6 +30,7 @@ enum ChatGPTVoiceSuppressionOutcome: String, Sendable {
     case noChatGPT
     case noActiveVoice
     case alreadyMuted
+    case stateUnreadable
     case shortcutFailed
     case stillListening
     case mutedVerified
@@ -45,6 +46,7 @@ enum ChatGPTVoiceRestorationOutcome: String, Sendable {
     case voiceEnded
     case callChanged
     case userUnmuted
+    case stateUnreadable
     case shortcutFailed
     case restoredVerified
     case restoredUnverified
@@ -69,11 +71,11 @@ protocol ChatGPTVoiceMuteTransport: Sendable {
 /// state, activates ChatGPT, or moves the pointer.
 ///
 /// Core Audio shows whether ChatGPT is using an input stream, including when its Voice
-/// microphone is muted. Ethan's normal path now sends paired direct toggles without
-/// reading microphone controls. Exact local Voice call boundaries still distinguish
-/// calls that reuse the same process. The optional Accessibility reader remains behind
-/// an OFF-by-default flag: only when explicitly enabled can readable manual state take
-/// precedence. Direct toggles cannot verify the user's starting mute state. — GPT-6.1 Sol
+/// microphone is muted. Ethan's 28 November request requires a readable state
+/// before either control can change; unknown never authorizes a blind toggle.
+/// Exact call boundaries reject a replacement call in the same process. A posted
+/// shortcut remains an attempt, and UI state cannot attribute an unobserved
+/// external mute/unmute/mute sequence to its owner. — GPT-6.1 Sol
 /// Accessibility is never used to activate ChatGPT, set focus, press the control, or move the
 /// pointer; the only mutation remains the user-configured keyboard command. VoiceInk++ deliberately
 /// does not poll that tree while recording—the rejected polling experiment caused lag.
@@ -488,8 +490,9 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
             logger.debug("Capture began while ChatGPT Voice was already muted; microphone toggle was not posted pid=\(before.applicationPID, privacy: .public)")
             return .alreadyMuted
         }
-        if before.microphoneState == nil {
-            logger.notice("ChatGPT Voice microphone state is unverified; using one paired shortcut lease for the active session pid=\(before.applicationPID, privacy: .public)")
+        guard before.microphoneState == .listening else {
+            logger.notice("Voice microphone state unreadable; no recording-owned toggle posted")
+            return .stateUnreadable
         }
         guard await allowMicrophoneAfterSpeaker(toward: .muted),
               suppressionIsStillWanted(intent) else {
@@ -507,15 +510,12 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
         } else {
             postState = nil
         }
-        // A visible failure must not turn into an inverse toggle just because
-        // Codex later hides the same call's microphone button at Stop.
-        if postState == .listening {
-            logger.notice("ChatGPT Voice microphone still showed listening after the mute shortcut; no inverse will be sent")
-            return .stillListening
-        }
+        // Codex may repaint late. A listening readback is not proof the post
+        // failed; remember the attempt, then require a fresh muted state at Stop.
+        // No readback can justify another toggle. Found and fixed by GPT-6.1 Sol.
 
-        // An unreadable post-state can still own one paired attempt for this exact call.
-        // Codex can ignore a shortcut even though macOS accepted the event.
+        // This lease owns an attempt from a readable listening state. Stop must
+        // observe the same call muted before pairing it; unknown never restores.
         ownedMicrophoneMute = (call, authority)
         if postState == .muted {
             logger.notice("VoiceInk++ verified and owns ChatGPT Voice microphone suppression pid=\(before.applicationPID, privacy: .public)")
@@ -563,9 +563,9 @@ actor ChatGPTVoiceCaptureMuteCoordinator {
         case .muted:
             break
         case nil:
-            // The same Voice call remains, but its background control is unreadable. Pair the
-            // single shortcut posted at capture start exactly once; never retry an unobserved result.
-            logger.notice("ChatGPT Voice microphone state is unverified; pairing the owned shortcut pid=\(ownedPID, privacy: .public)")
+            ownedMicrophoneMute = nil
+            logger.notice("Voice microphone restoration skipped: current state unreadable; ownership ended without an inverse")
+            return .stateUnreadable
         }
         guard await allowMicrophoneAfterSpeaker(toward: .listening) else { return .shortcutFailed }
         // A new local or paired capture can arrive during the gap. Transfer the
@@ -675,11 +675,11 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTV
                 logger.error("ChatGPT Voice microphone shortcut is missing or changed; refusing targeted input")
                 return nil
             }
-            // Give a visible manual change made after the snapshot priority over the
-            // shortcut. Do not lengthen the unknown-state branch with a second scan.
-            if before.microphoneState != nil,
-               Self.microphoneState(applicationPID: call.applicationPID) == target {
-                logger.notice("ChatGPT Voice microphone already reached the requested state before dispatch")
+            // A manual/H Chat change during the speaker gap takes precedence.
+            // Unknown cannot authorize the toggle. — GPT-6.1 Sol
+            guard let currentState = Self.microphoneState(applicationPID: call.applicationPID),
+                  currentState != target else {
+                logger.notice("ChatGPT Voice microphone state unknown or already matches; shortcut skipped")
                 return nil
             }
             // Refresh call identity at the event boundary. A new call can reuse
@@ -707,14 +707,15 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTV
         }.value
     }
 
-    func postSpeakerToggle(for call: ChatGPTVoiceCall) async -> Date? {
+    func postSpeakerToggle(for call: ChatGPTVoiceCall, fromMuted: Bool) async -> Date? {
         await Task.detached(priority: .userInitiated) { [logger] () -> Date? in
-            // Ethan asked to send the configured speaker shortcut directly.
-            // The Voice chat can be in the background with no visible controls.
-            // Resolve the chord first, then recheck the call at dispatch: a new
-            // call can reuse this PID. Accessibility permission is checked by the sender.
+            // The state-preserving hold supersedes direct blind pairing. Check
+            // the expected state and exact call immediately before one shortcut;
+            // there is no external atomic setter or acknowledgement. — GPT-6.1 Sol
             guard let shortcut = await Self.configuredSpeakerShortcut(),
                   let application = Self.expectedApplication(),
+                  Self.voiceCall(for: application) == call,
+                  Self.readVoiceControls(applicationPID: call.applicationPID, channel: .speaker).isMuted == fromMuted,
                   Self.voiceCall(for: application) == call
             else {
                 logger.notice("Codex Voice speaker shortcut skipped: binding unavailable or call no longer matches")
@@ -797,19 +798,10 @@ final class SystemChatGPTVoiceMuteTransport: ChatGPTVoiceMuteTransport, ChatGPTV
 
     func microphoneStateAfterToggle(for call: ChatGPTVoiceCall) async -> ChatGPTVoiceMicrophoneState? {
         guard ChatGPTVoiceMicrophoneStateReading.isEnabled() else { return nil }
-        // One delayed, bounded observation is enough to distinguish a visible state change.
-        // Repeated AX traversal was a rejected source of VoiceInk++ UI lag, and an unreadable
-        // background surface already has the paired one-shot lease fallback above.
-        do {
-            try await Task.sleep(nanoseconds: 150_000_000)
-        } catch {
-            return nil
-        }
-        guard let current = await snapshot(),
-              current.call == call else {
-            return nil
-        }
-        return current.microphoneState
+        // Native shortcut posting has no applied-state acknowledgement, and Codex
+        // can repaint late. Do not delay capture or mistake a stale label for it.
+        // Stop performs its own fresh same-call check. — GPT-6.1 Sol
+        return nil
     }
 
     static func readSnapshot() -> ChatGPTVoiceInputSnapshot? {

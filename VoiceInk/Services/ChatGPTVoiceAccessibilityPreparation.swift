@@ -38,12 +38,13 @@ final class ChatGPTVoiceAccessibilityPreparation {
     private var observers: [NSObjectProtocol] = []
 
     func startForApplication() {
-        // Ethan left UI-state detection OFF. Do not prepare or observe Codex's
-        // UI for this dormant feature; direct keyboard posting needs no tree. — GPT-6.1 Sol
+        // The new state checks read existing controls only. Keep the separate
+        // exposure experiment dormant; it previously returned unsupported. — GPT-6.1 Sol
         guard ChatGPTVoiceMicrophoneStateReading.isEnabled() else {
             Self.logger.notice("Voice microphone UI-state reading is disabled; no Accessibility exposure requested")
             return
         }
+        guard ChatGPTVoiceMicrophoneStateReading.automaticExposureEnabled else { return }
         // A test host must not prepare the user's real Codex process as a side
         // effect of starting its app delegate. Fixtures inject their own model.
         guard observers.isEmpty,
@@ -67,6 +68,7 @@ final class ChatGPTVoiceAccessibilityPreparation {
 
     nonisolated private static func prepareInBackground(expectedPID: pid_t? = nil) {
         guard ChatGPTVoiceMicrophoneStateReading.isEnabled() else { return }
+        guard ChatGPTVoiceMicrophoneStateReading.automaticExposureEnabled else { return }
         Task.detached(priority: .utility) {
             // A configured speaker binding is the opt-in. Do not expose Codex's
             // renderer for users who have not configured this Voice integration.

@@ -781,11 +781,13 @@ Treat lagging AX control values as readbacks, not independent proof of audible s
 Keep actual command rejection distinct from an unreadable or stale control.
 User-requested — 2026-11-22; see the dated Voice evidence in `LEARNINGS.md`.
 
-The recording-owned speaker path sends the configured Codex Voice output shortcut
-directly at capture start and pairs it once at capture end on the same identified
-call. Ethan asked to remove the speaker-control precheck on 2026-11-24 so switching
-chats cannot prevent dispatch. Follow the [Voice controls reference](references/codex-voice-accessibility.md#recording-speaker-shortcut)
-for the microphone and reporting boundaries.
+Ethan's 2026-11-28 recording hold request supersedes the older direct-toggle and
+reader-OFF policy: preserve a microphone or speaker mute already set by H Chat or
+Ethan, and change each control only from a readable state that needs changing.
+Unknown state never authorizes a blind toggle or inverse. Read the current
+[Voice controls reference](references/codex-voice-accessibility.md#current-requested-recording-policy--2026-11-28)
+for bounded reads, same-call ownership, restoration limits and dormant exposure.
+This does not change H Chat's independent explicit commands.
 
 Automatic recording-summary/Voice recap notices are removed at Ethan's request on
 2026-11-24, superseding his 2026-11-22 acceptance of the normal Codex queue route.

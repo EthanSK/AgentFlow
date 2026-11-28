@@ -1,6 +1,29 @@
 # Codex Voice controls and exposure
 
-## Current recording policy
+## Current requested recording policy — 2026-11-28
+
+Ethan asks recording to preserve the current state: if H Chat or Ethan already
+silenced Voice speakers or muted the microphone, leave that control alone.
+Treat each channel separately and pair only a recording-owned attempt on the
+exact same call. A later readable unmute takes precedence. An unreadable state
+is never permission for a blind toggle or inverse. This supersedes the 24 November
+Agent Flow direct-toggle/reader-OFF policy; H Chat's explicit commands stay separate.
+
+Use bounded, background reads of existing controls. Keep the unsupported exposure
+preparation dormant, no focus/AXPress/pointer changes, no polling or retry toggles.
+Preserve the existing 300ms speaker-to-microphone gap and recheck local/paired
+ownership and current state after it. A missing preference enables the reader;
+an explicit false still skips it and leaves the state unknown.
+
+Shortcut dispatch is not applied-state confirmation. Codex's UI can lag, and a
+snapshot cannot attribute an unseen external mute/unmute/mute sequence. Do not
+claim atomic cross-app ownership or audible acceptance from these checks. If
+state is unreadable at restoration, discard the lease without an inverse; this
+can leave Voice muted until it is restored explicitly. Stronger provenance needs
+a supported state/change feed or an agreed shared ownership interface, not a
+blind fallback. Verify installed code and real-use acceptance separately.
+
+## Earlier 24 November policy (superseded for Agent Flow recording)
 
 On 2026-11-24 Ethan explicitly chose to leave Agent Flow's microphone/UI-state
 reader OFF. `VIPPVoiceMicrophoneStateReadsEnabled` is false when absent. Gate both
