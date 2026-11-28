@@ -1,6 +1,17 @@
 # Learnings
 
 ---
+**Date:** 2026-11-28T00:23:17Z
+**Trigger:** User request on 2026-11-28: press Enter 100 milliseconds later than it does now.
+**Symptom:** Ethan reported occasional missing Enter and requested another 100 ms before normal automatic Send.
+**Root cause:** The cause of the intermittent recipient miss remains unproved. Normal Primary delivery had one explicit 400 ms allowance after paste; Ethan approved increasing that value by 100 ms.
+**Fix:** Build 571 changes primaryCurrentInputSettleNanoseconds to 500_000_000. Paste-only skips the wait; the same post-wait FIFO, cancellation and local HUD guard still govern exactly one generic HID Send. Exact Next delivery, recording-tail timing and key-event transport are unchanged.
+**Commit:** 04269f1d1785a4ecfac366b46b66467fa4d9a175
+**Guard:** All 12 selected canonical Mini functions passed, including ImmediateKeyboardSequenceTests and Primary/Next, queue-order and HUD-only guards. All six returned artifact hashes and remote cleanup verified. Signed universal build 571 is installed and startup readiness acknowledged; signature, audio/Automation entitlements, icon, eight protected preferences, updater key and official VoiceInk preservation verified. Physical recipient acceptance remains separate from event-post and automated proof.
+---
+
+
+---
 **Date:** 2026-11-27T22:43:47.669122+00:00
 **Trigger:** Hosted570/run46074119666 failed a different existing native image fixture after all7isolated fade functions Passed.
 **Symptom:** The1114-function remainder failed only retiredCancelAndNoPasteCardsRenderInBothStylesAndRespectOutlineOff: Mini clipboard-only on/off difference0, required>80. All10Python gates Passed; credential cleanup and retained diagnostic upload Passed. The original on/off PNGs were not configured, so the exact failed paint state remains unknown.
