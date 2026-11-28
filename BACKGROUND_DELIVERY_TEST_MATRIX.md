@@ -1,5 +1,10 @@
 # VoiceInk++ background delivery test matrix
 
+**2026-11-28 Primary timing adjustment:** Ethan requested another 100 ms before
+Enter. Require one system-focused paste followed by the configured generic Send
+after 500 ms when enabled, preserving paste-only, cancellation and FIFO guards.
+Earlier dated timing receipts below remain historical evidence.
+
 **2026-11-09 Primary timing restored:** Ethan removed the experimental 50 ms
 attempt and conditional retry. Require one system-focused paste and, only when
 Mode auto-send is enabled and the queue permits it, one generic Send after the
@@ -207,7 +212,7 @@ destination=primaryCurrentInput targetCaptured=false deliveryPolicy=baseCurrentI
 pipeline: about to DELIVER ... destination=primaryCurrentInput
 paste: primary current-input compatibility selected ... appSpecificDelivery=false
 paste: primary current-input command completed result=commandPosted
-paste: primary current-input HID auto-send issued=true verification=notRequired settleMs=400
+paste: primary current-input HID auto-send issued=true verification=notRequired settleMs=500
 ```
 
 The same delivery must contain no exact-input preparation/resolution, Telegram identity, OpenAI Send,

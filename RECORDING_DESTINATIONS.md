@@ -2,6 +2,11 @@
 
 ## Current timing — one Send after the existing paste allowance
 
+On 2026-11-28 Ethan requested Enter another 100 ms later after occasional missed
+submissions. The normal Primary allowance is now 500 ms. Paste-only still skips
+the wait; cancellation, FIFO tail suppression and the single generic key remain.
+This timing adjustment does not establish the cause of every missed submission.
+
 Ethan removed the experimental early 50 ms Send and conditional retry on
 2026-11-09 after reporting worse submission. Normal Primary delivery again posts
 one system-focused paste, waits the previous 400 ms only when auto-send is enabled,

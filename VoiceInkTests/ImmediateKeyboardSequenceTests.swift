@@ -87,14 +87,14 @@ struct ImmediateKeyboardSequenceTests {
         let end = try #require(delivery.range(of: "private func deliverToBackgroundExactInput(", range: start.upperBound..<delivery.endIndex))
         let primary = delivery[start.lowerBound..<end.lowerBound]
         #expect(!primary.contains("NSWorkspace"))
-        // Ethan restored the pre-experiment timing: one 400 ms allowance and
-        // exactly one generic Send, with no recipient observation or early retry.
+        // Ethan added 100 ms on 2026-11-28: one 500 ms allowance and exactly one
+        // generic Send, with no recipient observation or early retry. — GPT-6.1 Sol
         #expect(primary.components(separatedBy: "Task.sleep").count == 2)
         #expect(primary.contains("Task.sleep(nanoseconds: Self.primaryCurrentInputSettleNanoseconds)"))
         #expect(primary.components(separatedBy: "CursorPaster.performAutoSend(").count == 2)
         #expect(primary.contains("if autoSendKey.isEnabled"))
-        #expect(TranscriptionDelivery.primaryCurrentInputSettleNanoseconds == 400_000_000)
-        #expect(delivery.contains("primaryCurrentInputSettleNanoseconds: UInt64 = 400_000_000"))
+        #expect(TranscriptionDelivery.primaryCurrentInputSettleNanoseconds == 500_000_000)
+        #expect(delivery.contains("primaryCurrentInputSettleNanoseconds: UInt64 = 500_000_000"))
         #expect(!delivery.contains("PrimarySendReceipt"))
         #expect(!primary.contains("AXUIElement") && !primary.contains("PrimarySendAttemptPolicy"))
         #expect(primary.contains("settleMs=\\(Self.primaryCurrentInputSettleNanoseconds / 1_000_000)"))

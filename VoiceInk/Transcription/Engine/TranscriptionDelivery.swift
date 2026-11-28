@@ -17,10 +17,11 @@ final class TranscriptionDelivery: TranscriptionDelivering {
     init(recoveryPasteOverride: ((Request, Actions) async -> Void)? = nil) {
         self.recoveryPasteOverride = recoveryPasteOverride
     }
-    // Ethan removed the experimental early Send on 2026-11-09 because it did not
-    // improve submission. Keep the previous single 400 ms paste-to-Return allowance;
-    // Primary must not inspect the recipient or retry an unacknowledged key.
-    static let primaryCurrentInputSettleNanoseconds: UInt64 = 400_000_000
+    // Ethan requested Enter 100 ms later on 2026-11-28 after occasional missed
+    // submissions: extend the existing 400 ms allowance to 500 ms. Keep the single
+    // Send restored on 2026-11-09; Primary must not inspect the recipient or retry
+    // an unacknowledged key. Paste-only skips this wait. — GPT-6.1 Sol
+    static let primaryCurrentInputSettleNanoseconds: UInt64 = 500_000_000
 
     enum BackgroundAutoSendVerification: Equatable {
         case verifiedCleared
@@ -803,7 +804,7 @@ final class TranscriptionDelivery: TranscriptionDelivering {
             break
         }
 
-        // Paste-only stays immediate. For auto-send, preserve the pre-experiment
+        // Paste-only stays immediate. For auto-send, preserve the approved
         // allowance and exactly one generic key; no AX read-back or early attempt.
         if autoSendKey.isEnabled {
             try? await Task.sleep(nanoseconds: Self.primaryCurrentInputSettleNanoseconds)
