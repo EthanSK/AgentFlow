@@ -765,7 +765,7 @@ struct ChatGPTVoiceCaptureMuteCoordinatorTests {
         #expect(source.contains("keyDown.postToPid(applicationPID)"))
         #expect(source.contains("keyUp.postToPid(applicationPID)"))
         #expect(source.contains("AXUIElementCopyAttributeValue"))
-        #expect(source.contains("try await Task.sleep(nanoseconds: 150_000_000)"))
+        #expect(!source.contains("try await Task.sleep(nanoseconds: 150_000_000)"))
         #expect(!source.contains("for _ in 0..<"))
         #expect(!source.contains(".activate(options:"))
         #expect(!source.contains("CGEvent(mouseEventSource:"))
